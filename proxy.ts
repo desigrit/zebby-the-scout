@@ -2,10 +2,6 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isAllowedHost } from "./lib/host-access";
 
 export function proxy(request: NextRequest) {
-  if (request.nextUrl.pathname === "/api/health" &&
-      request.headers.get("host") === process.env.WEBSITE_HOSTNAME) {
-    return NextResponse.next();
-  }
   if (!isAllowedHost(request.headers.get("host"), process.env.NODE_ENV === "development")) {
     return new Response("Not found.", {
       status: 404,

@@ -9,7 +9,7 @@
     "install:ci": "node scripts/install-ci.mjs",
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node scripts/migrate.mjs && next start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "test": "node --experimental-strip-types --test tests/job-details.test.mjs tests/host-access.test.mjs tests/public-address.test.mjs",
     "test:job-details": "node --experimental-strip-types --test tests/job-details.test.mjs",

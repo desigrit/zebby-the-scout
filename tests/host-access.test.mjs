@@ -2,13 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { isAllowedHost } from "../lib/host-access.ts";
 
-test("the public workspace only runs on its chosen hostname", () => {
-  assert.equal(isAllowedHost("applications424760.raunakoberoi.com"), true);
-  assert.equal(isAllowedHost("APPLICATIONS424760.RAUNAKOBEROI.COM"), true);
-  assert.equal(isAllowedHost("raunakoberoi.com"), false);
-  assert.equal(isAllowedHost("applications424760.raunakoberoi.com.evil.test"), false);
-  assert.equal(isAllowedHost("my-project.vercel.app"), false);
-  assert.equal(isAllowedHost(null), false);
+test("the public workspace only runs on Azure's default hostname", () => {
+  const azureHost = "pm-applications-a6gqaeashthkhkeu.eastus-01.azurewebsites.net";
+  assert.equal(isAllowedHost(azureHost, false, azureHost), true);
+  assert.equal(isAllowedHost(azureHost.toUpperCase(), false, azureHost), true);
+  assert.equal(isAllowedHost("raunakoberoi.com", false, azureHost), false);
+  assert.equal(isAllowedHost(`${azureHost}.evil.test`, false, azureHost), false);
+  assert.equal(isAllowedHost("my-project.vercel.app", false, azureHost), false);
+  assert.equal(isAllowedHost(null, false, azureHost), false);
+  assert.equal(isAllowedHost(azureHost, false, ""), false);
 });
 
 test("local addresses are only enabled for development", () => {

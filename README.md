@@ -18,14 +18,14 @@ When adding an application, paste the public HTTPS job listing link first. The a
 
 ## Data and access
 
-The production app is intended for `applications424760.raunakoberoi.com`. Anyone who opens that address can view and change every application, download every saved resume, and upload files. There is no sign-in. The site requests that search engines do not index it, but this does not control access.
+The production app uses the default HTTPS address shown on its Azure App Service Overview page. Anyone who opens that address can view and change every application, download every saved resume, and upload files. There is no sign-in. The site requests that search engines do not index it, but this does not control access.
 
-Applications and resume metadata use Azure Database for PostgreSQL. Resume files use a private Azure Blob Storage container, served through the app's download route. The app returns 404 on other production hostnames.
+Applications and resume metadata use Azure Database for PostgreSQL. Resume files use a private Azure Blob Storage container, served through the app's download route. The app returns 404 on other production hostnames. Azure supplies the allowed hostname through `WEBSITE_DEFAULT_HOSTNAME`.
 
 For recovery, configure the PostgreSQL server's automatic backups with 35 days of retention and Blob soft delete with 35 days of retention. PostgreSQL's daily snapshots and point-in-time restore cover accidental application deletion more thoroughly than a weekly database copy. See [Azure deployment](docs/AZURE_DEPLOY.md).
 
 ## Local development
 
-Use Node.js 22.13 or newer. Run `npm ci`, copy `.env.example` to `.env.local`, and set the real PostgreSQL and Azure Storage connection values. Run `npm run db:migrate` and `npm run dev`. The development server accepts `localhost` and `127.0.0.1`.
+Use Node.js 22.13 or newer. Run `npm ci`, copy `.env.example` to `.env.local`, and set the real PostgreSQL and Azure Storage connection values. Run `npm run db:migrate` and `npm run dev`. The development server accepts `localhost` and `127.0.0.1`. The production `npm run start` command applies migrations before starting the server.
 
 After changing `db/schema.ts`, run `npm run db:generate` and commit the new migration. Run `npm run build` and `npm test` before deployment.

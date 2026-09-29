@@ -1,8 +1,8 @@
 import { headers } from "next/headers";
-import { APPLICATION_HOST, isAllowedHost } from "./host-access";
+import { isAllowedHost } from "./host-access";
 
-// All visitors to the chosen hostname intentionally share this workspace.
-export const WORKSPACE_ID = APPLICATION_HOST;
+// Keep the original workspace key so existing records stay in the same workspace.
+export const WORKSPACE_ID = "applications424760.raunakoberoi.com";
 
 export async function getWorkspaceId(): Promise<string | null> {
   const requestHeaders = await headers();

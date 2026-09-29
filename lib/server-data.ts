@@ -28,8 +28,24 @@ let blobService: BlobServiceClient | undefined;
 
 export function database(): Pool {
   const url = process.env.DATABASE_URL;
-  if (!url) throw new Error("Application database is unavailable");
-  pool ??= new Pool({ connectionString: url, max: 4, connectionTimeoutMillis: 10_000 });
+  const host = process.env.PGHOST;
+  const user = process.env.PGUSER;
+  const password = process.env.PGPASSWORD;
+  if (!url && !(host && user && password)) {
+    throw new Error("Application database is unavailable");
+  }
+  pool ??= new Pool({
+    ...(url ? { connectionString: url } : {
+      host,
+      user,
+      password,
+      database: process.env.PGDATABASE || "postgres",
+      port: 5432,
+      ssl: { rejectUnauthorized: true },
+    }),
+    max: 4,
+    connectionTimeoutMillis: 10_000,
+  });
   return pool;
 }
 
