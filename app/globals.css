@@ -142,6 +142,12 @@ a { color: inherit; text-underline-offset: 3px; }
 .field { display: flex; flex-direction: column; gap: 7px; min-width: 0; grid-column: span 2; }
 .field-wide { grid-column: span 4; }
 .field > span:first-child, .field > label:first-child { color: var(--ink); font-size: 13px; font-weight: 700; }
+.optional-label { color: var(--ink-faint); font-weight: 500; }
+.field small { color: var(--ink-soft); font-size: 12px; line-height: 1.4; }
+.listing-input-row { display: flex; gap: 9px; align-items: stretch; }
+.listing-input-row input { flex: 1; min-width: 0; width: auto; }
+.listing-input-row .button { flex: none; min-height: 43px; }
+.lookup-message { margin: 0; color: var(--ink-soft); font-size: 13px; line-height: 1.4; }
 .field input, .field select {
   width: 100%;
   min-height: 43px;
@@ -206,6 +212,7 @@ a { color: inherit; text-underline-offset: 3px; }
 .role-cell strong, .role-cell span, .role-cell a { display: block; }
 .role-cell strong { color: var(--ink); font-size: 14px; font-weight: 750; line-height: 1.35; }
 .role-cell > span { margin-top: 2px; color: var(--ink-soft); }
+.role-cell .role-context { margin-top: 5px; color: var(--ink-faint); font-size: 12px; overflow-wrap: anywhere; }
 .role-cell a { display: inline-flex; align-items: center; gap: 2px; margin-top: 7px; color: #a1492d; font-size: 12px; font-weight: 700; text-decoration: none; }
 .role-cell a:hover, .resume-link:hover { text-decoration: underline; }
 .mobile-label { display: none; }
@@ -285,6 +292,8 @@ a { color: inherit; text-underline-offset: 3px; }
   .search-field { flex: 1; }
   .form-grid { grid-template-columns: 1fr; }
   .field, .field-wide, .resume-field { grid-column: 1; }
+  .listing-input-row { flex-direction: column; }
+  .listing-input-row .button { align-self: flex-start; }
   .editor-head h2 { font-size: 21px; }
 }
 @media (max-width: 420px) {

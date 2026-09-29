@@ -44,11 +44,11 @@ export async function POST(request: Request) {
     const item = input.data;
     await database()
       .prepare(`INSERT INTO applications
-        (id, user_id, company, title, listing_url, applied_date, match_strength,
-         resume_id, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        (id, user_id, company, title, team, locations, listing_url, applied_date,
+         match_strength, resume_id, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .bind(
-        id, user.userId, item.company, item.title, item.listingUrl,
+        id, user.userId, item.company, item.title, item.team ?? "", item.locations ?? "", item.listingUrl,
         item.appliedDate, item.matchStrength, item.resumeId, item.status, now, now,
       )
       .run();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   ArrowUpRight,
   BriefcaseBusiness,
@@ -21,6 +21,7 @@ import {
   type ApplicationStatus,
   type Resume,
 } from "../lib/application-types";
+import type { JobDetails } from "../lib/job-details";
 
 type FormState = Omit<ApplicationInput, "matchStrength"> & { matchStrength: string };
 type BrowserTool = {
@@ -52,6 +53,8 @@ function emptyForm(): FormState {
   return {
     company: "",
     title: "",
+    team: "",
+    locations: "",
     listingUrl: "",
     appliedDate: localToday(),
     matchStrength: "",
@@ -72,6 +75,8 @@ function applicationInput(item: Application, status = item.status): ApplicationI
   return {
     company: item.company,
     title: item.title,
+    team: item.team,
+    locations: item.locations,
     listingUrl: item.listingUrl,
     appliedDate: item.appliedDate,
     matchStrength: item.matchStrength,
@@ -104,17 +109,48 @@ export default function ApplicationDashboard({ displayName }: { displayName: str
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(() => emptyForm());
+  const [lookingUp, setLookingUp] = useState(false);
+  const [lookupMessage, setLookupMessage] = useState("");
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const formRef = useRef<HTMLDivElement>(null);
-  const companyInputRef = useRef<HTMLInputElement>(null);
+  const listingInputRef = useRef<HTMLInputElement>(null);
   const addButtonRef = useRef<HTMLButtonElement>(null);
   const lastTriggerRef = useRef<HTMLElement | null>(null);
   const shouldRestoreFocusRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const lookupControllerRef = useRef<AbortController | null>(null);
+  const lastLookupUrlRef = useRef("");
+  const lastAutofillRef = useRef<Partial<JobDetails>>({});
+  const appliedDateTouchedRef = useRef(false);
+
+  const revealForm = useCallback(() => {
+    window.setTimeout(() => {
+      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      listingInputRef.current?.focus({ preventScroll: true });
+    }, 0);
+  }, []);
+
+  const openNewForm = useCallback(() => {
+    lastTriggerRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    setEditingId(null);
+    setForm(emptyForm());
+    lookupControllerRef.current?.abort();
+    lastLookupUrlRef.current = "";
+    lastAutofillRef.current = {};
+    appliedDateTouchedRef.current = false;
+    setLookupMessage("");
+    setLookingUp(false);
+    setResumeFile(null);
+    setActionError("");
+    setFormOpen(true);
+    revealForm();
+  }, [revealForm]);
 
   useLayoutEffect(() => {
     if (formOpen || !shouldRestoreFocusRef.current) return;
@@ -124,7 +160,7 @@ export default function ApplicationDashboard({ displayName }: { displayName: str
     else addButtonRef.current?.focus();
   }, [formOpen, applications]);
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setLoadError("");
     try {
@@ -143,11 +179,12 @@ export default function ApplicationDashboard({ displayName }: { displayName: str
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
-    void loadData();
-  }, []);
+    const timer = window.setTimeout(() => void loadData(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadData]);
 
   useEffect(() => {
     const context = (document as Document & { modelContext?: BrowserModelContext }).modelContext;
@@ -167,6 +204,8 @@ export default function ApplicationDashboard({ displayName }: { displayName: str
               id: item.id,
               company: item.company,
               title: item.title,
+              team: item.team,
+              locations: item.locations,
               listingUrl: item.listingUrl,
               appliedDate: item.appliedDate,
               matchStrength: item.matchStrength,
@@ -193,7 +232,7 @@ export default function ApplicationDashboard({ displayName }: { displayName: str
       console.warn("Browser tools could not be registered", error);
     }
     return () => lifecycle.abort();
-  }, [applications, resumes]);
+  }, [applications, openNewForm]);
 
   const stats = useMemo(() => {
     const weekStart = new Date();
@@ -221,34 +260,94 @@ export default function ApplicationDashboard({ displayName }: { displayName: str
       const matchesStatus = statusFilter === "All statuses" || item.status === statusFilter;
       const matchesQuery =
         !term ||
-        [item.company, item.title, item.resumeName].some((value) =>
+        [item.company, item.title, item.team, item.locations, item.resumeName].some((value) =>
           value.toLowerCase().includes(term),
         );
       return matchesStatus && matchesQuery;
     });
   }, [applications, query, statusFilter]);
 
-  function revealForm() {
-    window.setTimeout(() => {
-      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      companyInputRef.current?.focus({ preventScroll: true });
-    }, 0);
-  }
-
   function restoreFocus() {
     shouldRestoreFocusRef.current = true;
   }
 
-  function openNewForm() {
-    lastTriggerRef.current = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
-    setEditingId(null);
-    setForm(emptyForm());
-    setResumeFile(null);
-    setActionError("");
-    setFormOpen(true);
-    revealForm();
+  const lookupJobDetails = useCallback(async (url: string, force = false) => {
+    const listingUrl = url.trim();
+    if (!force && lastLookupUrlRef.current === listingUrl) return;
+    lastLookupUrlRef.current = listingUrl;
+    lookupControllerRef.current?.abort();
+    const controller = new AbortController();
+    lookupControllerRef.current = controller;
+    setLookingUp(true);
+    setLookupMessage("Reading the job listing...");
+    try {
+      const response = await fetch("/api/job-details", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: listingUrl }),
+        signal: controller.signal,
+      });
+      const { details } = await readJson<{ details: JobDetails }>(response);
+      if (controller.signal.aborted) return;
+      setForm((current) => {
+        if (current.listingUrl.trim() !== listingUrl) return current;
+        const next = { ...current };
+        for (const key of ["company", "title", "team", "locations"] as const) {
+          if (details[key] && (force || !current[key].trim())) {
+            next[key] = details[key];
+            lastAutofillRef.current[key] = details[key];
+          }
+        }
+        return next;
+      });
+      const fields = [
+        details.company && "company", details.title && "job title",
+        details.team && "team", details.locations && "locations",
+      ].filter(Boolean);
+      setLookupMessage(fields.length
+        ? force
+          ? `Updated ${fields.join(", ")}. Check any fields the listing did not provide.`
+          : `Found ${fields.join(", ")}. Check the details before saving.`
+        : force
+          ? "No listing details were available. Existing fields were kept; check them manually."
+          : "No listing details were available. Fill the fields manually.");
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setLookupMessage(error instanceof Error ? error.message : "Could not read this listing. Fill the fields manually.");
+    } finally {
+      if (lookupControllerRef.current === controller) {
+        lookupControllerRef.current = null;
+        setLookingUp(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!formOpen || editingId || !/^https:\/\//i.test(form.listingUrl.trim())) return;
+    const timer = window.setTimeout(() => void lookupJobDetails(form.listingUrl), 600);
+    return () => window.clearTimeout(timer);
+  }, [formOpen, editingId, form.listingUrl, lookupJobDetails]);
+
+  function updateListingUrl(value: string) {
+    lookupControllerRef.current?.abort();
+    lastLookupUrlRef.current = "";
+    const previousAutofill = lastAutofillRef.current;
+    lastAutofillRef.current = {};
+    setLookingUp(false);
+    setLookupMessage("");
+    setForm((current) => {
+      const next = {
+        ...current,
+        listingUrl: value,
+        appliedDate: !editingId && !appliedDateTouchedRef.current ? localToday() : current.appliedDate,
+      };
+      for (const key of ["company", "title", "team", "locations"] as const) {
+        if (previousAutofill[key] && current[key] === previousAutofill[key]) {
+          next[key] = "";
+        }
+      }
+      return next;
+    });
   }
 
   function openEditForm(item: Application) {
@@ -257,6 +356,12 @@ export default function ApplicationDashboard({ displayName }: { displayName: str
       : null;
     setEditingId(item.id);
     setForm({ ...applicationInput(item), matchStrength: String(item.matchStrength) });
+    lookupControllerRef.current?.abort();
+    lastLookupUrlRef.current = "";
+    lastAutofillRef.current = {};
+    appliedDateTouchedRef.current = true;
+    setLookupMessage("");
+    setLookingUp(false);
     setResumeFile(null);
     setActionError("");
     setFormOpen(true);
@@ -265,6 +370,7 @@ export default function ApplicationDashboard({ displayName }: { displayName: str
 
   function closeForm() {
     if (saving) return;
+    lookupControllerRef.current?.abort();
     setFormOpen(false);
     setEditingId(null);
     setResumeFile(null);
@@ -310,6 +416,8 @@ export default function ApplicationDashboard({ displayName }: { displayName: str
       const payload: ApplicationInput = {
         company: form.company.trim(),
         title: form.title.trim(),
+        team: form.team.trim(),
+        locations: form.locations.trim(),
         listingUrl: form.listingUrl.trim(),
         appliedDate: form.appliedDate,
         matchStrength,
@@ -333,6 +441,7 @@ export default function ApplicationDashboard({ displayName }: { displayName: str
         ),
       );
       setFormOpen(false);
+      lookupControllerRef.current?.abort();
       setEditingId(null);
       setNotice(editingId ? "Application updated." : "Application added.");
       restoreFocus();
@@ -420,7 +529,7 @@ export default function ApplicationDashboard({ displayName }: { displayName: str
             <div className="editor-head">
               <div>
                 <h2 id="form-title">{editingId ? "Edit application" : "Add an application"}</h2>
-                <p>Keep the details you will want when a company replies.</p>
+                <p>Start with the job link, then check the details before saving.</p>
               </div>
               <button className="icon-button" type="button" aria-label="Close form" onClick={closeForm}>
                 <X size={20} aria-hidden="true" />
@@ -428,21 +537,47 @@ export default function ApplicationDashboard({ displayName }: { displayName: str
             </div>
             <form onSubmit={saveApplication}>
               <div className="form-grid">
+                <div className="field field-wide listing-field">
+                  <label htmlFor="listing-url">Job listing link</label>
+                  <div className="listing-input-row">
+                    <input
+                      id="listing-url"
+                      ref={listingInputRef}
+                      type="url"
+                      value={form.listingUrl}
+                      onChange={(event) => updateListingUrl(event.target.value)}
+                      placeholder="https://..."
+                      maxLength={2000}
+                      aria-describedby="listing-help"
+                      required
+                    />
+                    <button className="button button-secondary" type="button" onClick={() => void lookupJobDetails(form.listingUrl, true)} disabled={!form.listingUrl.trim() || lookingUp}>
+                      {lookingUp ? "Reading..." : "Fill from link"}
+                    </button>
+                  </div>
+                  <small id="listing-help">Paste a public HTTPS listing. Available details fill automatically, and you can edit them.</small>
+                  {lookupMessage && <p className="lookup-message" role="status">{lookupMessage}</p>}
+                </div>
                 <label className="field">
                   <span>Company</span>
-                  <input ref={companyInputRef} value={form.company} onChange={(event) => updateField("company", event.target.value)} placeholder="Company name" maxLength={120} required />
+                  <input value={form.company} onChange={(event) => updateField("company", event.target.value)} placeholder="Company name" maxLength={120} required />
                 </label>
                 <label className="field">
                   <span>Job title</span>
                   <input value={form.title} onChange={(event) => updateField("title", event.target.value)} placeholder="Senior Product Manager" maxLength={160} required />
                 </label>
-                <label className="field field-wide">
-                  <span>Job listing link</span>
-                  <input type="url" value={form.listingUrl} onChange={(event) => updateField("listingUrl", event.target.value)} placeholder="https://..." maxLength={2000} required />
+                <label className="field">
+                  <span>Team <span className="optional-label">optional</span></span>
+                  <input value={form.team} onChange={(event) => updateField("team", event.target.value)} placeholder="Product Growth" maxLength={160} />
+                </label>
+                <label className="field">
+                  <span>Location(s) <span className="optional-label">optional</span></span>
+                  <input value={form.locations} onChange={(event) => updateField("locations", event.target.value)} placeholder="New York, NY; Remote" maxLength={500} />
                 </label>
                 <label className="field">
                   <span>Date applied</span>
-                  <input type="date" value={form.appliedDate} onChange={(event) => updateField("appliedDate", event.target.value)} required />
+                  <input type="date" value={form.appliedDate} onChange={(event) => { appliedDateTouchedRef.current = true; updateField("appliedDate", event.target.value); }} required />
+                  <small>Set to today. Change it if you applied on another date.</small>
                 </label>
                 <label className="field">
                   <span>Match strength</span>
@@ -555,6 +690,8 @@ export default function ApplicationDashboard({ displayName }: { displayName: str
                       <td className="role-cell">
                         <strong>{item.title}</strong>
                         <span>{item.company}</span>
+                        {item.team && <span className="role-context">Team: {item.team}</span>}
+                        {item.locations && <span className="role-context">Location(s): {item.locations}</span>}
                         <a href={item.listingUrl} target="_blank" rel="noopener noreferrer">
                           View listing <ArrowUpRight size={13} aria-hidden="true" />
                         </a>

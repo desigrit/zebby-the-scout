@@ -24,7 +24,8 @@ The user keeps job listing links and uses different resume versions. They need t
 
 ## Capabilities and Constraints
 
-- Record company, job title, listing link, date applied, match strength, resume used, and status.
+- Record company, job title, team, locations, listing link, date applied, match strength, resume used, and status.
+- Put the listing link first and try to fill company, title, team, and locations from public job data. Start the applied date at today and keep every field editable.
 - Show application statistics.
 - Make saved records available across the user's computers.
 - Store uploaded resume files so they can be reused across applications and opened on either computer.

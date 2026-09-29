@@ -304,7 +304,7 @@
   ],
   "narrative": {
     "northStar": "The Search Ledger",
-    "overview": "The app should feel like a dependable working ledger for a busy job search. Warm paper and fine green rules keep rows readable, while a dark forest header gives the workspace a clear identity. The terracotta action color points to the next useful step without competing with application data.\n\nThe interface is compact enough for several entries a day. One expressive serif heading gives the page character; controls, statistics, and row details use a direct sans-serif voice. The form opens within the same workspace so the list remains a useful reference while editing.",
+    "overview": "The app should feel like a dependable working ledger for a busy job search. Warm paper and fine green rules keep rows readable, while a dark forest header gives the workspace a clear identity. The terracotta action color points to the next useful step without competing with application data.\n\nThe interface is compact enough for several entries a day. One expressive serif heading gives the page character; controls, statistics, and row details use a direct sans-serif voice. The form opens within the same workspace so the list remains a useful reference while editing. Its first field is the job link, with a clear autofill action and editable results.",
     "keyCharacteristics": [
       "Warm paper surfaces on a muted canvas.",
       "Strong hierarchy through typography and spacing, with light borders between data.",

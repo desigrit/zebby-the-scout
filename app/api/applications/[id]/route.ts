@@ -23,11 +23,12 @@ export async function PATCH(request: Request, context: Context) {
     const item = input.data;
     const result = await database()
       .prepare(`UPDATE applications SET
-        company = ?, title = ?, listing_url = ?, applied_date = ?, match_strength = ?,
+        company = ?, title = ?, team = COALESCE(?, team), locations = COALESCE(?, locations),
+        listing_url = ?, applied_date = ?, match_strength = ?,
         resume_id = ?, status = ?, updated_at = ?
         WHERE id = ? AND user_id = ?`)
       .bind(
-        item.company, item.title, item.listingUrl, item.appliedDate,
+        item.company, item.title, item.team ?? null, item.locations ?? null, item.listingUrl, item.appliedDate,
         item.matchStrength, item.resumeId, item.status, new Date().toISOString(),
         id, user.userId,
       )

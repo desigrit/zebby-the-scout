@@ -10,6 +10,8 @@ const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
 export const applicationInputSchema = z.object({
   company: z.string().trim().min(1).max(120),
   title: z.string().trim().min(1).max(160),
+  team: z.string().trim().max(160).optional(),
+  locations: z.string().trim().max(500).optional(),
   listingUrl: z.string().trim().url().max(2000).refine((value) => {
     const protocol = new URL(value).protocol;
     return protocol === "http:" || protocol === "https:";
@@ -43,6 +45,8 @@ export function mapApplication(row: Record<string, unknown>): Application {
     id: String(row.id),
     company: String(row.company),
     title: String(row.title),
+    team: String(row.team ?? ""),
+    locations: String(row.locations ?? ""),
     listingUrl: String(row.listing_url),
     appliedDate: String(row.applied_date),
     matchStrength: Number(row.match_strength),

@@ -19,6 +19,8 @@ export type Application = {
   id: string;
   company: string;
   title: string;
+  team: string;
+  locations: string;
   listingUrl: string;
   appliedDate: string;
   matchStrength: number;
@@ -33,6 +35,8 @@ export type ApplicationInput = Pick<
   Application,
   | "company"
   | "title"
+  | "team"
+  | "locations"
   | "listingUrl"
   | "appliedDate"
   | "matchStrength"

@@ -21,6 +21,8 @@ export const applications = sqliteTable(
     userId: text("user_id").notNull(),
     company: text("company").notNull(),
     title: text("title").notNull(),
+    team: text("team").notNull().default(""),
+    locations: text("locations").notNull().default(""),
     listingUrl: text("listing_url").notNull(),
     appliedDate: text("applied_date").notNull(),
     matchStrength: integer("match_strength").notNull(),

@@ -149,7 +149,7 @@ The palette pairs a single warm action accent with forest green structure and qu
 
 ## Layout
 
-The content container is capped at 1440px and uses responsive side padding (`clamp(22px, 4vw, 68px)`). The desktop page flows from title and add action to a five-column statistics band, then search, filter, and applications. The editor uses a four-column form grid with most fields spanning two columns; the listing URL spans all four.
+The content container is capped at 1440px and uses responsive side padding (`clamp(22px, 4vw, 68px)`). The desktop page flows from title and add action to a five-column statistics band, then search, filter, and applications. The editor starts with the listing URL and its autofill action across all four columns. Company, title, team, locations, applied date, and match strength follow in paired fields. On mobile, the URL and autofill action stack above the fields.
 
 At 1100px, table columns and cell padding tighten. At 850px, the statistics band changes to three columns and application rows become two-column record cards with visible field labels. At 650px, the heading, filters, and form stack; the statistics band uses two columns. At 420px, filters stack vertically, the status control fills its row, and the final metric fills the band width. Preserve these content-driven changes when adding fields.
 
