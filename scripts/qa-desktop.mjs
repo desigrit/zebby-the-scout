@@ -11,6 +11,29 @@ const userData = path.join(root, "profile");
 const dbPath = path.join(root, "cloud", "applications.sqlite");
 const output = path.resolve("outputs/desktop-qa");
 let app;
+
+function simplePdf(text) {
+  const stream = `BT /F1 12 Tf 72 720 Td (${text}) Tj ET`;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = [];
+  for (const [index, object] of objects.entries()) {
+    offsets.push(Buffer.byteLength(pdf));
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  }
+  const xref = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return Buffer.from(pdf);
+}
+
 try {
   await mkdir(userData, { recursive: true });
   await mkdir(output, { recursive: true });
@@ -29,7 +52,7 @@ try {
     overview: "Product leader experienced in shaping growth strategy through customer insight and data. Brings clear prioritization, strong cross-functional partnership, and a disciplined approach to experimentation. Connects product outcomes to business goals and communicates tradeoffs with clarity.",
   });
   store.close();
-  await writeFile(path.join(userData, "settings.json"), JSON.stringify({ databasePath: dbPath }));
+  await writeFile(path.join(userData, "settings.json"), JSON.stringify({ databasePath: dbPath, analysisProvider: "openai" }));
   const executablePath = process.platform === "win32"
     ? path.resolve("node_modules/electron/dist/electron.exe")
     : path.resolve("node_modules/electron/dist/Electron.app/Contents/MacOS/Electron");
@@ -89,22 +112,74 @@ try {
   await page.screenshot({ path: path.join(output, "applications.png") });
   await page.getByRole("button", { name: "Add application", exact: true }).click();
   await page.screenshot({ path: path.join(output, "application-form.png") });
+  await page.evaluate(() => {
+    const originalFetch = window.fetch;
+    window.fetch = async (url, options) => {
+      if (url === "/api/job-posting") return Response.json({
+        details: { company: "Northstar Labs", title: "Senior Product Manager", team: "Growth", locations: "Remote" },
+        text: "Original offline job listing. Lead customer discovery, product strategy, roadmap planning, activation experiments, stakeholder communication, and cross-functional product delivery with design and engineering partners.",
+      });
+      return originalFetch(url, options);
+    };
+  });
   await page.locator("#listing-url").fill("https://example.org/jobs/senior-product-manager");
+  await page.getByText("Saved a copy of the listing text for offline reference.", { exact: false }).waitFor();
   await page.getByPlaceholder("Company name").fill("QA Company");
   await page.getByPlaceholder("Senior Product Manager").fill("Product Manager");
   await page.locator("#new-resume").setInputFiles({ name: "Resume.pdf", mimeType: "application/pdf",
-    buffer: Buffer.from("%PDF-1.4\nTest resume") });
+    buffer: simplePdf("Product strategy and customer discovery with roadmap and activation experiments") });
   await page.getByRole("button", { name: "Save application" }).click();
   await page.getByText("Application added.").waitFor();
   await page.getByText("QA Company").waitFor();
+  await page.getByRole("button", { name: "Saved copy" }).click();
+  await page.getByRole("dialog", { name: "Saved listing copy" }).getByText("Original offline job listing.", { exact: false }).waitFor();
+  const dialogBounds = await page.getByRole("dialog", { name: "Saved listing copy" }).boundingBox();
+  assert.ok(dialogBounds && Math.abs(dialogBounds.x + dialogBounds.width / 2 - 640) < 20);
+  await page.screenshot({ path: path.join(output, "saved-copy.png") });
+  await page.getByRole("button", { name: "Close saved copy" }).click();
   await page.getByRole("button", { name: "Analyze match" }).click();
   await page.getByRole("table").getByText("78%").waitFor();
   assert.equal((await app.evaluate(() => globalThis.__analysisCalls)).length, 2);
   assert.equal((await app.evaluate(() => globalThis.__analysisCalls))[1].input[0].content[0].type, "input_file");
   await page.screenshot({ path: path.join(output, "applications-filled.png") });
+  await app.evaluate(() => {
+    const originalFetch = globalThis.fetch;
+    globalThis.__ollamaCalls = [];
+    globalThis.fetch = async (url, options) => {
+      if (url === "http://localhost:11434/api/tags") return Response.json({ models: [{ name: "qwen3:8b" }] });
+      if (url === "http://localhost:11434/api/chat") {
+        const body = JSON.parse(options.body);
+        globalThis.__ollamaCalls.push(body);
+        const match = body.format.required.includes("score");
+        return Response.json({ done: true, message: { content: JSON.stringify(match
+          ? { score: 81, explanation: "Relevant product work, with one missing metric." }
+          : { keywords: ["Discovery", "Strategy", "Roadmap", "Experimentation", "Activation", "Analytics"],
+            themes: ["Lead discovery", "Shape strategy", "Prioritize roadmap", "Run experiments", "Measure outcomes"],
+            overview: "An ideal candidate leads product strategy from customer evidence and measurable outcomes." }) } });
+      }
+      return originalFetch(url, options);
+    };
+  });
   await nav.getByRole("button", { name: "Settings" }).click();
   await page.getByRole("heading", { name: "Settings", exact: true }).waitFor();
+  await page.getByText("Ollama", { exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('input[value="ollama"]')?.checked);
+  assert.equal(await page.getByRole("radio", { name: /Ollama/ }).isChecked(), true);
+  await page.getByRole("button", { name: "Find models" }).click();
+  await page.getByText("1 installed model found.", { exact: false }).waitFor();
+  await page.getByRole("button", { name: "Save Ollama settings" }).click();
+  await page.getByText("Ollama server and model saved on this computer.").waitFor();
   await page.screenshot({ path: path.join(output, "settings.png") });
+  await nav.getByRole("button", { name: "Plan", exact: true }).click();
+  await page.getByRole("button", { name: "Analyze again" }).click();
+  await page.getByText("Analysis saved. You can edit any part of it.").waitFor();
+  await nav.getByRole("button", { name: "Applications" }).click();
+  await page.getByRole("button", { name: "Analyze again" }).click();
+  await page.getByRole("table").getByText("81%").waitFor();
+  const ollamaCalls = await app.evaluate(() => globalThis.__ollamaCalls);
+  assert.equal(ollamaCalls.length, 2);
+  assert.match(ollamaCalls[1].messages[1].content, /Product strategy and customer discovery/);
+  await nav.getByRole("button", { name: "Settings" }).click();
   await page.getByRole("radio", { name: "Dark" }).check();
   await page.locator('html[data-theme="dark"]').waitFor();
   await page.waitForFunction(() => !document.querySelector('.settings-actions button')?.disabled);

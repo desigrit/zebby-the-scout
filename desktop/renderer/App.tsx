@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ArrowRight, ArrowUpRight, BriefcaseBusiness, Check, ClipboardList, FileText, FolderOpen,
   KeyRound, LoaderCircle, Monitor, Moon, Plus, RotateCw, Search, Settings2, Sparkles, Sun, Trash2 } from "lucide-react";
 import ApplicationDashboard from "../../app/application-dashboard";
@@ -9,12 +9,13 @@ type Tab = "plan" | "applications" | "settings";
 
 function emptyPlan(): PlanInput {
   return { listingUrl: "", company: "", title: "", team: "", locations: "",
-    description: "", keywords: [], themes: [], overview: "" };
+    description: "", snapshotText: "", snapshotSource: "", keywords: [], themes: [], overview: "" };
 }
 
 function inputFromPlan(plan: Plan): PlanInput {
   return { listingUrl: plan.listingUrl, company: plan.company, title: plan.title,
     team: plan.team, locations: plan.locations, description: plan.description,
+    snapshotText: plan.snapshotText, snapshotSource: plan.snapshotSource,
     keywords: plan.keywords, themes: plan.themes, overview: plan.overview };
 }
 
@@ -32,7 +33,8 @@ function formatUpdated(value: string) {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(value));
 }
 
-function PlanView({ hasApiKey, onOpenSettings, onDirtyChange }: {
+function PlanView({ analysisProvider, ollamaModel, hasApiKey, onOpenSettings, onDirtyChange }: {
+  analysisProvider: DesktopState["analysisProvider"]; ollamaModel: string;
   hasApiKey: boolean; onOpenSettings: () => void; onDirtyChange: (dirty: boolean) => void;
 }) {
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -46,6 +48,7 @@ function PlanView({ hasApiKey, onOpenSettings, onDirtyChange }: {
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const listingController = useRef<AbortController | null>(null);
   const dirty = JSON.stringify(draft) !== JSON.stringify(savedDraft);
   const busy = reading || saving || analyzing;
 
@@ -65,38 +68,66 @@ function PlanView({ hasApiKey, onOpenSettings, onDirtyChange }: {
     `${plan.title} ${plan.company} ${plan.listingUrl}`.toLowerCase().includes(filter.toLowerCase())), [plans, filter]);
 
   function update<K extends keyof PlanInput>(key: K, value: PlanInput[K]) {
-    setDraft((current) => ({ ...current, [key]: value }));
+    setDraft((current) => {
+      if (key === "listingUrl" && value !== current.listingUrl) {
+        listingController.current?.abort();
+        return { ...current, listingUrl: String(value),
+          description: current.description === current.snapshotText ? "" : current.description,
+          snapshotText: "", snapshotSource: "" };
+      }
+      return { ...current, [key]: value };
+    });
     setNotice("");
   }
 
   function choose(plan: Plan | null) {
     if (busy) return;
     if (dirty && !window.confirm("Discard unsaved changes to this plan?")) return;
+    listingController.current?.abort();
     setSelectedId(plan?.id || null);
     setDraft(plan ? inputFromPlan(plan) : emptyPlan());
     setSavedDraft(plan ? inputFromPlan(plan) : emptyPlan());
     setError(""); setNotice("");
   }
 
-  async function readListing() {
-    if (!draft.listingUrl.trim()) return;
+  const readListing = useCallback(async (url: string) => {
+    if (!url.trim()) return;
+    listingController.current?.abort();
+    const controller = new AbortController();
+    listingController.current = controller;
     setReading(true); setError(""); setNotice("");
     try {
       const { details, text } = await readJson<{ details: {
         company: string; title: string; team: string; locations: string;
       }; text: string }>(await fetch("/api/job-posting", { method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: draft.listingUrl.trim() }) }));
-      setDraft((current) => ({ ...current,
+        body: JSON.stringify({ url: url.trim() }), signal: controller.signal }));
+      if (controller.signal.aborted) return;
+      setDraft((current) => current.listingUrl.trim() === url.trim() ? ({ ...current,
         company: current.company || details.company, title: current.title || details.title,
         team: current.team || details.team, locations: current.locations || details.locations,
         description: current.description || text,
-      }));
-      setNotice(text ? "Listing text added. Review it before analyzing." : "The site did not share the job text. Paste the description below.");
+        snapshotText: current.snapshotSource === "page" && current.snapshotText ? current.snapshotText : text || current.snapshotText,
+        snapshotSource: text ? "page" : current.snapshotSource,
+      }) : current);
+      setNotice(text ? "Listing copy captured for offline reference. Review it before analyzing." : "The site did not share the job text. Paste the description below.");
     } catch (cause) {
+      if (controller.signal.aborted) return;
       setError(`${errorText(cause)} You can paste the job description below.`);
-    } finally { setReading(false); }
-  }
+    } finally {
+      if (listingController.current === controller) { listingController.current = null; setReading(false); }
+    }
+  }, []);
+
+  useEffect(() => {
+    const url = draft.listingUrl.trim();
+    if (!/^https:\/\//i.test(url) || draft.snapshotText ||
+        (selectedId && savedDraft.listingUrl === url)) return;
+    const timer = window.setTimeout(() => void readListing(url), 650);
+    return () => window.clearTimeout(timer);
+  }, [draft.listingUrl, draft.snapshotText, selectedId, savedDraft.listingUrl, readListing]);
+
+  useEffect(() => () => listingController.current?.abort(), []);
 
   async function save(value = draft): Promise<Plan> {
     setSaving(true); setError("");
@@ -121,7 +152,9 @@ function PlanView({ hasApiKey, onOpenSettings, onDirtyChange }: {
   }
 
   async function analyze() {
-    if (!hasApiKey) { onOpenSettings(); return; }
+    if (analysisProvider === "openai" && !hasApiKey || analysisProvider === "ollama" && !ollamaModel) {
+      onOpenSettings(); return;
+    }
     setAnalyzing(true); setError(""); setNotice("");
     try {
       const saved = dirty || !selectedId ? await save() : plans.find((plan) => plan.id === selectedId);
@@ -189,7 +222,7 @@ function PlanView({ hasApiKey, onOpenSettings, onDirtyChange }: {
           <label className="field"><span>Job listing link</span><div className="listing-input-row">
             <input type="url" value={draft.listingUrl} onChange={(event) => update("listingUrl", event.target.value)}
               placeholder="https://..." required maxLength={2000} />
-            <button className="button button-secondary" type="button" onClick={() => void readListing()}
+            <button className="button button-secondary" type="button" onClick={() => void readListing(draft.listingUrl)}
               disabled={!draft.listingUrl || busy}>{reading ? <LoaderCircle className="spin" size={16} /> : <ArrowRight size={16} />} Read listing</button>
           </div></label>
           <div className="plan-meta-grid">
@@ -201,18 +234,23 @@ function PlanView({ hasApiKey, onOpenSettings, onDirtyChange }: {
           <label className="field"><span>Job description</span><textarea className="description-area" value={draft.description}
             onChange={(event) => update("description", event.target.value)} placeholder="Read the listing or paste the full job description here." maxLength={80000} />
             <small>Some job sites block automatic reading. You can paste and edit the text here.</small></label>
+          {draft.snapshotText && <details className="snapshot-panel"><summary>Saved listing copy <span>{draft.snapshotSource === "page" ? "Captured from link" : "Saved from description"}</span></summary>
+            <p>This original text stays in the database when you edit the description above.</p>
+            <pre>{draft.snapshotText}</pre></details>}
         </div>
         <div className="plan-section analysis-section">
           <div className="plan-section-heading"><div><h3>Resume direction</h3>
             <p>Generated suggestions are editable. Check them against the posting and your experience.</p></div>
             <button className="button button-secondary analysis-button" type="button" onClick={() => void analyze()}
-              disabled={busy || draft.description.trim().length < 100 || !draft.listingUrl}>
+              disabled={busy || Math.max(draft.description.trim().length, draft.snapshotText?.trim().length || 0) < 100 || !draft.listingUrl}>
               {analyzing ? <LoaderCircle className="spin" size={17} /> : <Sparkles size={17} />}
-              {analyzing ? "Analyzing..." : draft.keywords.length ? "Analyze again" : "Analyze with GPT-6 Sol"}
+              {analyzing ? "Analyzing..." : draft.keywords.length ? "Analyze again" : `Analyze with ${analysisProvider === "ollama" ? (ollamaModel || "Ollama") : "GPT-6 Sol"}`}
             </button>
           </div>
-          {!hasApiKey && <p className="analysis-hint"><KeyRound size={16} aria-hidden="true" />
+          {analysisProvider === "openai" && !hasApiKey && <p className="analysis-hint"><KeyRound size={16} aria-hidden="true" />
             Add an OpenAI API key in <button type="button" onClick={onOpenSettings}>Settings</button> to run analysis.</p>}
+          {analysisProvider === "ollama" && !ollamaModel && <p className="analysis-hint"><KeyRound size={16} aria-hidden="true" />
+            Choose an Ollama model in <button type="button" onClick={onOpenSettings}>Settings</button> to run analysis.</p>}
           <div className="analysis-grid">
             <label className="field"><span>Core ATS keywords <small>{draft.keywords.filter(Boolean).length} keywords, aim for 6-20</small></span>
               <textarea className="keywords-area" value={draft.keywords.join("\n")}
@@ -227,7 +265,9 @@ function PlanView({ hasApiKey, onOpenSettings, onDirtyChange }: {
             <textarea className="overview-area" value={draft.overview}
               onChange={(event) => update("overview", event.target.value)}
               placeholder="The ideal profile for this role will appear here. Edit it to match your actual experience before using it." /></label>
-          <p className="analysis-footnote">Analysis sends the job posting text to OpenAI using your API key. API usage may be billed to your account.</p>
+          <p className="analysis-footnote">{analysisProvider === "ollama"
+            ? "Analysis sends the job posting text to your configured Ollama server."
+            : "Analysis sends the job posting text to OpenAI using your API key. API usage may be billed to your account."}</p>
         </div>
         <div className="plan-actions">
           {selectedId && <button className="button-delete" type="button" onClick={() => void remove()} disabled={busy}>
@@ -243,9 +283,44 @@ function PlanView({ hasApiKey, onOpenSettings, onDirtyChange }: {
 
 function SettingsView({ state, onState }: { state: DesktopState; onState: (value: DesktopState) => void }) {
   const [keyInput, setKeyInput] = useState("");
+  const [ollamaUrl, setOllamaUrl] = useState(state.ollamaUrl);
+  const [ollamaModel, setOllamaModel] = useState(state.ollamaModel);
+  const [installedModels, setInstalledModels] = useState<string[]>([]);
+  const [findingModels, setFindingModels] = useState(false);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+
+  async function changeProvider(value: DesktopState["analysisProvider"]) {
+    setWorking(true); setError(""); setNotice("");
+    try { onState(await window.desktop!.setAnalysisProvider(value)); }
+    catch (cause) { setError(errorText(cause)); }
+    finally { setWorking(false); }
+  }
+
+  async function findModels() {
+    setFindingModels(true); setError(""); setNotice("");
+    try {
+      const models = await window.desktop!.listOllamaModels(ollamaUrl);
+      setInstalledModels(models);
+      if (!models.length) setNotice("Ollama is running, but no models are installed.");
+      else {
+        if (!ollamaModel || !models.includes(ollamaModel)) {
+          setOllamaModel(models.find((model) => /^qwen/i.test(model)) || models[0]);
+        }
+        setNotice(`${models.length} installed ${models.length === 1 ? "model" : "models"} found. Save your selection below.`);
+      }
+    } catch (cause) { setError(errorText(cause)); }
+    finally { setFindingModels(false); }
+  }
+
+  async function saveOllama() {
+    setWorking(true); setError(""); setNotice("");
+    try { onState(await window.desktop!.setOllamaConfig({ url: ollamaUrl, model: ollamaModel }));
+      setNotice("Ollama server and model saved on this computer."); }
+    catch (cause) { setError(errorText(cause)); }
+    finally { setWorking(false); }
+  }
 
   async function choose(kind: "open" | "create") {
     setWorking(true); setError(""); setNotice("");
@@ -309,9 +384,35 @@ function SettingsView({ state, onState }: { state: DesktopState; onState: (value
       </div>
     </section>
     <section className="settings-section" aria-labelledby="ai-settings">
-      <div className="settings-section-heading"><h2 id="ai-settings">OpenAI key</h2>
-        <p>For Plan and match analysis</p></div>
+      <div className="settings-section-heading"><h2 id="ai-settings">Analysis</h2>
+        <p>For Plan and resume match</p></div>
       <div className="settings-content">
+        <div className="provider-options" role="radiogroup" aria-label="Analysis provider">
+          <label className={`provider-option ${state.analysisProvider === "ollama" ? "selected" : ""}`}>
+            <input type="radio" name="analysis-provider" value="ollama" checked={state.analysisProvider === "ollama"}
+              onChange={() => void changeProvider("ollama")} disabled={working} />
+            <strong>Ollama</strong><span>Use a model on your computer or local network</span>
+          </label>
+          <label className={`provider-option ${state.analysisProvider === "openai" ? "selected" : ""}`}>
+            <input type="radio" name="analysis-provider" value="openai" checked={state.analysisProvider === "openai"}
+              onChange={() => void changeProvider("openai")} disabled={working} />
+            <strong>OpenAI</strong><span>Use GPT-6 Sol with an API key</span>
+          </label>
+        </div>
+        {state.analysisProvider === "ollama" ? <>
+          <label className="field"><span>Server URL</span><input type="url" value={ollamaUrl}
+            onChange={(event) => setOllamaUrl(event.target.value)} placeholder="http://localhost:11434" spellCheck={false} /></label>
+          <div className="ollama-model-row"><label className="field"><span>Model</span><input value={ollamaModel}
+            onChange={(event) => setOllamaModel(event.target.value)} list="ollama-models"
+            placeholder="qwen3:8b" spellCheck={false} /></label>
+            <datalist id="ollama-models">{installedModels.map((model) => <option key={model} value={model} />)}</datalist>
+            <button className="button button-secondary" type="button" onClick={() => void findModels()} disabled={working || findingModels}>
+              <RotateCw size={16} aria-hidden="true" /> {findingModels ? "Finding..." : "Find models"}</button></div>
+          <div className="settings-actions"><button className="button button-primary" type="button"
+            onClick={() => void saveOllama()} disabled={working || findingModels || !ollamaModel.trim()}>
+            <Check size={17} aria-hidden="true" /> Save Ollama settings</button></div>
+          <p className="settings-help">Paste a server URL, find an installed model, then save. Plan text and extracted resume text go to that Ollama server when you run analysis.</p>
+        </> : <>
         <p className="key-status">{state.hasApiKey ? "API key saved on this computer" : "No API key saved"}</p>
         <label className="field key-field"><span>{state.hasApiKey ? "Replace API key" : "API key"}</span>
           <input type="password" value={keyInput} onChange={(event) => setKeyInput(event.target.value)}
@@ -322,6 +423,7 @@ function SettingsView({ state, onState }: { state: DesktopState; onState: (value
           {state.hasApiKey && <button className="button button-secondary" type="button" disabled={working}
             onClick={() => void saveKey("")}>Remove key</button>}</div>
         <p className="settings-help">The key stays on this computer. Plan analysis sends job text, and match analysis sends job text and your selected resume. GPT-6 Sol usage may incur API charges.</p>
+        </>}
       </div>
     </section>
     <section className="settings-section" aria-labelledby="appearance-settings">
@@ -430,6 +532,7 @@ export default function App() {
       </div>}
       {!state.filePath ? (tab === "settings" ? <SettingsView state={state} onState={setState} /> : <Welcome state={state} onState={setState} />)
       : tab === "plan" ? <PlanView key={databaseVersion} hasApiKey={state.hasApiKey}
+        analysisProvider={state.analysisProvider} ollamaModel={state.ollamaModel}
         onOpenSettings={() => navigate("settings")} onDirtyChange={setDirtyPlan} />
       : tab === "applications" ? <ApplicationDashboard key={databaseVersion} embedded />
       : <SettingsView state={state} onState={setState} />}</div>

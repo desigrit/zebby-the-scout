@@ -23,6 +23,9 @@ export type Application = {
   locations: string;
   listingUrl: string;
   jobDescription: string;
+  snapshotText: string;
+  snapshotCapturedAt: string;
+  snapshotSource: "page" | "manual" | "saved" | "";
   appliedDate: string;
   matchStrength: number | null;
   matchNotes: string;
@@ -42,6 +45,8 @@ export type ApplicationInput = Pick<
   | "locations"
   | "listingUrl"
   | "jobDescription"
+  | "snapshotText"
+  | "snapshotSource"
   | "appliedDate"
   | "matchStrength"
   | "resumeId"

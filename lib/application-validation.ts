@@ -18,6 +18,8 @@ export const applicationInputSchema = z.object({
     } catch { return false; }
   }).default(""),
   jobDescription: z.string().trim().max(80_000).default(""),
+  snapshotText: z.string().trim().max(80_000).default(""),
+  snapshotSource: z.enum(["page", "manual", "saved", ""]).default(""),
   appliedDate: z.union([z.literal(""), dateSchema]).default(""),
   matchStrength: z.number().int().min(0).max(100).nullable().default(null),
   resumeId: z.union([z.literal(""), z.string().uuid()]).default(""),

@@ -219,6 +219,20 @@ a { color: inherit; text-underline-offset: 3px; }
 .role-cell .role-context { margin-top: 5px; color: var(--ink-faint); font-size: 12px; overflow-wrap: anywhere; }
 .role-cell a { display: inline-flex; align-items: center; gap: 2px; margin-top: 7px; color: #a1492d; font-size: 12px; font-weight: 700; text-decoration: none; }
 .role-cell a:hover, .resume-link:hover { text-decoration: underline; }
+.role-cell .snapshot-link { display: inline-flex; align-items: center; gap: 4px; margin: 7px 0 0 10px; padding: 0; border: 0; background: transparent; color: #2d6650; font-size: 12px; font-weight: 700; cursor: pointer; }
+.role-cell .snapshot-link:hover { text-decoration: underline; }
+.snapshot-panel { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--canvas); color: var(--ink); }
+.snapshot-panel summary { cursor: pointer; font-size: 13px; font-weight: 700; }
+.snapshot-panel summary span { margin-left: 8px; color: var(--ink-soft); font-size: 11px; font-weight: 500; }
+.snapshot-panel p { margin: 11px 0; color: var(--ink-soft); font-size: 12px; }
+.snapshot-panel pre { max-height: 310px; margin: 0; padding: 13px; overflow: auto; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; color: var(--ink); font: inherit; font-size: 12px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.snapshot-dialog { position: fixed; inset: 0; width: min(760px, calc(100vw - 44px)); max-height: min(82vh, 850px); margin: auto; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); color: var(--ink); box-shadow: 0 24px 80px rgba(20, 36, 24, .25); }
+.snapshot-dialog::backdrop { background: rgba(17, 31, 22, .62); }
+.snapshot-dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 23px 26px 12px; }
+.snapshot-dialog-head h2 { margin: 0; font-size: 21px; }
+.snapshot-dialog-head p { margin: 5px 0 0; color: var(--ink-soft); font-size: 13px; }
+.snapshot-dialog-meta { margin: 0 26px 12px; color: var(--ink-faint); font-size: 11px; font-weight: 650; }
+.snapshot-dialog pre { max-height: calc(82vh - 145px); margin: 0 26px 26px; padding: 17px; overflow: auto; border: 1px solid var(--line); border-radius: 7px; background: var(--canvas); color: var(--ink); font: inherit; font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mobile-label { display: none; }
 .match-score { display: flex; align-items: center; gap: 10px; font-variant-numeric: tabular-nums; }
 .match-score strong { color: var(--ink); font-weight: 750; min-width: 35px; }

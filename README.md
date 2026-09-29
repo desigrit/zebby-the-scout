@@ -16,18 +16,22 @@ On first launch, the app creates a local SQLite database automatically, so you c
 
 The app keeps a local working copy and writes complete snapshots back to the selected file after changes. It detects if that cloud file changed outside the app before it saves. A backup copy is kept in the local backups folder at least once a week.
 
-Settings contains the current database file, Open and Create actions, the OpenAI API key, Auto/Light/Dark appearance, and optional local diagnostic logs. Auto follows your operating system. Diagnostic logs are saved only when enabled and may contain file paths and error details. The app sends job listing links to your default browser.
+Settings contains the current database file, Open and Create actions, an analysis provider, Auto/Light/Dark appearance, and optional local diagnostic logs. Auto follows your operating system. Diagnostic logs are saved only when enabled and may contain file paths and error details. The app sends job listing links to your default browser.
+
+Choose **Ollama** in Settings to analyze with a model running on your computer or local network. Enter the server URL, usually `http://localhost:11434`, choose **Find models**, select an installed model such as `qwen3:8b`, and save. Ollama must be running when you analyze. Its server and model settings are stored on each computer, while your plans and applications remain in the shared database. No OpenAI API key is needed for Ollama. For resume match, the app extracts text from PDF, DOCX, or DOC locally and sends that text with the job description to the configured Ollama server. Scanned PDFs without selectable text need a text-based resume.
+
+Choose **OpenAI** in Settings if you want to use GPT-6 Sol. Save an API key on each computer where you use that provider. Plan analysis sends job text, and resume match sends job text and the selected resume to OpenAI. API usage may be billed to your account.
 
 ## Plan
 
-Paste a public HTTPS job listing link and use **Read listing** to fill available details and job text. If a site blocks automatic reading, paste the description yourself. Save a separate plan for each posting.
+Paste a public HTTPS job listing link. The app automatically tries to fill available details and capture a readable text copy of the posting. **Read listing** retries when needed. If a site blocks automatic reading, paste the description yourself. Save a separate plan for each posting. A separate **Saved listing copy** keeps the original text in the SQLite file for offline reference, even after you edit the working description. The automatic copy can include up to 80,000 characters of readable page text. It does not save the page's images, scripts, or full HTML.
 
-Add an OpenAI API key in Settings, then choose **Analyze with GPT-6 Sol**. The app sends the saved job description to the OpenAI API and saves 6 to 20 ATS keywords, 5 or 6 resume themes, and an ideal candidate CV overview in the same SQLite file. All three outputs are editable. The overview describes an ideal profile, so check it against your real experience before using it. OpenAI API usage may be billed to your account. The API key is stored on the current computer, separate from the shared database.
+Choose an analysis provider in Settings, then analyze the plan. The app saves 6 to 20 ATS keywords, 5 or 6 resume themes, and an ideal candidate CV overview in the same SQLite file. All three outputs are editable. The overview describes an ideal profile, so check it against your real experience before using it.
 
 ## What it records
 
 - Company, job title, team, and location(s)
-- Job listing link and date applied
+- Job listing link, saved listing copy, and date applied
 - Match strength from 0 to 100 percent, entered manually or analyzed after saving
 - The resume used for each application, when attached
 - Status: Applied, Heard back, Interview scheduled, or Rejected
@@ -36,9 +40,9 @@ All application details can be left blank. The date starts at today and the stat
 
 Resumes are uploaded once and can be reused for later applications. PDF, DOCX, and DOC files up to 10 MB are supported.
 
-When adding an application, you can paste the public HTTPS job listing link first. The app tries to fill the company, title, team, and locations from the job board or page metadata. Review and edit any result before saving. Listings that block automated access can still be entered manually.
+When adding an application, you can paste the public HTTPS job listing link first. The app tries to fill the company, title, team, and locations from the job board or page metadata and capture the readable job text. Review and edit any result before saving. Choose **Saved copy** on an application to read the captured text offline. If a listing blocks automated access, paste the description yourself and save it. The saved copy stays in the database when you edit the working description.
 
-To estimate match strength, save an application with a resume, then choose **Analyze match**. GPT-6 Sol compares that resume with the job description. The app uses a description pasted into the application, a saved Plan with the same listing link, or the public listing page. The score and a short explanation are saved with the application. If you edit the resume or description afterward, the previous AI score is cleared. Analysis sends the selected resume and job text to OpenAI only when you choose the action. OpenAI API usage may be billed to your account.
+To estimate match strength, save an application with a resume, then choose **Analyze match**. Your selected provider compares the resume with the job description. The app uses a description pasted into the application, its saved listing copy, a saved Plan with the same listing link, or the public listing page. The score and a short explanation are saved with the application. If you edit the resume or description afterward, the previous AI score is cleared. The app only sends job and resume content for analysis when you choose the action.
 
 ## Build from source
 

@@ -58,6 +58,8 @@ function emptyForm(): FormState {
     locations: "",
     listingUrl: "",
     jobDescription: "",
+    snapshotText: "",
+    snapshotSource: "",
     appliedDate: localToday(),
     matchStrength: "",
     resumeId: "",
@@ -82,6 +84,8 @@ function applicationInput(item: Application, status = item.status): ApplicationI
     locations: item.locations,
     listingUrl: item.listingUrl,
     jobDescription: item.jobDescription,
+    snapshotText: item.snapshotText,
+    snapshotSource: item.snapshotSource,
     appliedDate: item.appliedDate,
     matchStrength: item.matchStrength,
     resumeId: item.resumeId,
@@ -120,6 +124,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
   const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const [viewingSnapshot, setViewingSnapshot] = useState<Application | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const formRef = useRef<HTMLDivElement>(null);
   const listingInputRef = useRef<HTMLInputElement>(null);
@@ -131,6 +136,14 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
   const lastLookupUrlRef = useRef("");
   const lastAutofillRef = useRef<Partial<JobDetails>>({});
   const appliedDateTouchedRef = useRef(false);
+  const snapshotDialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = snapshotDialogRef.current;
+    if (!dialog) return;
+    if (viewingSnapshot && !dialog.open) dialog.showModal();
+    if (!viewingSnapshot && dialog.open) dialog.close();
+  }, [viewingSnapshot]);
 
   const revealForm = useCallback(() => {
     window.setTimeout(() => {
@@ -287,13 +300,14 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
     setLookingUp(true);
     setLookupMessage("Reading the job listing...");
     try {
-      const response = await fetch("/api/job-details", {
+      const response = await fetch(embedded ? "/api/job-posting" : "/api/job-details", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: listingUrl }),
         signal: controller.signal,
       });
-      const { details } = await readJson<{ details: JobDetails }>(response);
+      const { details, text: capturedText } = await readJson<{ details: JobDetails; text?: string }>(response);
+      const text = capturedText || "";
       if (controller.signal.aborted) return;
       setForm((current) => {
         if (current.listingUrl.trim() !== listingUrl) return current;
@@ -304,19 +318,23 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
             lastAutofillRef.current[key] = details[key];
           }
         }
+        if (text) {
+          next.snapshotText = text;
+          next.snapshotSource = "page";
+          if (!current.jobDescription.trim()) next.jobDescription = text;
+        }
         return next;
       });
       const fields = [
         details.company && "company", details.title && "job title",
         details.team && "team", details.locations && "locations",
       ].filter(Boolean);
-      setLookupMessage(fields.length
-        ? force
-          ? `Updated ${fields.join(", ")}. Check any fields the listing did not provide.`
-          : `Found ${fields.join(", ")}. Check the details before saving.`
-        : force
-          ? "No listing details were available. Existing fields were kept; check them manually."
-          : "No listing details were available. Fill the fields manually.");
+      setLookupMessage(!embedded
+        ? fields.length ? `Found ${fields.join(", ")}. Check the details before saving.` : "No listing details were available. Fill the fields manually."
+        : text
+        ? `Saved a copy of the listing text for offline reference.${fields.length ? ` Found ${fields.join(", ")}.` : ""}`
+        : fields.length ? `Found ${fields.join(", ")}, but no job text. Paste it below to keep a copy.`
+          : "The site did not share listing details. Paste the description below to keep a copy.");
     } catch (error) {
       if (controller.signal.aborted) return;
       setLookupMessage(error instanceof Error ? error.message : "Could not read this listing. Fill the fields manually.");
@@ -326,7 +344,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
         setLookingUp(false);
       }
     }
-  }, []);
+  }, [embedded]);
 
   useEffect(() => {
     if (!formOpen || editingId || !/^https:\/\//i.test(form.listingUrl.trim())) return;
@@ -345,6 +363,9 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
       const next = {
         ...current,
         listingUrl: value,
+        snapshotText: "",
+        snapshotSource: "" as const,
+        jobDescription: current.jobDescription === current.snapshotText ? "" : current.jobDescription,
         appliedDate: !editingId && !appliedDateTouchedRef.current ? localToday() : current.appliedDate,
       };
       for (const key of ["company", "title", "team", "locations"] as const) {
@@ -422,6 +443,8 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
         locations: form.locations.trim(),
         listingUrl: form.listingUrl.trim(),
         jobDescription: form.jobDescription.trim(),
+        snapshotText: form.snapshotText.trim(),
+        snapshotSource: form.snapshotSource,
         appliedDate: form.appliedDate,
         matchStrength,
         resumeId,
@@ -571,7 +594,9 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                       {lookingUp ? "Reading..." : "Fill from link"}
                     </button>
                   </div>
-                  <small id="listing-help">A public link can fill available details. You can leave it blank.</small>
+                  <small id="listing-help">{embedded
+                    ? "A public link can fill available details and save a text copy for offline use. You can leave it blank."
+                    : "A public link can fill available details. You can leave it blank."}</small>
                   {lookupMessage && <p className="lookup-message" role="status">{lookupMessage}</p>}
                 </div>
                 <label className="field">
@@ -637,8 +662,12 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                     onChange={(event) => updateField("jobDescription", event.target.value)}
                     placeholder="Paste the posting here if you want to analyze your resume match later. A saved Plan for the same link can supply it too."
                     maxLength={80000} />
-                  <small>Only sent with your resume to OpenAI when you choose Analyze match.</small>
+                  <small>{embedded
+                    ? "Used for resume match analysis with your selected provider. If a site blocks access, paste its text here to save a copy."
+                    : "Used for resume match analysis. If a site blocks access, paste its description here."}</small>
                 </label>
+                {form.snapshotText && <details className="snapshot-panel field-wide"><summary>Saved listing copy <span>{form.snapshotSource === "page" ? "Captured from link" : "Saved from description"}</span></summary>
+                  <p>This copy stays in the database when you edit the job description.</p><pre>{form.snapshotText}</pre></details>}
                 {editingId && applications.find((item) => item.id === editingId)?.matchNotes &&
                   <div className="field-wide match-explanation"><strong>Match analysis</strong>
                     <p>{applications.find((item) => item.id === editingId)?.matchNotes}</p></div>}
@@ -723,6 +752,8 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                         {item.listingUrl && <a href={item.listingUrl} target="_blank" rel="noopener noreferrer">
                           View listing <ArrowUpRight size={13} aria-hidden="true" />
                         </a>}
+                        {item.snapshotText && <button className="snapshot-link" type="button" onClick={() => setViewingSnapshot(item)}>
+                          <FileText size={13} aria-hidden="true" /> Saved copy</button>}
                       </td>
                       <td><span className="mobile-label">Applied</span>{formatDate(item.appliedDate)}</td>
                       <td>
@@ -786,6 +817,18 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
           )}
         </section>
       </main>
+      <dialog ref={snapshotDialogRef} className="snapshot-dialog" aria-labelledby="snapshot-title"
+        onClose={() => setViewingSnapshot(null)} onCancel={() => setViewingSnapshot(null)}>
+        {viewingSnapshot && <>
+          <div className="snapshot-dialog-head"><div><h2 id="snapshot-title">Saved listing copy</h2>
+            <p>{viewingSnapshot.title || "Untitled role"}{viewingSnapshot.company ? ` at ${viewingSnapshot.company}` : ""}</p></div>
+            <button className="icon-button" type="button" aria-label="Close saved copy" onClick={() => setViewingSnapshot(null)}>
+              <X size={19} aria-hidden="true" /></button></div>
+          <div className="snapshot-dialog-meta">{viewingSnapshot.snapshotSource === "page" ? "Captured from listing" : "Saved from description"}
+            {viewingSnapshot.snapshotCapturedAt && ` · ${formatDate(viewingSnapshot.snapshotCapturedAt.slice(0, 10))}`}</div>
+          <pre>{viewingSnapshot.snapshotText}</pre>
+        </>}
+      </dialog>
     </div>
   );
 }

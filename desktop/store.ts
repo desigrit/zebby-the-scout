@@ -15,6 +15,9 @@ export type Plan = {
   team: string;
   locations: string;
   description: string;
+  snapshotText: string;
+  snapshotCapturedAt: string;
+  snapshotSource: "page" | "manual" | "saved" | "";
   keywords: string[];
   themes: string[];
   overview: string;
@@ -22,7 +25,10 @@ export type Plan = {
   updatedAt: string;
 };
 
-export type PlanInput = Omit<Plan, "id" | "createdAt" | "updatedAt">;
+export type PlanInput = Omit<Plan, "id" | "createdAt" | "updatedAt" | "snapshotCapturedAt" | "snapshotText" | "snapshotSource"> & {
+  snapshotText?: string;
+  snapshotSource?: Plan["snapshotSource"];
+};
 
 const planInputSchema = z.object({
   listingUrl: z.string().trim().url().max(2000).refine((value) => new URL(value).protocol === "https:"),
@@ -31,6 +37,8 @@ const planInputSchema = z.object({
   team: z.string().trim().max(160),
   locations: z.string().trim().max(500),
   description: z.string().trim().max(80_000),
+  snapshotText: z.string().trim().max(80_000).default(""),
+  snapshotSource: z.enum(["page", "manual", "saved", ""]).default(""),
   keywords: z.array(z.string().trim().max(200)).max(100),
   themes: z.array(z.string().trim().max(1000)).max(100),
   overview: z.string().trim().max(20_000),
@@ -38,11 +46,32 @@ const planInputSchema = z.object({
 
 type Row = Record<string, unknown>;
 
+function snapshotValues(input: { listingUrl: string; snapshotText?: string; snapshotSource?: string },
+  description: string, previous: Row | undefined, now: string) {
+  const sameListing = previous && String(previous.listing_url) === input.listingUrl;
+  if (sameListing && previous.snapshot_text &&
+      !(input.snapshotSource === "page" && input.snapshotText?.trim() && previous.snapshot_source !== "page")) {
+    return [String(previous.snapshot_text), String(previous.snapshot_captured_at || ""),
+      String(previous.snapshot_source || "saved")];
+  }
+  const supplied = input.snapshotText?.trim() || "";
+  const text = previous && !sameListing && supplied === String(previous.snapshot_text || "")
+    ? "" : supplied;
+  const fallback = previous && !sameListing && description === String(previous.job_description || previous.description || "")
+    ? "" : description;
+  const captured = text || fallback;
+  const source = text ? input.snapshotSource || "page" : captured ? "manual" : "";
+  return [captured, captured ? now : "", source];
+}
+
 function mapApplication(row: Row): Application {
   return {
     id: String(row.id), company: String(row.company), title: String(row.title),
     team: String(row.team || ""), locations: String(row.locations || ""),
     listingUrl: String(row.listing_url), jobDescription: String(row.job_description || ""),
+    snapshotText: String(row.snapshot_text || ""),
+    snapshotCapturedAt: String(row.snapshot_captured_at || ""),
+    snapshotSource: String(row.snapshot_source || "") as Application["snapshotSource"],
     appliedDate: String(row.applied_date),
     matchStrength: row.match_strength === null ? null : Number(row.match_strength),
     matchNotes: String(row.match_notes || ""), matchAnalyzedAt: String(row.match_analyzed_at || ""),
@@ -66,6 +95,9 @@ function mapPlan(row: Row): Plan {
     company: String(row.company || ""), title: String(row.title || ""),
     team: String(row.team || ""), locations: String(row.locations || ""),
     description: String(row.description || ""),
+    snapshotText: String(row.snapshot_text || ""),
+    snapshotCapturedAt: String(row.snapshot_captured_at || ""),
+    snapshotSource: String(row.snapshot_source || "") as Plan["snapshotSource"],
     keywords: JSON.parse(String(row.keywords_json || "[]")) as string[],
     themes: JSON.parse(String(row.themes_json || "[]")) as string[],
     overview: String(row.overview || ""),
@@ -85,6 +117,8 @@ function createSchema(db: DatabaseSync) {
       id TEXT PRIMARY KEY, company TEXT NOT NULL, title TEXT NOT NULL,
       team TEXT NOT NULL DEFAULT '', locations TEXT NOT NULL DEFAULT '',
       listing_url TEXT NOT NULL DEFAULT '', job_description TEXT NOT NULL DEFAULT '',
+      snapshot_text TEXT NOT NULL DEFAULT '', snapshot_captured_at TEXT NOT NULL DEFAULT '',
+      snapshot_source TEXT NOT NULL DEFAULT '',
       applied_date TEXT NOT NULL DEFAULT '',
       match_strength INTEGER CHECK (match_strength BETWEEN 0 AND 100),
       match_notes TEXT NOT NULL DEFAULT '', match_analyzed_at TEXT NOT NULL DEFAULT '',
@@ -95,19 +129,21 @@ function createSchema(db: DatabaseSync) {
       id TEXT PRIMARY KEY, listing_url TEXT NOT NULL, company TEXT NOT NULL DEFAULT '',
       title TEXT NOT NULL DEFAULT '', team TEXT NOT NULL DEFAULT '',
       locations TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',
+      snapshot_text TEXT NOT NULL DEFAULT '', snapshot_captured_at TEXT NOT NULL DEFAULT '',
+      snapshot_source TEXT NOT NULL DEFAULT '',
       keywords_json TEXT NOT NULL DEFAULT '[]', themes_json TEXT NOT NULL DEFAULT '[]',
       overview TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );
     CREATE INDEX applications_date_idx ON applications(applied_date DESC, created_at DESC);
     CREATE INDEX plans_updated_idx ON plans(updated_at DESC);
-    PRAGMA user_version = 3;
+    PRAGMA user_version = 4;
   `);
 }
 
 function migrate(db: DatabaseSync): boolean {
   const version = Number((db.prepare("PRAGMA user_version").get() as Row).user_version);
-  if (version === 3) return false;
-  if (version !== 1 && version !== 2) throw new Error("This is not a supported PM Application Tracker database.");
+  if (version === 4) return false;
+  if (version !== 1 && version !== 2 && version !== 3) throw new Error("This is not a supported PM Application Tracker database.");
   if (version === 1) db.exec(`
     CREATE TABLE plans (
       id TEXT PRIMARY KEY, listing_url TEXT NOT NULL, company TEXT NOT NULL DEFAULT '',
@@ -119,7 +155,7 @@ function migrate(db: DatabaseSync): boolean {
     CREATE INDEX plans_updated_idx ON plans(updated_at DESC);
     PRAGMA user_version = 2;
   `);
-  db.exec(`
+  if (version <= 2) db.exec(`
     BEGIN IMMEDIATE;
     CREATE TABLE applications_v3 (
       id TEXT PRIMARY KEY, company TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '',
@@ -141,6 +177,23 @@ function migrate(db: DatabaseSync): boolean {
     PRAGMA user_version = 3;
     COMMIT;
   `);
+  db.exec(`
+    BEGIN IMMEDIATE;
+    ALTER TABLE applications ADD COLUMN snapshot_text TEXT NOT NULL DEFAULT '';
+    ALTER TABLE applications ADD COLUMN snapshot_captured_at TEXT NOT NULL DEFAULT '';
+    ALTER TABLE applications ADD COLUMN snapshot_source TEXT NOT NULL DEFAULT '';
+    ALTER TABLE plans ADD COLUMN snapshot_text TEXT NOT NULL DEFAULT '';
+    ALTER TABLE plans ADD COLUMN snapshot_captured_at TEXT NOT NULL DEFAULT '';
+    ALTER TABLE plans ADD COLUMN snapshot_source TEXT NOT NULL DEFAULT '';
+    UPDATE applications SET snapshot_text = job_description,
+      snapshot_captured_at = updated_at, snapshot_source = 'saved'
+      WHERE length(trim(job_description)) > 0;
+    UPDATE plans SET snapshot_text = description,
+      snapshot_captured_at = updated_at, snapshot_source = 'saved'
+      WHERE length(trim(description)) > 0;
+    PRAGMA user_version = 4;
+    COMMIT;
+  `);
   return true;
 }
 
@@ -148,7 +201,7 @@ function validate(db: DatabaseSync) {
   const check = (db.prepare("PRAGMA quick_check").get() as Row).quick_check;
   if (check !== "ok") throw new Error("The selected database failed its integrity check.");
   const version = Number((db.prepare("PRAGMA user_version").get() as Row).user_version);
-  if (version !== 1 && version !== 2 && version !== 3) throw new Error("This is not a supported PM Application Tracker database.");
+  if (version !== 1 && version !== 2 && version !== 3 && version !== 4) throw new Error("This is not a supported PM Application Tracker database.");
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Row[];
   const names = new Set(tables.map((row) => String(row.name)));
   if (!names.has("applications") || !names.has("resumes")) {
@@ -318,6 +371,7 @@ export class DesktopStore {
       if (id) {
         const previous = db.prepare("SELECT * FROM applications WHERE id = ?").get(id) as Row | undefined;
         if (!previous) throw new Error("Application not found.");
+        const snapshot = snapshotValues(item, item.jobDescription, previous, now);
         const sameSource = String(previous.resume_id || "") === item.resumeId &&
           String(previous.listing_url) === item.listingUrl &&
           String(previous.job_description || "") === item.jobDescription;
@@ -325,19 +379,22 @@ export class DesktopStore {
         const preserveAnalysis = sameSource && sameScore;
         const score = !sameSource && previous.match_analyzed_at && sameScore ? null : item.matchStrength;
         const result = db.prepare(`UPDATE applications SET company = ?, title = ?, team = ?, locations = ?,
-          listing_url = ?, job_description = ?, applied_date = ?, match_strength = ?,
+          listing_url = ?, job_description = ?, snapshot_text = ?, snapshot_captured_at = ?,
+          snapshot_source = ?, applied_date = ?, match_strength = ?,
           match_notes = ?, match_analyzed_at = ?, resume_id = ?, status = ?, updated_at = ?
           WHERE id = ?`).run(item.company, item.title, item.team, item.locations, item.listingUrl,
-          item.jobDescription, item.appliedDate, score,
+          item.jobDescription, ...snapshot, item.appliedDate, score,
           preserveAnalysis ? String(previous.match_notes || "") : "",
           preserveAnalysis ? String(previous.match_analyzed_at || "") : "",
           item.resumeId || null, item.status, now, id);
         if (!result.changes) throw new Error("Application not found.");
       } else {
+        const snapshot = snapshotValues(item, item.jobDescription, undefined, now);
         db.prepare(`INSERT INTO applications (id, company, title, team, locations, listing_url,
-          job_description, applied_date, match_strength, resume_id, status, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(resultId, item.company, item.title,
-          item.team, item.locations, item.listingUrl, item.jobDescription, item.appliedDate,
+          job_description, snapshot_text, snapshot_captured_at, snapshot_source, applied_date,
+          match_strength, resume_id, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(resultId, item.company, item.title,
+          item.team, item.locations, item.listingUrl, item.jobDescription, ...snapshot, item.appliedDate,
           item.matchStrength, item.resumeId || null, item.status, now, now);
       }
     });
@@ -357,9 +414,13 @@ export class DesktopStore {
     }
     await this.mutate((db) => {
       const result = db.prepare(`UPDATE applications SET match_strength = ?, match_notes = ?,
-        match_analyzed_at = ?, job_description = ?, updated_at = ? WHERE id = ? AND updated_at = ?`)
+        match_analyzed_at = ?, job_description = ?,
+        snapshot_text = CASE WHEN snapshot_text = '' THEN ? ELSE snapshot_text END,
+        snapshot_captured_at = CASE WHEN snapshot_captured_at = '' THEN ? ELSE snapshot_captured_at END,
+        snapshot_source = CASE WHEN snapshot_source = '' THEN 'saved' ELSE snapshot_source END,
+        updated_at = ? WHERE id = ? AND updated_at = ?`)
         .run(score, notes.trim().slice(0, 4000), new Date().toISOString(), jobDescription,
-          new Date().toISOString(), id, expectedUpdatedAt);
+          jobDescription, new Date().toISOString(), new Date().toISOString(), id, expectedUpdatedAt);
       if (!result.changes) throw new Error("This application changed while analysis ran. Run it again from the latest version.");
     });
     return this.findApplication(id)!;
@@ -410,14 +471,20 @@ export class DesktopStore {
         item.locations, item.description, JSON.stringify(item.keywords.filter(Boolean)),
         JSON.stringify(item.themes.filter(Boolean)), item.overview];
       if (id) {
+        const previous = db.prepare("SELECT * FROM plans WHERE id = ?").get(id) as Row | undefined;
+        if (!previous) throw new Error("Plan not found.");
+        const snapshot = snapshotValues(item, item.description, previous, now);
         const result = db.prepare(`UPDATE plans SET listing_url = ?, company = ?, title = ?, team = ?,
           locations = ?, description = ?, keywords_json = ?, themes_json = ?, overview = ?,
-          updated_at = ? WHERE id = ?`).run(...fields, now, id);
+          snapshot_text = ?, snapshot_captured_at = ?, snapshot_source = ?,
+          updated_at = ? WHERE id = ?`).run(...fields, ...snapshot, now, id);
         if (!result.changes) throw new Error("Plan not found.");
       } else {
+        const snapshot = snapshotValues(item, item.description, undefined, now);
         db.prepare(`INSERT INTO plans (id, listing_url, company, title, team, locations,
-          description, keywords_json, themes_json, overview, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(resultId, ...fields, now, now);
+          description, keywords_json, themes_json, overview,
+          snapshot_text, snapshot_captured_at, snapshot_source, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(resultId, ...fields, ...snapshot, now, now);
       }
     });
     return this.getPlan(resultId)!;

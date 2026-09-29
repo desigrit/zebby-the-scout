@@ -14,6 +14,7 @@ import {
 } from "./job-details";
 
 const MAX_BYTES = 4_000_000;
+const MAX_DESCRIPTION_CHARS = 80_000;
 export function publicHttpsUrl(value: string, ownHost: string): URL {
   const url = new URL(value);
   const host = url.hostname.toLowerCase();
@@ -128,7 +129,13 @@ function plainText(html: string): string {
   $("script, style, nav, header, footer, aside, form, iframe, noscript").remove();
   const content = $("main").first().length ? $("main").first()
     : $("article").first().length ? $("article").first() : $("body");
-  return content.text().replace(/\s+/g, " ").trim().slice(0, 40_000);
+  content.find("br").replaceWith("\n");
+  content.find("h1, h2, h3, h4, p, li, section, article, div").each((_index, element) => {
+    $(element).append("\n");
+  });
+  return content.text().replace(/\r/g, "").split("\n")
+    .map((line) => line.replace(/[\t ]+/g, " ").trim()).filter(Boolean)
+    .join("\n").slice(0, MAX_DESCRIPTION_CHARS);
 }
 
 function descriptionText(platform: Platform, data: unknown, url: URL): string {
@@ -136,11 +143,11 @@ function descriptionText(platform: Platform, data: unknown, url: URL): string {
   const row = data as Record<string, unknown>;
   if (platform.kind === "lever") {
     const lists = Array.isArray(row.lists) ? row.lists : [];
-    return (String(row.descriptionPlain || plainText(String(row.description || ""))) + " " +
-      lists.map((entry) => {
+    return [String(row.descriptionPlain || plainText(String(row.description || ""))),
+      ...lists.map((entry) => {
         const item = entry && typeof entry === "object" ? entry as Record<string, unknown> : {};
-        return `${item.text || ""} ${plainText(String(item.content || ""))}`;
-      }).join(" ")).trim().slice(0, 40_000);
+        return `${item.text || ""}\n${plainText(String(item.content || ""))}`.trim();
+      })].filter(Boolean).join("\n\n").trim().slice(0, MAX_DESCRIPTION_CHARS);
   }
   if (platform.kind === "greenhouse") return plainText(String(row.content || ""));
   const postings = Array.isArray(row.jobPostings) ? row.jobPostings : [];
@@ -182,5 +189,5 @@ export async function fetchJobPosting(value: string, ownHost = ""):
   if (platform && !details.company && (details.title || details.team || details.locations)) {
     details.company = companyFromBoardName(platform.board);
   }
-  return { details, text: (apiText || htmlText).slice(0, 40_000) };
+  return { details, text: (apiText || htmlText).slice(0, MAX_DESCRIPTION_CHARS) };
 }
