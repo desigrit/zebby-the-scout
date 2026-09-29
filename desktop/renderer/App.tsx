@@ -48,6 +48,7 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, onOpenSettings, on
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+
   const listingController = useRef<AbortController | null>(null);
   const dirty = JSON.stringify(draft) !== JSON.stringify(savedDraft);
   const busy = reading || saving || analyzing;
@@ -266,7 +267,7 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, onOpenSettings, on
               onChange={(event) => update("overview", event.target.value)}
               placeholder="The ideal profile for this role will appear here. Edit it to match your actual experience before using it." /></label>
           <p className="analysis-footnote">{analysisProvider === "ollama"
-            ? "Analysis sends the job posting text to your configured Ollama server."
+            ? `Analysis uses ${ollamaModel || "your selected model"} on your configured Ollama server.`
             : "Analysis sends the job posting text to OpenAI using your API key. API usage may be billed to your account."}</p>
         </div>
         <div className="plan-actions">
@@ -291,6 +292,15 @@ function SettingsView({ state, onState }: { state: DesktopState; onState: (value
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
+  useEffect(() => {
+    if (state.analysisProvider !== "ollama" || ollamaUrl !== state.ollamaUrl) return;
+    let active = true;
+    void window.desktop!.listOllamaModels(state.ollamaUrl)
+      .then((models) => { if (active) setInstalledModels(models); })
+      .catch(() => { if (active) setInstalledModels([]); });
+    return () => { active = false; };
+  }, [state.analysisProvider, state.ollamaUrl, ollamaUrl]);
+
   async function changeProvider(value: DesktopState["analysisProvider"]) {
     setWorking(true); setError(""); setNotice("");
     try { onState(await window.desktop!.setAnalysisProvider(value)); }
@@ -304,13 +314,8 @@ function SettingsView({ state, onState }: { state: DesktopState; onState: (value
       const models = await window.desktop!.listOllamaModels(ollamaUrl);
       setInstalledModels(models);
       if (!models.length) setNotice("Ollama is running, but no models are installed.");
-      else {
-        if (!ollamaModel || !models.includes(ollamaModel)) {
-          setOllamaModel(models.find((model) => /^qwen/i.test(model)) || models[0]);
-        }
-        setNotice(`${models.length} installed ${models.length === 1 ? "model" : "models"} found. Save your selection below.`);
-      }
-    } catch (cause) { setError(errorText(cause)); }
+      else setNotice(`${models.length} installed ${models.length === 1 ? "model" : "models"} found. Choose one below.`);
+    } catch (cause) { setInstalledModels([]); setError(errorText(cause)); }
     finally { setFindingModels(false); }
   }
 
@@ -401,17 +406,25 @@ function SettingsView({ state, onState }: { state: DesktopState; onState: (value
         </div>
         {state.analysisProvider === "ollama" ? <>
           <label className="field"><span>Server URL</span><input type="url" value={ollamaUrl}
-            onChange={(event) => setOllamaUrl(event.target.value)} placeholder="http://localhost:11434" spellCheck={false} /></label>
+            onChange={(event) => { setOllamaUrl(event.target.value); setInstalledModels([]); }}
+            placeholder="http://localhost:11434" spellCheck={false} /></label>
           <div className="ollama-model-row"><label className="field"><span>Model</span><input value={ollamaModel}
-            onChange={(event) => setOllamaModel(event.target.value)} list="ollama-models"
+            onChange={(event) => setOllamaModel(event.target.value)}
             placeholder="qwen3:8b" spellCheck={false} /></label>
-            <datalist id="ollama-models">{installedModels.map((model) => <option key={model} value={model} />)}</datalist>
             <button className="button button-secondary" type="button" onClick={() => void findModels()} disabled={working || findingModels}>
-              <RotateCw size={16} aria-hidden="true" /> {findingModels ? "Finding..." : "Find models"}</button></div>
+              <RotateCw size={16} aria-hidden="true" /> {findingModels ? "Finding..." : "Refresh models"}</button></div>
+          {installedModels.length > 0 && <div className="installed-models" aria-label="Installed models">
+            <strong>Installed models</strong>
+            <div>{installedModels.map((model) => <button key={model} type="button"
+              className={`installed-model ${ollamaModel === model ? "selected" : ""}`}
+              aria-pressed={ollamaModel === model} onClick={() => setOllamaModel(model)}>
+              <span>{model}</span>{ollamaModel === model && <Check size={17} aria-hidden="true" />}
+            </button>)}</div>
+          </div>}
           <div className="settings-actions"><button className="button button-primary" type="button"
             onClick={() => void saveOllama()} disabled={working || findingModels || !ollamaModel.trim()}>
             <Check size={17} aria-hidden="true" /> Save Ollama settings</button></div>
-          <p className="settings-help">Paste a server URL, find an installed model, then save. Plan text and extracted resume text go to that Ollama server when you run analysis.</p>
+          <p className="settings-help">Choose an installed model or enter its name, then save. Plan text and extracted resume text go to that Ollama server when you run analysis.</p>
         </> : <>
         <p className="key-status">{state.hasApiKey ? "API key saved on this computer" : "No API key saved"}</p>
         <label className="field key-field"><span>{state.hasApiKey ? "Replace API key" : "API key"}</span>

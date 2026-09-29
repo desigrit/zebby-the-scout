@@ -1,6 +1,6 @@
 {
   "name": "pm-application-tracker",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "main": "desktop-dist/main.cjs",
   "engines": {

@@ -146,7 +146,9 @@ try {
     const originalFetch = globalThis.fetch;
     globalThis.__ollamaCalls = [];
     globalThis.fetch = async (url, options) => {
-      if (url === "http://localhost:11434/api/tags") return Response.json({ models: [{ name: "qwen3:8b" }] });
+      if (url === "http://localhost:11434/api/tags") return Response.json({ models: [
+        { name: "qwen3:8b" }, { name: "qwen3.8:27b" },
+      ] });
       if (url === "http://localhost:11434/api/chat") {
         const body = JSON.parse(options.body);
         globalThis.__ollamaCalls.push(body);
@@ -165,8 +167,11 @@ try {
   await page.getByText("Ollama", { exact: true }).click();
   await page.waitForFunction(() => document.querySelector('input[value="ollama"]')?.checked);
   assert.equal(await page.getByRole("radio", { name: /Ollama/ }).isChecked(), true);
-  await page.getByRole("button", { name: "Find models" }).click();
-  await page.getByText("1 installed model found.", { exact: false }).waitFor();
+  await page.getByRole("button", { name: "qwen3.8:27b" }).waitFor();
+  await page.getByRole("button", { name: "Refresh models" }).click();
+  await page.getByText("2 installed models found.", { exact: false }).waitFor();
+  await page.getByRole("button", { name: "qwen3.8:27b" }).click();
+  assert.equal(await page.getByPlaceholder("qwen3:8b").inputValue(), "qwen3.8:27b");
   await page.getByRole("button", { name: "Save Ollama settings" }).click();
   await page.getByText("Ollama server and model saved on this computer.").waitFor();
   await page.screenshot({ path: path.join(output, "settings.png") });
@@ -178,6 +183,8 @@ try {
   await page.getByRole("table").getByText("81%").waitFor();
   const ollamaCalls = await app.evaluate(() => globalThis.__ollamaCalls);
   assert.equal(ollamaCalls.length, 2);
+  assert.equal(ollamaCalls[0].model, "qwen3.8:27b");
+  assert.equal(ollamaCalls[1].model, "qwen3.8:27b");
   assert.match(ollamaCalls[1].messages[1].content, /Product strategy and customer discovery/);
   await nav.getByRole("button", { name: "Settings" }).click();
   await page.getByRole("radio", { name: "Dark" }).check();

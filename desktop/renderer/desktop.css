@@ -113,6 +113,13 @@
 .ollama-model-row { display: flex; align-items: end; gap: 9px; }
 .ollama-model-row .field { flex: 1; min-width: 0; }
 .ollama-model-row .button { flex: none; min-height: 43px; }
+.installed-models { margin-top: 13px; }
+.installed-models > strong { display: block; margin-bottom: 8px; color: var(--ink-soft); font-size: 12px; font-weight: 700; }
+.installed-models > div { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; }
+.installed-model { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 43px; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--paper); color: var(--ink); font-size: 13px; font-weight: 650; text-align: left; cursor: pointer; }
+.installed-model:hover { border-color: var(--focus); }
+.installed-model.selected { border-color: var(--focus); background: #eaf2e8; color: #225843; }
+.installed-model:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .appearance-options { display: flex; flex-wrap: wrap; gap: 9px; }
 .appearance-option { position: relative; display: flex; align-items: center; justify-content: center; gap: 9px; min-width: 112px; min-height: 43px; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--paper); color: var(--ink-soft); cursor: pointer; font-size: 13px; font-weight: 650; }
 .appearance-option:hover { border-color: var(--focus); color: var(--ink); }
@@ -205,6 +212,7 @@ html[data-theme="dark"] .applications-table tbody tr:hover { background: #2b3a2f
 html[data-theme="dark"] .plan-item.selected,
 html[data-theme="dark"] .appearance-option.selected { background: #314a39; border-color: #67856b; color: #e6f3e7; }
 html[data-theme="dark"] .provider-option.selected { background: #314a39; border-color: #67856b; }
+html[data-theme="dark"] .installed-model.selected { background: #314a39; border-color: #67856b; color: #e6f3e7; }
 html[data-theme="dark"] .save-state { background: #304b38; color: #c1e8c8; }
 html[data-theme="dark"] .save-state.unsaved { background: #503b27; color: #f1d0a0; }
 html[data-theme="dark"] .analysis-hint { background: #493925; color: #f5d6af; }
