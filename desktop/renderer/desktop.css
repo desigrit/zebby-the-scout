@@ -1,5 +1,7 @@
 .desktop-shell { display: grid; grid-template-columns: 210px minmax(0, 1fr); min-height: 100vh; }
 .desktop-workspace { min-width: 0; }
+.workspace-warning { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px clamp(24px, 3vw, 52px); background: #fff0e2; color: #774622; font-size: 13px; }
+.workspace-warning button { border: 0; padding: 0; background: transparent; color: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .platform-mac { font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
 .platform-mac button, .platform-mac input, .platform-mac textarea, .platform-mac select { font-family: inherit; }
 .platform-windows { font-family: "Segoe UI Variable", "Segoe UI", Arial, sans-serif; }
@@ -174,6 +176,7 @@ html[data-theme="dark"] .plan-search,
 html[data-theme="dark"] .plan-section .field input,
 html[data-theme="dark"] .plan-section .field textarea,
 html[data-theme="dark"] .field input,
+html[data-theme="dark"] .field textarea,
 html[data-theme="dark"] .field select,
 html[data-theme="dark"] .key-field input { background: #26342b; color: var(--ink); }
 html[data-theme="dark"] .field input::placeholder,
@@ -197,10 +200,12 @@ html[data-theme="dark"] .delete-confirm span,
 html[data-theme="dark"] .delete-confirm button { color: #f2a89c; }
 html[data-theme="dark"] .settings-content .key-status,
 html[data-theme="dark"] .settings-link,
-html[data-theme="dark"] .resume-link { color: #a8ddbd; }
+html[data-theme="dark"] .resume-link,
+html[data-theme="dark"] .match-action { color: #a8ddbd; }
 html[data-theme="dark"] .switch-track { background: #66786a; }
 html[data-theme="dark"] .notice { background: #294632; color: #c3edce; }
 html[data-theme="dark"] .form-error { background: #4c302a; color: #f5b3a6; }
+html[data-theme="dark"] .workspace-warning { background: #493925; color: #f5d6af; }
 html[data-theme="dark"] .settings-content .sync-warning { color: #efad94; }
 html[data-theme="dark"] .applications-table th { background: #26342a; }
 html[data-theme="dark"] .score-track { background: #48594a; }

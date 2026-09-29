@@ -6,16 +6,20 @@ const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
 });
 
 export const applicationInputSchema = z.object({
-  company: z.string().trim().min(1).max(120),
-  title: z.string().trim().min(1).max(160),
-  team: z.string().trim().max(160).optional(),
-  locations: z.string().trim().max(500).optional(),
-  listingUrl: z.string().trim().url().max(2000).refine((value) => {
-    const protocol = new URL(value).protocol;
-    return protocol === "http:" || protocol === "https:";
-  }),
-  appliedDate: dateSchema,
-  matchStrength: z.number().int().min(0).max(100),
-  resumeId: z.string().uuid(),
-  status: z.enum(["Applied", "Heard back", "Interview scheduled", "Rejected"]),
+  company: z.string().trim().max(120).default(""),
+  title: z.string().trim().max(160).default(""),
+  team: z.string().trim().max(160).default(""),
+  locations: z.string().trim().max(500).default(""),
+  listingUrl: z.string().trim().max(2000).refine((value) => {
+    if (!value) return true;
+    try {
+      const protocol = new URL(value).protocol;
+      return protocol === "http:" || protocol === "https:";
+    } catch { return false; }
+  }).default(""),
+  jobDescription: z.string().trim().max(80_000).default(""),
+  appliedDate: z.union([z.literal(""), dateSchema]).default(""),
+  matchStrength: z.number().int().min(0).max(100).nullable().default(null),
+  resumeId: z.union([z.literal(""), z.string().uuid()]).default(""),
+  status: z.enum(["Applied", "Heard back", "Interview scheduled", "Rejected"]).default("Applied"),
 });

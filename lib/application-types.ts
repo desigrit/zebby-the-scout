@@ -22,8 +22,11 @@ export type Application = {
   team: string;
   locations: string;
   listingUrl: string;
+  jobDescription: string;
   appliedDate: string;
-  matchStrength: number;
+  matchStrength: number | null;
+  matchNotes: string;
+  matchAnalyzedAt: string;
   resumeId: string;
   resumeName: string;
   status: ApplicationStatus;
@@ -38,6 +41,7 @@ export type ApplicationInput = Pick<
   | "team"
   | "locations"
   | "listingUrl"
+  | "jobDescription"
   | "appliedDate"
   | "matchStrength"
   | "resumeId"

@@ -42,9 +42,12 @@ function mapApplication(row: Row): Application {
   return {
     id: String(row.id), company: String(row.company), title: String(row.title),
     team: String(row.team || ""), locations: String(row.locations || ""),
-    listingUrl: String(row.listing_url), appliedDate: String(row.applied_date),
-    matchStrength: Number(row.match_strength), resumeId: String(row.resume_id),
-    resumeName: String(row.resume_name), status: row.status as Application["status"],
+    listingUrl: String(row.listing_url), jobDescription: String(row.job_description || ""),
+    appliedDate: String(row.applied_date),
+    matchStrength: row.match_strength === null ? null : Number(row.match_strength),
+    matchNotes: String(row.match_notes || ""), matchAnalyzedAt: String(row.match_analyzed_at || ""),
+    resumeId: String(row.resume_id || ""), resumeName: String(row.resume_name || ""),
+    status: row.status as Application["status"],
     createdAt: String(row.created_at), updatedAt: String(row.updated_at),
   };
 }
@@ -81,9 +84,11 @@ function createSchema(db: DatabaseSync) {
     CREATE TABLE applications (
       id TEXT PRIMARY KEY, company TEXT NOT NULL, title TEXT NOT NULL,
       team TEXT NOT NULL DEFAULT '', locations TEXT NOT NULL DEFAULT '',
-      listing_url TEXT NOT NULL, applied_date TEXT NOT NULL,
-      match_strength INTEGER NOT NULL CHECK (match_strength BETWEEN 0 AND 100),
-      resume_id TEXT NOT NULL REFERENCES resumes(id),
+      listing_url TEXT NOT NULL DEFAULT '', job_description TEXT NOT NULL DEFAULT '',
+      applied_date TEXT NOT NULL DEFAULT '',
+      match_strength INTEGER CHECK (match_strength BETWEEN 0 AND 100),
+      match_notes TEXT NOT NULL DEFAULT '', match_analyzed_at TEXT NOT NULL DEFAULT '',
+      resume_id TEXT REFERENCES resumes(id),
       status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );
     CREATE TABLE plans (
@@ -95,15 +100,15 @@ function createSchema(db: DatabaseSync) {
     );
     CREATE INDEX applications_date_idx ON applications(applied_date DESC, created_at DESC);
     CREATE INDEX plans_updated_idx ON plans(updated_at DESC);
-    PRAGMA user_version = 2;
+    PRAGMA user_version = 3;
   `);
 }
 
 function migrate(db: DatabaseSync): boolean {
   const version = Number((db.prepare("PRAGMA user_version").get() as Row).user_version);
-  if (version === 2) return false;
-  if (version !== 1) throw new Error("This is not a supported PM Application Tracker database.");
-  db.exec(`
+  if (version === 3) return false;
+  if (version !== 1 && version !== 2) throw new Error("This is not a supported PM Application Tracker database.");
+  if (version === 1) db.exec(`
     CREATE TABLE plans (
       id TEXT PRIMARY KEY, listing_url TEXT NOT NULL, company TEXT NOT NULL DEFAULT '',
       title TEXT NOT NULL DEFAULT '', team TEXT NOT NULL DEFAULT '',
@@ -114,6 +119,28 @@ function migrate(db: DatabaseSync): boolean {
     CREATE INDEX plans_updated_idx ON plans(updated_at DESC);
     PRAGMA user_version = 2;
   `);
+  db.exec(`
+    BEGIN IMMEDIATE;
+    CREATE TABLE applications_v3 (
+      id TEXT PRIMARY KEY, company TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '',
+      team TEXT NOT NULL DEFAULT '', locations TEXT NOT NULL DEFAULT '',
+      listing_url TEXT NOT NULL DEFAULT '', job_description TEXT NOT NULL DEFAULT '',
+      applied_date TEXT NOT NULL DEFAULT '',
+      match_strength INTEGER CHECK (match_strength BETWEEN 0 AND 100),
+      match_notes TEXT NOT NULL DEFAULT '', match_analyzed_at TEXT NOT NULL DEFAULT '',
+      resume_id TEXT REFERENCES resumes(id),
+      status TEXT NOT NULL DEFAULT 'Applied', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    INSERT INTO applications_v3 (id, company, title, team, locations, listing_url,
+      applied_date, match_strength, resume_id, status, created_at, updated_at)
+    SELECT id, company, title, team, locations, listing_url, applied_date,
+      match_strength, resume_id, status, created_at, updated_at FROM applications;
+    DROP TABLE applications;
+    ALTER TABLE applications_v3 RENAME TO applications;
+    CREATE INDEX applications_date_idx ON applications(applied_date DESC, created_at DESC);
+    PRAGMA user_version = 3;
+    COMMIT;
+  `);
   return true;
 }
 
@@ -121,7 +148,7 @@ function validate(db: DatabaseSync) {
   const check = (db.prepare("PRAGMA quick_check").get() as Row).quick_check;
   if (check !== "ok") throw new Error("The selected database failed its integrity check.");
   const version = Number((db.prepare("PRAGMA user_version").get() as Row).user_version);
-  if (version !== 1 && version !== 2) throw new Error("This is not a supported PM Application Tracker database.");
+  if (version !== 1 && version !== 2 && version !== 3) throw new Error("This is not a supported PM Application Tracker database.");
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Row[];
   const names = new Set(tables.map((row) => String(row.name)));
   if (!names.has("applications") || !names.has("resumes")) {
@@ -168,6 +195,18 @@ export class DesktopStore {
       await copyFile(scratch, target);
       await this.open(target);
     } finally { await unlink(scratch).catch(() => undefined); }
+  }
+
+  async copyCurrentTo(filePath: string) {
+    const target = path.resolve(filePath);
+    if (existsSync(target)) throw new Error("That file already exists. Choose another name.");
+    await this.writeQueue;
+    if (this.dirty) throw new Error("Retry the pending save before copying this database.");
+    await this.assertCurrentFile();
+    await mkdir(path.dirname(target), { recursive: true });
+    await copyFile(this.filePath, target);
+    await this.open(target);
+    return this.status;
   }
 
   async open(filePath: string) {
@@ -259,12 +298,12 @@ export class DesktopStore {
 
   listApplications(): Application[] {
     return (this.requireDb().prepare(`SELECT a.*, r.filename AS resume_name FROM applications a
-      JOIN resumes r ON r.id = a.resume_id ORDER BY a.applied_date DESC, a.created_at DESC`).all() as Row[]).map(mapApplication);
+      LEFT JOIN resumes r ON r.id = a.resume_id ORDER BY a.applied_date DESC, a.created_at DESC`).all() as Row[]).map(mapApplication);
   }
 
   private findApplication(id: string): Application | null {
     const row = this.requireDb().prepare(`SELECT a.*, r.filename AS resume_name FROM applications a
-      JOIN resumes r ON r.id = a.resume_id WHERE a.id = ?`).get(id) as Row | undefined;
+      LEFT JOIN resumes r ON r.id = a.resume_id WHERE a.id = ?`).get(id) as Row | undefined;
     return row ? mapApplication(row) : null;
   }
 
@@ -274,23 +313,56 @@ export class DesktopStore {
     const item: ApplicationInput = { ...parsed.data, team: parsed.data.team || "", locations: parsed.data.locations || "" };
     const resultId = id || randomUUID();
     await this.mutate((db) => {
-      if (!db.prepare("SELECT id FROM resumes WHERE id = ?").get(item.resumeId)) throw new Error("Choose an uploaded resume.");
+      if (item.resumeId && !db.prepare("SELECT id FROM resumes WHERE id = ?").get(item.resumeId)) throw new Error("The selected resume could not be found.");
       const now = new Date().toISOString();
       if (id) {
+        const previous = db.prepare("SELECT * FROM applications WHERE id = ?").get(id) as Row | undefined;
+        if (!previous) throw new Error("Application not found.");
+        const sameSource = String(previous.resume_id || "") === item.resumeId &&
+          String(previous.listing_url) === item.listingUrl &&
+          String(previous.job_description || "") === item.jobDescription;
+        const sameScore = (previous.match_strength === null ? null : Number(previous.match_strength)) === item.matchStrength;
+        const preserveAnalysis = sameSource && sameScore;
+        const score = !sameSource && previous.match_analyzed_at && sameScore ? null : item.matchStrength;
         const result = db.prepare(`UPDATE applications SET company = ?, title = ?, team = ?, locations = ?,
-          listing_url = ?, applied_date = ?, match_strength = ?, resume_id = ?, status = ?, updated_at = ?
+          listing_url = ?, job_description = ?, applied_date = ?, match_strength = ?,
+          match_notes = ?, match_analyzed_at = ?, resume_id = ?, status = ?, updated_at = ?
           WHERE id = ?`).run(item.company, item.title, item.team, item.locations, item.listingUrl,
-          item.appliedDate, item.matchStrength, item.resumeId, item.status, now, id);
+          item.jobDescription, item.appliedDate, score,
+          preserveAnalysis ? String(previous.match_notes || "") : "",
+          preserveAnalysis ? String(previous.match_analyzed_at || "") : "",
+          item.resumeId || null, item.status, now, id);
         if (!result.changes) throw new Error("Application not found.");
       } else {
         db.prepare(`INSERT INTO applications (id, company, title, team, locations, listing_url,
-          applied_date, match_strength, resume_id, status, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(resultId, item.company, item.title,
-          item.team, item.locations, item.listingUrl, item.appliedDate, item.matchStrength,
-          item.resumeId, item.status, now, now);
+          job_description, applied_date, match_strength, resume_id, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(resultId, item.company, item.title,
+          item.team, item.locations, item.listingUrl, item.jobDescription, item.appliedDate,
+          item.matchStrength, item.resumeId || null, item.status, now, now);
       }
     });
     return this.findApplication(resultId)!;
+  }
+
+  findPlanByListingUrl(listingUrl: string): Plan | null {
+    const row = this.requireDb().prepare("SELECT * FROM plans WHERE listing_url = ? ORDER BY updated_at DESC LIMIT 1")
+      .get(listingUrl) as Row | undefined;
+    return row ? mapPlan(row) : null;
+  }
+
+  async saveMatchAnalysis(id: string, expectedUpdatedAt: string, score: number,
+    notes: string, jobDescription: string): Promise<Application> {
+    if (!Number.isInteger(score) || score < 0 || score > 100 || !notes.trim()) {
+      throw new Error("The match analysis was incomplete. Try again.");
+    }
+    await this.mutate((db) => {
+      const result = db.prepare(`UPDATE applications SET match_strength = ?, match_notes = ?,
+        match_analyzed_at = ?, job_description = ?, updated_at = ? WHERE id = ? AND updated_at = ?`)
+        .run(score, notes.trim().slice(0, 4000), new Date().toISOString(), jobDescription,
+          new Date().toISOString(), id, expectedUpdatedAt);
+      if (!result.changes) throw new Error("This application changed while analysis ran. Run it again from the latest version.");
+    });
+    return this.findApplication(id)!;
   }
 
   async deleteApplication(id: string) {

@@ -1,7 +1,12 @@
 import { Pool, type QueryResultRow } from "pg";
 import { BlobServiceClient } from "@azure/storage-blob";
 import type { Application, Resume } from "./application-types";
-export { applicationInputSchema } from "./application-validation";
+import { applicationInputSchema as desktopApplicationInputSchema } from "./application-validation";
+
+export const applicationInputSchema = desktopApplicationInputSchema.refine((item) =>
+  Boolean(item.company && item.title && item.listingUrl && item.appliedDate &&
+    item.matchStrength !== null && item.resumeId),
+  "Complete all application fields for the web version.");
 
 let pool: Pool | undefined;
 let blobService: BlobServiceClient | undefined;
@@ -60,8 +65,11 @@ export function mapApplication(row: Record<string, unknown>): Application {
     team: String(row.team ?? ""),
     locations: String(row.locations ?? ""),
     listingUrl: String(row.listing_url),
+    jobDescription: "",
     appliedDate: String(row.applied_date),
     matchStrength: Number(row.match_strength),
+    matchNotes: "",
+    matchAnalyzedAt: "",
     resumeId: String(row.resume_id),
     resumeName: String(row.resume_name),
     status: row.status as Application["status"],

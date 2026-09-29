@@ -250,7 +250,7 @@ function SettingsView({ state, onState }: { state: DesktopState; onState: (value
   async function choose(kind: "open" | "create") {
     setWorking(true); setError(""); setNotice("");
     try { const result = await window.desktop!.chooseDatabase(kind);
-      if (result) { onState(result); setNotice(kind === "create" ? "Database created and ready." : "Database opened."); }
+      if (result) { onState(result); setNotice(kind === "create" ? "Database copy created and ready." : "Database opened."); }
     } catch (cause) { setError(errorText(cause)); }
     finally { setWorking(false); }
   }
@@ -301,16 +301,16 @@ function SettingsView({ state, onState }: { state: DesktopState; onState: (value
         <div className="settings-actions"><button className="button button-secondary" type="button" onClick={() => void choose("open")} disabled={working}>
           <FolderOpen size={17} aria-hidden="true" /> Open database</button>
           <button className="button button-secondary" type="button" onClick={() => void choose("create")} disabled={working}>
-          <Plus size={17} aria-hidden="true" /> Create database</button>
+          <Plus size={17} aria-hidden="true" /> Create database copy</button>
           {state.dirty && <button className="button button-primary" type="button" onClick={() => void retry()} disabled={working}>
             <RotateCw size={16} aria-hidden="true" /> Retry save</button>}
         </div>
-        <p className="settings-help">Cloud file? Quit and wait for sync before switching computers. Weekly backups stay local.</p>
+        <p className="settings-help">The app creates a local database automatically. Create database copy saves your current plans and applications to a new file, including a cloud folder. Quit and wait for sync before switching computers. Weekly backups stay local.</p>
       </div>
     </section>
     <section className="settings-section" aria-labelledby="ai-settings">
       <div className="settings-section-heading"><h2 id="ai-settings">OpenAI key</h2>
-        <p>For Plan analysis</p></div>
+        <p>For Plan and match analysis</p></div>
       <div className="settings-content">
         <p className="key-status">{state.hasApiKey ? "API key saved on this computer" : "No API key saved"}</p>
         <label className="field key-field"><span>{state.hasApiKey ? "Replace API key" : "API key"}</span>
@@ -321,7 +321,7 @@ function SettingsView({ state, onState }: { state: DesktopState; onState: (value
           onClick={() => void saveKey(keyInput)}><Check size={17} aria-hidden="true" /> Save API key</button>
           {state.hasApiKey && <button className="button button-secondary" type="button" disabled={working}
             onClick={() => void saveKey("")}>Remove key</button>}</div>
-        <p className="settings-help">The key stays on this computer. GPT-6 Sol analysis may incur API charges.</p>
+        <p className="settings-help">The key stays on this computer. Plan analysis sends job text, and match analysis sends job text and your selected resume. GPT-6 Sol usage may incur API charges.</p>
       </div>
     </section>
     <section className="settings-section" aria-labelledby="appearance-settings">
@@ -375,6 +375,7 @@ function Welcome({ state, onState }: { state: DesktopState; onState: (value: Des
 
 export default function App() {
   const [state, setState] = useState<DesktopState | null>(null);
+  const appearance = state?.appearance;
   const [tab, setTab] = useState<Tab>("plan");
   const [dirtyPlan, setDirtyPlan] = useState(false);
   const [databaseVersion, setDatabaseVersion] = useState(0);
@@ -395,14 +396,14 @@ export default function App() {
   }, [navigate]);
 
   useEffect(() => {
-    if (!state) return;
+    if (!appearance) return;
     const system = window.matchMedia("(prefers-color-scheme: dark)");
-    const update = () => { document.documentElement.dataset.theme = state.appearance === "auto"
-      ? (system.matches ? "dark" : "light") : state.appearance; };
+    const update = () => { document.documentElement.dataset.theme = appearance === "auto"
+      ? (system.matches ? "dark" : "light") : appearance; };
     update();
     system.addEventListener("change", update);
     return () => system.removeEventListener("change", update);
-  }, [state?.appearance]);
+  }, [appearance]);
 
   if (!state) return <div className="desktop-loading"><LoaderCircle className="spin" size={24} /> Opening workspace...</div>;
   return <div className={`desktop-shell ${state.platform === "darwin" ? "platform-mac" : "platform-windows"}`}>
@@ -422,7 +423,12 @@ export default function App() {
         {state.dirty && <small>Save pending</small>}
       </div>}
     </aside>
-    <div className="desktop-workspace">{!state.filePath ? (tab === "settings" ? <SettingsView state={state} onState={setState} /> : <Welcome state={state} onState={setState} />)
+    <div className="desktop-workspace">
+      {state.startupError && <div className="workspace-warning" role="alert">
+        <span>The previous database is unavailable. This workspace is stored locally.</span>
+        <button type="button" onClick={() => navigate("settings")}>Open Settings</button>
+      </div>}
+      {!state.filePath ? (tab === "settings" ? <SettingsView state={state} onState={setState} /> : <Welcome state={state} onState={setState} />)
       : tab === "plan" ? <PlanView key={databaseVersion} hasApiKey={state.hasApiKey}
         onOpenSettings={() => navigate("settings")} onDirtyChange={setDirtyPlan} />
       : tab === "applications" ? <ApplicationDashboard key={databaseVersion} embedded />

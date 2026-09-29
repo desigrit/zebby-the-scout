@@ -59,7 +59,12 @@ try {
     globalThis.__analysisCalls = [];
     globalThis.fetch = async (url, options) => {
       if (url === "https://api.openai.com/v1/responses") {
-        globalThis.__analysisCalls.push(JSON.parse(options.body));
+        const body = JSON.parse(options.body);
+        globalThis.__analysisCalls.push(body);
+        if (body.text.format.name === "application_match") {
+          return Response.json({ output: [{ type: "message", content: [{ type: "output_text",
+            text: JSON.stringify({ score: 78, explanation: "Strong product strategy evidence, with a gap in activation metrics." }) }] }] });
+        }
         return Response.json({ output: [{ type: "message", content: [{ type: "output_text",
           text: JSON.stringify({ keywords: ["Discovery", "Strategy", "Roadmap", "Experimentation", "Activation", "Analytics"],
             themes: ["Lead discovery", "Shape strategy", "Prioritize roadmap", "Run experiments", "Measure outcomes"],
@@ -83,15 +88,19 @@ try {
   await page.getByRole("heading", { name: "Applications", exact: true }).waitFor();
   await page.screenshot({ path: path.join(output, "applications.png") });
   await page.getByRole("button", { name: "Add application", exact: true }).click();
-  await page.locator("#listing-url").fill("https://example.org/jobs/qa-pm");
+  await page.screenshot({ path: path.join(output, "application-form.png") });
+  await page.locator("#listing-url").fill("https://example.org/jobs/senior-product-manager");
   await page.getByPlaceholder("Company name").fill("QA Company");
   await page.getByPlaceholder("Senior Product Manager").fill("Product Manager");
-  await page.getByPlaceholder("0 to 100").fill("85");
   await page.locator("#new-resume").setInputFiles({ name: "Resume.pdf", mimeType: "application/pdf",
     buffer: Buffer.from("%PDF-1.4\nTest resume") });
   await page.getByRole("button", { name: "Save application" }).click();
   await page.getByText("Application added.").waitFor();
   await page.getByText("QA Company").waitFor();
+  await page.getByRole("button", { name: "Analyze match" }).click();
+  await page.getByRole("table").getByText("78%").waitFor();
+  assert.equal((await app.evaluate(() => globalThis.__analysisCalls)).length, 2);
+  assert.equal((await app.evaluate(() => globalThis.__analysisCalls))[1].input[0].content[0].type, "input_file");
   await page.screenshot({ path: path.join(output, "applications-filled.png") });
   await nav.getByRole("button", { name: "Settings" }).click();
   await page.getByRole("heading", { name: "Settings", exact: true }).waitFor();
@@ -137,6 +146,19 @@ try {
   await page.getByText("Plan saved.").waitFor();
   await page.getByText("Second Company").first().waitFor();
   assert.equal(errors.length, 0, errors.join("\n"));
+  await app.close();
+  app = await electron.launch({ executablePath, args: [path.resolve(".")],
+    cwd: path.resolve("."), env: { ...process.env, PM_TRACKER_TEST_USER_DATA: path.join(root, "fresh-profile") } });
+  const freshPage = await app.firstWindow();
+  await freshPage.getByRole("heading", { name: "Plan", exact: true }).waitFor();
+  assert.equal((await app.evaluate(({ app }) => app.getPath("userData"))).endsWith("fresh-profile"), true);
+  await freshPage.getByRole("button", { name: "Applications" }).click();
+  await freshPage.getByRole("button", { name: "Add application", exact: true }).click();
+  await freshPage.getByRole("button", { name: "Save application" }).click();
+  await freshPage.getByText("Application added.").waitFor();
+  await freshPage.getByText("Untitled role").waitFor();
+  await freshPage.getByText("Not scored").last().waitFor();
+  assert.ok((await readFile(path.join(root, "fresh-profile", "PM Applications.sqlite"))).length > 0);
   console.log(`Desktop UI smoke test passed. Screenshots: ${output}`);
 } finally {
   await app?.close();

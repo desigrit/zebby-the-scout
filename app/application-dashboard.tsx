@@ -10,6 +10,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Sparkles,
   Trash2,
   Upload,
   X,
@@ -56,6 +57,7 @@ function emptyForm(): FormState {
     team: "",
     locations: "",
     listingUrl: "",
+    jobDescription: "",
     appliedDate: localToday(),
     matchStrength: "",
     resumeId: "",
@@ -64,6 +66,7 @@ function emptyForm(): FormState {
 }
 
 function formatDate(value: string) {
+  if (!value) return "Not set";
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
@@ -78,6 +81,7 @@ function applicationInput(item: Application, status = item.status): ApplicationI
     team: item.team,
     locations: item.locations,
     listingUrl: item.listingUrl,
+    jobDescription: item.jobDescription,
     appliedDate: item.appliedDate,
     matchStrength: item.matchStrength,
     resumeId: item.resumeId,
@@ -114,6 +118,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const formRef = useRef<HTMLDivElement>(null);
@@ -242,15 +247,16 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
     return {
       total,
       thisWeek: applications.filter(
-        (item) => new Date(item.appliedDate + "T12:00:00") >= weekStart,
+        (item) => Boolean(item.appliedDate) && new Date(item.appliedDate + "T12:00:00") >= weekStart,
       ).length,
       inConversation: applications.filter(
         (item) => item.status === "Heard back" || item.status === "Interview scheduled",
       ).length,
       interviews: applications.filter((item) => item.status === "Interview scheduled").length,
-      averageMatch: total
-        ? Math.round(applications.reduce((sum, item) => sum + item.matchStrength, 0) / total)
-        : 0,
+      averageMatch: (() => {
+        const scored = applications.filter((item) => item.matchStrength !== null);
+        return scored.length ? Math.round(scored.reduce((sum, item) => sum + item.matchStrength!, 0) / scored.length) : null;
+      })(),
     };
   }, [applications]);
 
@@ -355,7 +361,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
       ? document.activeElement
       : null;
     setEditingId(item.id);
-    setForm({ ...applicationInput(item), matchStrength: String(item.matchStrength) });
+    setForm({ ...applicationInput(item), matchStrength: item.matchStrength === null ? "" : String(item.matchStrength) });
     lookupControllerRef.current?.abort();
     lastLookupUrlRef.current = "";
     lastAutofillRef.current = {};
@@ -385,12 +391,8 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
 
   async function saveApplication(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!resumeFile && !form.resumeId) {
-      setActionError("Choose a saved resume or upload a new one.");
-      return;
-    }
-    const matchStrength = Number(form.matchStrength);
-    if (!Number.isInteger(matchStrength) || matchStrength < 0 || matchStrength > 100) {
+    const matchStrength = form.matchStrength.trim() === "" ? null : Number(form.matchStrength);
+    if (matchStrength !== null && (!Number.isInteger(matchStrength) || matchStrength < 0 || matchStrength > 100)) {
       setActionError("Enter a match score from 0 to 100.");
       return;
     }
@@ -419,6 +421,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
         team: form.team.trim(),
         locations: form.locations.trim(),
         listingUrl: form.listingUrl.trim(),
+        jobDescription: form.jobDescription.trim(),
         appliedDate: form.appliedDate,
         matchStrength,
         resumeId,
@@ -473,6 +476,20 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
     }
   }
 
+  async function analyzeMatch(item: Application) {
+    setAnalyzingId(item.id);
+    setActionError(""); setNotice("");
+    try {
+      const { application } = await readJson<{ application: Application }>(
+        await fetch(`/api/applications/${encodeURIComponent(item.id)}/analyze`, { method: "POST" }),
+      );
+      setApplications((current) => current.map((existing) => existing.id === item.id ? application : existing));
+      setNotice(`Match analysis saved for ${application.title || application.company || "this application"}.`);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Match analysis could not be completed.");
+    } finally { setAnalyzingId(null); }
+  }
+
   async function deleteApplication(item: Application) {
     setDeletingId(item.id);
     setActionError("");
@@ -521,7 +538,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
           <div className="stat-item"><span>This week</span><strong>{stats.thisWeek}</strong></div>
           <div className="stat-item"><span>In conversation</span><strong>{stats.inConversation}</strong></div>
           <div className="stat-item"><span>Interviews</span><strong>{stats.interviews}</strong></div>
-          <div className="stat-item"><span>Average match</span><strong>{stats.averageMatch}%</strong></div>
+          <div className="stat-item"><span>Average match</span><strong>{stats.averageMatch === null ? "No score" : `${stats.averageMatch}%`}</strong></div>
         </section>
 
         {formOpen && (
@@ -529,7 +546,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
             <div className="editor-head">
               <div>
                 <h2 id="form-title">{editingId ? "Edit application" : "Add an application"}</h2>
-                <p>Start with the job link, then check the details before saving.</p>
+                <p>Leave any detail blank. Start with a link if you have one.</p>
               </div>
               <button className="icon-button" type="button" aria-label="Close form" onClick={closeForm}>
                 <X size={20} aria-hidden="true" />
@@ -549,42 +566,42 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                       placeholder="https://..."
                       maxLength={2000}
                       aria-describedby="listing-help"
-                      required
                     />
                     <button className="button button-secondary" type="button" onClick={() => void lookupJobDetails(form.listingUrl, true)} disabled={!form.listingUrl.trim() || lookingUp}>
                       {lookingUp ? "Reading..." : "Fill from link"}
                     </button>
                   </div>
-                  <small id="listing-help">Paste a public HTTPS listing. Available details fill automatically, and you can edit them.</small>
+                  <small id="listing-help">A public link can fill available details. You can leave it blank.</small>
                   {lookupMessage && <p className="lookup-message" role="status">{lookupMessage}</p>}
                 </div>
                 <label className="field">
                   <span>Company</span>
-                  <input value={form.company} onChange={(event) => updateField("company", event.target.value)} placeholder="Company name" maxLength={120} required />
+                  <input value={form.company} onChange={(event) => updateField("company", event.target.value)} placeholder="Company name" maxLength={120} />
                 </label>
                 <label className="field">
                   <span>Job title</span>
-                  <input value={form.title} onChange={(event) => updateField("title", event.target.value)} placeholder="Senior Product Manager" maxLength={160} required />
+                  <input value={form.title} onChange={(event) => updateField("title", event.target.value)} placeholder="Senior Product Manager" maxLength={160} />
                 </label>
                 <label className="field">
-                  <span>Team <span className="optional-label">optional</span></span>
+                  <span>Team</span>
                   <input value={form.team} onChange={(event) => updateField("team", event.target.value)} placeholder="Product Growth" maxLength={160} />
                 </label>
                 <label className="field">
-                  <span>Location(s) <span className="optional-label">optional</span></span>
+                  <span>Location(s)</span>
                   <input value={form.locations} onChange={(event) => updateField("locations", event.target.value)} placeholder="New York, NY; Remote" maxLength={500} />
                 </label>
                 <label className="field">
                   <span>Date applied</span>
-                  <input type="date" value={form.appliedDate} onChange={(event) => { appliedDateTouchedRef.current = true; updateField("appliedDate", event.target.value); }} required />
+                  <input type="date" value={form.appliedDate} onChange={(event) => { appliedDateTouchedRef.current = true; updateField("appliedDate", event.target.value); }} />
                   <small>Set to today. Change it if you applied on another date.</small>
                 </label>
                 <label className="field">
                   <span>Match strength</span>
                   <span className="input-suffix">
-                    <input type="number" min="0" max="100" step="1" value={form.matchStrength} onChange={(event) => updateField("matchStrength", event.target.value)} placeholder="0 to 100" required />
+                    <input type="number" min="0" max="100" step="1" value={form.matchStrength} onChange={(event) => updateField("matchStrength", event.target.value)} placeholder="Score later" />
                     <span>%</span>
                   </span>
+                  <small>Leave blank to analyze it after saving.</small>
                 </label>
                 <label className="field">
                   <span>Status</span>
@@ -595,7 +612,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                 <div className="field resume-field">
                   <label htmlFor="saved-resume">Resume used</label>
                   <select id="saved-resume" value={form.resumeId} onChange={(event) => updateField("resumeId", event.target.value)} disabled={resumes.length === 0}>
-                    <option value="">{resumes.length === 0 ? "Upload your first resume below" : "Choose a saved resume"}</option>
+                    <option value="">No resume selected</option>
                     {resumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.filename}</option>)}
                   </select>
                   <button className="upload-control" type="button" onClick={() => fileInputRef.current?.click()}>
@@ -612,8 +629,19 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                     accept=".pdf,.docx,.doc"
                     onChange={(event) => setResumeFile(event.target.files?.[0] || null)}
                   />
-                  <small>PDF, DOCX, or DOC, up to 10 MB. A new upload is used for this role and saved for later use.</small>
+                  <small>Optional. PDF, DOCX, or DOC, up to 10 MB. A new upload is saved for later use.</small>
                 </div>
+                <label className="field field-wide">
+                  <span>Job description</span>
+                  <textarea className="application-description" value={form.jobDescription}
+                    onChange={(event) => updateField("jobDescription", event.target.value)}
+                    placeholder="Paste the posting here if you want to analyze your resume match later. A saved Plan for the same link can supply it too."
+                    maxLength={80000} />
+                  <small>Only sent with your resume to OpenAI when you choose Analyze match.</small>
+                </label>
+                {editingId && applications.find((item) => item.id === editingId)?.matchNotes &&
+                  <div className="field-wide match-explanation"><strong>Match analysis</strong>
+                    <p>{applications.find((item) => item.id === editingId)?.matchNotes}</p></div>}
               </div>
               {actionError && <p className="form-error" role="alert">{actionError}</p>}
               <div className="form-actions">
@@ -688,25 +716,32 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                   {visibleApplications.map((item) => (
                     <tr key={item.id}>
                       <td className="role-cell">
-                        <strong>{item.title}</strong>
-                        <span>{item.company}</span>
+                        <strong>{item.title || "Untitled role"}</strong>
+                        <span>{item.company || "Company not set"}</span>
                         {item.team && <span className="role-context">Team: {item.team}</span>}
                         {item.locations && <span className="role-context">Location(s): {item.locations}</span>}
-                        <a href={item.listingUrl} target="_blank" rel="noopener noreferrer">
+                        {item.listingUrl && <a href={item.listingUrl} target="_blank" rel="noopener noreferrer">
                           View listing <ArrowUpRight size={13} aria-hidden="true" />
-                        </a>
+                        </a>}
                       </td>
                       <td><span className="mobile-label">Applied</span>{formatDate(item.appliedDate)}</td>
                       <td>
                         <span className="mobile-label">Match</span>
-                        <span className={"match-score " + matchTone(item.matchStrength)}>
-                          <strong>{item.matchStrength}%</strong>
-                          <span className="score-track"><span style={{ width: item.matchStrength + "%" }} /></span>
-                        </span>
+                        {item.matchStrength === null ? <span className="cell-empty">Not scored</span> :
+                          <span className={"match-score " + matchTone(item.matchStrength)} title={item.matchNotes || undefined}>
+                            <strong>{item.matchStrength}%</strong>
+                            <span className="score-track"><span style={{ width: item.matchStrength + "%" }} /></span>
+                          </span>}
+                        {embedded && item.resumeId && <button className="match-action" type="button"
+                          disabled={analyzingId !== null} onClick={() => void analyzeMatch(item)}>
+                          <Sparkles size={13} aria-hidden="true" />
+                          {analyzingId === item.id ? "Analyzing..." : item.matchAnalyzedAt ? "Analyze again" : "Analyze match"}
+                        </button>}
+                        {embedded && !item.resumeId && <small className="match-help">Add a resume to analyze</small>}
                       </td>
                       <td>
                         <span className="mobile-label">Resume</span>
-                        <a className="resume-link" href={"/api/resumes/" + encodeURIComponent(item.resumeId)}
+                        {item.resumeId ? <a className="resume-link" href={"/api/resumes/" + encodeURIComponent(item.resumeId)}
                           onClick={window.desktop ? (event) => {
                             event.preventDefault();
                             void window.desktop?.downloadResume(item.resumeId).catch((error) =>
@@ -714,14 +749,14 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                           } : undefined}>
                           <FileText size={16} aria-hidden="true" />
                           <span>{item.resumeName}</span>
-                        </a>
+                        </a> : <span className="cell-empty">Not added</span>}
                       </td>
                       <td>
                         <span className="mobile-label">Status</span>
                         <select
                           className="status-select"
                           data-status={item.status}
-                          aria-label={"Status for " + item.title + " at " + item.company}
+                          aria-label={"Status for " + (item.title || "untitled role") + " at " + (item.company || "unknown company")}
                           value={item.status}
                           disabled={savingStatusId === item.id}
                           onChange={(event) => void updateStatus(item, event.target.value as ApplicationStatus)}
