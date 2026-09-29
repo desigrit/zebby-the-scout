@@ -47,7 +47,6 @@ rounded:
   field: "7px"
   button: "8px"
   panel: "12px"
-  sign-in-panel: "14px"
 spacing:
   tight: "9px"
   field-gap: "18px"
@@ -114,7 +113,7 @@ The palette pairs a single warm action accent with forest green structure and qu
 
 ### Secondary
 
-- **Deep Forest** (`forest`): the top bar and sign-in backdrop.
+- **Deep Forest** (`forest`): the top bar.
 - **Focus Green** (`focus`): focused controls and keyboard outlines.
 
 ### Neutral
@@ -145,7 +144,7 @@ The palette pairs a single warm action accent with forest green structure and qu
 - **Body:** explanatory copy uses the `body` token. Table details are smaller to fit more records in view.
 - **Label:** field labels and key data labels use the `label` token with stronger weight.
 
-**The One Serif Rule.** Keep expressive serif type on the main page or sign-in heading; application data stays sans-serif.
+**The One Serif Rule.** Keep expressive serif type on the main page heading; application data stays sans-serif.
 
 ## Layout
 
@@ -175,11 +174,11 @@ Corners are gently rounded: compact controls use the `compact` and `field` radii
 
 ### Navigation
 
-The top bar is a 76px tall forest strip with a compact tile mark, bold product name, and private-account cue. On narrow screens it becomes 67px tall and hides the account name to preserve space.
+The top bar is a 76px tall forest strip with a compact tile mark, bold product name, and open-workspace cue. On narrow screens it becomes 67px tall and hides the cue to preserve space.
 
 ### Cards and containers
 
-The statistic band, application list, empty state, and editor sit on paper. The band and table use rules between items. Only the editor has a shadow. The sign-in panel uses a slightly larger corner radius for its isolated surface.
+The statistic band, application list, empty state, and editor sit on paper. The band and table use rules between items. Only the editor has a shadow.
 
 ### Inputs and fields
 

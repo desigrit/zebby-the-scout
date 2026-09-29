@@ -1,4 +1,5 @@
-import { env } from "cloudflare:workers";
+import { Pool, type QueryResultRow } from "pg";
+import { BlobServiceClient } from "@azure/storage-blob";
 import { z } from "zod";
 import type { Application, Resume } from "./application-types";
 
@@ -22,22 +23,37 @@ export const applicationInputSchema = z.object({
   status: z.enum(["Applied", "Heard back", "Interview scheduled", "Rejected"]),
 });
 
-export function database(): D1Database {
-  if (!env.DB) throw new Error("Application database is unavailable");
-  return env.DB;
+let pool: Pool | undefined;
+let blobService: BlobServiceClient | undefined;
+
+export function database(): Pool {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("Application database is unavailable");
+  pool ??= new Pool({ connectionString: url, max: 4, connectionTimeoutMillis: 10_000 });
+  return pool;
 }
 
-export function resumeBucket(): R2Bucket {
-  if (!env.BUCKET) throw new Error("Resume storage is unavailable");
-  return env.BUCKET;
+export function resumeContainer() {
+  const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
+  if (!connectionString) throw new Error("Resume storage is unavailable");
+  blobService ??= BlobServiceClient.fromConnectionString(connectionString);
+  return blobService.getContainerClient("resumes");
+}
+
+export async function queryDatabase<T extends QueryResultRow>(
+  statement: string,
+  parameters: unknown[] = [],
+): Promise<T[]> {
+  const result = await database().query<T>(statement, parameters);
+  return result.rows;
 }
 
 export async function ownsResume(userId: string, resumeId: string) {
-  const row = await database()
-    .prepare("SELECT id FROM resumes WHERE id = ? AND user_id = ?")
-    .bind(resumeId, userId)
-    .first<{ id: string }>();
-  return Boolean(row);
+  const rows = await queryDatabase<{ id: string }>(
+    "SELECT id FROM resumes WHERE id = $1 AND user_id = $2",
+    [resumeId, userId],
+  );
+  return rows.length > 0;
 }
 
 export function mapApplication(row: Record<string, unknown>): Application {
@@ -69,13 +85,10 @@ export function mapResume(row: Record<string, unknown>): Resume {
 }
 
 export async function findApplication(userId: string, id: string) {
-  const row = await database()
-    .prepare(`SELECT a.*, r.filename AS resume_name
+  const rows = await queryDatabase<Record<string, unknown>>(`SELECT a.*, r.filename AS resume_name
       FROM applications a JOIN resumes r ON r.id = a.resume_id
-      WHERE a.id = ? AND a.user_id = ?`)
-    .bind(id, userId)
-    .first<Record<string, unknown>>();
-  return row ? mapApplication(row) : null;
+      WHERE a.id = $1 AND a.user_id = $2`, [id, userId]);
+  return rows[0] ? mapApplication(rows[0]) : null;
 }
 
 export function jsonError(message: string, status: number) {

@@ -4,6 +4,7 @@ import {
   detailsFromAshby,
   detailsFromDescription,
   detailsFromGreenhouse,
+  detailsFromHtml,
   detailsFromLever,
   detailsFromStructuredData,
 } from "../lib/job-details.ts";
@@ -28,6 +29,21 @@ test("structured JobPosting keeps employer, team, and multiple locations", () =>
     title: "Senior Product Manager",
     team: "Growth",
     locations: "New York, NY; San Francisco, CA; Remote (United States)",
+  });
+});
+
+test("HTML job pages read JSON-LD and metadata in Node.js", async () => {
+  const details = await detailsFromHtml(`
+    <html><head><title>Careers</title>
+      <meta property="og:site_name" content="Northstar">
+      <script type="application/ld+json">{
+        "@type":"JobPosting","title":"Product Manager",
+        "hiringOrganization":{"name":"Northstar"},
+        "employmentUnit":{"name":"Growth"},
+        "jobLocation":{"address":{"addressLocality":"Seattle","addressRegion":"WA"}}
+      }</script></head><body></body></html>`);
+  assert.deepEqual(details, {
+    company: "Northstar", title: "Product Manager", team: "Growth", locations: "Seattle, WA",
   });
 });
 

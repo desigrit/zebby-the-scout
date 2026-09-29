@@ -1,6 +1,6 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, pgTable, text } from "drizzle-orm/pg-core";
 
-export const resumes = sqliteTable(
+export const resumes = pgTable(
   "resumes",
   {
     id: text("id").primaryKey(),
@@ -14,7 +14,7 @@ export const resumes = sqliteTable(
   (table) => [index("idx_resumes_user_created").on(table.userId, table.createdAt)],
 );
 
-export const applications = sqliteTable(
+export const applications = pgTable(
   "applications",
   {
     id: text("id").primaryKey(),

@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { getChatGPTUser } from "../../chatgpt-auth";
+import { lookup } from "node:dns/promises";
+import { Agent, fetch as safeFetch } from "undici";
+import { getWorkspaceId } from "../../../lib/workspace-access";
+import { isPublicAddress } from "../../../lib/public-address";
 import {
   companyFromBoardName,
   detailsFromAshby,
@@ -29,7 +32,7 @@ function publicHttpsUrl(value: string, ownHost: string): URL {
   return url;
 }
 
-async function readBounded(response: Response): Promise<string> {
+async function readBounded(response: Awaited<ReturnType<typeof safeFetch>>): Promise<string> {
   const length = Number(response.headers.get("content-length"));
   if (Number.isFinite(length) && length > MAX_BYTES) throw new Error("The listing is too large to read.");
   if (!response.body) return "";
@@ -55,20 +58,41 @@ async function fetchText(url: URL, signal: AbortSignal, ownHost: string, accept:
   let current = url;
   for (let redirects = 0; redirects < 4; redirects++) {
     publicHttpsUrl(current.href, ownHost);
-    const response = await fetch(current.href, {
-      method: "GET",
-      redirect: "manual",
-      signal,
-      headers: { Accept: accept },
-    });
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get("location");
-      if (!location) throw new Error("The listing redirected without a destination.");
-      current = publicHttpsUrl(new URL(location, current).href, ownHost);
-      continue;
+    const addresses = await lookup(current.hostname, { all: true });
+    if (!addresses.length || addresses.some((item) => !isPublicAddress(item.address))) {
+      throw new Error("Use a public HTTPS job listing link to fill details.");
     }
-    if (!response.ok) throw new Error("The listing could not be read.");
-    return { body: await readBounded(response), contentType: response.headers.get("content-type") || "" };
+    const chosen = addresses.find((item) => item.family === 4) || addresses[0];
+    // Pin the checked address so a second DNS answer cannot reach a private endpoint.
+    const agent = new Agent({
+      connect: {
+        autoSelectFamily: false,
+        lookup: (_hostname, _options, callback) => callback(null, chosen.address, chosen.family),
+      },
+    });
+    try {
+      const response = await safeFetch(current.href, {
+        method: "GET",
+        redirect: "manual",
+        signal,
+        headers: { Accept: accept },
+        dispatcher: agent,
+      });
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get("location");
+        await response.body?.cancel();
+        if (!location) throw new Error("The listing redirected without a destination.");
+        current = publicHttpsUrl(new URL(location, current).href, ownHost);
+        continue;
+      }
+      if (!response.ok) {
+        await response.body?.cancel();
+        throw new Error("The listing could not be read.");
+      }
+      return { body: await readBounded(response), contentType: response.headers.get("content-type") || "" };
+    } finally {
+      await agent.close();
+    }
   }
   throw new Error("The listing redirected too many times.");
 }
@@ -121,8 +145,8 @@ async function htmlDetails(url: URL, signal: AbortSignal, ownHost: string): Prom
 }
 
 export async function POST(request: Request) {
-  const user = await getChatGPTUser();
-  if (!user) return jsonError("Sign in to read a job listing.", 401);
+  const workspaceId = await getWorkspaceId();
+  if (!workspaceId) return jsonError("Not found.", 404);
 
   const input = inputSchema.safeParse(await request.json().catch(() => null));
   if (!input.success) return jsonError("Enter a valid job listing link.", 400);

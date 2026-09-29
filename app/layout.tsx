@@ -4,6 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "PM Application Tracker",
   description: "Track product management applications, match scores, resumes, and progress.",
+  robots: { index: false, follow: false, nocache: true },
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

@@ -6,7 +6,7 @@ import {
   BriefcaseBusiness,
   Check,
   FileText,
-  LockKeyhole,
+  Globe,
   Pencil,
   Plus,
   Search,
@@ -97,7 +97,7 @@ function matchTone(score: number) {
   return "low";
 }
 
-export default function ApplicationDashboard({ displayName }: { displayName: string }) {
+export default function ApplicationDashboard() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [loading, setLoading] = useState(true);
@@ -499,8 +499,8 @@ export default function ApplicationDashboard({ displayName }: { displayName: str
           <span>PM Application Tracker</span>
         </div>
         <div className="account-note">
-          <LockKeyhole size={15} aria-hidden="true" />
-          <span>Private to {displayName}</span>
+          <Globe size={15} aria-hidden="true" />
+          <span>Open workspace</span>
         </div>
       </header>
 

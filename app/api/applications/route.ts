@@ -1,7 +1,7 @@
-import { getChatGPTUser } from "../../chatgpt-auth";
+import { getWorkspaceId } from "../../../lib/workspace-access";
 import {
   applicationInputSchema,
-  database,
+  queryDatabase,
   findApplication,
   jsonError,
   mapApplication,
@@ -9,18 +9,15 @@ import {
 } from "../../../lib/server-data";
 
 export async function GET() {
-  const user = await getChatGPTUser();
-  if (!user) return jsonError("Sign in to view applications.", 401);
+  const workspaceId = await getWorkspaceId();
+  if (!workspaceId) return jsonError("Not found.", 404);
 
   try {
-    const rows = await database()
-      .prepare(`SELECT a.*, r.filename AS resume_name
+    const rows = await queryDatabase<Record<string, unknown>>(`SELECT a.*, r.filename AS resume_name
         FROM applications a JOIN resumes r ON r.id = a.resume_id
-        WHERE a.user_id = ?
-        ORDER BY a.applied_date DESC, a.created_at DESC`)
-      .bind(user.userId)
-      .all<Record<string, unknown>>();
-    return Response.json({ applications: rows.results.map(mapApplication) });
+        WHERE a.user_id = $1
+        ORDER BY a.applied_date DESC, a.created_at DESC`, [workspaceId]);
+    return Response.json({ applications: rows.map(mapApplication) });
   } catch (error) {
     console.error("Failed to load applications", error);
     return jsonError("Applications could not be loaded. Try again.", 503);
@@ -28,31 +25,28 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const user = await getChatGPTUser();
-  if (!user) return jsonError("Sign in to add an application.", 401);
+  const workspaceId = await getWorkspaceId();
+  if (!workspaceId) return jsonError("Not found.", 404);
 
   const input = applicationInputSchema.safeParse(await request.json().catch(() => null));
   if (!input.success) return jsonError("Check the application fields and try again.", 400);
 
   try {
-    if (!(await ownsResume(user.userId, input.data.resumeId))) {
-      return jsonError("Choose one of your uploaded resumes.", 400);
+    if (!(await ownsResume(workspaceId, input.data.resumeId))) {
+      return jsonError("Choose an uploaded resume.", 400);
     }
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const item = input.data;
-    await database()
-      .prepare(`INSERT INTO applications
+    await queryDatabase(`INSERT INTO applications
         (id, user_id, company, title, team, locations, listing_url, applied_date,
          match_strength, resume_id, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .bind(
-        id, user.userId, item.company, item.title, item.team ?? "", item.locations ?? "", item.listingUrl,
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`, [
+        id, workspaceId, item.company, item.title, item.team ?? "", item.locations ?? "", item.listingUrl,
         item.appliedDate, item.matchStrength, item.resumeId, item.status, now, now,
-      )
-      .run();
-    return Response.json({ application: await findApplication(user.userId, id) }, { status: 201 });
+      ]);
+    return Response.json({ application: await findApplication(workspaceId, id) }, { status: 201 });
   } catch (error) {
     console.error("Failed to add application", error);
     return jsonError("Application could not be saved. Try again.", 503);

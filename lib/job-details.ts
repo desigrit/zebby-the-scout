@@ -1,3 +1,5 @@
+import { load } from "cheerio";
+
 export type JobDetails = {
   company: string;
   title: string;
@@ -206,32 +208,19 @@ export function companyFromBoardName(name: string) {
 }
 
 export async function detailsFromHtml(html: string): Promise<JobDetails> {
+  const $ = load(html);
   const meta = new Map<string, string>();
-  const scripts: string[] = [];
-  let pageTitle = "";
-  let scriptText = "";
-  await new HTMLRewriter()
-    .on("meta", {
-      element(element) {
-        const key = (element.getAttribute("property") || element.getAttribute("name") || element.getAttribute("itemprop") || "").toLowerCase();
-        const value = element.getAttribute("content");
-        if (key && value && !meta.has(key)) meta.set(key, value);
-      },
-    })
-    .on("title", { text(chunk) { pageTitle += chunk.text; } })
-    .on('script[type="application/ld+json"]', {
-      element(element) {
-        scriptText = "";
-        element.onEndTag(() => {
-          if (scriptText.length <= 200_000 && scripts.length < 20) scripts.push(scriptText);
-        });
-      },
-      text(chunk) {
-        if (scriptText.length <= 200_000) scriptText += chunk.text;
-      },
-    })
-    .transform(new Response(html, { headers: { "Content-Type": "text/html" } }))
-    .text();
+  $("meta").each((_, element) => {
+    const tag = $(element);
+    const key = (tag.attr("property") || tag.attr("name") || tag.attr("itemprop") || "").toLowerCase();
+    const value = tag.attr("content");
+    if (key && value && !meta.has(key)) meta.set(key, value);
+  });
+  const pageTitle = $("title").first().text();
+  const scripts = $('script[type="application/ld+json"]').toArray()
+    .slice(0, 20)
+    .map((element) => $(element).html() || "")
+    .filter((script) => script.length <= 200_000);
 
   let structured = emptyJobDetails();
   for (const script of scripts) {

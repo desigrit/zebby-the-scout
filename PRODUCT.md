@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-Delegated: a private hosted web app with a durable database, chosen to work on Windows and Mac through a browser.
+An Azure-hosted web app with a durable database, available on Windows and Mac through a browser.
 
 ## Users
 
@@ -31,6 +31,8 @@ The user keeps job listing links and uses different resume versions. They need t
 - Store uploaded resume files so they can be reused across applications and opened on either computer.
 - Score match strength from 0 to 100 percent.
 - Initial statuses follow the requested stages: Applied, Heard back, Interview scheduled, and Rejected.
+- Anyone who visits the chosen public subdomain can view and change records, upload resumes, and download them. The app has no sign-in.
+- Keep PostgreSQL point-in-time backups and Blob soft delete available for recovery.
 
 ## Product Principles
 

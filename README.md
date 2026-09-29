@@ -1,6 +1,6 @@
 # PM Application Tracker
 
-A private browser app for tracking product management applications on Windows and Mac.
+A browser app for tracking product management applications on Windows and Mac.
 
 ## What it records
 
@@ -18,22 +18,14 @@ When adding an application, paste the public HTTPS job listing link first. The a
 
 ## Data and access
 
-Applications are stored in Cloudflare D1. Resume files are stored in Cloudflare R2. Records and downloads are limited to the signed-in owner of each record. When published, the Site defaults to private access.
+The production app is intended for `applications424760.raunakoberoi.com`. Anyone who opens that address can view and change every application, download every saved resume, and upload files. There is no sign-in. The site requests that search engines do not index it, but this does not control access.
+
+Applications and resume metadata use Azure Database for PostgreSQL. Resume files use a private Azure Blob Storage container, served through the app's download route. The app returns 404 on other production hostnames.
+
+For recovery, configure the PostgreSQL server's automatic backups with 35 days of retention and Blob soft delete with 35 days of retention. PostgreSQL's daily snapshots and point-in-time restore cover accidental application deletion more thoroughly than a weekly database copy. See [Azure deployment](docs/AZURE_DEPLOY.md).
 
 ## Local development
 
-Use Node.js 22.13 or newer. Run `npm ci`, then `npm run db:generate` after schema changes. Set the logical D1 and R2 bindings in `.openai/hosting.json`. Build once with `npm run build`, apply pending local migrations as described below, then start `npm run dev`.
+Use Node.js 22.13 or newer. Run `npm ci`, copy `.env.example` to `.env.local`, and set the real PostgreSQL and Azure Storage connection values. Run `npm run db:migrate` and `npm run dev`. The development server accepts `localhost` and `127.0.0.1`.
 
-For a new local database, apply both migration files in order. Run this command for the first migration:
-
-```sh
-node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_acoustic_triton.sql
-```
-
-Then run it again with `drizzle/0001_rapid_eternals.sql` as the file path. For an existing local database created before Team and Locations were added, apply only that second migration.
-
-Open the local sign-in route shown by the development server. The portable preview uses a local test identity. Local database and file storage remain on that computer; the published app uses hosted storage.
-
-## Publishing
-
-The `.openai/hosting.json` file identifies the private Site and its logical storage bindings. Publish through the Sites workflow so source, build output, and database migrations stay together.
+After changing `db/schema.ts`, run `npm run db:generate` and commit the new migration. Run `npm run build` and `npm test` before deployment.
