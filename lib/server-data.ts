@@ -1,27 +1,12 @@
 import { Pool, type QueryResultRow } from "pg";
 import { BlobServiceClient } from "@azure/storage-blob";
-import { z } from "zod";
 import type { Application, Resume } from "./application-types";
+import { applicationInputSchema as desktopApplicationInputSchema } from "./application-validation";
 
-const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
-  const date = new Date(`${value}T12:00:00Z`);
-  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
-});
-
-export const applicationInputSchema = z.object({
-  company: z.string().trim().min(1).max(120),
-  title: z.string().trim().min(1).max(160),
-  team: z.string().trim().max(160).optional(),
-  locations: z.string().trim().max(500).optional(),
-  listingUrl: z.string().trim().url().max(2000).refine((value) => {
-    const protocol = new URL(value).protocol;
-    return protocol === "http:" || protocol === "https:";
-  }),
-  appliedDate: dateSchema,
-  matchStrength: z.number().int().min(0).max(100),
-  resumeId: z.string().uuid(),
-  status: z.enum(["Applied", "Heard back", "Interview scheduled", "Rejected"]),
-});
+export const applicationInputSchema = desktopApplicationInputSchema.refine((item) =>
+  Boolean(item.company && item.title && item.listingUrl && item.appliedDate &&
+    item.matchStrength !== null && item.resumeId),
+  "Complete all application fields for the web version.");
 
 let pool: Pool | undefined;
 let blobService: BlobServiceClient | undefined;
@@ -80,8 +65,14 @@ export function mapApplication(row: Record<string, unknown>): Application {
     team: String(row.team ?? ""),
     locations: String(row.locations ?? ""),
     listingUrl: String(row.listing_url),
+    jobDescription: "",
+    snapshotText: "",
+    snapshotCapturedAt: "",
+    snapshotSource: "",
     appliedDate: String(row.applied_date),
     matchStrength: Number(row.match_strength),
+    matchNotes: "",
+    matchAnalyzedAt: "",
     resumeId: String(row.resume_id),
     resumeName: String(row.resume_name),
     status: row.status as Application["status"],

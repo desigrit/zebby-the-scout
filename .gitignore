@@ -38,6 +38,10 @@ yarn-error.log*
 # typescript
 next-env.d.ts
 /dist/
+/desktop-dist/
+/desktop-packages/
+/build/desktop-icon.png
+/build/electron-arm64/
 /.wrangler/
 # Checkout-local execution profile and tool state; never publish them.
 /.sites-runtime/
