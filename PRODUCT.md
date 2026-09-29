@@ -4,7 +4,7 @@
 
 ## Platform
 
-desktop, Windows x64, Windows ARM64, and Apple Silicon macOS
+adaptive
 
 ## Stack
 
@@ -35,7 +35,8 @@ The user keeps job listing links and uses different resume versions. They need t
 - Analyze a saved job brief with GPT-6 Sol through the OpenAI API. The user enters an API key in Settings on each computer.
 - Store uploaded resumes as SQLite BLOBs in the same chosen database file as applications and plans.
 - Keep weekly local backups and detect outside changes to the selected cloud file before saving.
-- Use native file dialogs, desktop menus, and platform fonts. No account sign-in is required.
+- Use native file dialogs, platform fonts, and a left navigation for Windows x64, Windows ARM64, and Apple Silicon macOS. No account sign-in is required.
+- Keep appearance and optional diagnostic logging in local settings on each computer.
 
 ## Product Principles
 

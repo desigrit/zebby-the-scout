@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { ArrowRight, ArrowUpRight, Check, Cloud, Database, FileText, FolderOpen,
-  KeyRound, LoaderCircle, Plus, RotateCw, Search, Settings2, Sparkles, Trash2 } from "lucide-react";
+import { ArrowRight, ArrowUpRight, BriefcaseBusiness, Check, ClipboardList, FileText, FolderOpen,
+  KeyRound, LoaderCircle, Monitor, Moon, Plus, RotateCw, Search, Settings2, Sparkles, Sun, Trash2 } from "lucide-react";
 import ApplicationDashboard from "../../app/application-dashboard";
 import type { DesktopState } from "../bridge";
 import type { Plan, PlanInput } from "../store";
@@ -270,14 +270,31 @@ function SettingsView({ state, onState }: { state: DesktopState; onState: (value
     finally { setWorking(false); }
   }
 
+  async function changeAppearance(value: DesktopState["appearance"]) {
+    setWorking(true); setError(""); setNotice("");
+    onState({ ...state, appearance: value });
+    try { onState(await window.desktop!.setAppearance(value)); }
+    catch (cause) { onState(state); setError(errorText(cause)); }
+    finally { setWorking(false); }
+  }
+
+  async function changeLogCapture(value: boolean) {
+    setWorking(true); setError(""); setNotice("");
+    onState({ ...state, captureLogs: value });
+    try { onState(await window.desktop!.setLogCapture(value));
+      setNotice(value ? "Diagnostic logging is on." : "Diagnostic logging is off."); }
+    catch (cause) { onState(state); setError(errorText(cause)); }
+    finally { setWorking(false); }
+  }
+
   return <main className="desktop-main settings-page">
-    <div className="page-heading"><div><h1>Settings</h1><p>Choose where your data lives and connect analysis.</p></div></div>
+    <div className="page-heading"><div><h1>Settings</h1><p>Preferences for this computer.</p></div></div>
     {error && <p className="form-error" role="alert">{error}</p>}
     {notice && <p className="notice" role="status">{notice}</p>}
     <section className="settings-section" aria-labelledby="database-settings">
-      <div className="settings-icon"><Database size={22} aria-hidden="true" /></div>
-      <div className="settings-content"><h2 id="database-settings">Database</h2>
-        <p>Applications, uploaded resumes, and plans live in one SQLite file.</p>
+      <div className="settings-section-heading"><h2 id="database-settings">Database</h2>
+        <p>Plans, applications, and resumes</p></div>
+      <div className="settings-content">
         <div className="database-location"><span>Current file</span><strong>{state.filename || "No database selected"}</strong>
           {state.filePath && <code title={state.filePath}>{state.filePath}</code>}</div>
         {state.dirty && <p className="sync-warning">The latest changes are still on this computer. Retry the save before switching devices.</p>}
@@ -288,20 +305,13 @@ function SettingsView({ state, onState }: { state: DesktopState; onState: (value
           {state.dirty && <button className="button button-primary" type="button" onClick={() => void retry()} disabled={working}>
             <RotateCw size={16} aria-hidden="true" /> Retry save</button>}
         </div>
+        <p className="settings-help">Cloud file? Quit and wait for sync before switching computers. Weekly backups stay local.</p>
       </div>
     </section>
-    <section className="settings-section" aria-labelledby="sync-settings"><div className="settings-icon"><Cloud size={22} aria-hidden="true" /></div>
-      <div className="settings-content"><h2 id="sync-settings">Using a cloud folder</h2>
-        <p>Put the SQLite file in a synced folder such as OneDrive, Dropbox, or iCloud Drive. Choose that same file on each computer.</p>
-        <ol className="sync-steps"><li>Quit the app on the first computer.</li><li>Wait for the cloud drive to finish syncing.</li>
-          <li>Open the app on the other computer and confirm its cloud drive is up to date.</li></ol>
-        <div className="backup-note"><strong>Weekly backups</strong><span>A copy is kept on each computer in its local backups folder.</span>
-          <button type="button" onClick={() => void window.desktop!.openBackups()}>Open backups folder <ArrowUpRight size={14} aria-hidden="true" /></button></div>
-      </div>
-    </section>
-    <section className="settings-section" aria-labelledby="ai-settings"><div className="settings-icon"><KeyRound size={22} aria-hidden="true" /></div>
-      <div className="settings-content"><h2 id="ai-settings">OpenAI analysis</h2>
-        <p>Plan uses GPT-6 Sol to analyze job descriptions. Your API key stays on this computer and is never added to the shared database.</p>
+    <section className="settings-section" aria-labelledby="ai-settings">
+      <div className="settings-section-heading"><h2 id="ai-settings">OpenAI key</h2>
+        <p>For Plan analysis</p></div>
+      <div className="settings-content">
         <p className="key-status">{state.hasApiKey ? "API key saved on this computer" : "No API key saved"}</p>
         <label className="field key-field"><span>{state.hasApiKey ? "Replace API key" : "API key"}</span>
           <input type="password" value={keyInput} onChange={(event) => setKeyInput(event.target.value)}
@@ -311,7 +321,32 @@ function SettingsView({ state, onState }: { state: DesktopState; onState: (value
           onClick={() => void saveKey(keyInput)}><Check size={17} aria-hidden="true" /> Save API key</button>
           {state.hasApiKey && <button className="button button-secondary" type="button" disabled={working}
             onClick={() => void saveKey("")}>Remove key</button>}</div>
-        <p className="settings-help">Analysis uses your OpenAI API account and may incur charges.</p>
+        <p className="settings-help">The key stays on this computer. GPT-6 Sol analysis may incur API charges.</p>
+      </div>
+    </section>
+    <section className="settings-section" aria-labelledby="appearance-settings">
+      <div className="settings-section-heading"><h2 id="appearance-settings">Appearance</h2>
+        <p>Choose how the app looks</p></div>
+      <div className="settings-content"><div className="appearance-options" role="radiogroup" aria-label="Appearance">
+        {([ ["auto", "Auto", Monitor], ["light", "Light", Sun], ["dark", "Dark", Moon] ] as const).map(([value, label, Icon]) =>
+          <label key={value} className={`appearance-option ${state.appearance === value ? "selected" : ""}`}>
+            <input type="radio" name="appearance" value={value} checked={state.appearance === value}
+              onChange={() => void changeAppearance(value)} disabled={working} />
+            <Icon size={17} aria-hidden="true" /><span>{label}</span>
+          </label>)}</div>
+        <p className="settings-help">Auto follows your system setting.</p>
+      </div>
+    </section>
+    <section className="settings-section" aria-labelledby="logs-settings">
+      <div className="settings-section-heading"><h2 id="logs-settings">Logs</h2>
+        <p>For troubleshooting</p></div>
+      <div className="settings-content">
+        <label className="log-toggle"><span><strong>Capture diagnostic logs</strong><small>Save app errors on this computer when something goes wrong.</small></span>
+          <input type="checkbox" role="switch" checked={state.captureLogs} disabled={working}
+            onChange={(event) => void changeLogCapture(event.target.checked)} /><span className="switch-track" aria-hidden="true" /></label>
+        {state.captureLogs && <button className="settings-link" type="button" onClick={() => void window.desktop!.openLogs()}>
+          Open logs folder <ArrowUpRight size={15} aria-hidden="true" /></button>}
+        <p className="settings-help">Logs may include file paths and error details. They are never added to your database.</p>
       </div>
     </section>
   </main>;
@@ -359,24 +394,38 @@ export default function App() {
     return () => { removeChanged(); removeNavigate(); };
   }, [navigate]);
 
+  useEffect(() => {
+    if (!state) return;
+    const system = window.matchMedia("(prefers-color-scheme: dark)");
+    const update = () => { document.documentElement.dataset.theme = state.appearance === "auto"
+      ? (system.matches ? "dark" : "light") : state.appearance; };
+    update();
+    system.addEventListener("change", update);
+    return () => system.removeEventListener("change", update);
+  }, [state?.appearance]);
+
   if (!state) return <div className="desktop-loading"><LoaderCircle className="spin" size={24} /> Opening workspace...</div>;
   return <div className={`desktop-shell ${state.platform === "darwin" ? "platform-mac" : "platform-windows"}`}>
-    <header className="topbar desktop-topbar">
-      <div className="brand"><span className="brand-mark" aria-hidden="true"><span /><span /><span /></span>
-        <span>PM Application Tracker</span></div>
-      {state.filePath && <nav className="desktop-tabs" aria-label="Workspace">
-        <button type="button" className={tab === "plan" ? "active" : ""} onClick={() => navigate("plan")} aria-current={tab === "plan" ? "page" : undefined}>Plan</button>
+    <aside className="desktop-sidebar">
+      <div className="sidebar-brand"><span className="brand-mark" aria-hidden="true"><span /><span /><span /></span>
+        <strong>PM Application<br />Tracker</strong></div>
+      <nav className="sidebar-nav" aria-label="Workspace">
+        <button type="button" className={tab === "plan" ? "active" : ""} onClick={() => navigate("plan")}
+          aria-current={tab === "plan" ? "page" : undefined}><ClipboardList size={19} aria-hidden="true" /> Plan</button>
         <button type="button" className={tab === "applications" ? "active" : ""} onClick={() => navigate("applications")}
-          aria-current={tab === "applications" ? "page" : undefined}>Applications</button>
-      </nav>}
-      <button type="button" className={`topbar-settings ${tab === "settings" ? "active" : ""}`}
-        onClick={() => navigate("settings")} aria-label="Settings" title="Settings">
-        <Settings2 size={18} aria-hidden="true" /><span>Settings</span></button>
-    </header>
-    {!state.filePath ? (tab === "settings" ? <SettingsView state={state} onState={setState} /> : <Welcome state={state} onState={setState} />)
+          aria-current={tab === "applications" ? "page" : undefined}><BriefcaseBusiness size={19} aria-hidden="true" /> Applications</button>
+        <button type="button" className={tab === "settings" ? "active" : ""} onClick={() => navigate("settings")}
+          aria-current={tab === "settings" ? "page" : undefined}><Settings2 size={19} aria-hidden="true" /> Settings</button>
+      </nav>
+      {state.filePath && <div className="sidebar-database" title={state.filePath}>
+        <span>Current database</span><strong>{state.filename}</strong>
+        {state.dirty && <small>Save pending</small>}
+      </div>}
+    </aside>
+    <div className="desktop-workspace">{!state.filePath ? (tab === "settings" ? <SettingsView state={state} onState={setState} /> : <Welcome state={state} onState={setState} />)
       : tab === "plan" ? <PlanView key={databaseVersion} hasApiKey={state.hasApiKey}
         onOpenSettings={() => navigate("settings")} onDirtyChange={setDirtyPlan} />
       : tab === "applications" ? <ApplicationDashboard key={databaseVersion} embedded />
-      : <SettingsView state={state} onState={setState} />}
+      : <SettingsView state={state} onState={setState} />}</div>
   </div>;
 }

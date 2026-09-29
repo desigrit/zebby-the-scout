@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -36,12 +36,22 @@ try {
   app = await electron.launch({ executablePath, args: [path.resolve(".")],
     cwd: path.resolve("."), env: { ...process.env, PM_TRACKER_TEST_USER_DATA: userData } });
   const page = await app.firstWindow();
+  const nav = page.getByRole("navigation", { name: "Workspace" });
+  if (process.platform === "win32") assert.equal(await app.evaluate(({ Menu }) => Menu.getApplicationMenu()), null);
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize({ width: 1280, height: 880 });
   await page.getByRole("heading", { name: "Plan", exact: true }).waitFor();
   await page.getByText("Northstar Labs").first().waitFor();
   await page.screenshot({ path: path.join(output, "plan.png") });
+  await app.evaluate(({ shell }) => {
+    globalThis.__externalLinks = [];
+    shell.openExternal = async (url) => { globalThis.__externalLinks.push(url); };
+  });
+  await page.getByRole("link", { name: "Open listing" }).click();
+  await page.waitForTimeout(100);
+  assert.deepEqual(await app.evaluate(() => globalThis.__externalLinks),
+    ["https://example.org/jobs/senior-product-manager"]);
   await page.getByRole("heading", { name: "Resume direction" }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(output, "plan-analysis.png") });
   await app.evaluate(() => {
@@ -58,18 +68,18 @@ try {
       return originalFetch(url, options);
     };
   });
-  await page.locator(".topbar-settings").click();
+  await nav.getByRole("button", { name: "Settings" }).click();
   await page.locator('input[type="password"]').fill("sk-test-only");
   await page.getByRole("button", { name: "Save API key" }).click();
   await page.getByText("API key saved on this computer.").waitFor();
-  await page.getByRole("button", { name: "Plan", exact: true }).click();
+  await nav.getByRole("button", { name: "Plan", exact: true }).click();
   await page.getByRole("button", { name: "Analyze again" }).click();
   await page.getByText("Analysis saved. You can edit any part of it.").waitFor();
   const calls = await app.evaluate(() => globalThis.__analysisCalls);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].model, "gpt-6-sol");
   assert.equal(calls[0].store, false);
-  await page.getByRole("button", { name: "Applications" }).click();
+  await nav.getByRole("button", { name: "Applications" }).click();
   await page.getByRole("heading", { name: "Applications", exact: true }).waitFor();
   await page.screenshot({ path: path.join(output, "applications.png") });
   await page.getByRole("button", { name: "Add application", exact: true }).click();
@@ -83,10 +93,40 @@ try {
   await page.getByText("Application added.").waitFor();
   await page.getByText("QA Company").waitFor();
   await page.screenshot({ path: path.join(output, "applications-filled.png") });
-  await page.locator(".topbar-settings").click();
+  await nav.getByRole("button", { name: "Settings" }).click();
   await page.getByRole("heading", { name: "Settings", exact: true }).waitFor();
   await page.screenshot({ path: path.join(output, "settings.png") });
-  await page.getByRole("button", { name: "Plan", exact: true }).click();
+  await page.getByRole("radio", { name: "Dark" }).check();
+  await page.locator('html[data-theme="dark"]').waitFor();
+  await page.waitForFunction(() => !document.querySelector('.settings-actions button')?.disabled);
+  await page.waitForFunction(() => {
+    const button = document.querySelector('.settings-actions .button-secondary');
+    return button && getComputedStyle(button).backgroundColor === "rgb(41, 55, 45)";
+  });
+  const darkButton = await page.getByRole("button", { name: "Open database" }).evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { background: style.backgroundColor, color: style.color };
+  });
+  assert.equal(darkButton.background, "rgb(41, 55, 45)");
+  await page.screenshot({ path: path.join(output, "settings-dark.png") });
+  await nav.getByRole("button", { name: "Plan", exact: true }).click();
+  await page.getByRole("heading", { name: "Plan", exact: true }).waitFor();
+  await page.waitForTimeout(220);
+  await page.screenshot({ path: path.join(output, "plan-dark.png") });
+  await nav.getByRole("button", { name: "Applications" }).click();
+  await page.getByRole("heading", { name: "Applications", exact: true }).waitFor();
+  await page.waitForTimeout(220);
+  await page.screenshot({ path: path.join(output, "applications-dark.png") });
+  await nav.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("radio", { name: "Light" }).check();
+  await page.locator('html[data-theme="light"]').waitFor();
+  await page.getByRole("switch", { name: "Capture diagnostic logs" }).check();
+  await page.getByText("Diagnostic logging is on.").waitFor();
+  const savedSettings = JSON.parse(await readFile(path.join(userData, "settings.json"), "utf8"));
+  assert.equal(savedSettings.appearance, "light");
+  assert.equal(savedSettings.captureLogs, true);
+  assert.match(await readFile(path.join(userData, "Logs", "tracker.log"), "utf8"), /Diagnostic logging enabled/);
+  await nav.getByRole("button", { name: "Plan", exact: true }).click();
   await page.getByRole("button", { name: "New plan" }).click();
   await page.getByPlaceholder("https://...").fill("https://example.org/jobs/new-role");
   await page.getByPlaceholder("Company name").fill("Second Company");

@@ -6,6 +6,9 @@ contextBridge.exposeInMainWorld("desktop", {
   retrySync: () => ipcRenderer.invoke("desktop:retry-sync"),
   openBackups: () => ipcRenderer.invoke("desktop:open-backups"),
   setApiKey: (value: string) => ipcRenderer.invoke("desktop:set-api-key", value),
+  setAppearance: (value: "auto" | "dark" | "light") => ipcRenderer.invoke("desktop:set-appearance", value),
+  setLogCapture: (value: boolean) => ipcRenderer.invoke("desktop:set-log-capture", value),
+  openLogs: () => ipcRenderer.invoke("desktop:open-logs"),
   downloadResume: (id: string) => ipcRenderer.invoke("desktop:download-resume", id),
   onDatabaseChanged: (callback: (state: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state);
@@ -17,4 +20,12 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.on("desktop:navigate", listener);
     return () => ipcRenderer.removeListener("desktop:navigate", listener);
   },
+});
+
+window.addEventListener("error", (event) => {
+  ipcRenderer.send("desktop:renderer-error", event.error?.stack || event.message);
+});
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason;
+  ipcRenderer.send("desktop:renderer-error", reason instanceof Error ? reason.stack || reason.message : String(reason));
 });

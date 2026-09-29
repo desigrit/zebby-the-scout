@@ -4,7 +4,7 @@ A desktop app for planning product management applications and tracking the role
 
 ## Install
 
-Download the package for your computer from the repository's **Actions > Desktop packages** run:
+Download the installer for your computer from the repository's [Releases](https://github.com/desigrit/applications/releases) page. Release installers download directly as `.exe` or `.dmg` files, without a ZIP wrapper.
 
 - Windows x64: `PM-Application-Tracker-*-win-x64.exe`
 - Windows ARM64: `PM-Application-Tracker-*-win-arm64.exe`
@@ -14,7 +14,9 @@ These are unsigned personal builds. Windows SmartScreen or macOS Gatekeeper may 
 
 On first launch, choose **Create database** or **Open existing database**. Put the `.sqlite` file in a cloud synced folder if you want the same data on both computers. In Settings, choose that file on each computer. Quit the app on one computer, wait for its cloud drive to finish syncing, then open the app on the other computer. Keep only one computer editing the file at a time.
 
-The app keeps a local working copy and writes complete snapshots back to the selected file after changes. It detects if that cloud file changed outside the app before it saves. A backup copy is kept in the local backups folder at least once a week. Settings has a button to open that folder.
+The app keeps a local working copy and writes complete snapshots back to the selected file after changes. It detects if that cloud file changed outside the app before it saves. A backup copy is kept in the local backups folder at least once a week.
+
+Settings contains the current database file, Open and Create actions, the OpenAI API key, Auto/Light/Dark appearance, and optional local diagnostic logs. Auto follows your operating system. Diagnostic logs are saved only when enabled and may contain file paths and error details. The app sends job listing links to your default browser.
 
 ## Plan
 
@@ -40,4 +42,4 @@ When adding an application, paste the public HTTPS job listing link first. The a
 
 Use Node.js 22.13 or newer. Run `npm ci`, then `node node_modules/electron/install.js` to download the local Electron runtime. Run `npm run desktop:dev` to launch the desktop app. Run `npm test`, `npx tsc --noEmit`, and `npm run lint` to check changes.
 
-The package commands are `npm run desktop:package:win:x64`, `npm run desktop:package:win:arm64`, and `npm run desktop:package:mac:arm64`. Both Windows packages are built on Windows x64; the macOS package is built on Apple Silicon. The GitHub Actions workflow runs all three builds and uploads the installers as artifacts. The earlier Azure web implementation remains in the repository but is not needed for the desktop app.
+The package commands are `npm run desktop:package:win:x64`, `npm run desktop:package:win:arm64`, and `npm run desktop:package:mac:arm64`. Both Windows packages are built on Windows x64; the macOS package is built on Apple Silicon. Tagging a version as `vX.Y.Z` runs all three builds and publishes the `.exe` and `.dmg` files as GitHub Release assets. GitHub Actions keeps internal build artifacts as ZIP files. The earlier Azure web implementation remains in the repository but is not needed for the desktop app.

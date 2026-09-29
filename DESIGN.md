@@ -22,22 +22,22 @@ typography:
     lineHeight: 1.08
     letterSpacing: "-0.035em"
   headline:
-    fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif'
+    fontFamily: '"Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif'
     fontSize: "24px"
     fontWeight: 700
     lineHeight: 1.2
     letterSpacing: "-0.025em"
   body:
-    fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif'
+    fontFamily: '"Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif'
     fontSize: "16px"
     fontWeight: 400
     lineHeight: 1.5
   label:
-    fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif'
+    fontFamily: '"Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif'
     fontSize: "13px"
     fontWeight: 700
   metric:
-    fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif'
+    fontFamily: '"Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif'
     fontSize: "clamp(27px, 2.3vw, 34px)"
     fontWeight: 660
     lineHeight: 1.1
@@ -78,10 +78,10 @@ components:
     textColor: "{colors.ink}"
     rounded: "{rounded.panel}"
     padding: "clamp(22px, 3vw, 36px)"
-  navigation-topbar:
+  navigation-sidebar:
     backgroundColor: "{colors.forest}"
     textColor: "#f8f7ef"
-    padding: "0 clamp(22px, 4vw, 68px)"
+    padding: "30px 13px 20px"
 ---
 
 # Design System: PM Application Tracker
@@ -90,7 +90,7 @@ components:
 
 **Creative North Star: "The Search Ledger"**
 
-The app should feel like a dependable working ledger for a busy job search. Warm paper and fine green rules keep rows readable, while a dark forest header gives the workspace a clear identity. The terracotta action color points to the next useful step without competing with application data.
+The app should feel like a dependable working ledger for a busy job search. Warm paper and fine green rules keep rows readable, while a dark forest sidebar gives the workspace a clear identity. The terracotta action color points to the next useful step without competing with application data.
 
 The interface is compact enough for several entries a day. One expressive serif heading gives the page character; controls, statistics, and row details use a direct sans-serif voice. The form opens within the same workspace so the list remains a useful reference while editing.
 
@@ -105,6 +105,8 @@ The interface is compact enough for several entries a day. One expressive serif 
 
 The palette pairs a single warm action accent with forest green structure and quiet paper neutrals. The values in the frontmatter match the CSS custom properties in `app/globals.css`.
 
+The desktop dark appearance uses `#161d19` canvas, `#202a24` paper, `#ecf1e9` text, `#becbbf` secondary text, and `#35463b` rules. Its sidebar uses `#12231c`. State colors use muted green, amber, and terracotta surfaces so status remains readable without relying on color alone.
+
 ### Primary
 
 - **Terracotta** (`accent`): the main action fill and most prominent call to action.
@@ -113,7 +115,7 @@ The palette pairs a single warm action accent with forest green structure and qu
 
 ### Secondary
 
-- **Deep Forest** (`forest`): the top bar.
+- **Deep Forest** (`forest`): the sidebar.
 - **Focus Green** (`focus`): focused controls and keyboard outlines.
 
 ### Neutral
@@ -132,7 +134,7 @@ The palette pairs a single warm action accent with forest green structure and qu
 
 **Display Font:** Georgia, with Times New Roman and serif fallbacks.
 
-**Body Font:** Segoe UI, with Helvetica Neue, Arial, and sans-serif fallbacks.
+**Body Font:** Segoe UI Variable on Windows and the system font on macOS, with Segoe UI, Helvetica Neue, Arial, and sans-serif fallbacks.
 
 **Character:** The serif title adds a measured editorial note. Sans-serif labels and data stay compact and easy to scan across Windows and Mac.
 
@@ -148,9 +150,9 @@ The palette pairs a single warm action accent with forest green structure and qu
 
 ## Layout
 
-The content container is capped at 1440px and uses responsive side padding (`clamp(22px, 4vw, 68px)`). The desktop page flows from title and add action to a five-column statistics band, then search, filter, and applications. The editor starts with the listing URL and its autofill action across all four columns. Company, title, team, locations, applied date, and match strength follow in paired fields. On mobile, the URL and autofill action stack above the fields.
+The desktop shell has a 210px left sidebar with Plan, Applications, and Settings. The workspace content is capped at 1440px. Applications flows from title and add action to a five-column statistics band, then search, filter, and records. The editor starts with the listing URL and its autofill action. Company, title, team, locations, applied date, and match strength follow in paired fields.
 
-At 1100px, table columns and cell padding tighten. At 850px, the statistics band changes to three columns and application rows become two-column record cards with visible field labels. At 650px, the heading, filters, and form stack; the statistics band uses two columns. At 420px, filters stack vertically, the status control fills its row, and the final metric fills the band width. Preserve these content-driven changes when adding fields.
+At 850px, the sidebar narrows to 176px and the Plan rail moves above its editor. The statistics band changes to three columns and application rows become two-column record cards with visible field labels. At 650px, the heading, filters, and form stack; the statistics band uses two columns. Preserve these content-driven changes when adding fields.
 
 The common rhythm uses tight control gaps, medium field gaps, and generous panel padding. Let separators and whitespace group information before adding new containers.
 
@@ -174,7 +176,7 @@ Corners are gently rounded: compact controls use the `compact` and `field` radii
 
 ### Navigation
 
-The top bar is a 76px tall forest strip with a compact tile mark, bold product name, and open-workspace cue. On narrow screens it becomes 67px tall and hides the cue to preserve space.
+The left sidebar holds the tile mark, product name, Plan, Applications, Settings, and the current database name. The active destination has a distinct muted green surface. Windows has no native menu bar; macOS keeps only the native app menu. Settings is an uncluttered four-section page for Database, OpenAI key, Appearance, and Logs.
 
 ### Cards and containers
 

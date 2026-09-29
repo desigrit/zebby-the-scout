@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, safeStorage, shell } from "electron";
-import { readFile, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fetchJobPosting } from "../lib/job-fetch";
 import { DesktopStore, type PlanInput } from "./store";
@@ -14,9 +14,29 @@ let mainWindow: BrowserWindow | null = null;
 let store: DesktopStore;
 let apiKey = "";
 let startupError = "";
-let settings: { databasePath?: string; encryptedApiKey?: string } = {};
+type Appearance = "auto" | "dark" | "light";
+let settings: { databasePath?: string; encryptedApiKey?: string; appearance?: Appearance; captureLogs?: boolean } = {};
+let logQueue = Promise.resolve();
 
 function settingsPath() { return path.join(app.getPath("userData"), "settings.json"); }
+function logsPath() { return path.join(app.getPath("userData"), "Logs"); }
+
+function logDiagnostic(message: string, error?: unknown) {
+  if (!settings.captureLogs) return;
+  const detail = error instanceof Error ? error.stack || error.message : error ? String(error) : "";
+  const line = `${new Date().toISOString()} ${message}${detail ? `: ${detail}` : ""}\n`.slice(0, 8000);
+  logQueue = logQueue.then(async () => {
+    const folder = logsPath();
+    const file = path.join(folder, "tracker.log");
+    await mkdir(folder, { recursive: true });
+    if (((await stat(file).catch(() => null))?.size || 0) > 2_000_000) {
+      const previous = path.join(folder, "tracker.previous.log");
+      await unlink(previous).catch(() => undefined);
+      await rename(file, previous);
+    }
+    await appendFile(file, line, "utf8");
+  }).catch((failure) => console.error("Could not write diagnostic log", failure));
+}
 
 async function saveSettings() {
   await writeFile(settingsPath(), JSON.stringify(settings, null, 2), "utf8");
@@ -25,13 +45,16 @@ async function saveSettings() {
 async function loadSettings() {
   try { settings = JSON.parse(await readFile(settingsPath(), "utf8")); }
   catch { settings = {}; }
+  if (!["auto", "dark", "light"].includes(settings.appearance || "auto")) settings.appearance = "auto";
+  settings.captureLogs = settings.captureLogs === true;
   if (settings.encryptedApiKey && safeStorage.isEncryptionAvailable()) {
     try { apiKey = safeStorage.decryptString(Buffer.from(settings.encryptedApiKey, "base64")); }
     catch { apiKey = ""; }
   }
   if (settings.databasePath) {
     try { await store.open(settings.databasePath); }
-    catch (error) { startupError = error instanceof Error ? error.message : "The last database could not be opened."; }
+    catch (error) { startupError = error instanceof Error ? error.message : "The last database could not be opened.";
+      logDiagnostic("Could not open the saved database", error); }
   }
 }
 
@@ -40,6 +63,7 @@ function state() {
     ...store.status, startupError, hasApiKey: Boolean(apiKey),
     canSaveApiKey: safeStorage.isEncryptionAvailable(),
     backupsPath: store.backupsPath,
+    appearance: settings.appearance || "auto", captureLogs: Boolean(settings.captureLogs), logsPath: logsPath(),
     platform: process.platform,
   };
 }
@@ -183,6 +207,7 @@ async function handleApi(request: Request, pathname: string): Promise<Response> 
     return jsonError("Not found.", 404);
   } catch (error) {
     console.error("Desktop API request failed", pathname, error);
+    logDiagnostic(`Request failed (${method} ${pathname})`, error);
     const message = error instanceof Error ? error.message : "The request could not be completed.";
     return jsonError(message, /changed outside|changed while/.test(message) ? 409 : 400);
   }
@@ -208,9 +233,35 @@ function registerProtocol() {
 
 function registerIpc() {
   ipcMain.handle("desktop:state", () => state());
-  ipcMain.handle("desktop:choose-database", (_event, kind: "open" | "create") => chooseDatabase(kind));
-  ipcMain.handle("desktop:retry-sync", () => store.retrySync());
+  ipcMain.handle("desktop:choose-database", async (_event, kind: "open" | "create") => {
+    try { return await chooseDatabase(kind); }
+    catch (error) { logDiagnostic(`Could not ${kind} database`, error); throw error; }
+  });
+  ipcMain.handle("desktop:retry-sync", async () => {
+    try { return await store.retrySync(); }
+    catch (error) { logDiagnostic("Could not save database", error); throw error; }
+  });
   ipcMain.handle("desktop:open-backups", () => shell.openPath(store.backupsPath));
+  ipcMain.handle("desktop:set-appearance", async (_event, value: Appearance) => {
+    if (value !== "auto" && value !== "dark" && value !== "light") throw new Error("Choose an appearance option.");
+    settings.appearance = value;
+    await saveSettings();
+    return state();
+  });
+  ipcMain.handle("desktop:set-log-capture", async (_event, value: boolean) => {
+    if (typeof value !== "boolean") throw new Error("Choose whether to capture logs.");
+    settings.captureLogs = value;
+    await saveSettings();
+    if (value) logDiagnostic("Diagnostic logging enabled");
+    return state();
+  });
+  ipcMain.handle("desktop:open-logs", async () => {
+    await mkdir(logsPath(), { recursive: true });
+    return shell.openPath(logsPath());
+  });
+  ipcMain.on("desktop:renderer-error", (_event, message: unknown) => {
+    if (typeof message === "string") logDiagnostic("Renderer error", message.slice(0, 4000));
+  });
   ipcMain.handle("desktop:set-api-key", async (_event, value: string) => {
     if (typeof value !== "string" || value.length > 500) throw new Error("The API key is invalid.");
     apiKey = value.trim();
@@ -230,59 +281,54 @@ function registerIpc() {
 }
 
 function createMenu() {
-  const isMac = process.platform === "darwin";
-  const send = (target: string) => mainWindow?.webContents.send("desktop:navigate", target);
-  const template: Electron.MenuItemConstructorOptions[] = [
-    ...(isMac ? [{ label: app.name, submenu: [{ role: "about" as const }, { type: "separator" as const },
-      { role: "services" as const }, { type: "separator" as const }, { role: "hide" as const },
-      { role: "hideOthers" as const }, { role: "unhide" as const }, { type: "separator" as const },
-      { role: "quit" as const }] }] : []),
-    { label: "File", submenu: [
-      { label: "New Database...", click: () => void chooseDatabase("create"), accelerator: "CmdOrCtrl+Shift+N" },
-      { label: "Open Database...", click: () => void chooseDatabase("open"), accelerator: "CmdOrCtrl+O" },
-      { type: "separator" },
-      { label: "Settings...", click: () => send("settings"), accelerator: "CmdOrCtrl+," },
-      ...(isMac ? [] : [{ type: "separator" as const }, { role: "quit" as const }]),
-    ] },
-    { label: "Edit", submenu: [{ role: "undo" }, { role: "redo" }, { type: "separator" },
-      { role: "cut" }, { role: "copy" }, { role: "paste" }, { role: "selectAll" }] },
-    { label: "View", submenu: [
-      { label: "Plan", click: () => send("plan"), accelerator: "CmdOrCtrl+1" },
-      { label: "Applications", click: () => send("applications"), accelerator: "CmdOrCtrl+2" },
-      { type: "separator" }, { role: "reload" }, { role: "togglefullscreen" },
-    ] },
-    { label: "Window", submenu: [{ role: "minimize" }, { role: "close" }] },
-  ];
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+  if (process.platform !== "darwin") {
+    Menu.setApplicationMenu(null);
+    return;
+  }
+  Menu.setApplicationMenu(Menu.buildFromTemplate([{ label: app.name, submenu: [
+    { role: "about" }, { type: "separator" }, { role: "services" }, { type: "separator" },
+    { role: "hide" }, { role: "hideOthers" }, { role: "unhide" }, { type: "separator" }, { role: "quit" },
+  ] }]));
+}
+
+function openWebLink(url: string) {
+  try {
+    const target = new URL(url);
+    if (target.protocol === "http:" || target.protocol === "https:") {
+      void shell.openExternal(target.toString()).catch((error) => logDiagnostic("Could not open web link", error));
+    }
+  } catch { /* Ignore malformed links. */ }
 }
 
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1250, height: 850, minWidth: 790, minHeight: 620,
-    backgroundColor: "#f5f3ed", title: "PM Application Tracker",
+    backgroundColor: "#f5f3ed", title: "PM Application Tracker", autoHideMenuBar: true,
     webPreferences: { preload: path.join(appRoot, "preload.cjs"), contextIsolation: true,
       nodeIntegration: false, sandbox: true, webSecurity: true },
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith("https://")) void shell.openExternal(url);
+    openWebLink(url);
     return { action: "deny" };
   });
   mainWindow.webContents.on("will-navigate", (event, url) => {
     if (!url.startsWith("tracker://app/")) {
       event.preventDefault();
-      if (url.startsWith("https://")) void shell.openExternal(url);
+      openWebLink(url);
     }
   });
+  mainWindow.webContents.on("render-process-gone", (_event, details) =>
+    logDiagnostic("Renderer process stopped", `${details.reason}, exit code ${details.exitCode}`));
   void mainWindow.loadURL("tracker://app/");
   mainWindow.on("closed", () => { mainWindow = null; });
 }
 
+if (process.env.PM_TRACKER_TEST_USER_DATA) app.setPath("userData", path.resolve(process.env.PM_TRACKER_TEST_USER_DATA));
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on("second-instance", () => { mainWindow?.show(); mainWindow?.focus(); });
   app.whenReady().then(async () => {
     app.setName("PM Application Tracker");
-    if (process.env.PM_TRACKER_TEST_USER_DATA) app.setPath("userData", path.resolve(process.env.PM_TRACKER_TEST_USER_DATA));
     store = new DesktopStore(app.getPath("userData"));
     await loadSettings();
     registerProtocol();
@@ -290,7 +336,9 @@ else {
     createMenu();
     createWindow();
     app.on("activate", () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
-  }).catch((error) => { dialog.showErrorBox("Could not start PM Application Tracker", String(error)); app.quit(); });
+  }).catch((error) => { console.error("Could not start PM Application Tracker", error);
+    logDiagnostic("Could not start the app", error);
+    dialog.showErrorBox("Could not start PM Application Tracker", String(error)); app.quit(); });
   app.on("before-quit", (event) => {
     if (store?.status.dirty) {
       event.preventDefault();

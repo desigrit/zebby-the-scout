@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: [desktop-sqlite]
+    tags: ["v*"]
 
 permissions:
   contents: read
@@ -55,3 +56,23 @@ jobs:
           name: pm-application-tracker-macos-arm64
           path: desktop-packages/*-mac-arm64.dmg
           if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows-x64, macos-arm64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check release version
+        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pm-application-tracker-*
+          path: release-files
+          merge-multiple: true
+      - name: Publish direct installer downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release-files/*.exe release-files/*.dmg --title "PM Application Tracker $GITHUB_REF_NAME" --generate-notes --target "$GITHUB_SHA"
