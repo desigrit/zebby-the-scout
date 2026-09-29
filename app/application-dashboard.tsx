@@ -97,7 +97,7 @@ function matchTone(score: number) {
   return "low";
 }
 
-export default function ApplicationDashboard() {
+export default function ApplicationDashboard({ embedded = false }: { embedded?: boolean }) {
   const [applications, setApplications] = useState<Application[]>([]);
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [loading, setLoading] = useState(true);
@@ -492,8 +492,8 @@ export default function ApplicationDashboard() {
   }
 
   return (
-    <div className="site-shell">
-      <header className="topbar">
+    <div className={embedded ? "desktop-dashboard" : "site-shell"}>
+      {!embedded && <header className="topbar">
         <div className="brand" aria-label="PM Application Tracker">
           <span className="brand-mark" aria-hidden="true"><span /><span /><span /></span>
           <span>PM Application Tracker</span>
@@ -502,7 +502,7 @@ export default function ApplicationDashboard() {
           <Globe size={15} aria-hidden="true" />
           <span>Open workspace</span>
         </div>
-      </header>
+      </header>}
 
       <main className="main-content">
         <div className="page-heading">
@@ -706,7 +706,12 @@ export default function ApplicationDashboard() {
                       </td>
                       <td>
                         <span className="mobile-label">Resume</span>
-                        <a className="resume-link" href={"/api/resumes/" + encodeURIComponent(item.resumeId)}>
+                        <a className="resume-link" href={"/api/resumes/" + encodeURIComponent(item.resumeId)}
+                          onClick={window.desktop ? (event) => {
+                            event.preventDefault();
+                            void window.desktop?.downloadResume(item.resumeId).catch((error) =>
+                              setActionError(error instanceof Error ? error.message : "Resume could not be saved."));
+                          } : undefined}>
                           <FileText size={16} aria-hidden="true" />
                           <span>{item.resumeName}</span>
                         </a>
