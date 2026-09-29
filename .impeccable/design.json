@@ -1,0 +1,343 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-29T02:53:37.118Z",
+  "title": "Design System: PM Application Tracker",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "Terracotta",
+        "tonalRamp": [
+          "oklch(18% 0.1547 37.8)",
+          "oklch(27% 0.1547 37.8)",
+          "oklch(38% 0.1547 37.8)",
+          "oklch(49% 0.1547 37.8)",
+          "oklch(60% 0.1547 37.8)",
+          "oklch(72% 0.1547 37.8)",
+          "oklch(84% 0.1547 37.8)",
+          "oklch(95% 0.1547 37.8)"
+        ]
+      },
+      "accent-hover": {
+        "role": "primary",
+        "displayName": "Deep Terracotta",
+        "tonalRamp": [
+          "oklch(18% 0.1416 37.2)",
+          "oklch(27% 0.1416 37.2)",
+          "oklch(38% 0.1416 37.2)",
+          "oklch(49% 0.1416 37.2)",
+          "oklch(60% 0.1416 37.2)",
+          "oklch(72% 0.1416 37.2)",
+          "oklch(84% 0.1416 37.2)",
+          "oklch(95% 0.1416 37.2)"
+        ]
+      },
+      "accent-wash": {
+        "role": "primary",
+        "displayName": "Terracotta Wash",
+        "tonalRamp": [
+          "oklch(18% 0.0178 48.5)",
+          "oklch(27% 0.0178 48.5)",
+          "oklch(38% 0.0178 48.5)",
+          "oklch(49% 0.0178 48.5)",
+          "oklch(60% 0.0178 48.5)",
+          "oklch(72% 0.0178 48.5)",
+          "oklch(84% 0.0178 48.5)",
+          "oklch(95% 0.0178 48.5)"
+        ]
+      },
+      "forest": {
+        "role": "secondary",
+        "displayName": "Deep Forest",
+        "tonalRamp": [
+          "oklch(18% 0.0357 175.4)",
+          "oklch(27% 0.0357 175.4)",
+          "oklch(38% 0.0357 175.4)",
+          "oklch(49% 0.0357 175.4)",
+          "oklch(60% 0.0357 175.4)",
+          "oklch(72% 0.0357 175.4)",
+          "oklch(84% 0.0357 175.4)",
+          "oklch(95% 0.0357 175.4)"
+        ]
+      },
+      "focus": {
+        "role": "secondary",
+        "displayName": "Focus Green",
+        "tonalRamp": [
+          "oklch(18% 0.0828 172.1)",
+          "oklch(27% 0.0828 172.1)",
+          "oklch(38% 0.0828 172.1)",
+          "oklch(49% 0.0828 172.1)",
+          "oklch(60% 0.0828 172.1)",
+          "oklch(72% 0.0828 172.1)",
+          "oklch(84% 0.0828 172.1)",
+          "oklch(95% 0.0828 172.1)"
+        ]
+      },
+      "canvas": {
+        "role": "neutral",
+        "displayName": "Warm Canvas",
+        "tonalRamp": [
+          "oklch(18% 0.0082 91.5)",
+          "oklch(27% 0.0082 91.5)",
+          "oklch(38% 0.0082 91.5)",
+          "oklch(49% 0.0082 91.5)",
+          "oklch(60% 0.0082 91.5)",
+          "oklch(72% 0.0082 91.5)",
+          "oklch(84% 0.0082 91.5)",
+          "oklch(95% 0.0082 91.5)"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "tonalRamp": [
+          "oklch(18% 0.0054 95.1)",
+          "oklch(27% 0.0054 95.1)",
+          "oklch(38% 0.0054 95.1)",
+          "oklch(49% 0.0054 95.1)",
+          "oklch(60% 0.0054 95.1)",
+          "oklch(72% 0.0054 95.1)",
+          "oklch(84% 0.0054 95.1)",
+          "oklch(95% 0.0054 95.1)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Forest Ink",
+        "tonalRamp": [
+          "oklch(18% 0.029 174.5)",
+          "oklch(27% 0.029 174.5)",
+          "oklch(38% 0.029 174.5)",
+          "oklch(49% 0.029 174.5)",
+          "oklch(60% 0.029 174.5)",
+          "oklch(72% 0.029 174.5)",
+          "oklch(84% 0.029 174.5)",
+          "oklch(95% 0.029 174.5)"
+        ]
+      },
+      "ink-soft": {
+        "role": "neutral",
+        "displayName": "Soft Ink",
+        "tonalRamp": [
+          "oklch(18% 0.0255 170.9)",
+          "oklch(27% 0.0255 170.9)",
+          "oklch(38% 0.0255 170.9)",
+          "oklch(49% 0.0255 170.9)",
+          "oklch(60% 0.0255 170.9)",
+          "oklch(72% 0.0255 170.9)",
+          "oklch(84% 0.0255 170.9)",
+          "oklch(95% 0.0255 170.9)"
+        ]
+      },
+      "ink-faint": {
+        "role": "neutral",
+        "displayName": "Faint Ink",
+        "tonalRamp": [
+          "oklch(18% 0.0224 164.1)",
+          "oklch(27% 0.0224 164.1)",
+          "oklch(38% 0.0224 164.1)",
+          "oklch(49% 0.0224 164.1)",
+          "oklch(60% 0.0224 164.1)",
+          "oklch(72% 0.0224 164.1)",
+          "oklch(84% 0.0224 164.1)",
+          "oklch(95% 0.0224 164.1)"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Fine Rule",
+        "tonalRamp": [
+          "oklch(18% 0.0142 138.7)",
+          "oklch(27% 0.0142 138.7)",
+          "oklch(38% 0.0142 138.7)",
+          "oklch(49% 0.0142 138.7)",
+          "oklch(60% 0.0142 138.7)",
+          "oklch(72% 0.0142 138.7)",
+          "oklch(84% 0.0142 138.7)",
+          "oklch(95% 0.0142 138.7)"
+        ]
+      },
+      "line-strong": {
+        "role": "neutral",
+        "displayName": "Strong Rule",
+        "tonalRamp": [
+          "oklch(18% 0.0199 147.8)",
+          "oklch(27% 0.0199 147.8)",
+          "oklch(38% 0.0199 147.8)",
+          "oklch(49% 0.0199 147.8)",
+          "oklch(60% 0.0199 147.8)",
+          "oklch(72% 0.0199 147.8)",
+          "oklch(84% 0.0199 147.8)",
+          "oklch(95% 0.0199 147.8)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "The main page and sign-in headings."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Editor and section headings."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Supporting copy and explanatory text."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Field and data labels."
+      },
+      "metric": {
+        "displayName": "Metric",
+        "purpose": "Application statistics."
+      }
+    },
+    "shadows": [
+      {
+        "name": "editor-ambient",
+        "value": "0 12px 35px rgba(22, 50, 38, .07)",
+        "purpose": "Lift the active application editor above the flat ledger."
+      },
+      {
+        "name": "field-focus",
+        "value": "0 0 0 3px rgba(47, 124, 103, .14)",
+        "purpose": "Show focus on form and filter controls."
+      }
+    ],
+    "motion": [
+      {
+        "name": "button-state",
+        "value": "background-color .18s ease, transform .18s ease, border-color .18s ease",
+        "purpose": "Keep button hover and press feedback brief; disable it for reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "table-tight",
+        "value": "1100px"
+      },
+      {
+        "name": "record-cards",
+        "value": "850px"
+      },
+      {
+        "name": "stacked-layout",
+        "value": "650px"
+      },
+      {
+        "name": "narrow-phone",
+        "value": "420px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Terracotta action for adding and saving an application.",
+      "html": "<button class=\"ds-button-primary\" type=\"button\">Add application</button>",
+      "css": ".ds-button-primary { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 17px; border: 1px solid transparent; border-radius: 8px; background: var(--accent); color: var(--paper); font: 700 14px/1.2 \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif; cursor: pointer; transition: background-color .18s ease, transform .18s ease; } .ds-button-primary:hover { background: var(--accent-hover); } .ds-button-primary:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; } .ds-button-primary:active { transform: translateY(1px); } @media (prefers-reduced-motion: reduce) { .ds-button-primary { transition: none; } }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Quiet bordered action for canceling or retrying.",
+      "html": "<button class=\"ds-button-secondary\" type=\"button\">Cancel</button>",
+      "css": ".ds-button-secondary { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 17px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--paper); color: var(--ink); font: 700 14px/1.2 \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif; cursor: pointer; transition: background-color .18s ease, border-color .18s ease; } .ds-button-secondary:hover { background: #f2f6ef; border-color: #95ac9a; } .ds-button-secondary:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; } @media (prefers-reduced-motion: reduce) { .ds-button-secondary { transition: none; } }"
+    },
+    {
+      "name": "Labeled Input",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "A compact white field with a clear label and green focus treatment.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Company</span><input class=\"ds-field-input\" placeholder=\"Company name\" /></label>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 7px; color: var(--ink); font-family: \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif; } .ds-field-label { font-size: 13px; font-weight: 700; } .ds-field-input { width: 100%; min-height: 43px; padding: 9px 12px; border: 1px solid var(--line-strong); border-radius: 7px; background: #fff; color: var(--ink); font: 400 16px/1.5 \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif; outline: none; } .ds-field-input::placeholder { color: #798981; } .ds-field-input:focus { border-color: var(--focus); box-shadow: 0 0 0 3px rgba(47, 124, 103, .14); } .ds-field-input:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }"
+    },
+    {
+      "name": "Resume Upload",
+      "kind": "button",
+      "description": "A dashed file selection button distinct from the save action.",
+      "html": "<button class=\"ds-upload\" type=\"button\">Upload a resume</button>",
+      "css": ".ds-upload { display: inline-flex; align-items: center; min-height: 39px; padding: 7px 11px; border: 1px dashed #96ac9f; border-radius: 7px; background: #f6faf5; color: #285c49; font: 700 13px/1.4 \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif; cursor: pointer; } .ds-upload:hover { background: #eaf4e9; } .ds-upload:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }"
+    },
+    {
+      "name": "Top Navigation",
+      "kind": "nav",
+      "refersTo": "navigation-topbar",
+      "description": "The forest identity strip for the private workspace.",
+      "html": "<header class=\"ds-topbar\"><div class=\"ds-brand\"><span class=\"ds-brand-mark\"><i></i><i></i><i></i></span><span>PM Application Tracker</span></div><span class=\"ds-account\">Private workspace</span></header>",
+      "css": ".ds-topbar { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 76px; padding: 0 clamp(22px, 4vw, 68px); background: var(--forest); color: #f8f7ef; font-family: \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif; } .ds-brand { display: inline-flex; align-items: center; gap: 13px; font-size: 17px; font-weight: 690; letter-spacing: -.025em; } .ds-brand-mark { display: grid; grid-template-columns: 7px 7px; grid-template-rows: 7px 7px; gap: 3px; width: 24px; height: 24px; transform: rotate(-8deg); } .ds-brand-mark i { background: #f3ead6; border-radius: 1px; } .ds-brand-mark i:first-child { grid-column: span 2; background: #ea8d5c; } .ds-account { color: #d3e1d9; font-size: 13px; } @media (max-width: 650px) { .ds-topbar { min-height: 67px; } .ds-brand { font-size: 14px; } .ds-account { display: none; } }"
+    },
+    {
+      "name": "Statistic Band",
+      "kind": "card",
+      "description": "Ruled paper cells give application totals a stable reading rhythm.",
+      "html": "<div class=\"ds-stat-band\"><div class=\"ds-stat\"><span>Applications</span><strong>24</strong></div><div class=\"ds-stat\"><span>Average match</span><strong>78%</strong></div></div>",
+      "css": ".ds-stat-band { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); font-family: \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif; } .ds-stat { display: flex; flex-direction: column; gap: 7px; min-width: 0; padding: 23px 25px 22px; } .ds-stat + .ds-stat { border-left: 1px solid var(--line); } .ds-stat span { color: var(--ink-soft); font-size: 13px; font-weight: 650; } .ds-stat strong { color: var(--ink); font-size: 30px; font-weight: 660; letter-spacing: -.04em; line-height: 1.1; font-variant-numeric: tabular-nums; } @media (max-width: 420px) { .ds-stat { padding: 18px; } }"
+    },
+    {
+      "name": "Application Record",
+      "kind": "custom",
+      "description": "A ruled list record that becomes a labeled two-column card on mobile.",
+      "html": "<div class=\"ds-record\"><div class=\"ds-record-role\"><strong>Senior Product Manager</strong><span>Example Company</span><a href=\"#\">View listing</a></div><div class=\"ds-record-detail\"><small>Applied</small>Sep 28, 2026</div><div class=\"ds-record-detail\"><small>Resume</small>PM resume.pdf</div></div>",
+      "css": ".ds-record { display: grid; grid-template-columns: 2fr 1fr 1.3fr; align-items: center; gap: 18px; padding: 18px; border-bottom: 1px solid var(--line); background: var(--paper); color: var(--ink-soft); font: 400 13px/1.5 \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif; } .ds-record:hover { background: #fafbf7; } .ds-record-role strong, .ds-record-role span, .ds-record-role a { display: block; } .ds-record-role strong { color: var(--ink); font-size: 14px; font-weight: 750; } .ds-record-role a { margin-top: 7px; color: #a1492d; font-size: 12px; font-weight: 700; text-decoration: none; } .ds-record-role a:hover { text-decoration: underline; } .ds-record-role a:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; } .ds-record-detail small { display: none; } @media (max-width: 850px) { .ds-record { grid-template-columns: 1fr 1fr; gap: 12px 20px; padding: 18px 20px; } .ds-record-role { grid-column: 1 / -1; } .ds-record-detail small { display: block; margin-bottom: 4px; color: var(--ink-faint); font-size: 11px; font-weight: 700; } }"
+    },
+    {
+      "name": "Status Select",
+      "kind": "chip",
+      "description": "A native select with a tint that reflects the current hiring stage.",
+      "html": "<select class=\"ds-status\" aria-label=\"Application status\" data-status=\"Interview scheduled\"><option>Applied</option><option>Heard back</option><option selected>Interview scheduled</option><option>Rejected</option></select>",
+      "css": ".ds-status { width: 172px; height: 33px; padding: 0 25px 0 10px; border: 1px solid transparent; border-radius: 6px; outline: 0; font: 720 12px/1.3 \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif; } .ds-status[data-status=\"Applied\"] { color: #4f6057; background: #edf2ed; } .ds-status[data-status=\"Heard back\"] { color: #855d1e; background: #fcf0d8; } .ds-status[data-status=\"Interview scheduled\"] { color: #1f674d; background: #e0f3e7; } .ds-status[data-status=\"Rejected\"] { color: #9a4a3c; background: #fae9e5; } .ds-status:focus { box-shadow: 0 0 0 3px rgba(47, 124, 103, .18); } .ds-status:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; } @media (max-width: 850px) { .ds-status { height: 44px; } } @media (max-width: 420px) { .ds-status { width: 100%; } }"
+    },
+    {
+      "name": "Match Score",
+      "kind": "custom",
+      "description": "A numeric percentage plus a short track keeps match strength readable without relying on color.",
+      "html": "<span class=\"ds-match\"><strong>86%</strong><span class=\"ds-match-track\"><span style=\"width:86%\"></span></span></span>",
+      "css": ".ds-match { display: inline-flex; align-items: center; gap: 10px; font-family: \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif; font-variant-numeric: tabular-nums; } .ds-match strong { min-width: 35px; color: var(--ink); font-size: 13px; font-weight: 750; } .ds-match-track { display: block; width: 48px; height: 5px; overflow: hidden; border-radius: 6px; background: #e2e9e1; } .ds-match-track span { display: block; height: 100%; border-radius: inherit; background: #2d8864; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Search Ledger",
+    "overview": "The app should feel like a dependable working ledger for a busy job search. Warm paper and fine green rules keep rows readable, while a dark forest header gives the workspace a clear identity. The terracotta action color points to the next useful step without competing with application data.\n\nThe interface is compact enough for several entries a day. One expressive serif heading gives the page character; controls, statistics, and row details use a direct sans-serif voice. The form opens within the same workspace so the list remains a useful reference while editing.",
+    "keyCharacteristics": [
+      "Warm paper surfaces on a muted canvas.",
+      "Strong hierarchy through typography and spacing, with light borders between data.",
+      "Compact native controls with visible focus treatment.",
+      "A table on wide screens that becomes readable record cards on narrow screens."
+    ],
+    "rules": [
+      {
+        "name": "The One Accent Rule",
+        "body": "Reserve terracotta for the primary action and deliberate links. Use greens for identity, focus, and positive progress.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Serif Rule",
+        "body": "Keep expressive serif type on the main page or sign-in heading; application data stays sans-serif.",
+        "section": "typography"
+      },
+      {
+        "name": "The Active Editor Rule",
+        "body": "Apply the ambient shadow to the open editor only; resting data surfaces remain flat.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep the page title expressive and the application data compact.",
+      "Do keep controls legible and preserve 44px targets for mobile row actions and status changes.",
+      "Do pair match-track color with a numeric percentage, and pair status tint with readable text.",
+      "Do show visible keyboard focus and respect reduced-motion preferences."
+    ],
+    "donts": [
+      "Don't add shadows to every row or metric; the editor is the elevated surface.",
+      "Don't rely on color alone to communicate match strength or status.",
+      "Don't compress application records into an unreadable mobile table; use labeled record cards."
+    ]
+  }
+}
