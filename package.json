@@ -19,7 +19,7 @@
     "desktop:build": "node scripts/build-desktop.mjs",
     "desktop:dev": "npm run desktop:build && electron .",
     "desktop:package:win:x64": "npm run desktop:build && electron-builder --win nsis --x64 --publish never -c electron-builder.local.cjs",
-    "desktop:package:win:arm64": "npm run desktop:build && electron-builder --win nsis --arm64 --publish never -c electron-builder.local.cjs",
+    "desktop:package:win:arm64": "npm run desktop:build && node scripts/download-electron-arm64.mjs && electron-builder --win nsis --arm64 --publish never -c electron-builder.arm64.cjs",
     "desktop:package:mac:arm64": "npm run desktop:build && electron-builder --mac dmg --arm64 --publish never"
   },
   "dependencies": {
@@ -56,6 +56,8 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
     "@cloudflare/workers-types": "4.20260515.1",
+    "@electron-internal/extract-zip": "^1.0.5",
+    "@electron/get": "^5.1.0",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/pg": "^8.23.1",

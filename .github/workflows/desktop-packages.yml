@@ -29,19 +29,8 @@ jobs:
           name: pm-application-tracker-windows-x64
           path: desktop-packages/*-win-x64.exe
           if-no-files-found: error
-
-  windows-arm64:
-    runs-on: windows-11-arm
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: node node_modules/electron/install.js
-      - run: npm run desktop:build
-      - run: npx electron-builder --win nsis --arm64 --publish never -c electron-builder.local.cjs
+      - run: node scripts/download-electron-arm64.mjs
+      - run: npx electron-builder --win nsis --arm64 --publish never -c electron-builder.arm64.cjs
       - uses: actions/upload-artifact@v4
         with:
           name: pm-application-tracker-windows-arm64

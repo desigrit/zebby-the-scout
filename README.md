@@ -40,4 +40,4 @@ When adding an application, paste the public HTTPS job listing link first. The a
 
 Use Node.js 22.13 or newer. Run `npm ci`, then `node node_modules/electron/install.js` to download the local Electron runtime. Run `npm run desktop:dev` to launch the desktop app. Run `npm test`, `npx tsc --noEmit`, and `npm run lint` to check changes.
 
-The package commands are `npm run desktop:package:win:x64`, `npm run desktop:package:win:arm64`, and `npm run desktop:package:mac:arm64`. Windows packages are built on Windows; the macOS package is built on Apple Silicon. The GitHub Actions workflow runs all three builds and uploads the installers as artifacts. The earlier Azure web implementation remains in the repository but is not needed for the desktop app.
+The package commands are `npm run desktop:package:win:x64`, `npm run desktop:package:win:arm64`, and `npm run desktop:package:mac:arm64`. Both Windows packages are built on Windows x64; the macOS package is built on Apple Silicon. The GitHub Actions workflow runs all three builds and uploads the installers as artifacts. The earlier Azure web implementation remains in the repository but is not needed for the desktop app.
