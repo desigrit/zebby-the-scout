@@ -29,6 +29,12 @@ function inside(root, target) {
   if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Unsafe runtime build path.");
 }
 
+async function includeModelNotices(folder) {
+  await copyFile("build/local-model-notices.txt", path.join(folder, "MODEL-NOTICES.txt"));
+  await copyFile("build/LICENSE-Apache-2.0.txt", path.join(folder, "LICENSE-Apache-2.0.txt"));
+  await cp("build/model-licenses", path.join(folder, "model-licenses"), { recursive: true });
+}
+
 export async function prepareRuntime(platform, arch) {
   const key = `${platform === "darwin" ? "mac" : platform === "win32" ? "win" : platform}-${arch}`;
   const asset = assets[key];
@@ -38,7 +44,9 @@ export async function prepareRuntime(platform, arch) {
   await mkdir(root, { recursive: true });
   const manifest = await readFile(path.join(destination, "runtime.json"), "utf8").then(JSON.parse).catch(() => null);
   if (manifest?.release === release && manifest.archiveSha256 === asset.sha256 &&
-    await lstat(path.join(destination, manifest.executable)).catch(() => null)) return;
+    await lstat(path.join(destination, manifest.executable)).catch(() => null)) {
+    await includeModelNotices(destination); return;
+  }
   console.log(`Preparing CPU analysis engine for ${key} (${release}).`);
   const response = await fetch(`https://github.com/ggml-org/llama.cpp/releases/download/${release}/${asset.filename}`,
     { signal: AbortSignal.timeout(180_000) });
@@ -84,8 +92,7 @@ export async function prepareRuntime(platform, arch) {
     const licenseResponse = await fetch(`https://raw.githubusercontent.com/ggml-org/llama.cpp/${release}/LICENSE`, { signal: AbortSignal.timeout(30_000) });
     if (!licenseResponse.ok) throw new Error("Could not include the runtime license.");
     await writeFile(path.join(ready, "LICENSE-llama.cpp.txt"), await licenseResponse.text());
-    await copyFile("build/local-model-notices.txt", path.join(ready, "MODEL-NOTICES.txt"));
-    await copyFile("build/LICENSE-Apache-2.0.txt", path.join(ready, "LICENSE-Apache-2.0.txt"));
+    await includeModelNotices(ready);
     await writeFile(path.join(ready, "runtime.json"), JSON.stringify({ release, archiveSha256: asset.sha256,
       executable: relativeExecutable }, null, 2));
     inside(root, destination);

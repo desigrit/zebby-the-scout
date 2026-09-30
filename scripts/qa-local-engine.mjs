@@ -16,22 +16,32 @@ const output = path.resolve("work/local-engine-qa");
 await mkdir(output, { recursive: true });
 const packaged = process.argv.includes("--packaged");
 if (!packaged) await prepareRuntime(process.platform, process.arch);
+const platformFolder = `${process.platform === "darwin" ? "mac" : "win"}-${process.arch}`;
+const resources = process.platform === "darwin"
+  ? path.resolve("desktop-packages/mac-arm64/PM Application Tracker.app/Contents/Resources")
+  : path.resolve(`desktop-packages/${process.arch === "arm64" ? "win-arm64-unpacked" : "win-unpacked"}/resources`);
 let lastStatus = "";
-const downloads = new LocalModelDownloads(path.join(output, "Models"), { onChange: () => {
+const downloads = new LocalModelDownloads(path.join(output, "Models"), {
+  licensesFolder: packaged ? path.join(resources, "local-runtime/model-licenses") : path.resolve("build/model-licenses"), onChange: () => {
   const status = downloads.status(id).status;
   if (status !== lastStatus) { lastStatus = status; console.log(`${model.name}: ${status}`); }
 } });
 await downloads.initialize();
 await downloads.start(id); await downloads.waitForDownload();
 assert.equal(downloads.status(id).status, "ready", downloads.status(id).error);
-const platformFolder = `${process.platform === "darwin" ? "mac" : "win"}-${process.arch}`;
-const resources = process.platform === "darwin"
-  ? path.resolve("desktop-packages/mac-arm64/PM Application Tracker.app/Contents/Resources")
-  : path.resolve(`desktop-packages/${process.arch === "arm64" ? "win-arm64-unpacked" : "win-unpacked"}/resources`);
 const engine = new LocalModelEngine({ downloads,
   runtimeFolder: packaged ? path.join(resources, "local-runtime") : path.resolve("build/llama", platformFolder),
   workerPath: packaged ? path.join(resources, "app.asar/desktop-dist/local-runtime-worker.cjs")
-    : path.resolve("desktop-dist/local-runtime-worker.cjs") });
+    : path.resolve("desktop-dist/local-runtime-worker.cjs"),
+  fetcher: async (url, options) => {
+    const response = await fetch(url, options);
+    if (String(url).endsWith("/v1/chat/completions")) {
+      const result = await response.clone().json();
+      // Synthetic QA data only, retained for diagnosing generation failures.
+      await writeFile(path.join(output, `${id}-response.json`), JSON.stringify(result, null, 2));
+    }
+    return response;
+  } });
 const jobDescription = "We are hiring a product manager to lead product strategy and customer discovery. Responsibilities: own the roadmap and prioritization, use analytics and SQL to evaluate product metrics, plan experimentation and A/B testing, communicate technical requirements, and align stakeholders through cross-functional collaboration. Qualifications: product delivery, user research, stakeholder management, agile execution and customer experience. Experience with developer tools is preferred.";
 const resumeText = "Alex Example\nProduct Manager\nI lead product strategy and customer discovery to build developer tools. I own a roadmap, use analytics and SQL for product metrics, and use experimentation for prioritization. I work with engineering and design in cross-functional collaboration and stakeholder management. I have delivered agile releases, conducted user research, and improved customer experience. My experience is strongest in product delivery and discovery; I have not managed a people team.";
 const currentCvOverview = "I lead product strategy and customer discovery to build useful developer tools. I work with engineering and design to prioritize a roadmap and measure customer outcomes.";
@@ -39,8 +49,10 @@ const input = { jobDescription, resumeText, currentCvOverview };
 const started = Date.now();
 try {
   const generate = (...args) => engine.analyze(id, ...args);
+  console.log(`${model.name}: running Plan`);
   const plan = model.basic ? await analyzeBasicLocal(input, true, generate)
     : await generate(planInstructions, input, planSchema);
+  console.log(`${model.name}: running match`);
   const match = model.basic ? await analyzeBasicLocal(input, false, generate)
     : await generate(matchInstructions, { jobDescription, resumeText }, matchSchema);
   assert.ok(plan.keywords.length >= 6 && plan.keywords.length <= 20);

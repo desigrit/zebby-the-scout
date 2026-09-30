@@ -33,7 +33,7 @@ The user keeps job listing links and uses different resume versions. They need t
 - Initial statuses follow the requested stages: Applied, Heard back, Interview scheduled, and Rejected.
 - Provide Plan and Applications tabs. Plan keeps multiple job briefs, editable ATS keywords, resume themes, and ideal candidate CV overviews.
 - Analyze a saved job brief through the selected OpenAI, Ollama, or downloadable built-in CPU model. Provider settings and model downloads are local to each computer.
-- Download a local model only when selected. SmolLM2 provides basic keyword coverage and short overview suggestions; the Qwen options use the full analysis prompts. OpenAI and installed Ollama models retain their full provider path, with no automatic fallback.
+- Download a local model only when selected. SmolLM2 provides basic keyword coverage and short overview suggestions; LFM2.5, Gemma 3, and Qwen use the full analysis prompts. LFM2.5 and Gemma require agreement to their model terms before download or use, saved on each computer. OpenAI and installed Ollama models retain their full provider path, with no automatic fallback.
 - Show download progress, pause, resume, retry, and per-model Delete with native confirmation. Keep models through updates. Windows uninstall removes model downloads; Mac users delete them in Settings before removing the app.
 - Store captured application listing text in editable Notes for offline reference, retaining the original archive fields and taking a full backup before migration.
 - Store uploaded resumes as SQLite BLOBs in the same chosen database file as applications and plans.

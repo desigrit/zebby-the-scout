@@ -17,6 +17,7 @@ export default function LocalModelsSettings({ state, onState }: { state: Desktop
   const [error, setError] = useState("");
   const selected = LOCAL_MODELS.find((model) => model.id === state.builtInModelId);
   const statuses = state.localModels || [];
+  const needsConsent = Boolean(selected?.license && !state.acceptedModelTerms?.includes(selected.id));
   const current = selected ? statuses.find((item) => item.id === selected.id) || {
     id: selected.id, status: "not-installed" as const, downloadedBytes: 0, error: "",
   } : null;
@@ -33,7 +34,10 @@ export default function LocalModelsSettings({ state, onState }: { state: Desktop
   function controls(model: LocalModel, status: LocalModelStatus) {
     const running = status.status === "downloading" || status.status === "verifying";
     return <div className="local-model-actions">
-      {running ? <button type="button" className="button button-secondary" disabled={working}
+      {needsConsent && model.license ? <button type="button" className="button button-primary model-agreement" disabled={working}
+        onClick={() => void run(() => window.desktop!.resumeModelDownload(model.id, model.license!.version))}>
+        <Download size={15} aria-hidden="true" /> {status.status === "ready" ? "Agree and use" : "Agree and download"}</button>
+      : running ? <button type="button" className="button button-secondary" disabled={working}
         onClick={() => void run(() => window.desktop!.pauseModelDownload())}>
         <Pause size={15} aria-hidden="true" /> Pause</button>
       : status.status !== "ready" && <button type="button" className="button button-secondary" disabled={working}
@@ -59,14 +63,21 @@ export default function LocalModelsSettings({ state, onState }: { state: Desktop
         </option>)}
       </select>
     </label>
-    <p id="local-download-help" className="settings-help">Selecting a model starts its download. Installed models are reused. Analysis runs on this computer&apos;s CPU, with no account or server setup.</p>
+    <p id="local-download-help" className="settings-help">Selecting a model starts its download. LFM2.5 and Gemma ask you to accept their terms first. Installed models are reused. Analysis runs on this computer&apos;s CPU.</p>
     {selected && current && <div className="selected-model-detail">
       <p className="model-description">{selected.description}</p>
       <p className="model-memory">Recommended: {selected.memoryHint}. Model download: {formatModelBytes(selected.bytes)}.</p>
+      {selected.license && <div className="model-license">
+        <p className="settings-help">{selected.license.summary}{" "}
+          <a href={selected.license.url} target="_blank" rel="noreferrer">Model terms</a>
+          {selected.license.policyUrl && <> · <a href={selected.license.policyUrl} target="_blank" rel="noreferrer">Use restrictions</a></>}
+        </p>
+        {needsConsent && <p className="settings-help">Choosing {current.status === "ready" ? "Agree and use" : "Agree and download"} accepts the model terms and any linked use restrictions.</p>}
+      </div>}
       <div className="model-download-status">
         <span className={current.status === "ready" ? "model-ready" : ""} role="status">
           {current.status === "ready" && <Check size={16} aria-hidden="true" />}
-          {downloadState(selected, current)}
+          {needsConsent ? "Review model terms to continue" : downloadState(selected, current)}
         </span>
         {current.status !== "not-installed" && current.status !== "ready" &&
           <span className="model-download-bytes">{formatModelBytes(current.downloadedBytes)} / {formatModelBytes(selected.bytes)}</span>}

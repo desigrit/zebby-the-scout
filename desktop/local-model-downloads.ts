@@ -19,6 +19,7 @@ type DownloadOptions = {
   models?: readonly LocalModel[];
   availableDiskBytes?: (folder: string) => Promise<number>;
   onChange?: () => void;
+  licensesFolder?: string;
 };
 
 export class LocalModelDownloads {
@@ -30,6 +31,7 @@ export class LocalModelDownloads {
   private availableDiskBytes: (folder: string) => Promise<number>;
   private onChange: () => void;
   private operations = Promise.resolve();
+  private licensesFolder?: string;
 
   constructor(folder: string, options: DownloadOptions = {}) {
     this.folder = path.resolve(folder);
@@ -40,6 +42,7 @@ export class LocalModelDownloads {
       return disk.bavail * disk.bsize;
     });
     this.onChange = options.onChange || (() => {});
+    this.licensesFolder = options.licensesFolder && path.resolve(options.licensesFolder);
     for (const model of this.models) this.statuses.set(model.id,
       { id: model.id, status: "not-installed", downloadedBytes: 0, error: "" });
   }
@@ -76,6 +79,29 @@ export class LocalModelDownloads {
     await mkdir(this.folder, { recursive: true });
     if ((await lstat(this.folder)).isSymbolicLink()) {
       throw new Error("The model folder is a link. Remove that link before downloading models.");
+    }
+  }
+
+  private legalPaths(id: string) {
+    return (this.model(id).license?.files || []).map((file) => {
+      if (path.basename(file.filename) !== file.filename || path.basename(file.source) !== file.source) {
+        throw new Error("The model license path is invalid.");
+      }
+      return { source: file.source, target: path.join(this.folder, file.filename) };
+    });
+  }
+
+  private async includeLicense(id: string) {
+    const files = this.legalPaths(id);
+    if (!files.length) return;
+    if (!this.licensesFolder) throw new Error("The model terms are missing. Reinstall the latest app version.");
+    await this.ensureFolder();
+    for (const file of files) {
+      if ((await lstat(file.target).catch(() => null))?.isSymbolicLink()) {
+        throw new Error("The model license file is a link. Remove the link before trying again.");
+      }
+      const text = await readFile(path.join(this.licensesFolder, file.source));
+      await writeFile(file.target, text);
     }
   }
 
@@ -204,6 +230,8 @@ export class LocalModelDownloads {
     signal.throwIfAborted();
     const destination = await lstat(filename).catch(() => null);
     if (destination?.isSymbolicLink()) throw new Error("The model file is a link. Remove it before trying again.");
+    await this.includeLicense(model.id);
+    signal.throwIfAborted();
     if (destination) await unlink(filename);
     await rename(partial, filename);
     const complete = await stat(filename);
@@ -224,6 +252,7 @@ export class LocalModelDownloads {
       this.update(id, { status: "error", error: "The model file changed. Remove it and download it again." });
       throw new Error("The model file changed. Remove it in Settings and download it again.");
     }
+    await this.includeLicense(id);
     return filename;
   }
 
@@ -235,7 +264,7 @@ export class LocalModelDownloads {
     await this.ensureFolder();
     const filename = this.filePath(id);
     // Only known model artifacts are removed. Databases and user files are never included.
-    for (const target of [filename, `${filename}.part`, `${filename}.verified.json`]) {
+    for (const target of [filename, `${filename}.part`, `${filename}.verified.json`, ...this.legalPaths(id).map((file) => file.target)]) {
       await unlink(target).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
     }
     this.update(id, { status: "not-installed", downloadedBytes: 0, error: "" });

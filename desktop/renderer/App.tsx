@@ -592,7 +592,8 @@ export default function App() {
     });
     const removeModelsChanged = window.desktop!.onLocalModelsChanged((next) => {
       setState((current) => current ? { ...current, builtInModelId: next.builtInModelId,
-        localModels: next.localModels, modelsFolder: next.modelsFolder, localEngine: next.localEngine,
+        localModels: next.localModels, acceptedModelTerms: next.acceptedModelTerms,
+        modelsFolder: next.modelsFolder, localEngine: next.localEngine,
         totalMemory: next.totalMemory, availableMemory: next.availableMemory } : next);
     });
     return () => { removeChanged(); removeNavigate(); removeModelsChanged(); };
@@ -635,7 +636,9 @@ export default function App() {
       : tab === "plan" ? <PlanView key={databaseVersion} hasApiKey={state.hasApiKey}
         analysisProvider={state.analysisProvider} ollamaModel={state.ollamaModel}
         builtInModelId={state.builtInModelId} builtInReady={Boolean(state.localModels?.some((model) =>
-          model.id === state.builtInModelId && model.status === "ready"))}
+          model.id === state.builtInModelId && model.status === "ready") &&
+          (!LOCAL_MODELS.find((model) => model.id === state.builtInModelId)?.license ||
+            state.acceptedModelTerms?.includes(state.builtInModelId)))}
         onOpenSettings={() => navigate("settings")} onDirtyChange={setDirtyPlan} />
       : tab === "applications" ? <ApplicationDashboard key={databaseVersion} embedded />
       : <SettingsView state={state} onState={setState} />}</div>

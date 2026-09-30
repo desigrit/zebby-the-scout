@@ -11,7 +11,7 @@ contextBridge.exposeInMainWorld("desktop", {
   listOllamaModels: (url: string) => ipcRenderer.invoke("desktop:list-ollama-models", url),
   selectLocalModel: (id: string) => ipcRenderer.invoke("desktop:select-local-model", id),
   pauseModelDownload: () => ipcRenderer.invoke("desktop:pause-model-download"),
-  resumeModelDownload: (id: string) => ipcRenderer.invoke("desktop:resume-model-download", id),
+  resumeModelDownload: (id: string, termsVersion?: string) => ipcRenderer.invoke("desktop:resume-model-download", id, termsVersion),
   deleteLocalModel: (id: string) => ipcRenderer.invoke("desktop:delete-local-model", id),
   openModelFolder: () => ipcRenderer.invoke("desktop:open-model-folder"),
   setAppearance: (value: "auto" | "dark" | "light") => ipcRenderer.invoke("desktop:set-appearance", value),

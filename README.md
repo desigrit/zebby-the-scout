@@ -26,16 +26,20 @@ Choose **OpenAI** in Settings if you want to use GPT-6 Sol. Save an API key on e
 
 ### Downloadable local models
 
-Choose **Built-in local, downloadable models** in the **Provider** dropdown, then choose a **Local model**. Selecting a model starts its download, with progress, Pause, Resume, and Retry controls. A completed download is verified and reused, including after app updates. No account, API key, Ollama installation, or GPU is required. These models run on the computer's CPU. Downloads require an internet connection; analysis works offline once a model is ready.
+Choose **Built-in local, downloadable models** in the **Provider** dropdown, then choose a **Local model**. Selecting a model starts its download, with progress, Pause, Resume, and Retry controls. LFM2.5 and Gemma first show their model terms and an **Agree and download** button. A completed download is verified and reused, including after app updates. No account, API key, Ollama installation, or GPU is required. These models run on the computer's CPU. Downloads require an internet connection; analysis works offline once a model is ready.
 
 | Model | Download | Recommended installed RAM | Analysis |
 | --- | --- | --- | --- |
 | SmolLM2 360M, Q4_K_M | 271 MB | 4 GB or more | Basic keyword coverage, resume themes, and short overview suggestions |
+| LFM2.5 350M, Q4_K_M | 229 MB | 4 GB or more | Full analysis prompts with a small instruction model |
+| Gemma 3 270M Instruct QAT, Q4_0 | 241 MB | 4 GB or more | Full analysis prompts with a small instruction model |
 | Qwen3 0.6B, Q8_0 | 639 MB | 8 GB or more | Full role and resume analysis with a small model |
 | Qwen3 4B, Q4_K_M | 2.50 GB | 16 GB or more | Full role and resume analysis with a medium model |
 | Qwen3 8B, Q4_K_M | 5.03 GB | 24 GB or more | Full role and resume analysis with the largest built-in model |
 
-Only SmolLM2 uses the compact profile: keywords and themes come from listing terms, match strength is the percentage of those terms found in the resume, and the model suggests a light overview edit from short source excerpts. Unsupported wording is discarded, retaining your original overview with an explanation. This score does not assess experience depth. The Qwen options receive the complete role and extracted resume text with the full analysis prompts. Their results depend on model capacity, and larger models can be slow on CPU. If the request exceeds the chosen model's context or available memory, the app reports it instead of silently shortening the text or changing providers.
+Only SmolLM2 uses the compact profile: keywords and themes come from listing terms, match strength is the percentage of those terms found in the resume, and the model suggests a light overview edit from short source excerpts. Unsupported wording is discarded, retaining your original overview with an explanation. This score does not assess experience depth. LFM2.5, Gemma, and Qwen receive the complete role and extracted resume text with the full analysis prompts. Results depend on model capacity. Small models can miss evidence or give inconsistent scores and overview suggestions; larger models can be slow on CPU. If the request exceeds the chosen model's context or available memory, the app reports it instead of silently shortening the text or changing providers.
+
+LFM2.5 uses the [LFM Open License v1.0](https://huggingface.co/LiquidAI/LFM2.5-350M-GGUF/blob/657e078c94084481950a2d555a941481f715536b/LICENSE). Gemma uses the [Gemma Terms of Use](https://ai.google.dev/gemma/terms) and [Prohibited Use Policy](https://ai.google.dev/gemma/prohibited_use_policy). Agreement is saved on each computer and checked against the bundled terms version. Full terms and notices are included with the app and copied next to the downloaded model for offline reference.
 
 OpenAI and Ollama retain their configured model and full analysis path. Choosing a downloadable model does not replace an installed Ollama model such as `qwen3.8:27b`. Providers never fall back to one another automatically.
 
@@ -72,6 +76,8 @@ Use Node.js 22.13 or newer. Run `npm ci`, then `node node_modules/electron/insta
 
 After `npm run desktop:build`, `npm run test:renderer` checks the compiled UI invisibly with synthetic data. It does not launch Electron or open a real database. It uses an installed Edge or Chrome browser, or the executable supplied through `PM_TRACKER_BROWSER`, and writes screenshots to `qa-output`.
 
-For an actual CPU inference check without opening Electron, run `node --experimental-strip-types scripts/qa-local-engine.mjs smollm2-360m` or use `qwen3-06b`. This downloads the selected model into `work/local-engine-qa/Models`, uses synthetic job and resume text, checks the analysis, authenticated engine access, and shutdown, then saves a result under `work`. That folder is excluded from source control. Packaged builds prepare their platform's engine automatically and include its license and model notices.
+For an actual CPU inference check without opening Electron, run `node --experimental-strip-types scripts/qa-local-engine.mjs smollm2-360m`, or use `lfm25-350m`, `gemma3-270m`, or `qwen3-06b`. This downloads the selected model into `work/local-engine-qa/Models`, uses synthetic job and resume text, checks the analysis, authenticated engine access, and shutdown, then saves a result under `work`. That folder is excluded from source control. Packaged builds prepare their platform's engine automatically and include its license and model notices. CI runs both new models from the packaged Windows x64 and Apple Silicon apps.
+
+Gemma uses model-specific sampling and string bounds in the output grammar to reduce repetitive completions. Its complete source input and full instructions are preserved. CI retains synthetic response diagnostics if native generation fails.
 
 The package commands are `npm run desktop:package:win:x64`, `npm run desktop:package:win:arm64`, and `npm run desktop:package:mac:arm64`. Both Windows packages are built on Windows x64; the macOS package is built on Apple Silicon. Tagging a version as `vX.Y.Z` runs all three builds and publishes the `.exe` and `.dmg` files as GitHub Release assets. GitHub Actions keeps internal build artifacts as ZIP files. The earlier Azure web implementation remains in the repository but is not needed for the desktop app.

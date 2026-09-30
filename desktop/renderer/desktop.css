@@ -141,6 +141,9 @@
 .model-download-progress::-webkit-progress-value { background: var(--focus); border-radius: 3px; }
 .model-download-progress::-moz-progress-bar { background: var(--focus); border-radius: 3px; }
 .local-model-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 13px; }
+.model-license a { text-decoration: underline; text-underline-offset: 3px; }
+.model-agreement { background: var(--accent-hover); }
+.model-agreement:not(:disabled):hover { background: var(--accent-hover); filter: brightness(.92); }
 .model-delete:hover:not(:disabled) { border-color: var(--accent-hover); }
 .model-download-error { margin: 10px 0 0; color: #923b28; font-size: 13px; line-height: 1.5; }
 .local-model-library { margin-top: 17px; font-size: 13px; }

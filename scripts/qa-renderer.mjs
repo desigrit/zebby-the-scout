@@ -4,11 +4,12 @@ import { mkdir, readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 import { chromium } from "playwright-core";
+import { LOCAL_MODELS } from "../desktop/local-model-catalog.ts";
 
 // Checks the compiled renderer with synthetic data in an invisible browser.
 // It does not launch Electron, read settings, or open an application database.
 const renderer = path.resolve("desktop-dist/renderer");
-const output = path.resolve("qa-output/renderer-1.1.0");
+const output = path.resolve("qa-output/renderer-1.1.1");
 const executablePath = process.env.PM_TRACKER_BROWSER || [
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
   "C:/Program Files/Google/Chrome/Application/chrome.exe",
@@ -36,7 +37,7 @@ let plan = { id: "plan-1", listingUrl: "https://example.org/jobs/pm", company: "
 const state = { filePath: "example.sqlite", filename: "Applications.sqlite", dirty: false, startupError: "", hasApiKey: false,
   analysisProvider: "ollama", ollamaUrl: "http://localhost:11434", ollamaModel: "qwen3.8:27b", canSaveApiKey: true,
   backupsPath: "", appearance: "light", captureLogs: false, logsPath: "", platform: "win32",
-  builtInModelId: "", localModels: ["smollm2-360m", "qwen3-06b", "qwen3-4b", "qwen3-8b"].map((id) =>
+  builtInModelId: "", acceptedModelTerms: [], localModels: LOCAL_MODELS.map(({ id }) =>
     ({ id, status: "not-installed", downloadedBytes: 0, error: "" })), modelsFolder: "example/Models",
   localEngine: { status: "idle", modelId: "" }, totalMemory: 32e9, availableMemory: 16e9 };
 const pending = new Map();
@@ -70,7 +71,7 @@ try {
     });
     await page.screenshot({ path: path.join(output, filename), fullPage: true });
   }
-  await page.addInitScript((initialState) => {
+  await page.addInitScript(({ initialState, licenseVersions }) => {
     const listeners = new Set();
     const snapshot = () => structuredClone(initialState);
     const update = (id, change) => { initialState.localModels = initialState.localModels.map((item) =>
@@ -84,16 +85,24 @@ try {
       setAnalysisProvider: async (provider) => { initialState.analysisProvider = provider; return snapshot(); },
       setAppearance: async (appearance) => { initialState.appearance = appearance; return snapshot(); },
       selectLocalModel: async (id) => { window.modelQA.selections.push(id); initialState.builtInModelId = id;
-        if (initialState.localModels.find((item) => item.id === id).status !== "ready")
+        if ((!licenseVersions[id] || initialState.acceptedModelTerms.includes(id)) &&
+          initialState.localModels.find((item) => item.id === id).status !== "ready")
           update(id, { status: "downloading", downloadedBytes: 0, error: "" }); return snapshot(); },
       pauseModelDownload: async () => { for (const item of initialState.localModels)
         if (["downloading", "verifying"].includes(item.status)) update(item.id, { status: "paused" }); return snapshot(); },
-      resumeModelDownload: async (id) => { update(id, { status: "downloading", error: "" }); return snapshot(); },
+      resumeModelDownload: async (id, termsVersion) => {
+        if (licenseVersions[id] && !initialState.acceptedModelTerms.includes(id)) {
+          if (termsVersion !== licenseVersions[id]) throw new Error("Review the model terms first.");
+          initialState.acceptedModelTerms.push(id);
+        }
+        if (initialState.localModels.find((item) => item.id === id).status !== "ready")
+          update(id, { status: "downloading", error: "" }); return snapshot(); },
       deleteLocalModel: async (id) => { window.modelQA.deleteRequests.push(id);
         if (window.modelQA.confirmDelete) update(id, { status: "not-installed", downloadedBytes: 0, error: "" }); return snapshot(); },
       openModelFolder: async () => "",
     };
-  }, state);
+  }, { initialState: state, licenseVersions: Object.fromEntries(LOCAL_MODELS.filter((model) => model.license)
+    .map((model) => [model.id, model.license.version])) });
   await page.route("**/api/**", async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     const method = route.request().method();
@@ -201,7 +210,7 @@ try {
   await page.getByRole("combobox", { name: "Model", exact: true }).getByRole("option", { name: "qwen3.8:27b", exact: true }).waitFor({ state: "attached" });
   await provider.selectOption("builtin");
   const localModel = page.getByRole("combobox", { name: "Local model", exact: true });
-  assert.equal(await localModel.getByRole("option").count(), 5);
+  assert.equal(await localModel.getByRole("option").count(), LOCAL_MODELS.length + 1);
   assert.equal(await page.getByRole("button", { name: /Delete SmolLM2/ }).count(), 0);
   await localModel.selectOption("smollm2-360m");
   await page.getByText("Downloading SmolLM2 360M", { exact: true }).waitFor();
@@ -257,6 +266,32 @@ try {
   await page.getByRole("radio", { name: "Dark", exact: true }).check();
   await captureSettings("settings-mac-compact-dark.png");
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  // The newly added models require explicit agreement before download.
+  for (const id of ["lfm25-350m", "gemma3-270m"]) {
+    await page.evaluate((platform) => window.modelQA.setPlatform(platform), id === "lfm25-350m" ? "win32" : "darwin");
+    await page.setViewportSize(id === "lfm25-350m" ? { width: 1440, height: 960 } : { width: 790, height: 850 });
+    await page.getByRole("radio", { name: id === "lfm25-350m" ? "Light" : "Dark", exact: true }).check();
+    await localModel.selectOption(id);
+    await page.getByText("Review model terms to continue", { exact: true }).waitFor();
+    assert.equal(await page.getByRole("progressbar").count(), 0);
+    assert.equal(await page.getByRole("link", { name: "Model terms", exact: true }).getAttribute("target"), "_blank");
+    if (id === "gemma3-270m") {
+      assert.equal(await page.getByRole("link", { name: "Use restrictions", exact: true }).getAttribute("href"),
+        "https://ai.google.dev/gemma/prohibited_use_policy");
+    }
+    await captureSettings(`settings-${id}-terms.png`);
+    await page.getByRole("button", { name: "Agree and download", exact: true }).click();
+    await page.getByText(`Downloading ${LOCAL_MODELS.find((model) => model.id === id).name}`, { exact: true }).waitFor();
+    await page.evaluate(({ id, bytes }) => window.modelQA.update(id, { status: "ready", downloadedBytes: bytes }),
+      { id, bytes: LOCAL_MODELS.find((model) => model.id === id).bytes });
+    await page.getByText("Ready for offline analysis", { exact: true }).waitFor();
+    assert.equal(await page.getByRole("button", { name: "Agree and download", exact: true }).count(), 0);
+    await nav.getByRole("button", { name: "Plan", exact: true }).click();
+    await page.getByText(`Analysis runs on this computer with ${LOCAL_MODELS.find((model) => model.id === id).name}.`, { exact: false }).waitFor();
+    assert.equal(await page.getByText("Compact mode uses basic keyword coverage and limited overview suggestions.").count(), 0);
+    await nav.getByRole("button", { name: "Settings", exact: true }).click();
+    await captureSettings(`settings-${id}-ready.png`);
+  }
   assert.deepEqual(errors, []);
   console.log(`Headless renderer checks passed. No desktop app was launched. Screenshots: ${output}`);
 } finally {
