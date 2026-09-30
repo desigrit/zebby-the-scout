@@ -14,7 +14,7 @@ These are unsigned personal builds. Windows SmartScreen or macOS Gatekeeper may 
 
 On first launch, the app creates a local SQLite database automatically, so you can use Plan and Applications immediately. If you want the same data on both computers, use **Create database copy** in Settings and save it in a cloud synced folder. On the second computer, use **Open database** to select that file. Quit the app on one computer, wait for its cloud drive to finish syncing, then open the app on the other computer. Keep only one computer editing the file at a time.
 
-Install version 0.1.5 or newer on both computers before opening a shared database that has been upgraded by this release. Older versions cannot open the upgraded file.
+Install version 0.1.6 or newer on both computers before opening a shared database that has been upgraded by this release. Older versions cannot open the upgraded file.
 
 The app keeps a local working copy and writes complete snapshots back to the selected file after changes. It detects if that cloud file changed outside the app before it saves. A backup copy is kept in the local backups folder at least once a week.
 
@@ -28,7 +28,7 @@ Choose **OpenAI** in Settings if you want to use GPT-6 Sol. Save an API key on e
 
 Paste a public HTTPS job listing link. The app automatically tries to fill available details and capture a readable text copy of the posting. **Read listing** retries when needed. If a site blocks automatic reading, paste the description yourself. Save a separate plan for each posting. A separate **Saved listing copy** keeps the original text in the SQLite file for offline reference, even after you edit the working description. The automatic copy can include up to 80,000 characters of readable page text. It does not save the page's images, scripts, or full HTML.
 
-Paste your **Current CV Overview** and choose a saved resume or upload the one you plan to use for this role. Both are saved with the plan in the SQLite file. Choose an analysis provider in Settings, then select **Analyze**. The app saves 6 to 20 ATS keywords, 5 or 6 resume themes, a 0 to 100 percent match estimate based on that resume, and a role-specific CV overview rewritten from your pasted text. The rewrite aims to keep your writing style and use only experience supported by your CV and resume. The keywords, themes, and rewritten overview are editable. Check the result before using it. If you change the job details, current overview, or selected resume, the previous match score is cleared until you analyze again.
+Paste your **Current CV Overview** and choose a saved resume or upload the one you plan to use for this role. Both are saved with the plan in the SQLite file. Choose an analysis provider in Settings, then select **Analyze**. The app saves 6 to 20 ATS keywords, 5 or 6 resume themes, a 0 to 100 percent match estimate based on that resume, and a role-specific CV overview rewritten from your pasted text. The rewrite aims to keep your writing style and use only experience supported by your CV and resume. A short explanation below the generated overview says why it stayed the same or what changed. The keywords, themes, and rewritten overview are editable. Check the result before using it. If you change the job details, current overview, or selected resume, the previous match score and overview explanation are cleared until you analyze again. Existing plans need one new analysis to get an explanation.
 
 ## What it records
 

@@ -74,6 +74,9 @@
 .cv-section .plan-upload { margin-top: 2px; }
 .keywords-area, .themes-area { min-height: 194px; }
 .overview-area { min-height: 125px; }
+.overview-rationale { margin-top: -5px; padding: 12px 0 2px; border-top: 1px solid var(--line); }
+.overview-rationale strong { display: block; color: var(--ink); font-size: 12px; line-height: 1.35; }
+.overview-rationale p { max-width: 72ch; margin: 5px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
 .analysis-section { border-bottom: 0; }
 .analysis-button { white-space: nowrap; flex: none; }
 .analysis-hint { display: flex; align-items: center; gap: 7px; margin: -4px 0 22px; color: #865b2f; background: #fff4e8; padding: 10px 12px; border-radius: 7px; font-size: 12px; }

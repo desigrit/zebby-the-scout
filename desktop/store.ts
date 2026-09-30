@@ -23,13 +23,14 @@ export type Plan = {
   keywords: string[];
   themes: string[];
   overview: string;
+  overviewRationale: string;
   matchStrength: number | null;
   matchAnalyzedAt: string;
   createdAt: string;
   updatedAt: string;
 };
 
-export type PlanInput = Omit<Plan, "id" | "createdAt" | "updatedAt" | "snapshotCapturedAt" | "snapshotText" | "snapshotSource" | "matchStrength" | "matchAnalyzedAt"> & {
+export type PlanInput = Omit<Plan, "id" | "createdAt" | "updatedAt" | "snapshotCapturedAt" | "snapshotText" | "snapshotSource" | "overviewRationale" | "matchStrength" | "matchAnalyzedAt"> & {
   snapshotText?: string;
   snapshotSource?: Plan["snapshotSource"];
 };
@@ -109,6 +110,7 @@ function mapPlan(row: Row): Plan {
     keywords: JSON.parse(String(row.keywords_json || "[]")) as string[],
     themes: JSON.parse(String(row.themes_json || "[]")) as string[],
     overview: String(row.overview || ""),
+    overviewRationale: String(row.overview_rationale || ""),
     matchStrength: row.match_strength === null || row.match_strength === undefined ? null : Number(row.match_strength),
     matchAnalyzedAt: String(row.match_analyzed_at || ""),
     createdAt: String(row.created_at), updatedAt: String(row.updated_at),
@@ -143,19 +145,20 @@ function createSchema(db: DatabaseSync) {
       snapshot_source TEXT NOT NULL DEFAULT '',
       current_overview TEXT NOT NULL DEFAULT '', resume_id TEXT REFERENCES resumes(id),
       keywords_json TEXT NOT NULL DEFAULT '[]', themes_json TEXT NOT NULL DEFAULT '[]',
-      overview TEXT NOT NULL DEFAULT '', match_strength INTEGER CHECK (match_strength BETWEEN 0 AND 100),
+      overview TEXT NOT NULL DEFAULT '', overview_rationale TEXT NOT NULL DEFAULT '',
+      match_strength INTEGER CHECK (match_strength BETWEEN 0 AND 100),
       match_analyzed_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );
     CREATE INDEX applications_date_idx ON applications(applied_date DESC, created_at DESC);
     CREATE INDEX plans_updated_idx ON plans(updated_at DESC);
-    PRAGMA user_version = 5;
+    PRAGMA user_version = 6;
   `);
 }
 
 function migrate(db: DatabaseSync): boolean {
   const version = Number((db.prepare("PRAGMA user_version").get() as Row).user_version);
-  if (version === 5) return false;
-  if (version !== 1 && version !== 2 && version !== 3 && version !== 4) throw new Error("This is not a supported PM Application Tracker database.");
+  if (version === 6) return false;
+  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5) throw new Error("This is not a supported PM Application Tracker database.");
   if (version === 1) db.exec(`
     CREATE TABLE plans (
       id TEXT PRIMARY KEY, listing_url TEXT NOT NULL, company TEXT NOT NULL DEFAULT '',
@@ -206,13 +209,19 @@ function migrate(db: DatabaseSync): boolean {
     PRAGMA user_version = 4;
     COMMIT;
   `);
-  db.exec(`
+  if (version <= 4) db.exec(`
     BEGIN IMMEDIATE;
     ALTER TABLE plans ADD COLUMN current_overview TEXT NOT NULL DEFAULT '';
     ALTER TABLE plans ADD COLUMN resume_id TEXT REFERENCES resumes(id);
     ALTER TABLE plans ADD COLUMN match_strength INTEGER CHECK (match_strength BETWEEN 0 AND 100);
     ALTER TABLE plans ADD COLUMN match_analyzed_at TEXT NOT NULL DEFAULT '';
     PRAGMA user_version = 5;
+    COMMIT;
+  `);
+  db.exec(`
+    BEGIN IMMEDIATE;
+    ALTER TABLE plans ADD COLUMN overview_rationale TEXT NOT NULL DEFAULT '';
+    PRAGMA user_version = 6;
     COMMIT;
   `);
   return true;
@@ -222,7 +231,7 @@ function validate(db: DatabaseSync) {
   const check = (db.prepare("PRAGMA quick_check").get() as Row).quick_check;
   if (check !== "ok") throw new Error("The selected database failed its integrity check.");
   const version = Number((db.prepare("PRAGMA user_version").get() as Row).user_version);
-  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5) throw new Error("This is not a supported PM Application Tracker database.");
+  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6) throw new Error("This is not a supported PM Application Tracker database.");
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Row[];
   const names = new Set(tables.map((row) => String(row.name)));
   if (!names.has("applications") || !names.has("resumes")) {
@@ -505,12 +514,14 @@ export class DesktopStore {
           String(previous.description) === item.description &&
           String(previous.current_overview || "") === item.currentOverview &&
           String(previous.resume_id || "") === item.resumeId;
+        const keepRationale = sameSource && String(previous.overview || "") === item.overview;
         const result = db.prepare(`UPDATE plans SET listing_url = ?, company = ?, title = ?, team = ?,
           locations = ?, description = ?, current_overview = ?, resume_id = ?,
-          keywords_json = ?, themes_json = ?, overview = ?,
+          keywords_json = ?, themes_json = ?, overview = ?, overview_rationale = ?,
           snapshot_text = ?, snapshot_captured_at = ?, snapshot_source = ?,
           match_strength = ?, match_analyzed_at = ?, updated_at = ? WHERE id = ?`)
-          .run(...fields, ...snapshot, sameSource && previous.match_strength !== null
+          .run(...fields, keepRationale ? String(previous.overview_rationale || "") : "",
+            ...snapshot, sameSource && previous.match_strength !== null
             ? Number(previous.match_strength) : null,
             sameSource ? String(previous.match_analyzed_at || "") : "", now, id);
         if (!result.changes) throw new Error("Plan not found.");
@@ -526,14 +537,15 @@ export class DesktopStore {
   }
 
   async savePlanAnalysis(id: string, expectedUpdatedAt: string, keywords: string[],
-    themes: string[], overview: string, matchStrength: number): Promise<Plan> {
+    themes: string[], overview: string, overviewRationale: string, matchStrength: number): Promise<Plan> {
     if (!Number.isInteger(matchStrength) || matchStrength < 0 || matchStrength > 100) {
       throw new Error("The match score must be between 0 and 100.");
     }
+    if (!overviewRationale.trim()) throw new Error("The overview explanation was incomplete. Try again.");
     await this.mutate((db) => {
-      const result = db.prepare(`UPDATE plans SET keywords_json = ?, themes_json = ?, overview = ?,
+      const result = db.prepare(`UPDATE plans SET keywords_json = ?, themes_json = ?, overview = ?, overview_rationale = ?,
         match_strength = ?, match_analyzed_at = ?, updated_at = ? WHERE id = ? AND updated_at = ?`)
-        .run(JSON.stringify(keywords), JSON.stringify(themes), overview, matchStrength,
+        .run(JSON.stringify(keywords), JSON.stringify(themes), overview, overviewRationale.trim().slice(0, 2000), matchStrength,
           new Date().toISOString(), new Date().toISOString(), id, expectedUpdatedAt);
       if (!result.changes) throw new Error("This plan changed while analysis ran. Run it again from the latest version.");
     });
