@@ -27,10 +27,19 @@ test("desktop SQLite file stores applications, resumes, and plans across reopen"
     const plan = await store.savePlan({ listingUrl: "https://example.org/jobs/2",
       company: "Example Co", title: "Senior PM", team: "", locations: "",
       description: "A detailed job description", snapshotText: "Original plan posting from the page.",
-      snapshotSource: "page", keywords: ["strategy", "discovery"],
+      snapshotSource: "page", currentOverview: "I turn customer insights into product direction.",
+      resumeId: resume.id, keywords: ["strategy", "discovery"],
       themes: ["Lead product strategy"], overview: "Ideal candidate overview." });
     assert.equal(store.listApplications()[0].id, application.id);
     assert.equal(store.listPlans()[0].id, plan.id);
+    assert.equal(store.listPlans()[0].resumeId, resume.id);
+    assert.equal(store.listPlans()[0].currentOverview, "I turn customer insights into product direction.");
+    const analyzedPlan = await store.savePlanAnalysis(plan.id, plan.updatedAt,
+      ["Customer research", "Product strategy"], ["Lead customer discovery"],
+      "I use customer research to guide product strategy.", 84);
+    assert.equal(analyzedPlan.matchStrength, 84);
+    const preservedPlan = await store.savePlan({ ...analyzedPlan, overview: "Edited overview." }, plan.id);
+    assert.equal(preservedPlan.matchStrength, 84);
     assert.deepEqual([...store.getResume(resume.id).data], [37, 80, 68, 70]);
     const draft = await store.saveApplication({ company: "", title: "", team: "", locations: "",
       listingUrl: "", jobDescription: "", appliedDate: "", matchStrength: null,
@@ -47,9 +56,10 @@ test("desktop SQLite file stores applications, resumes, and plans across reopen"
     assert.equal(edited.matchNotes, "");
     assert.equal(edited.snapshotText, "Original job posting from the page.");
     assert.equal(edited.snapshotSource, "page");
-    const editedPlan = await store.savePlan({ ...plan, description: "A tailored analysis description" }, plan.id);
+    const editedPlan = await store.savePlan({ ...preservedPlan, description: "A tailored analysis description" }, plan.id);
     assert.equal(editedPlan.snapshotText, "Original plan posting from the page.");
     assert.equal(editedPlan.description, "A tailored analysis description");
+    assert.equal(editedPlan.matchStrength, null);
     assert.equal(store.status.dirty, false);
     assert.ok((await readdir(store.backupsPath)).some((name) => name.endsWith(".sqlite")));
     store.close();
@@ -58,7 +68,8 @@ test("desktop SQLite file stores applications, resumes, and plans across reopen"
     await store.open(file);
     assert.equal(store.listApplications()[0].resumeName, "PM Resume.pdf");
     assert.equal(store.listApplications().length, 2);
-    assert.equal(store.listPlans()[0].keywords[0], "strategy");
+    assert.equal(store.listPlans()[0].keywords[0], "Customer research");
+    assert.equal(store.listPlans()[0].resumeId, resume.id);
     assert.equal(store.listPlans()[0].snapshotText, "Original plan posting from the page.");
     assert.equal(store.listApplications().find((item) => item.id === application.id).snapshotText,
       "Original job posting from the page.");
@@ -123,7 +134,7 @@ test("version 2 desktop databases migrate without losing applications or resumes
     assert.equal(store.listApplications()[0].matchStrength, 80);
     assert.equal(store.listApplications()[0].resumeName, "Old Resume.pdf");
     const migrated = new DatabaseSync(file, { readOnly: true });
-    assert.equal(migrated.prepare("PRAGMA user_version").get().user_version, 4);
+    assert.equal(migrated.prepare("PRAGMA user_version").get().user_version, 5);
     migrated.close();
     const blank = await store.saveApplication({});
     assert.equal(blank.resumeId, "");
@@ -162,7 +173,7 @@ test("version 1 desktop databases gain Plan and optional application fields", as
     assert.equal(application.matchStrength, null);
     assert.deepEqual(store.listPlans(), []);
     const check = new DatabaseSync(file, { readOnly: true });
-    assert.equal(check.prepare("PRAGMA user_version").get().user_version, 4);
+    assert.equal(check.prepare("PRAGMA user_version").get().user_version, 5);
     check.close();
   } finally {
     store?.close();
@@ -210,8 +221,51 @@ test("version 3 descriptions become offline copies during migration", async () =
     assert.equal(store.listPlans()[0].snapshotText, "Previous plan description");
     assert.equal(store.listPlans()[0].snapshotSource, "saved");
     const check = new DatabaseSync(file, { readOnly: true });
-    assert.equal(check.prepare("PRAGMA user_version").get().user_version, 4);
+    assert.equal(check.prepare("PRAGMA user_version").get().user_version, 5);
     check.close();
+  } finally {
+    store?.close();
+    if (!path.resolve(root).startsWith(path.resolve(tmpdir()) + path.sep)) throw new Error("Unexpected test directory");
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("version 4 desktop databases gain CV inputs and match scores", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "pm-tracker-v4-test-"));
+  const file = path.join(root, "legacy.sqlite");
+  const bundle = path.join(root, "store.mjs");
+  let store;
+  try {
+    const db = new DatabaseSync(file);
+    db.exec(`
+      CREATE TABLE resumes (id TEXT PRIMARY KEY, filename TEXT NOT NULL, content_type TEXT NOT NULL,
+        size INTEGER NOT NULL, file_data BLOB NOT NULL, created_at TEXT NOT NULL);
+      CREATE TABLE applications (id TEXT PRIMARY KEY);
+      CREATE TABLE plans (id TEXT PRIMARY KEY, listing_url TEXT NOT NULL,
+        company TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', team TEXT NOT NULL DEFAULT '',
+        locations TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',
+        snapshot_text TEXT NOT NULL DEFAULT '', snapshot_captured_at TEXT NOT NULL DEFAULT '',
+        snapshot_source TEXT NOT NULL DEFAULT '', keywords_json TEXT NOT NULL DEFAULT '[]',
+        themes_json TEXT NOT NULL DEFAULT '[]', overview TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+      PRAGMA user_version = 4;
+    `);
+    db.prepare("INSERT INTO plans (id, listing_url, title, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run("plan-v4", "https://example.org/v4", "Existing role", "Original description", "2026-09-01", "2026-09-01");
+    db.close();
+    await build({ entryPoints: [path.resolve("desktop/store.ts")], outfile: bundle,
+      bundle: true, platform: "node", format: "esm", target: "node22" });
+    const { DesktopStore } = await import(pathToFileURL(bundle).href);
+    store = new DesktopStore(path.join(root, "user-data"));
+    await store.open(file);
+    const plan = store.getPlan("plan-v4");
+    assert.equal(plan.title, "Existing role");
+    assert.equal(plan.currentOverview, "");
+    assert.equal(plan.resumeId, "");
+    assert.equal(plan.matchStrength, null);
+    const check = new DatabaseSync(file, { readOnly: true });
+    try { assert.equal(check.prepare("PRAGMA user_version").get().user_version, 5); }
+    finally { check.close(); }
   } finally {
     store?.close();
     if (!path.resolve(root).startsWith(path.resolve(tmpdir()) + path.sep)) throw new Error("Unexpected test directory");

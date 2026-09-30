@@ -43,10 +43,14 @@ try {
   const { DesktopStore } = await import(pathToFileURL(bundle).href);
   const store = new DesktopStore(userData);
   await store.create(dbPath);
+  const planResume = await store.addResume("Planning CV.pdf", "application/pdf",
+    simplePdf("Product strategy and customer research with cross-functional roadmap delivery"));
   await store.savePlan({
     listingUrl: "https://example.org/jobs/senior-product-manager", company: "Northstar Labs",
     title: "Senior Product Manager", team: "Growth", locations: "Seattle, WA; Remote",
     description: "Lead discovery and product strategy for a growth platform. Partner with design, engineering, and analytics teams to define a roadmap, prioritize experiments, improve activation, and communicate outcomes to executive stakeholders. The role calls for customer research, data analysis, cross-functional leadership, and crisp product narratives.",
+    currentOverview: "I help teams find customer needs and build useful products with clear priorities.",
+    resumeId: planResume.id,
     keywords: ["Product strategy", "Customer discovery", "Roadmap prioritization", "Experimentation", "Activation", "Data analysis", "Stakeholder alignment", "Cross-functional leadership"],
     themes: ["Translate customer signals into focused product bets", "Lead experiments from hypothesis through learning", "Align partners on priorities and tradeoffs", "Use data to improve activation and adoption", "Communicate a clear product narrative"],
     overview: "Product leader experienced in shaping growth strategy through customer insight and data. Brings clear prioritization, strong cross-functional partnership, and a disciplined approach to experimentation. Connects product outcomes to business goals and communicates tradeoffs with clarity.",
@@ -91,7 +95,7 @@ try {
         return Response.json({ output: [{ type: "message", content: [{ type: "output_text",
           text: JSON.stringify({ keywords: ["Discovery", "Strategy", "Roadmap", "Experimentation", "Activation", "Analytics"],
             themes: ["Lead discovery", "Shape strategy", "Prioritize roadmap", "Run experiments", "Measure outcomes"],
-            overview: "An ideal candidate connects product strategy to customer evidence and measurable outcomes." }) }] }] });
+            score: 83, overview: "I use customer research to set clear product priorities and guide teams toward useful outcomes." }) }] }] });
       }
       return originalFetch(url, options);
     };
@@ -107,6 +111,11 @@ try {
   assert.equal(calls.length, 1);
   assert.equal(calls[0].model, "gpt-6-sol");
   assert.equal(calls[0].store, false);
+  assert.equal(calls[0].input[0].content[0].type, "input_file");
+  assert.match(calls[0].input[0].content[1].text, /I help teams find customer needs/);
+  await page.getByText("83%").waitFor();
+  await page.getByText("83%").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(output, "plan-analyzed.png") });
   await nav.getByRole("button", { name: "Applications" }).click();
   await page.getByRole("heading", { name: "Applications", exact: true }).waitFor();
   await page.screenshot({ path: path.join(output, "applications.png") });
@@ -152,26 +161,26 @@ try {
       if (url === "http://localhost:11434/api/chat") {
         const body = JSON.parse(options.body);
         globalThis.__ollamaCalls.push(body);
-        const match = body.format.required.includes("score");
+        const match = !body.format.required.includes("keywords");
         return Response.json({ done: true, message: { content: JSON.stringify(match
           ? { score: 81, explanation: "Relevant product work, with one missing metric." }
           : { keywords: ["Discovery", "Strategy", "Roadmap", "Experimentation", "Activation", "Analytics"],
             themes: ["Lead discovery", "Shape strategy", "Prioritize roadmap", "Run experiments", "Measure outcomes"],
-            overview: "An ideal candidate leads product strategy from customer evidence and measurable outcomes." }) } });
+            score: 86, overview: "I lead product strategy with customer evidence and clear priorities." }) } });
       }
       return originalFetch(url, options);
     };
   });
   await nav.getByRole("button", { name: "Settings" }).click();
   await page.getByRole("heading", { name: "Settings", exact: true }).waitFor();
-  await page.getByText("Ollama", { exact: true }).click();
-  await page.waitForFunction(() => document.querySelector('input[value="ollama"]')?.checked);
-  assert.equal(await page.getByRole("radio", { name: /Ollama/ }).isChecked(), true);
-  await page.getByRole("button", { name: "qwen3.8:27b" }).waitFor();
+  await page.getByRole("combobox", { name: "Provider" }).selectOption("ollama");
+  await page.waitForFunction(() => document.querySelector('select')?.value === "ollama");
+  assert.equal(await page.getByRole("combobox", { name: "Provider" }).inputValue(), "ollama");
+  await page.getByRole("combobox", { name: "Model" }).getByRole("option", { name: "qwen3.8:27b" }).waitFor({ state: "attached" });
   await page.getByRole("button", { name: "Refresh models" }).click();
   await page.getByText("2 installed models found.", { exact: false }).waitFor();
-  await page.getByRole("button", { name: "qwen3.8:27b" }).click();
-  assert.equal(await page.getByPlaceholder("qwen3:8b").inputValue(), "qwen3.8:27b");
+  await page.getByRole("combobox", { name: "Model" }).selectOption("qwen3.8:27b");
+  assert.equal(await page.getByRole("combobox", { name: "Model" }).inputValue(), "qwen3.8:27b");
   await page.getByRole("button", { name: "Save Ollama settings" }).click();
   await page.getByText("Ollama server and model saved on this computer.").waitFor();
   await page.screenshot({ path: path.join(output, "settings.png") });
@@ -185,6 +194,8 @@ try {
   assert.equal(ollamaCalls.length, 2);
   assert.equal(ollamaCalls[0].model, "qwen3.8:27b");
   assert.equal(ollamaCalls[1].model, "qwen3.8:27b");
+  assert.match(ollamaCalls[0].messages[1].content, /I help teams find customer needs/);
+  assert.match(ollamaCalls[0].messages[1].content, /Product strategy and customer research/);
   assert.match(ollamaCalls[1].messages[1].content, /Product strategy and customer discovery/);
   await nav.getByRole("button", { name: "Settings" }).click();
   await page.getByRole("radio", { name: "Dark" }).check();
@@ -224,9 +235,14 @@ try {
   await page.getByPlaceholder("Product Manager").fill("Group Product Manager");
   await page.getByPlaceholder("Read the listing or paste the full job description here.")
     .fill("This role leads product strategy, customer discovery, and delivery with engineering and design partners.");
+  await page.getByPlaceholder("Paste the overview from your current CV here.")
+    .fill("I work with teams to build products that help customers.");
+  await page.locator('.plan-upload input[type="file"]').setInputFiles({ name: "Second CV.pdf", mimeType: "application/pdf",
+    buffer: simplePdf("Product strategy and customer discovery") });
   await page.getByRole("button", { name: "Save plan" }).click();
   await page.getByText("Plan saved.").waitFor();
   await page.getByText("Second Company").first().waitFor();
+  assert.equal(await page.getByRole("combobox", { name: "Resume for this role" }).locator("option:checked").textContent(), "Second CV.pdf");
   assert.equal(errors.length, 0, errors.join("\n"));
   await app.close();
   app = await electron.launch({ executablePath, args: [path.resolve(".")],
@@ -234,7 +250,7 @@ try {
   const freshPage = await app.firstWindow();
   await freshPage.getByRole("heading", { name: "Plan", exact: true }).waitFor();
   assert.equal((await app.evaluate(({ app }) => app.getPath("userData"))).endsWith("fresh-profile"), true);
-  await freshPage.getByRole("button", { name: "Applications" }).click();
+  await freshPage.getByRole("navigation", { name: "Workspace" }).getByRole("button", { name: "Applications", exact: true }).click();
   await freshPage.getByRole("button", { name: "Add application", exact: true }).click();
   await freshPage.getByRole("button", { name: "Save application" }).click();
   await freshPage.getByText("Application added.").waitFor();
