@@ -12,6 +12,39 @@ import { runSelectedAnalysis } from "../desktop/analysis-routing.ts";
 import { deleteDownloadedModel } from "../desktop/local-model-removal.ts";
 import { localModelFolder } from "../desktop/local-model-storage.ts";
 import { availableModelMemory, reclaimableMacMemory } from "../desktop/local-model-memory.ts";
+import { acceptModelTerms, modelTermsAccepted } from "../desktop/local-model-consent.ts";
+import { localModelMessages } from "../desktop/local-model-engine.ts";
+
+test("licensed models need explicit agreement to the exact terms, and only SmolLM2 uses basic analysis", async () => {
+  const original = {};
+  for (const id of ["lfm25-350m", "gemma3-270m"]) {
+    const item = getLocalModel(id);
+    assert.equal(item.basic, false);
+    assert.equal(modelTermsAccepted(item, original), false);
+    assert.throws(() => acceptModelTerms(item, original), /Review and accept/);
+    assert.throws(() => acceptModelTerms(item, original, "outdated terms"), /Review and accept/);
+    const accepted = acceptModelTerms(item, original, item.license.version);
+    assert.equal(modelTermsAccepted(item, accepted), true);
+    assert.equal(acceptModelTerms(item, accepted), accepted);
+    assert.deepEqual(original, {});
+    const hash = createHash("sha256");
+    for (const file of item.license.files) hash.update(await readFile(new URL(`../build/model-licenses/${file.source}`, import.meta.url)));
+    assert.equal(hash.digest("hex"), item.license.version, "Terms changes must invalidate the earlier agreement.");
+  }
+  assert.deepEqual(LOCAL_MODELS.filter((item) => item.basic).map((item) => item.id), ["smollm2-360m"]);
+  assert.equal(modelTermsAccepted(getLocalModel("qwen3-06b")), true);
+});
+
+test("Gemma's supported chat turns retain full instructions and input", () => {
+  const instructions = "Use all supplied resume evidence. Do not invent skills or achievements.";
+  const content = JSON.stringify({ jobDescription: "Full job text. ".repeat(4000), resumeText: "Full resume. ".repeat(4000) });
+  const gemma = localModelMessages("gemma3-270m", instructions, content);
+  assert.deepEqual(gemma.map((message) => message.role), ["user"]);
+  assert.ok(gemma[0].content.startsWith(instructions));
+  assert.ok(gemma[0].content.endsWith(content));
+  const liquid = localModelMessages("lfm25-350m", instructions, content);
+  assert.deepEqual(liquid, [{ role: "system", content: instructions }, { role: "user", content }]);
+});
 
 test("Mac model memory includes reclaimable pages without adding active or overlapping counters", async () => {
   const stats = `Mach Virtual Memory Statistics: (page size of 16384 bytes)
@@ -78,6 +111,27 @@ test("a verified download is reused after restarting, and deletion preserves unr
   assert.equal(await readFile(database, "utf8"), "preserve application data");
   assert.equal(await readFile(unrelated, "utf8"), "preserve unrelated data");
   assert.equal(requests, 1);
+});
+
+test("licensed downloads keep full terms next to the model and deletion preserves other models' terms", async (t) => {
+  const license = getLocalModel("gemma3-270m").license;
+  const licensed = { ...model, license };
+  const licensesFolder = path.resolve("build/model-licenses");
+  const { folder, downloads } = await fixture(t, { models: [licensed], licensesFolder, fetcher: async () => new Response(bytes) });
+  await writeFile(path.join(folder, "lfm25-350m-LICENSE.txt"), "preserve the other model's license");
+  await writeFile(path.join(folder, "Applications.sqlite"), "preserve the user's database");
+  await downloads.start(model.id); await downloads.waitForDownload();
+  assert.equal(downloads.status(model.id).status, "ready");
+  for (const file of license.files) {
+    assert.deepEqual(await readFile(path.join(folder, file.filename)), await readFile(path.join(licensesFolder, file.source)));
+  }
+  await rm(path.join(folder, license.files[0].filename));
+  await downloads.readyPath(model.id);
+  assert.ok((await stat(path.join(folder, license.files[0].filename))).isFile());
+  await downloads.remove(model.id);
+  for (const file of license.files) assert.equal(await stat(path.join(folder, file.filename)).catch(() => null), null);
+  assert.equal(await readFile(path.join(folder, "lfm25-350m-LICENSE.txt"), "utf8"), "preserve the other model's license");
+  assert.equal(await readFile(path.join(folder, "Applications.sqlite"), "utf8"), "preserve the user's database");
 });
 
 test("pause saves partial bytes and a restarted manager resumes with Range", async (t) => {
@@ -183,6 +237,7 @@ test("model storage is local to each OS and the Windows cleanup hook targets onl
   assert.match(cleanup, /\$\{ifNot\}\s+\$\{isUpdated\}/);
   for (const item of LOCAL_MODELS) {
     for (const suffix of ["", ".part", ".verified.json"]) assert.ok(cleanup.includes(`\\${item.filename}${suffix}"`));
+    for (const file of item.license?.files || []) assert.ok(cleanup.includes(`\\${file.filename}"`));
   }
   assert.doesNotMatch(cleanup, /\*|\.sqlite|\.db|backups/i);
 });
@@ -219,21 +274,23 @@ test("keyword evidence accepts sentence punctuation and aliases without matching
   assert.ok(basicEvidence("SQL is required.", "I used PostgreSQL.").missing.includes("SQL"));
 });
 
-test("OpenAI, configured Ollama models, and built-in Qwen receive the full request without a compact fallback", async () => {
+test("OpenAI, Ollama, and every full-profile built-in model receive the complete request without fallback", async () => {
   const input = { jobDescription: description.repeat(300), resumeText: resume.repeat(200), currentCvOverview };
   const schema = { type: "object", properties: { evidence: { type: "string" } } };
-  for (const provider of ["openai", "ollama", "builtin"]) {
+  const selections = [{ provider: "openai", builtInModelId: "qwen3-4b" }, { provider: "ollama", builtInModelId: "qwen3-4b" },
+    ...LOCAL_MODELS.filter((model) => !model.basic).map((model) => ({ provider: "builtin", builtInModelId: model.id }))];
+  for (const { provider, builtInModelId } of selections) {
     let called = "";
     const providers = {
       openai: async (prompt, content, name, format) => { called = "openai"; assert.equal(prompt, "Complete instructions");
         assert.equal(content, input); assert.equal(name, "resume_plan"); assert.equal(format, schema); return { evidence: "full" }; },
       ollama: async (url, modelId, prompt, content, format) => { called = "ollama"; assert.equal(url, "http://gpu-pc:11434");
         assert.equal(modelId, "qwen3.8:27b"); assert.equal(prompt, "Complete instructions"); assert.equal(content, input); assert.equal(format, schema); return { evidence: "full" }; },
-      ready: async (id) => { assert.equal(id, "qwen3-4b"); },
-      local: async (id, prompt, content, format) => { called = "builtin"; assert.equal(id, "qwen3-4b");
+      ready: async (id) => { assert.equal(id, builtInModelId); },
+      local: async (id, prompt, content, format) => { called = "builtin"; assert.equal(id, builtInModelId);
         assert.equal(prompt, "Complete instructions"); assert.equal(content, input); assert.equal(format, schema); return { evidence: "full" }; },
     };
-    const selected = { provider, ollamaUrl: "http://gpu-pc:11434", ollamaModel: "qwen3.8:27b", builtInModelId: "qwen3-4b" };
+    const selected = { provider, ollamaUrl: "http://gpu-pc:11434", ollamaModel: "qwen3.8:27b", builtInModelId };
     assert.deepEqual(await runSelectedAnalysis(selected, providers, "Complete instructions", input, "resume_plan", schema, "Failure"), { evidence: "full" });
     assert.equal(called, provider);
     providers[provider === "builtin" ? "local" : provider] = async () => { throw new Error("Selected provider unavailable"); };

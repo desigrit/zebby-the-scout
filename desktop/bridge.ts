@@ -10,6 +10,7 @@ export type DesktopState = {
   ollamaUrl: string;
   ollamaModel: string;
   builtInModelId: string;
+  acceptedModelTerms: string[];
   localModels: LocalModelStatus[];
   modelsFolder: string;
   localEngine: { status: "idle" | "loading" | "analyzing"; modelId: string };
@@ -34,7 +35,7 @@ export type DesktopBridge = {
   listOllamaModels(url: string): Promise<string[]>;
   selectLocalModel(id: string): Promise<DesktopState>;
   pauseModelDownload(): Promise<DesktopState>;
-  resumeModelDownload(id: string): Promise<DesktopState>;
+  resumeModelDownload(id: string, termsVersion?: string): Promise<DesktopState>;
   deleteLocalModel(id: string): Promise<DesktopState>;
   openModelFolder(): Promise<string>;
   setAppearance(value: DesktopState["appearance"]): Promise<DesktopState>;

@@ -9,6 +9,14 @@ import { getLocalModel } from "./local-model-catalog.ts";
 import type { LocalModelDownloads } from "./local-model-downloads.ts";
 import { availableModelMemory } from "./local-model-memory.ts";
 
+export function localModelMessages(id: string, instructions: string, content: string) {
+  // Gemma's chat template accepts user/model turns, not a system turn.
+  // Keep all instructions and input in the user turn for that model.
+  return getLocalModel(id).supportsSystemRole === false
+    ? [{ role: "user", content: `${instructions}\n\n${content}` }]
+    : [{ role: "system", content: instructions }, { role: "user", content }];
+}
+
 async function availablePort(): Promise<number> {
   const server = createServer();
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
@@ -132,7 +140,7 @@ export class LocalModelEngine {
         throw new Error("This posting and resume exceed the selected model's context. Choose a larger model or use your configured Ollama or OpenAI provider.");
       }
       const response = await fetcher(`${this.baseUrl}/v1/chat/completions`, { method: "POST", headers, signal,
-        body: JSON.stringify({ messages: [{ role: "system", content: instructions }, { role: "user", content }],
+        body: JSON.stringify({ messages: localModelMessages(id, instructions, content),
           stream: false, temperature: 0, seed: 0, max_tokens: maxTokens,
           response_format: { type: "json_object", schema }, chat_template_kwargs: { enable_thinking: false } }) });
       const payload = await response.json() as { error?: { message?: string };

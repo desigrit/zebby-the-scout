@@ -1,3 +1,12 @@
+export type LocalModelLicense = {
+  name: string;
+  version: string;
+  url: string;
+  policyUrl?: string;
+  summary: string;
+  files: readonly { source: string; filename: string }[];
+};
+
 export type LocalModel = {
   id: string;
   name: string;
@@ -12,6 +21,8 @@ export type LocalModel = {
   minimumFreeMemory: number;
   memoryHint: string;
   basic: boolean;
+  supportsSystemRole?: boolean;
+  license?: LocalModelLicense;
 };
 
 const GiB = 1024 ** 3;
@@ -26,6 +37,38 @@ export const LOCAL_MODELS: readonly LocalModel[] = [
     url: "https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/7be6f65f1db715fe5dc5a4634c0d459b4eed42ec/SmolLM2-360M-Instruct-Q4_K_M.gguf",
     sourceUrl: "https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct",
     context: 8192, minimumFreeMemory: 1.5 * GiB, memoryHint: "4 GB RAM or more",
+  },
+  {
+    id: "lfm25-350m", name: "LFM2.5 350M", tier: "Small", basic: false,
+    description: "A small instruction model for extraction, role analysis, and resume suggestions. Quality varies with the task.",
+    bytes: 229312224, filename: "LFM2.5-350M-Q4_K_M.gguf",
+    sha256: "7e6f72643caafc9a68256686638c4d7916f2cec76d1df478d4c3ddcd95a6aed4",
+    url: "https://huggingface.co/LiquidAI/LFM2.5-350M-GGUF/resolve/657e078c94084481950a2d555a941481f715536b/LFM2.5-350M-Q4_K_M.gguf",
+    sourceUrl: "https://huggingface.co/LiquidAI/LFM2.5-350M",
+    context: 16384, minimumFreeMemory: 1.5 * GiB, memoryHint: "4 GB RAM or more",
+    license: {
+      name: "LFM Open License v1.0", version: "5188f2b355da20647257a3156db5834c794e5fb5e6d8dc4d4cdbb3180e75b85b",
+      url: "https://huggingface.co/LiquidAI/LFM2.5-350M-GGUF/blob/657e078c94084481950a2d555a941481f715536b/LICENSE",
+      summary: "Liquid AI's license includes conditions for commercial use.",
+      files: [{ source: "LICENSE-LFM-1.0.txt", filename: "lfm25-350m-LICENSE.txt" }],
+    },
+  },
+  {
+    id: "gemma3-270m", name: "Gemma 3 270M", tier: "Small", basic: false, supportsSystemRole: false,
+    description: "A small instruction model for role analysis and short overview edits. Quality varies with the task.",
+    bytes: 241410624, filename: "gemma-3-270m-it-qat-Q4_0.gguf",
+    sha256: "3626e245220ca4a1c5911eb4010b3ecb7bdbf5bc53c79403c21355354d1e2dc6",
+    url: "https://huggingface.co/ggml-org/gemma-3-270m-it-qat-GGUF/resolve/7dba9faa7cdb58c7dc44b238c7dbb00e391fbf65/gemma-3-270m-it-qat-Q4_0.gguf",
+    sourceUrl: "https://huggingface.co/google/gemma-3-270m-it-qat-q4_0-unquantized",
+    context: 16384, minimumFreeMemory: 1.5 * GiB, memoryHint: "4 GB RAM or more",
+    license: {
+      name: "Gemma Terms of Use", version: "de7b03d137cbcb0d07d6a24254cdc0ca5bda24ea96121d587875b7448946502d",
+      url: "https://ai.google.dev/gemma/terms", policyUrl: "https://ai.google.dev/gemma/prohibited_use_policy",
+      summary: "Use is subject to Google's model terms and use restrictions.",
+      files: [{ source: "LICENSE-Gemma.txt", filename: "gemma3-270m-LICENSE.txt" },
+        { source: "Gemma-Prohibited-Use-Policy.txt", filename: "gemma3-270m-USE-POLICY.txt" },
+        { source: "NOTICE-Gemma.txt", filename: "gemma3-270m-NOTICE.txt" }],
+    },
   },
   {
     id: "qwen3-06b", name: "Qwen3 0.6B", tier: "Small", basic: false,

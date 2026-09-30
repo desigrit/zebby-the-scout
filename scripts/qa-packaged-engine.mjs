@@ -6,7 +6,7 @@ import path from "node:path";
 const executable = process.platform === "darwin"
   ? path.resolve("desktop-packages/mac-arm64/PM Application Tracker.app/Contents/MacOS/PM Application Tracker")
   : path.resolve("desktop-packages/win-unpacked/PM Application Tracker.exe");
-const child = spawn(executable, ["--experimental-strip-types", "scripts/qa-local-engine.mjs", "smollm2-360m", "--packaged"],
+const child = spawn(executable, ["--experimental-strip-types", "scripts/qa-local-engine.mjs", process.argv[2] || "smollm2-360m", "--packaged"],
   { windowsHide: true, stdio: "inherit", env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } });
 child.once("error", (error) => { console.error(error.message); process.exitCode = 1; });
 child.once("exit", (code) => { process.exitCode = code ?? 1; });

@@ -16,18 +16,19 @@ const output = path.resolve("work/local-engine-qa");
 await mkdir(output, { recursive: true });
 const packaged = process.argv.includes("--packaged");
 if (!packaged) await prepareRuntime(process.platform, process.arch);
+const platformFolder = `${process.platform === "darwin" ? "mac" : "win"}-${process.arch}`;
+const resources = process.platform === "darwin"
+  ? path.resolve("desktop-packages/mac-arm64/PM Application Tracker.app/Contents/Resources")
+  : path.resolve(`desktop-packages/${process.arch === "arm64" ? "win-arm64-unpacked" : "win-unpacked"}/resources`);
 let lastStatus = "";
-const downloads = new LocalModelDownloads(path.join(output, "Models"), { onChange: () => {
+const downloads = new LocalModelDownloads(path.join(output, "Models"), {
+  licensesFolder: packaged ? path.join(resources, "local-runtime/model-licenses") : path.resolve("build/model-licenses"), onChange: () => {
   const status = downloads.status(id).status;
   if (status !== lastStatus) { lastStatus = status; console.log(`${model.name}: ${status}`); }
 } });
 await downloads.initialize();
 await downloads.start(id); await downloads.waitForDownload();
 assert.equal(downloads.status(id).status, "ready", downloads.status(id).error);
-const platformFolder = `${process.platform === "darwin" ? "mac" : "win"}-${process.arch}`;
-const resources = process.platform === "darwin"
-  ? path.resolve("desktop-packages/mac-arm64/PM Application Tracker.app/Contents/Resources")
-  : path.resolve(`desktop-packages/${process.arch === "arm64" ? "win-arm64-unpacked" : "win-unpacked"}/resources`);
 const engine = new LocalModelEngine({ downloads,
   runtimeFolder: packaged ? path.join(resources, "local-runtime") : path.resolve("build/llama", platformFolder),
   workerPath: packaged ? path.join(resources, "app.asar/desktop-dist/local-runtime-worker.cjs")

@@ -29,6 +29,8 @@ jobs:
       - run: npm run test:renderer
       - run: npx electron-builder --win nsis --x64 --publish never -c electron-builder.local.cjs
       - run: node scripts/qa-packaged-engine.mjs
+      - run: node scripts/qa-packaged-engine.mjs lfm25-350m
+      - run: node scripts/qa-packaged-engine.mjs gemma3-270m
       - uses: actions/upload-artifact@v4
         with:
           name: pm-application-tracker-windows-x64
@@ -61,6 +63,8 @@ jobs:
       - run: npm run test:renderer
       - run: npx electron-builder --mac dmg --arm64 --publish never
       - run: node scripts/qa-packaged-engine.mjs
+      - run: node scripts/qa-packaged-engine.mjs lfm25-350m
+      - run: node scripts/qa-packaged-engine.mjs gemma3-270m
       - uses: actions/upload-artifact@v4
         with:
           name: pm-application-tracker-macos-arm64

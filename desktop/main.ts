@@ -7,12 +7,13 @@ import type { ApplicationInput } from "../lib/application-types";
 import { analyzeWithOllama, DEFAULT_OLLAMA_URL, listOllamaModels, normalizeOllamaUrl } from "./ollama";
 import { extractResumeText } from "./resume-text";
 import { DesktopStore, type PlanInput } from "./store";
-import { getLocalModel } from "./local-model-catalog";
+import { getLocalModel, LOCAL_MODELS } from "./local-model-catalog";
 import { LocalModelDownloads } from "./local-model-downloads";
 import { LocalModelEngine } from "./local-model-engine";
 import { publicAnalysisText, runSelectedAnalysis } from "./analysis-routing";
 import { deleteDownloadedModel } from "./local-model-removal";
 import { localModelFolder } from "./local-model-storage";
+import { acceptModelTerms, modelTermsAccepted, type AcceptedModelTerms } from "./local-model-consent";
 import { freemem, totalmem } from "node:os";
 
 protocol.registerSchemesAsPrivileged([{
@@ -31,7 +32,8 @@ let shuttingDown = false;
 type Appearance = "auto" | "dark" | "light";
 type AnalysisProvider = "ollama" | "openai" | "builtin";
 let settings: { databasePath?: string; encryptedApiKey?: string; appearance?: Appearance;
-  captureLogs?: boolean; analysisProvider?: AnalysisProvider; ollamaUrl?: string; ollamaModel?: string; builtInModelId?: string } = {};
+  captureLogs?: boolean; analysisProvider?: AnalysisProvider; ollamaUrl?: string; ollamaModel?: string; builtInModelId?: string;
+  acceptedModelTerms?: AcceptedModelTerms } = {};
 let logQueue = Promise.resolve();
 
 function settingsPath() { return path.join(app.getPath("userData"), "settings.json"); }
@@ -69,6 +71,9 @@ async function loadSettings() {
   settings.ollamaModel ||= "";
   try { if (settings.builtInModelId) getLocalModel(settings.builtInModelId); }
   catch { settings.builtInModelId = ""; }
+  if (!settings.acceptedModelTerms || typeof settings.acceptedModelTerms !== "object" || Array.isArray(settings.acceptedModelTerms)) {
+    settings.acceptedModelTerms = {};
+  }
   settings.captureLogs = settings.captureLogs === true;
   if (settings.encryptedApiKey && safeStorage.isEncryptionAvailable()) {
     try { apiKey = safeStorage.decryptString(Buffer.from(settings.encryptedApiKey, "base64")); }
@@ -97,6 +102,8 @@ function state() {
     ollamaUrl: settings.ollamaUrl || DEFAULT_OLLAMA_URL,
     ollamaModel: settings.ollamaModel || "",
     builtInModelId: settings.builtInModelId || "",
+    acceptedModelTerms: LOCAL_MODELS.filter((model) => model.license && modelTermsAccepted(model, settings.acceptedModelTerms))
+      .map((model) => model.id),
     localModels: modelDownloads?.list() || [], modelsFolder: modelDownloads?.folder || "",
     localEngine: { status: modelEngine?.status || "idle", modelId: modelEngine?.modelId || "" },
     totalMemory: totalmem(), availableMemory: freemem(),
@@ -194,7 +201,10 @@ async function analyzeWithSelectedProvider(instructions: string, input: unknown,
     ollama: (baseUrl, model, prompt, content, format) => analyzeWithOllama({ baseUrl,
       model, instructions: prompt, content: JSON.stringify(content), schema: format }),
     openai: analyzeWithOpenAI,
-    ready: (id) => modelDownloads.readyPath(id),
+    ready: (id) => {
+      acceptModelTerms(getLocalModel(id), settings.acceptedModelTerms || {});
+      return modelDownloads.readyPath(id);
+    },
     local: (...args) => modelEngine.analyze(...args),
   }, instructions, input, name, schema, failure);
 }
@@ -427,15 +437,19 @@ function registerIpc() {
     return listOllamaModels(url);
   });
   ipcMain.handle("desktop:select-local-model", async (_event, id: string) => {
-    getLocalModel(id);
+    const model = getLocalModel(id);
     settings.builtInModelId = id;
     await saveSettings();
-    await modelDownloads.start(id);
+    if (modelTermsAccepted(model, settings.acceptedModelTerms)) await modelDownloads.start(id);
+    else await modelDownloads.pause();
     return state();
   });
   ipcMain.handle("desktop:pause-model-download", async () => { await modelDownloads.pause(); return state(); });
-  ipcMain.handle("desktop:resume-model-download", async (_event, id: string) => {
-    getLocalModel(id); await modelDownloads.start(id); return state();
+  ipcMain.handle("desktop:resume-model-download", async (_event, id: string, termsVersion?: string) => {
+    const accepted = settings.acceptedModelTerms || {};
+    const next = acceptModelTerms(getLocalModel(id), accepted, termsVersion);
+    if (next !== accepted) { settings.acceptedModelTerms = next; await saveSettings(); }
+    await modelDownloads.start(id); return state();
   });
   ipcMain.handle("desktop:delete-local-model", async (_event, id: string) => {
     await deleteDownloadedModel(id, { engine: modelEngine, downloads: modelDownloads,
@@ -507,12 +521,14 @@ else {
     store = new DesktopStore(app.getPath("userData"));
     await loadSettings();
     const modelsChanged = () => mainWindow?.webContents.send("desktop:local-models-changed", state());
-    modelDownloads = new LocalModelDownloads(localModelFolder(app.getPath("userData"), process.platform,
-      process.env.LOCALAPPDATA), { onChange: modelsChanged });
-    await modelDownloads.initialize();
     const platformFolder = `${process.platform === "darwin" ? "mac" : "win"}-${process.arch}`;
+    const runtimeFolder = app.isPackaged ? path.join(process.resourcesPath, "local-runtime")
+      : path.resolve(appRoot, "../build/llama", platformFolder);
+    modelDownloads = new LocalModelDownloads(localModelFolder(app.getPath("userData"), process.platform,
+      process.env.LOCALAPPDATA), { onChange: modelsChanged, licensesFolder: path.join(runtimeFolder, "model-licenses") });
+    await modelDownloads.initialize();
     modelEngine = new LocalModelEngine({ downloads: modelDownloads, onChange: modelsChanged,
-      runtimeFolder: app.isPackaged ? path.join(process.resourcesPath, "local-runtime") : path.resolve(appRoot, "../build/llama", platformFolder),
+      runtimeFolder,
       workerPath: path.join(appRoot, "local-runtime-worker.cjs") });
     registerProtocol();
     registerIpc();

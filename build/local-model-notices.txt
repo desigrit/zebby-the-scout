@@ -10,7 +10,22 @@ https://huggingface.co/Qwen/Qwen3-0.6B-GGUF
 https://huggingface.co/Qwen/Qwen3-4B-GGUF
 https://huggingface.co/Qwen/Qwen3-8B-GGUF
 
-These models are distributed under the Apache License, Version 2.0.
+SmolLM2 and Qwen3 are distributed under the Apache License, Version 2.0.
+See LICENSE-Apache-2.0.txt in this folder for their license text.
+
+LFM2.5 350M, Liquid AI, Inc., Q4_K_M conversion by Liquid AI.
+Source: https://huggingface.co/LiquidAI/LFM2.5-350M
+GGUF conversion: https://huggingface.co/LiquidAI/LFM2.5-350M-GGUF
+LFM Open License v1.0, including its commercial-use conditions.
+See model-licenses/LICENSE-LFM-1.0.txt for the complete license.
+
+Gemma 3 270M Instruct QAT, Google, Q4_0 conversion by ggml-org.
+Source: https://huggingface.co/google/gemma-3-270m-it-qat-q4_0-unquantized
+GGUF conversion: https://huggingface.co/ggml-org/gemma-3-270m-it-qat-GGUF
+Gemma is provided under and subject to the Gemma Terms of Use found at ai.google.dev/gemma/terms
+See model-licenses/LICENSE-Gemma.txt, model-licenses/Gemma-Prohibited-Use-Policy.txt,
+and model-licenses/NOTICE-Gemma.txt for the complete terms, policy, and notice.
+
 The models are optional downloads and are not included in the installer.
-See LICENSE-Apache-2.0.txt in this folder for the license text.
+The model terms are also copied next to the corresponding downloaded model.
 The bundled llama.cpp CPU engine has its own MIT license in LICENSE-llama.cpp.txt.
