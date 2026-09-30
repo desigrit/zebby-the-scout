@@ -13,7 +13,8 @@ import { deleteDownloadedModel } from "../desktop/local-model-removal.ts";
 import { localModelFolder } from "../desktop/local-model-storage.ts";
 import { availableModelMemory, reclaimableMacMemory } from "../desktop/local-model-memory.ts";
 import { acceptModelTerms, modelTermsAccepted } from "../desktop/local-model-consent.ts";
-import { localModelMessages } from "../desktop/local-model-engine.ts";
+import { localModelMessages, localModelResponseSchema } from "../desktop/local-model-engine.ts";
+import { planSchema, matchSchema } from "../desktop/analysis-contracts.ts";
 
 test("licensed models need explicit agreement to the exact terms, and only SmolLM2 uses basic analysis", async () => {
   const original = {};
@@ -44,6 +45,25 @@ test("Gemma's supported chat turns retain full instructions and input", () => {
   assert.ok(gemma[0].content.endsWith(content));
   const liquid = localModelMessages("lfm25-350m", instructions, content);
   assert.deepEqual(liquid, [{ role: "system", content: instructions }, { role: "user", content }]);
+});
+
+test("Gemma bounds repetitive output fields while retaining the entire source and other model contracts", () => {
+  const input = { currentCvOverview: "Long CV overview. ".repeat(200), jobDescription: description.repeat(200), resumeText: resume.repeat(200) };
+  const original = structuredClone(input);
+  const schema = localModelResponseSchema("gemma3-270m", planSchema, input);
+  assert.equal(schema.properties.overview.maxLength, input.currentCvOverview.length * 2);
+  assert.equal(schema.properties.overviewRationale.maxLength, 600);
+  assert.equal(schema.properties.keywords.items.maxLength, 80);
+  assert.equal(schema.properties.themes.minItems, 5);
+  assert.deepEqual(schema.properties.score, planSchema.properties.score);
+  assert.equal(localModelResponseSchema("gemma3-270m", matchSchema, input).properties.explanation.maxLength, 800);
+  assert.equal(planSchema.properties.overview.maxLength, undefined);
+  assert.deepEqual(input, original);
+  for (const model of LOCAL_MODELS.filter((item) => item.id !== "gemma3-270m")) {
+    assert.equal(localModelResponseSchema(model.id, planSchema, input), planSchema);
+    assert.equal(model.sampling, undefined);
+  }
+  assert.ok(getLocalModel("gemma3-270m").sampling.temperature > 0);
 });
 
 test("Mac model memory includes reclaimable pages without adding active or overlapping counters", async () => {

@@ -32,6 +32,12 @@ jobs:
       - run: node scripts/qa-packaged-engine.mjs lfm25-350m
       - run: node scripts/qa-packaged-engine.mjs gemma3-270m
       - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: local-engine-qa-windows
+          path: work/local-engine-qa/*-response.json
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
         with:
           name: pm-application-tracker-windows-x64
           path: desktop-packages/*-win-x64.exe
@@ -65,6 +71,12 @@ jobs:
       - run: node scripts/qa-packaged-engine.mjs
       - run: node scripts/qa-packaged-engine.mjs lfm25-350m
       - run: node scripts/qa-packaged-engine.mjs gemma3-270m
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: local-engine-qa-macos
+          path: work/local-engine-qa/*-response.json
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: pm-application-tracker-macos-arm64

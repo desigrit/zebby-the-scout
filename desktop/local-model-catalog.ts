@@ -22,6 +22,7 @@ export type LocalModel = {
   memoryHint: string;
   basic: boolean;
   supportsSystemRole?: boolean;
+  sampling?: { temperature: number; top_k: number; top_p: number; min_p: number; repeat_penalty: number };
   license?: LocalModelLicense;
 };
 
@@ -55,6 +56,7 @@ export const LOCAL_MODELS: readonly LocalModel[] = [
   },
   {
     id: "gemma3-270m", name: "Gemma 3 270M", tier: "Small", basic: false, supportsSystemRole: false,
+    sampling: { temperature: 1, top_k: 64, top_p: 0.95, min_p: 0, repeat_penalty: 1.1 },
     description: "A small instruction model for role analysis and short overview edits. Quality varies with the task.",
     bytes: 241410624, filename: "gemma-3-270m-it-qat-Q4_0.gguf",
     sha256: "3626e245220ca4a1c5911eb4010b3ecb7bdbf5bc53c79403c21355354d1e2dc6",

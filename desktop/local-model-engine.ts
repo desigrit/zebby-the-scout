@@ -17,6 +17,24 @@ export function localModelMessages(id: string, instructions: string, content: st
     : [{ role: "system", content: instructions }, { role: "user", content }];
 }
 
+export function localModelResponseSchema(id: string, schema: Record<string, unknown>, input: unknown) {
+  if (id !== "gemma3-270m") return schema;
+  const source = input && typeof input === "object" ? input as Record<string, unknown> : {};
+  const overviewLength = typeof source.currentCvOverview === "string" ? source.currentCvOverview.length : 0;
+  const properties = schema.properties as Record<string, Record<string, unknown>> | undefined;
+  if (!properties) return schema;
+  // Bound the requested short output fields in the grammar, so a repetitive
+  // string cannot use the entire response budget. Source text is never shortened.
+  const limits: Record<string, number> = { overview: Math.max(800, overviewLength * 2), overviewRationale: 600, explanation: 800 };
+  return { ...schema, properties: Object.fromEntries(Object.entries(properties).map(([key, field]) => {
+    if (field.type === "string" && limits[key]) return [key, { ...field, minLength: 1, maxLength: limits[key] }];
+    if (["keywords", "themes"].includes(key) && field.type === "array") {
+      return [key, { ...field, items: { ...(field.items as object), minLength: 1, maxLength: key === "keywords" ? 80 : 180 } }];
+    }
+    return [key, field];
+  })) };
+}
+
 async function availablePort(): Promise<number> {
   const server = createServer();
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
@@ -141,8 +159,9 @@ export class LocalModelEngine {
       }
       const response = await fetcher(`${this.baseUrl}/v1/chat/completions`, { method: "POST", headers, signal,
         body: JSON.stringify({ messages: localModelMessages(id, instructions, content),
-          stream: false, temperature: 0, seed: 0, max_tokens: maxTokens,
-          response_format: { type: "json_object", schema }, chat_template_kwargs: { enable_thinking: false } }) });
+          stream: false, temperature: 0, ...getLocalModel(id).sampling, seed: 0, max_tokens: maxTokens,
+          response_format: { type: "json_object", schema: localModelResponseSchema(id, schema, input) },
+          chat_template_kwargs: { enable_thinking: false } }) });
       const payload = await response.json() as { error?: { message?: string };
         choices?: Array<{ finish_reason?: string; message?: { content?: string } }> };
       if (!response.ok) throw new Error(payload.error?.message || "Local analysis failed. Try again.");
