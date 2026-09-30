@@ -1,6 +1,6 @@
 {
   "name": "pm-application-tracker",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "private": true,
   "main": "desktop-dist/main.cjs",
   "engines": {
@@ -12,13 +12,14 @@
     "build": "next build",
     "start": "node scripts/migrate.mjs && next start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern desktop-dist --ignore-pattern desktop-packages",
-    "test": "node --experimental-strip-types --test tests/job-details.test.mjs tests/host-access.test.mjs tests/public-address.test.mjs tests/desktop-store.test.mjs tests/local-analysis.test.mjs tests/application-activity.test.mjs",
+    "test": "node --experimental-strip-types --test tests/job-details.test.mjs tests/host-access.test.mjs tests/public-address.test.mjs tests/desktop-store.test.mjs tests/local-analysis.test.mjs tests/application-activity.test.mjs tests/local-models.test.mjs",
     "test:job-details": "node --experimental-strip-types --test tests/job-details.test.mjs",
     "test:renderer": "node scripts/qa-renderer.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/migrate.mjs",
     "desktop:build": "node scripts/build-desktop.mjs",
     "desktop:dev": "npm run desktop:build && electron .",
+    "desktop:prepare-model-engine": "node scripts/download-llama.mjs",
     "desktop:package:win:x64": "npm run desktop:build && electron-builder --win nsis --x64 --publish never -c electron-builder.local.cjs",
     "desktop:package:win:arm64": "npm run desktop:build && node scripts/download-electron-arm64.mjs && electron-builder --win nsis --arm64 --publish never -c electron-builder.arm64.cjs",
     "desktop:package:mac:arm64": "npm run desktop:build && electron-builder --mac dmg --arm64 --publish never"
@@ -103,12 +104,15 @@
     ],
     "icon": "build/desktop-icon.png",
     "asar": true,
+    "beforePack": "scripts/prepare-llama.cjs",
+    "extraResources": [{ "from": "build/llama/${os}-${arch}", "to": "local-runtime" }],
     "win": {
       "target": "nsis"
     },
     "nsis": {
       "oneClick": true,
-      "perMachine": false
+      "perMachine": false,
+      "include": "build/model-cleanup.nsh"
     },
     "mac": {
       "target": "dmg",

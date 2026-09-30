@@ -8,6 +8,8 @@ import { pasteJobDescription } from "../../lib/job-text-paste";
 import type { DesktopState } from "../bridge";
 import type { Plan, PlanInput } from "../store";
 import type { Resume } from "../../lib/application-types";
+import LocalModelsSettings from "./LocalModelsSettings";
+import { LOCAL_MODELS } from "../local-model-catalog";
 
 type Tab = "plan" | "applications" | "settings";
 
@@ -39,8 +41,9 @@ function formatUpdated(value: string) {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(value));
 }
 
-function PlanView({ analysisProvider, ollamaModel, hasApiKey, onOpenSettings, onDirtyChange }: {
+function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, builtInReady, onOpenSettings, onDirtyChange }: {
   analysisProvider: DesktopState["analysisProvider"]; ollamaModel: string;
+  builtInModelId: string; builtInReady: boolean;
   hasApiKey: boolean; onOpenSettings: () => void; onDirtyChange: (dirty: boolean) => void;
 }) {
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -56,6 +59,7 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, onOpenSettings, on
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const builtInModel = LOCAL_MODELS.find((model) => model.id === builtInModelId);
 
   const listingController = useRef<AbortController | null>(null);
   const resumeInput = useRef<HTMLInputElement | null>(null);
@@ -194,7 +198,8 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, onOpenSettings, on
   }
 
   async function analyze() {
-    if (analysisProvider === "openai" && !hasApiKey || analysisProvider === "ollama" && !ollamaModel) {
+    if (analysisProvider === "openai" && !hasApiKey || analysisProvider === "ollama" && !ollamaModel ||
+        analysisProvider === "builtin" && !builtInReady) {
       onOpenSettings(); return;
     }
     setAnalyzing(true); setError(""); setNotice("");
@@ -310,13 +315,18 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, onOpenSettings, on
             {!hasAnalysis && <button className="button button-secondary analysis-button" type="button" onClick={() => void analyze()}
               disabled={busy || !canAnalyze}>
               <Sparkles size={17} aria-hidden="true" />
-              {`Analyze with ${analysisProvider === "ollama" ? (ollamaModel || "Ollama") : "GPT-6 Sol"}`}
+              {`Analyze with ${analysisProvider === "ollama" ? (ollamaModel || "Ollama") : analysisProvider === "builtin"
+                ? (builtInModel?.name || "a local model") : "GPT-6 Sol"}`}
             </button>}
           </div>
           {analysisProvider === "openai" && !hasApiKey && <p className="analysis-hint"><KeyRound size={16} aria-hidden="true" />
             Add an OpenAI API key in <button type="button" onClick={onOpenSettings}>Settings</button> to run analysis.</p>}
           {analysisProvider === "ollama" && !ollamaModel && <p className="analysis-hint"><KeyRound size={16} aria-hidden="true" />
             Choose an Ollama model in <button type="button" onClick={onOpenSettings}>Settings</button> to run analysis.</p>}
+          {analysisProvider === "builtin" && !builtInReady && <p className="analysis-hint"><FolderOpen size={16} aria-hidden="true" />
+            Download a local model in <button type="button" onClick={onOpenSettings}>Settings</button> to run analysis.</p>}
+          {analysisProvider === "builtin" && builtInReady && builtInModel?.basic && <p className="analysis-hint">
+            Compact mode uses basic keyword coverage and limited overview suggestions.</p>}
           {!canAnalyze && <p className="analysis-requirements">Add a job description of at least 100 characters, your current CV overview, and a resume to analyze this role.</p>}
           <div className="match-result" aria-busy={analyzing}><span>Resume match</span>
             {analyzing ? <MatchProgressRing label="Analyzing role" /> : <div className="match-result-value">
@@ -344,7 +354,9 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, onOpenSettings, on
             <strong>{overviewUnchanged ? "No wording changes" : "What changed"}</strong>
             <p>{overviewRationale}</p>
           </div>}
-          <p className="analysis-footnote">{analysisProvider === "ollama"
+          <p className="analysis-footnote">{analysisProvider === "builtin"
+            ? `Analysis runs on this computer with ${builtInModel?.name || "the selected local model"}. Your posting, overview, and resume stay local.`
+            : analysisProvider === "ollama"
             ? `Analysis sends the job posting, CV overview, and extracted resume text to ${ollamaModel || "your selected model"} on your configured Ollama server.`
             : "Analysis sends the job posting, CV overview, and selected resume to OpenAI using your API key. API usage may be billed to your account."}</p>
         </div>
@@ -475,6 +487,7 @@ function SettingsView({ state, onState }: { state: DesktopState; onState: (value
             onChange={(event) => void changeProvider(event.target.value as DesktopState["analysisProvider"])}>
             <option value="ollama">Ollama, local model</option>
             <option value="openai">OpenAI, GPT-6 Sol</option>
+            <option value="builtin">Built-in local, downloadable models</option>
           </select></label>
         {state.analysisProvider === "ollama" ? <>
           <label className="field"><span>Server URL</span><input type="url" value={ollamaUrl}
@@ -495,7 +508,7 @@ function SettingsView({ state, onState }: { state: DesktopState; onState: (value
             onClick={() => void saveOllama()} disabled={working || findingModels || !ollamaModel.trim()}>
             <Check size={17} aria-hidden="true" /> Save Ollama settings</button></div>
           <p className="settings-help">Choose an installed model, then save. Plan analysis sends job text, your overview, and extracted resume text to that Ollama server.</p>
-        </> : <>
+        </> : state.analysisProvider === "builtin" ? <LocalModelsSettings state={state} onState={onState} /> : <>
         <p className="key-status">{state.hasApiKey ? "API key saved on this computer" : "No API key saved"}</p>
         <label className="field key-field"><span>{state.hasApiKey ? "Replace API key" : "API key"}</span>
           <input type="password" value={keyInput} onChange={(event) => setKeyInput(event.target.value)}
@@ -577,7 +590,12 @@ export default function App() {
     const removeNavigate = window.desktop!.onNavigate((target) => {
       if (target === "plan" || target === "applications" || target === "settings") navigate(target);
     });
-    return () => { removeChanged(); removeNavigate(); };
+    const removeModelsChanged = window.desktop!.onLocalModelsChanged((next) => {
+      setState((current) => current ? { ...current, builtInModelId: next.builtInModelId,
+        localModels: next.localModels, modelsFolder: next.modelsFolder, localEngine: next.localEngine,
+        totalMemory: next.totalMemory, availableMemory: next.availableMemory } : next);
+    });
+    return () => { removeChanged(); removeNavigate(); removeModelsChanged(); };
   }, [navigate]);
 
   useEffect(() => {
@@ -616,6 +634,8 @@ export default function App() {
       {!state.filePath ? (tab === "settings" ? <SettingsView state={state} onState={setState} /> : <Welcome state={state} onState={setState} />)
       : tab === "plan" ? <PlanView key={databaseVersion} hasApiKey={state.hasApiKey}
         analysisProvider={state.analysisProvider} ollamaModel={state.ollamaModel}
+        builtInModelId={state.builtInModelId} builtInReady={Boolean(state.localModels?.some((model) =>
+          model.id === state.builtInModelId && model.status === "ready"))}
         onOpenSettings={() => navigate("settings")} onDirtyChange={setDirtyPlan} />
       : tab === "applications" ? <ApplicationDashboard key={databaseVersion} embedded />
       : <SettingsView state={state} onState={setState} />}</div>

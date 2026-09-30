@@ -17,6 +17,10 @@ await buildEsbuild({
   bundle: true, platform: "node", target: "node24", format: "cjs",
   external: ["electron"],
 });
+await buildEsbuild({
+  entryPoints: ["desktop/local-runtime-worker.ts"], outfile: "desktop-dist/local-runtime-worker.cjs",
+  bundle: true, platform: "node", target: "node24", format: "cjs", external: ["node:*"],
+});
 await mkdir("build", { recursive: true });
 await sharp(await readFile("build/desktop-icon.svg")).resize(1024, 1024).png().toFile("build/desktop-icon.png");
 await copyFile("build/desktop-icon.png", "desktop-dist/renderer/icon.png");
