@@ -5,6 +5,7 @@ import path from "node:path";
 import { DatabaseSync, backup } from "node:sqlite";
 import { z } from "zod";
 import { applicationInputSchema } from "../lib/application-validation";
+import { MAX_APPLICATION_NOTES_CHARS } from "../lib/application-types";
 import type { Application, ApplicationInput, Resume } from "../lib/application-types";
 
 export type Plan = {
@@ -52,6 +53,15 @@ const planInputSchema = z.object({
 });
 
 type Row = Record<string, unknown>;
+
+function notesWithListing(notes: string, listing: string) {
+  if (!listing.trim() || notes.includes(listing)) return notes;
+  const combined = notes.trim() ? `${notes}\n\nJob listing\n${listing}` : listing;
+  if (combined.length > MAX_APPLICATION_NOTES_CHARS) {
+    throw new Error("These notes are too long to include another listing. Shorten the notes before saving.");
+  }
+  return combined;
+}
 
 function snapshotValues(input: { listingUrl: string; snapshotText?: string; snapshotSource?: string },
   description: string, previous: Row | undefined, now: string) {
@@ -153,14 +163,14 @@ function createSchema(db: DatabaseSync) {
     );
     CREATE INDEX applications_date_idx ON applications(applied_date DESC, created_at DESC);
     CREATE INDEX plans_updated_idx ON plans(updated_at DESC);
-    PRAGMA user_version = 7;
+    PRAGMA user_version = 8;
   `);
 }
 
 function migrate(db: DatabaseSync): boolean {
   const version = Number((db.prepare("PRAGMA user_version").get() as Row).user_version);
-  if (version === 7) return false;
-  if (version < 1 || version > 6) throw new Error("This is not a supported PM Application Tracker database.");
+  if (version === 8) return false;
+  if (version < 1 || version > 7) throw new Error("This is not a supported PM Application Tracker database.");
   if (version === 1) db.exec(`
     CREATE TABLE plans (
       id TEXT PRIMARY KEY, listing_url TEXT NOT NULL, company TEXT NOT NULL DEFAULT '',
@@ -226,10 +236,20 @@ function migrate(db: DatabaseSync): boolean {
     PRAGMA user_version = 6;
     COMMIT;
   `);
-  db.exec(`
+  if (version <= 6) db.exec(`
     BEGIN IMMEDIATE;
     ALTER TABLE applications ADD COLUMN notes TEXT NOT NULL DEFAULT '';
     PRAGMA user_version = 7;
+    COMMIT;
+  `);
+  db.exec(`
+    BEGIN IMMEDIATE;
+    UPDATE applications SET notes = CASE
+      WHEN length(trim(notes)) = 0 THEN snapshot_text
+      ELSE notes || char(10) || char(10) || 'Job listing' || char(10) || snapshot_text
+    END
+    WHERE length(trim(snapshot_text)) > 0 AND instr(notes, snapshot_text) = 0;
+    PRAGMA user_version = 8;
     COMMIT;
   `);
   return true;
@@ -239,7 +259,7 @@ function validate(db: DatabaseSync) {
   const check = (db.prepare("PRAGMA quick_check").get() as Row).quick_check;
   if (check !== "ok") throw new Error("The selected database failed its integrity check.");
   const version = Number((db.prepare("PRAGMA user_version").get() as Row).user_version);
-  if (version < 1 || version > 7) throw new Error("This is not a supported PM Application Tracker database.");
+  if (version < 1 || version > 8) throw new Error("This is not a supported PM Application Tracker database.");
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Row[];
   const names = new Set(tables.map((row) => String(row.name)));
   if (!names.has("applications") || !names.has("resumes")) {
@@ -305,7 +325,17 @@ export class DesktopStore {
     const target = path.resolve(filePath);
     if (!(await stat(target).catch(() => null))?.isFile()) throw new Error("The database file could not be found. Wait for cloud sync, then try again.");
     const checkDb = new DatabaseSync(target, { readOnly: true });
-    try { validate(checkDb); } finally { checkDb.close(); }
+    let previousVersion = 0;
+    try {
+      validate(checkDb);
+      previousVersion = Number((checkDb.prepare("PRAGMA user_version").get() as Row).user_version);
+    } finally { checkDb.close(); }
+    if (previousVersion < 8) {
+      await mkdir(this.backupsPath, { recursive: true });
+      const prefix = createHash("sha256").update(target.toLowerCase()).digest("hex").slice(0, 12);
+      await copyFile(target, path.join(this.backupsPath,
+        `${prefix}-${new Date().toISOString().slice(0, 10)}-before-v8-${randomUUID()}.sqlite`));
+    }
     const workingDir = path.join(this.userData, "working");
     await mkdir(workingDir, { recursive: true });
     const workingPath = path.join(workingDir, createHash("sha256").update(target.toLowerCase()).digest("hex") + ".sqlite");
@@ -410,6 +440,10 @@ export class DesktopStore {
         const previous = db.prepare("SELECT * FROM applications WHERE id = ?").get(id) as Row | undefined;
         if (!previous) throw new Error("Application not found.");
         const snapshot = snapshotValues(item, item.jobDescription, previous, now);
+        // Notes have a separate save action; an open record form can carry an older value.
+        const currentNotes = String(previous.notes || "");
+        const applicationNotes = snapshot[0] !== String(previous.snapshot_text || "")
+          ? notesWithListing(currentNotes, snapshot[0]) : currentNotes;
         const sameSource = String(previous.resume_id || "") === item.resumeId &&
           String(previous.listing_url) === item.listingUrl &&
           String(previous.job_description || "") === item.jobDescription;
@@ -421,7 +455,7 @@ export class DesktopStore {
           snapshot_source = ?, applied_date = ?, match_strength = ?,
           match_notes = ?, match_analyzed_at = ?, resume_id = ?, status = ?, updated_at = ?
           WHERE id = ?`).run(item.company, item.title, item.team, item.locations, item.listingUrl,
-          item.jobDescription, item.notes, ...snapshot, item.appliedDate, score,
+          item.jobDescription, applicationNotes, ...snapshot, item.appliedDate, score,
           preserveAnalysis ? String(previous.match_notes || "") : "",
           preserveAnalysis ? String(previous.match_analyzed_at || "") : "",
           item.resumeId || null, item.status, now, id);
@@ -432,7 +466,7 @@ export class DesktopStore {
           job_description, notes, snapshot_text, snapshot_captured_at, snapshot_source, applied_date,
           match_strength, resume_id, status, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(resultId, item.company, item.title,
-          item.team, item.locations, item.listingUrl, item.jobDescription, item.notes, ...snapshot, item.appliedDate,
+          item.team, item.locations, item.listingUrl, item.jobDescription, notesWithListing(item.notes, snapshot[0]), ...snapshot, item.appliedDate,
           item.matchStrength, item.resumeId || null, item.status, now, now);
       }
     });
@@ -440,7 +474,7 @@ export class DesktopStore {
   }
 
   async saveApplicationNotes(id: string, notes: unknown): Promise<Application> {
-    if (typeof notes !== "string" || notes.length > 20_000) throw new Error("Notes must be 20,000 characters or less.");
+    if (typeof notes !== "string" || notes.length > MAX_APPLICATION_NOTES_CHARS) throw new Error("Notes must be 200,000 characters or less.");
     await this.mutate((db) => {
       const result = db.prepare("UPDATE applications SET notes = ?, updated_at = ? WHERE id = ?")
         .run(notes, new Date().toISOString(), id);
@@ -461,13 +495,17 @@ export class DesktopStore {
       throw new Error("The match analysis was incomplete. Try again.");
     }
     await this.mutate((db) => {
+      const previous = db.prepare("SELECT notes, snapshot_text FROM applications WHERE id = ?").get(id) as Row | undefined;
+      if (!previous) throw new Error("Application not found.");
+      const applicationNotes = previous.snapshot_text ? String(previous.notes || "")
+        : notesWithListing(String(previous.notes || ""), jobDescription);
       const result = db.prepare(`UPDATE applications SET match_strength = ?, match_notes = ?,
-        match_analyzed_at = ?, job_description = ?,
+        match_analyzed_at = ?, job_description = ?, notes = ?,
         snapshot_text = CASE WHEN snapshot_text = '' THEN ? ELSE snapshot_text END,
         snapshot_captured_at = CASE WHEN snapshot_captured_at = '' THEN ? ELSE snapshot_captured_at END,
         snapshot_source = CASE WHEN snapshot_source = '' THEN 'saved' ELSE snapshot_source END,
         updated_at = ? WHERE id = ? AND updated_at = ?`)
-        .run(score, notes.trim().slice(0, 4000), new Date().toISOString(), jobDescription,
+        .run(score, notes.trim().slice(0, 4000), new Date().toISOString(), jobDescription, applicationNotes,
           jobDescription, new Date().toISOString(), new Date().toISOString(), id, expectedUpdatedAt);
       if (!result.changes) throw new Error("This application changed while analysis ran. Run it again from the latest version.");
     });

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ArrowRight, ArrowUpRight, BriefcaseBusiness, Check, ClipboardList, FileText, FolderOpen,
-  KeyRound, LoaderCircle, Monitor, Moon, Plus, RotateCw, Search, Settings2, Sparkles, Sun, Trash2 } from "lucide-react";
+  KeyRound, LoaderCircle, Monitor, Moon, Plus, RefreshCw, RotateCw, Search, Settings2, Sparkles, Sun, Trash2 } from "lucide-react";
 import ApplicationDashboard from "../../app/application-dashboard";
 import LocationEditor from "../../app/location-editor";
+import MatchProgressRing from "../../app/match-progress-ring";
 import { pasteJobDescription } from "../../lib/job-text-paste";
 import type { DesktopState } from "../bridge";
 import type { Plan, PlanInput } from "../store";
@@ -61,6 +62,7 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, onOpenSettings, on
   const dirty = JSON.stringify(draft) !== JSON.stringify(savedDraft) || Boolean(resumeFile);
   const busy = reading || saving || analyzing;
   const selectedPlan = plans.find((plan) => plan.id === selectedId);
+  const hasAnalysis = Boolean(selectedPlan && (selectedPlan.matchAnalyzedAt || selectedPlan.keywords.length));
   const matchIsCurrent = selectedPlan && !resumeFile &&
     (["listingUrl", "company", "title", "team", "locations", "description",
       "currentOverview", "resumeId"] as const).every((key) => draft[key] === selectedPlan[key]);
@@ -225,9 +227,8 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, onOpenSettings, on
     } catch (cause) { setError(errorText(cause)); }
   }
 
-  return <main className="desktop-main plan-page">
-    <div className="page-heading plan-heading">
-      <div><h1>Plan</h1><p>Turn each job posting into a focused resume brief.</p></div>
+  return <main className="desktop-main plan-page" aria-label="Plan">
+    <div className="workspace-toolbar">
       <button className="button button-primary" type="button" onClick={() => choose(null)} disabled={busy}>
         <Plus size={18} aria-hidden="true" /> New plan
       </button>
@@ -306,18 +307,24 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, onOpenSettings, on
         <div className="plan-section analysis-section">
           <div className="plan-section-heading"><div><h3>Resume direction</h3>
             <p>Generated suggestions are editable. Check them against the posting and your experience.</p></div>
-            <button className="button button-secondary analysis-button" type="button" onClick={() => void analyze()}
+            {!hasAnalysis && <button className="button button-secondary analysis-button" type="button" onClick={() => void analyze()}
               disabled={busy || !canAnalyze}>
-              {analyzing ? <LoaderCircle className="spin" size={17} /> : <Sparkles size={17} />}
-              {analyzing ? "Analyzing..." : draft.keywords.length ? "Analyze again" : `Analyze with ${analysisProvider === "ollama" ? (ollamaModel || "Ollama") : "GPT-6 Sol"}`}
-            </button>
+              <Sparkles size={17} aria-hidden="true" />
+              {`Analyze with ${analysisProvider === "ollama" ? (ollamaModel || "Ollama") : "GPT-6 Sol"}`}
+            </button>}
           </div>
           {analysisProvider === "openai" && !hasApiKey && <p className="analysis-hint"><KeyRound size={16} aria-hidden="true" />
             Add an OpenAI API key in <button type="button" onClick={onOpenSettings}>Settings</button> to run analysis.</p>}
           {analysisProvider === "ollama" && !ollamaModel && <p className="analysis-hint"><KeyRound size={16} aria-hidden="true" />
             Choose an Ollama model in <button type="button" onClick={onOpenSettings}>Settings</button> to run analysis.</p>}
           {!canAnalyze && <p className="analysis-requirements">Add a job description of at least 100 characters, your current CV overview, and a resume to analyze this role.</p>}
-          <div className="match-result"><span>Resume match</span><strong>{matchStrength === null ? "Not analyzed" : `${matchStrength}%`}</strong>
+          <div className="match-result" aria-busy={analyzing}><span>Resume match</span>
+            {analyzing ? <MatchProgressRing label="Analyzing role" /> : <div className="match-result-value">
+              <strong>{matchStrength === null ? "Not analyzed" : `${matchStrength}%`}</strong>
+              {matchStrength !== null && <span className="score-track" aria-hidden="true"><span style={{ width: `${matchStrength}%` }} /></span>}
+              {hasAnalysis && <button className="match-refresh" type="button" aria-label="Refresh analysis" title="Refresh analysis"
+                onClick={() => void analyze()} disabled={busy || !canAnalyze}><RefreshCw size={16} aria-hidden="true" /></button>}
+            </div>}
             <small>Estimated fit based on the selected resume and job posting.</small></div>
           <div className="analysis-grid">
             <label className="field"><span>Core ATS keywords <small>{draft.keywords.filter(Boolean).length} keywords, aim for 6-20</small></span>
