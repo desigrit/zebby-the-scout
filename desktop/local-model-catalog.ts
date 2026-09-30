@@ -25,7 +25,7 @@ export const LOCAL_MODELS: readonly LocalModel[] = [
     sha256: "2fa3f013dcdd7b99f9b237717fa0b12d75bbb89984cc1274be1471a465bac9c2",
     url: "https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/7be6f65f1db715fe5dc5a4634c0d459b4eed42ec/SmolLM2-360M-Instruct-Q4_K_M.gguf",
     sourceUrl: "https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct",
-    context: 8192, minimumFreeMemory: 1.5 * GiB, memoryHint: "4 GB RAM or more", 
+    context: 8192, minimumFreeMemory: 1.5 * GiB, memoryHint: "4 GB RAM or more",
   },
   {
     id: "qwen3-06b", name: "Qwen3 0.6B", tier: "Small", basic: false,

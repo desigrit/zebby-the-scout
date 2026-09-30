@@ -8,4 +8,3 @@ export const matchInstructions = "Compare the supplied resume with the job descr
 export const matchSchema = { type: "object", additionalProperties: false,
   properties: { score: { type: "integer", minimum: 0, maximum: 100 }, explanation: { type: "string" } },
   required: ["score", "explanation"] };
-
