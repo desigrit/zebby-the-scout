@@ -11,6 +11,37 @@ import { basicEvidence, analyzeBasicLocal } from "../desktop/basic-local-analysi
 import { runSelectedAnalysis } from "../desktop/analysis-routing.ts";
 import { deleteDownloadedModel } from "../desktop/local-model-removal.ts";
 import { localModelFolder } from "../desktop/local-model-storage.ts";
+import { availableModelMemory, reclaimableMacMemory } from "../desktop/local-model-memory.ts";
+
+test("Mac model memory includes reclaimable pages without adding active or overlapping counters", async () => {
+  const stats = `Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free: 10000.
+Pages active: 900000.
+Pages inactive: 150000.
+Pages speculative: 20000.
+Pages wired down: 200000.
+Pages purgeable: 100000.
+Pages occupied by compressor: 300000.
+`;
+  const expected = 180000 * 16384;
+  assert.equal(reclaimableMacMemory(stats), expected);
+  assert.equal(reclaimableMacMemory(stats.replace("16384", "4096")), 180000 * 4096);
+  assert.equal(await availableModelMemory({ platform: "darwin", freeBytes: 10000 * 16384,
+    totalBytes: 8 * 1024 ** 3, readMacStats: async () => stats }), expected);
+  assert.ok(expected > LOCAL_MODELS[0].minimumFreeMemory);
+  assert.equal(await availableModelMemory({ platform: "darwin", freeBytes: 100,
+    totalBytes: 1000, readMacStats: async () => stats }), 1000);
+});
+
+test("unavailable Mac memory statistics preserve the conservative fallback and Windows avoids the command", async () => {
+  assert.equal(reclaimableMacMemory("unknown output"), null);
+  assert.equal(reclaimableMacMemory("page size of 16384 bytes\nPages free: 100."), null);
+  for (const readMacStats of [async () => "unknown output", async () => { throw new Error("unavailable"); }]) {
+    assert.equal(await availableModelMemory({ platform: "darwin", freeBytes: 123, readMacStats }), 123);
+  }
+  assert.equal(await availableModelMemory({ platform: "win32", freeBytes: 456,
+    readMacStats: async () => { throw new Error("Windows must not run vm_stat."); } }), 456);
+});
 
 const bytes = Buffer.from("Synthetic model bytes for download lifecycle verification.");
 const model = { ...LOCAL_MODELS[0], id: "fixture", filename: "fixture.gguf", bytes: bytes.length,

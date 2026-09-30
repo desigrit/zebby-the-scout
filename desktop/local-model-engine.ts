@@ -2,11 +2,12 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { createServer } from "node:net";
-import { availableParallelism, freemem } from "node:os";
+import { availableParallelism } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { getLocalModel } from "./local-model-catalog.ts";
 import type { LocalModelDownloads } from "./local-model-downloads.ts";
+import { availableModelMemory } from "./local-model-memory.ts";
 
 async function availablePort(): Promise<number> {
   const server = createServer();
@@ -66,7 +67,7 @@ export class LocalModelEngine {
     if (this.loadedId === id && this.child?.exitCode === null && this.child.signalCode === null) return;
     await this.stop(true);
     const model = getLocalModel(id);
-    if (freemem() < model.minimumFreeMemory) {
+    if (await availableModelMemory() < model.minimumFreeMemory) {
       throw new Error(`${model.name} needs more available memory. Close other apps or choose a smaller built-in model.`);
     }
     const root = path.resolve(this.options.runtimeFolder);
@@ -79,6 +80,7 @@ export class LocalModelEngine {
       throw new Error("The local analysis engine could not be found. Reinstall the app.");
     }
     const port = await availablePort();
+    if (this.shuttingDown) throw new Error("The app is closing.");
     this.secret = randomBytes(32).toString("hex");
     this.baseUrl = `http://127.0.0.1:${port}`;
     this.loadedId = id; this.status = "loading"; this.changed();
