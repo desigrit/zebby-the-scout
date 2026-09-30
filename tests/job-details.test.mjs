@@ -7,7 +7,9 @@ import {
   detailsFromHtml,
   detailsFromLever,
   detailsFromStructuredData,
+  mergeJobDetails,
 } from "../lib/job-details.ts";
+import { descriptionFromHtml, descriptionText, formattedJobText } from "../lib/job-fetch.ts";
 
 test("structured JobPosting keeps employer, team, and multiple locations", () => {
   const details = detailsFromStructuredData({
@@ -103,4 +105,40 @@ test("Ashby selects the pasted job rather than another opening on the board", ()
   assert.deepEqual(details, {
     company: "", title: "Product Manager", team: "Core", locations: "New York; San Francisco",
   });
+});
+
+test("a combined PM title becomes a title and team", () => {
+  assert.deepEqual(mergeJobDetails({ company: "Acme", title: "Product Manager, Central Products", team: "", locations: "" },
+    { company: "", title: "", team: "", locations: "" }),
+  { company: "Acme", title: "Product Manager", team: "Central Products", locations: "" });
+  assert.equal(mergeJobDetails({ company: "", title: "Product Manager, Remote", team: "", locations: "" },
+    { company: "", title: "", team: "", locations: "" }).title, "Product Manager, Remote");
+});
+
+test("job descriptions keep headings, bullets, and paragraph breaks", () => {
+  const text = formattedJobText("<h2>What you will do</h2><ul><li>Own the roadmap</li><li>Work with design</li></ul><p>Apply today.</p>");
+  assert.match(text, /What you will do\n\n• Own the roadmap\n• Work with design/);
+  assert.match(text, /Work with design\n\nApply today\./);
+  const structured = descriptionFromHtml(`<html><head><script type="application/ld+json">${JSON.stringify({
+    "@type": "JobPosting", description: "<h2>Role</h2><p>Work with customers and engineering to deliver valuable products.</p><ul><li>Lead discovery</li><li>Set direction</li></ul>",
+  })}</script></head><body><main>Generic shell content that is long enough to be mistaken for the full job post.</main></body></html>`);
+  assert.match(structured, /• Lead discovery\n• Set direction/);
+});
+
+test("Ashby description comes from the selected job in its public board API", () => {
+  const text = descriptionText({ kind: "ashby", board: "acme", endpoint: new URL("https://api.ashbyhq.com/") }, {
+    jobs: [
+      { jobUrl: "https://jobs.ashbyhq.com/acme/other", descriptionHtml: "<p>Wrong role</p>" },
+      { jobUrl: "https://jobs.ashbyhq.com/acme/pm", descriptionHtml: "<ul><li>Build products</li></ul>" },
+    ],
+  }, new URL("https://jobs.ashbyhq.com/acme/pm?source=referral"));
+  assert.equal(text, "• Build products");
+});
+
+test("Lever prefers formatted HTML when a plain description is also available", () => {
+  const text = descriptionText({ kind: "lever", board: "acme", endpoint: new URL("https://api.lever.co/") }, {
+    descriptionPlain: "Build products",
+    description: "<ul><li>Build products</li><li>Lead the team</li></ul>",
+  }, new URL("https://jobs.lever.co/acme/pm"));
+  assert.match(text, /• Build products\n• Lead the team/);
 });

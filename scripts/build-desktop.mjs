@@ -1,7 +1,7 @@
 import { build as buildVite } from "vite";
 import { build as buildEsbuild } from "esbuild";
 import sharp from "sharp";
-import { mkdir, readFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 await buildVite({ configFile: path.resolve("vite.config.desktop.ts") });
@@ -19,3 +19,4 @@ await buildEsbuild({
 });
 await mkdir("build", { recursive: true });
 await sharp(await readFile("build/desktop-icon.svg")).resize(1024, 1024).png().toFile("build/desktop-icon.png");
+await copyFile("build/desktop-icon.png", "desktop-dist/renderer/icon.png");

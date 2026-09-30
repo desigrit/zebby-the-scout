@@ -23,6 +23,7 @@ export type Application = {
   locations: string;
   listingUrl: string;
   jobDescription: string;
+  notes: string;
   snapshotText: string;
   snapshotCapturedAt: string;
   snapshotSource: "page" | "manual" | "saved" | "";
@@ -45,6 +46,7 @@ export type ApplicationInput = Pick<
   | "locations"
   | "listingUrl"
   | "jobDescription"
+  | "notes"
   | "snapshotText"
   | "snapshotSource"
   | "appliedDate"

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { ArrowRight, ArrowUpRight, BriefcaseBusiness, Check, ClipboardList, FileText, FolderOpen,
   KeyRound, LoaderCircle, Monitor, Moon, Plus, RotateCw, Search, Settings2, Sparkles, Sun, Trash2 } from "lucide-react";
 import ApplicationDashboard from "../../app/application-dashboard";
+import LocationEditor from "../../app/location-editor";
+import { pasteJobDescription } from "../../lib/job-text-paste";
 import type { DesktopState } from "../bridge";
 import type { Plan, PlanInput } from "../store";
 import type { Resume } from "../../lib/application-types";
@@ -268,10 +270,12 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, onOpenSettings, on
             <label className="field"><span>Company</span><input value={draft.company} onChange={(event) => update("company", event.target.value)} placeholder="Company name" /></label>
             <label className="field"><span>Job title</span><input value={draft.title} onChange={(event) => update("title", event.target.value)} placeholder="Product Manager" /></label>
             <label className="field"><span>Team</span><input value={draft.team} onChange={(event) => update("team", event.target.value)} placeholder="If listed" /></label>
-            <label className="field"><span>Location(s)</span><input value={draft.locations} onChange={(event) => update("locations", event.target.value)} placeholder="If listed" /></label>
+            <LocationEditor value={draft.locations} onChange={(value) => update("locations", value)} />
           </div>
           <label className="field"><span>Job description</span><textarea className="description-area" value={draft.description}
-            onChange={(event) => update("description", event.target.value)} placeholder="Read the listing or paste the full job description here." maxLength={80000} />
+            onChange={(event) => update("description", event.target.value)}
+            onPaste={(event) => pasteJobDescription(event, (value) => update("description", value))}
+            placeholder="Read the listing or paste the full job description here." maxLength={80000} />
             <small>Some job sites block automatic reading. You can paste and edit the text here.</small></label>
           {draft.snapshotText && <details className="snapshot-panel"><summary>Saved listing copy <span>{draft.snapshotSource === "page" ? "Captured from link" : "Saved from description"}</span></summary>
             <p>This original text stays in the database when you edit the description above.</p>
