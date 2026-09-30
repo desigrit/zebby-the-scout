@@ -76,6 +76,7 @@ function mapApplication(row: Row): Application {
     id: String(row.id), company: String(row.company), title: String(row.title),
     team: String(row.team || ""), locations: String(row.locations || ""),
     listingUrl: String(row.listing_url), jobDescription: String(row.job_description || ""),
+    notes: String(row.notes || ""),
     snapshotText: String(row.snapshot_text || ""),
     snapshotCapturedAt: String(row.snapshot_captured_at || ""),
     snapshotSource: String(row.snapshot_source || "") as Application["snapshotSource"],
@@ -129,6 +130,7 @@ function createSchema(db: DatabaseSync) {
       id TEXT PRIMARY KEY, company TEXT NOT NULL, title TEXT NOT NULL,
       team TEXT NOT NULL DEFAULT '', locations TEXT NOT NULL DEFAULT '',
       listing_url TEXT NOT NULL DEFAULT '', job_description TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',
       snapshot_text TEXT NOT NULL DEFAULT '', snapshot_captured_at TEXT NOT NULL DEFAULT '',
       snapshot_source TEXT NOT NULL DEFAULT '',
       applied_date TEXT NOT NULL DEFAULT '',
@@ -151,14 +153,14 @@ function createSchema(db: DatabaseSync) {
     );
     CREATE INDEX applications_date_idx ON applications(applied_date DESC, created_at DESC);
     CREATE INDEX plans_updated_idx ON plans(updated_at DESC);
-    PRAGMA user_version = 6;
+    PRAGMA user_version = 7;
   `);
 }
 
 function migrate(db: DatabaseSync): boolean {
   const version = Number((db.prepare("PRAGMA user_version").get() as Row).user_version);
-  if (version === 6) return false;
-  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5) throw new Error("This is not a supported PM Application Tracker database.");
+  if (version === 7) return false;
+  if (version < 1 || version > 6) throw new Error("This is not a supported PM Application Tracker database.");
   if (version === 1) db.exec(`
     CREATE TABLE plans (
       id TEXT PRIMARY KEY, listing_url TEXT NOT NULL, company TEXT NOT NULL DEFAULT '',
@@ -218,10 +220,16 @@ function migrate(db: DatabaseSync): boolean {
     PRAGMA user_version = 5;
     COMMIT;
   `);
-  db.exec(`
+  if (version <= 5) db.exec(`
     BEGIN IMMEDIATE;
     ALTER TABLE plans ADD COLUMN overview_rationale TEXT NOT NULL DEFAULT '';
     PRAGMA user_version = 6;
+    COMMIT;
+  `);
+  db.exec(`
+    BEGIN IMMEDIATE;
+    ALTER TABLE applications ADD COLUMN notes TEXT NOT NULL DEFAULT '';
+    PRAGMA user_version = 7;
     COMMIT;
   `);
   return true;
@@ -231,7 +239,7 @@ function validate(db: DatabaseSync) {
   const check = (db.prepare("PRAGMA quick_check").get() as Row).quick_check;
   if (check !== "ok") throw new Error("The selected database failed its integrity check.");
   const version = Number((db.prepare("PRAGMA user_version").get() as Row).user_version);
-  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6) throw new Error("This is not a supported PM Application Tracker database.");
+  if (version < 1 || version > 7) throw new Error("This is not a supported PM Application Tracker database.");
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Row[];
   const names = new Set(tables.map((row) => String(row.name)));
   if (!names.has("applications") || !names.has("resumes")) {
@@ -409,11 +417,11 @@ export class DesktopStore {
         const preserveAnalysis = sameSource && sameScore;
         const score = !sameSource && previous.match_analyzed_at && sameScore ? null : item.matchStrength;
         const result = db.prepare(`UPDATE applications SET company = ?, title = ?, team = ?, locations = ?,
-          listing_url = ?, job_description = ?, snapshot_text = ?, snapshot_captured_at = ?,
+          listing_url = ?, job_description = ?, notes = ?, snapshot_text = ?, snapshot_captured_at = ?,
           snapshot_source = ?, applied_date = ?, match_strength = ?,
           match_notes = ?, match_analyzed_at = ?, resume_id = ?, status = ?, updated_at = ?
           WHERE id = ?`).run(item.company, item.title, item.team, item.locations, item.listingUrl,
-          item.jobDescription, ...snapshot, item.appliedDate, score,
+          item.jobDescription, item.notes, ...snapshot, item.appliedDate, score,
           preserveAnalysis ? String(previous.match_notes || "") : "",
           preserveAnalysis ? String(previous.match_analyzed_at || "") : "",
           item.resumeId || null, item.status, now, id);
@@ -421,14 +429,24 @@ export class DesktopStore {
       } else {
         const snapshot = snapshotValues(item, item.jobDescription, undefined, now);
         db.prepare(`INSERT INTO applications (id, company, title, team, locations, listing_url,
-          job_description, snapshot_text, snapshot_captured_at, snapshot_source, applied_date,
+          job_description, notes, snapshot_text, snapshot_captured_at, snapshot_source, applied_date,
           match_strength, resume_id, status, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(resultId, item.company, item.title,
-          item.team, item.locations, item.listingUrl, item.jobDescription, ...snapshot, item.appliedDate,
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(resultId, item.company, item.title,
+          item.team, item.locations, item.listingUrl, item.jobDescription, item.notes, ...snapshot, item.appliedDate,
           item.matchStrength, item.resumeId || null, item.status, now, now);
       }
     });
     return this.findApplication(resultId)!;
+  }
+
+  async saveApplicationNotes(id: string, notes: unknown): Promise<Application> {
+    if (typeof notes !== "string" || notes.length > 20_000) throw new Error("Notes must be 20,000 characters or less.");
+    await this.mutate((db) => {
+      const result = db.prepare("UPDATE applications SET notes = ?, updated_at = ? WHERE id = ?")
+        .run(notes, new Date().toISOString(), id);
+      if (!result.changes) throw new Error("Application not found.");
+    });
+    return this.findApplication(id)!;
   }
 
   findPlanByListingUrl(listingUrl: string): Plan | null {

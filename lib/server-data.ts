@@ -66,6 +66,7 @@ export function mapApplication(row: Record<string, unknown>): Application {
     locations: String(row.locations ?? ""),
     listingUrl: String(row.listing_url),
     jobDescription: "",
+    notes: "",
     snapshotText: "",
     snapshotCapturedAt: "",
     snapshotSource: "",

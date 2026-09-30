@@ -130,7 +130,7 @@ try {
     const originalFetch = window.fetch;
     window.fetch = async (url, options) => {
       if (url === "/api/job-posting") return Response.json({
-        details: { company: "Northstar Labs", title: "Senior Product Manager", team: "Growth", locations: "Remote" },
+        details: { company: "Northstar Labs", title: "Senior Product Manager", team: "Growth", locations: "Seattle, WA; Bellevue, WA" },
         text: "Original offline job listing. Lead customer discovery, product strategy, roadmap planning, activation experiments, stakeholder communication, and cross-functional product delivery with design and engineering partners.",
       });
       return originalFetch(url, options);
@@ -138,21 +138,56 @@ try {
   });
   await page.locator("#listing-url").fill("https://example.org/jobs/senior-product-manager");
   await page.getByText("Saved a copy of the listing text for offline reference.", { exact: false }).waitFor();
+  await page.getByRole("button", { name: "Remove Bellevue, WA" }).waitFor();
+  await page.getByRole("button", { name: "Remove Bellevue, WA" }).click();
+  await page.getByRole("button", { name: "Add location", exact: true }).click();
+  await page.getByRole("textbox", { name: "New location" }).fill("Redmond, WA");
+  await page.getByRole("textbox", { name: "New location" }).press("Enter");
+  await page.locator("textarea.application-description").fill("");
+  await page.evaluate(() => {
+    const clipboard = new DataTransfer();
+    clipboard.setData("text/html", "<h2>Responsibilities</h2><ul><li>Lead discovery and product strategy with customers and partners</li><li>Prioritize roadmap work using evidence and outcomes</li></ul><p>Partner with design and engineering on activation experiments.</p>");
+    clipboard.setData("text/plain", "Responsibilities Lead discovery and product strategy with customers and partners Prioritize roadmap work using evidence and outcomes Partner with design and engineering on activation experiments.");
+    const area = document.querySelector("textarea.application-description");
+    area.focus();
+    area.dispatchEvent(new ClipboardEvent("paste", { clipboardData: clipboard, bubbles: true, cancelable: true }));
+  });
+  assert.match(await page.locator("textarea.application-description").inputValue(), /• Lead discovery.*\n• Prioritize roadmap/s);
   await page.getByPlaceholder("Company name").fill("QA Company");
   await page.getByPlaceholder("Senior Product Manager").fill("Product Manager");
   await page.locator("#new-resume").setInputFiles({ name: "Resume.pdf", mimeType: "application/pdf",
     buffer: simplePdf("Product strategy and customer discovery with roadmap and activation experiments") });
   await page.getByRole("button", { name: "Save application" }).click();
-  await page.getByText("Application added.").waitFor();
-  await page.getByText("QA Company").waitFor();
+  await page.getByRole("table").getByText("78%").waitFor();
+  await page.getByRole("table").getByText("QA Company", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "See more" }).click();
+  await page.getByText("Seattle, WA; Redmond, WA").waitFor();
+  await page.getByRole("button", { name: "See less" }).click();
+  await page.getByRole("combobox", { name: "Filter by company" }).selectOption("QA Company");
+  assert.match(await page.getByRole("combobox", { name: "Filter by company" }).textContent(), /QA Company \(1\)/);
+  assert.match(await page.getByRole("combobox", { name: "Filter by status" }).textContent(), /Applied \(1\)/);
+  await page.getByRole("combobox", { name: "Filter by company" }).selectOption("");
+  await page.getByRole("button", { name: "Notes for Product Manager at QA Company" }).click();
+  await page.getByRole("dialog", { name: "Application notes" }).getByRole("textbox", { name: "Notes" })
+    .fill("Pre-screen: discuss team scope.\nPerson: Hiring manager");
+  await page.getByRole("button", { name: "Save notes" }).click();
+  await page.getByText("Notes saved.").waitFor();
+  await page.getByRole("button", { name: "Notes for Product Manager at QA Company" }).click();
+  assert.match(await page.getByRole("dialog", { name: "Application notes" }).getByRole("textbox", { name: "Notes" }).inputValue(), /Hiring manager/);
+  await page.getByRole("dialog", { name: "Application notes" }).getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Delete Product Manager at QA Company" }).click();
+  await page.getByRole("dialog", { name: "Delete application?" }).getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("table").getByText("QA Company", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Add application", exact: true }).click();
+  await page.locator("#listing-url").fill("https://example.org/jobs/senior-product-manager?utm_source=mail");
+  await page.getByText("This listing is already saved.").waitFor();
+  await page.getByRole("button", { name: "Close form" }).click();
   await page.getByRole("button", { name: "Saved copy" }).click();
   await page.getByRole("dialog", { name: "Saved listing copy" }).getByText("Original offline job listing.", { exact: false }).waitFor();
   const dialogBounds = await page.getByRole("dialog", { name: "Saved listing copy" }).boundingBox();
   assert.ok(dialogBounds && Math.abs(dialogBounds.x + dialogBounds.width / 2 - 640) < 20);
   await page.screenshot({ path: path.join(output, "saved-copy.png") });
   await page.getByRole("button", { name: "Close saved copy" }).click();
-  await page.getByRole("button", { name: "Analyze match" }).click();
-  await page.getByRole("table").getByText("78%").waitFor();
   assert.equal((await app.evaluate(() => globalThis.__analysisCalls)).length, 2);
   assert.equal((await app.evaluate(() => globalThis.__analysisCalls))[1].input[0].content[0].type, "input_file");
   await page.screenshot({ path: path.join(output, "applications-filled.png") });

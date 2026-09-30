@@ -92,12 +92,22 @@ function locationNames(value: unknown): string[] {
 }
 
 export function mergeJobDetails(primary: JobDetails, fallback: JobDetails): JobDetails {
-  return {
+  const merged = {
     company: primary.company || fallback.company,
     title: primary.title || fallback.title,
     team: primary.team || fallback.team,
     locations: primary.locations || fallback.locations,
   };
+  return separateTitleAndTeam(merged);
+}
+
+export function separateTitleAndTeam(details: JobDetails): JobDetails {
+  const match = details.title.match(/^((?:(?:Senior|Sr\.?|Staff|Principal|Group|Lead|Associate|Technical|Director of|Head of|VP of|Vice President of)\s+)*(?:Product Manager|Product Management|Product Owner|Program Manager|Technical Program Manager|Growth Product Manager))(?:\s*,\s*)([^,]{2,80})$/i);
+  if (!match) return details;
+  const suffix = match[2].trim();
+  if (/^(?:remote|hybrid|onsite|on-site|united states|usa|us|canada|uk|[a-z .]+,\s*[a-z]{2})$/i.test(suffix)) return details;
+  if (details.team && details.team.toLowerCase() !== suffix.toLowerCase()) return details;
+  return { ...details, title: match[1].trim(), team: details.team || suffix };
 }
 
 function isJobPosting(value: Data) {

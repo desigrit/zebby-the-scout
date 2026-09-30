@@ -281,6 +281,11 @@ async function handleApi(request: Request, pathname: string): Promise<Response> 
     }
     const matchId = pathname.match(/^\/api\/applications\/([\da-f-]+)\/analyze$/i)?.[1];
     if (matchId && method === "POST") return Response.json({ application: await analyzeApplicationMatch(matchId) });
+    const notesId = pathname.match(/^\/api\/applications\/([\da-f-]+)\/notes$/i)?.[1];
+    if (notesId && method === "PATCH") {
+      const input = await request.json() as { notes?: unknown };
+      return Response.json({ application: await store.saveApplicationNotes(notesId, input?.notes) });
+    }
     if (pathname === "/api/resumes") {
       if (method === "GET") return Response.json({ resumes: store.listResumes() });
       if (method === "POST") {
@@ -440,6 +445,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1250, height: 850, minWidth: 790, minHeight: 620,
     backgroundColor: "#f5f3ed", title: "PM Application Tracker", autoHideMenuBar: true,
+    icon: path.join(rendererRoot, "icon.png"),
     webPreferences: { preload: path.join(appRoot, "preload.cjs"), contextIsolation: true,
       nodeIntegration: false, sandbox: true, webSecurity: true },
   });

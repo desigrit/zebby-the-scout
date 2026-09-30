@@ -14,7 +14,7 @@ These are unsigned personal builds. Windows SmartScreen or macOS Gatekeeper may 
 
 On first launch, the app creates a local SQLite database automatically, so you can use Plan and Applications immediately. If you want the same data on both computers, use **Create database copy** in Settings and save it in a cloud synced folder. On the second computer, use **Open database** to select that file. Quit the app on one computer, wait for its cloud drive to finish syncing, then open the app on the other computer. Keep only one computer editing the file at a time.
 
-Install version 0.1.6 or newer on both computers before opening a shared database that has been upgraded by this release. Older versions cannot open the upgraded file.
+Install version 1.0.1 or newer on both computers before opening a shared database that has been upgraded by this release. Older versions cannot open the upgraded file.
 
 The app keeps a local working copy and writes complete snapshots back to the selected file after changes. It detects if that cloud file changed outside the app before it saves. A backup copy is kept in the local backups folder at least once a week.
 
@@ -26,25 +26,26 @@ Choose **OpenAI** in Settings if you want to use GPT-6 Sol. Save an API key on e
 
 ## Plan
 
-Paste a public HTTPS job listing link. The app automatically tries to fill available details and capture a readable text copy of the posting. **Read listing** retries when needed. If a site blocks automatic reading, paste the description yourself. Save a separate plan for each posting. A separate **Saved listing copy** keeps the original text in the SQLite file for offline reference, even after you edit the working description. The automatic copy can include up to 80,000 characters of readable page text. It does not save the page's images, scripts, or full HTML.
+Paste a public HTTPS job listing link. The app automatically tries to fill available details and capture a readable text copy of the posting from supported job board APIs, structured job data, or visible page content. **Read listing** retries when needed. If a site blocks automatic reading, paste the description yourself. Headings, paragraphs, and bullets are retained as readable text when available. Save a separate plan for each posting. A separate **Saved listing copy** keeps the original text in the SQLite file for offline reference, even after you edit the working description. The automatic copy can include up to 80,000 characters of readable page text. It does not save the page's images, scripts, or full HTML.
 
 Paste your **Current CV Overview** and choose a saved resume or upload the one you plan to use for this role. Both are saved with the plan in the SQLite file. Choose an analysis provider in Settings, then select **Analyze**. The app saves 6 to 20 ATS keywords, 5 or 6 resume themes, a 0 to 100 percent match estimate based on that resume, and a role-specific CV overview rewritten from your pasted text. The rewrite aims to keep your writing style and use only experience supported by your CV and resume. A short explanation below the generated overview says why it stayed the same or what changed. The keywords, themes, and rewritten overview are editable. Check the result before using it. If you change the job details, current overview, or selected resume, the previous match score and overview explanation are cleared until you analyze again. Existing plans need one new analysis to get an explanation.
 
 ## What it records
 
-- Company, job title, team, and location(s)
+- Company, job title, team, and individual locations
 - Job listing link, saved listing copy, and date applied
 - Match strength from 0 to 100 percent, entered manually or analyzed after saving
 - The resume used for each application, when attached
 - Status: Applied, Heard back, Interview scheduled, or Rejected
+- Freeform notes for each application
 
-All application details can be left blank. The date starts at today and the status starts at Applied, but you can clear the date and save without a listing, score, or resume. The dashboard shows total applications, applications this week, roles in conversation, interviews, and average match strength among scored applications. You can search roles, filter by status, edit applications, change a status in place, and delete a mistaken entry.
+All application details can be left blank. The date starts at today and the status starts at Applied, but you can clear the date and save without a listing, score, or resume. The dashboard shows total applications, applications this week, roles in conversation, interviews, and average match strength among scored applications. You can search roles, filter by company or status with counts, edit applications, change a status in place, add notes, and delete a mistaken entry after confirmation. Multiple locations appear in a compact summary that expands on demand.
 
 Resumes are uploaded once and can be reused for later applications. PDF, DOCX, and DOC files up to 10 MB are supported.
 
-When adding an application, you can paste the public HTTPS job listing link first. The app tries to fill the company, title, team, and locations from the job board or page metadata and capture the readable job text. Review and edit any result before saving. Choose **Saved copy** on an application to read the captured text offline. If a listing blocks automated access, paste the description yourself and save it. The saved copy stays in the database when you edit the working description.
+When adding an application, you can paste the public HTTPS job listing link first. The app tries to fill the company, title, team, and locations from the job board or page metadata and capture the readable job text. Combined titles such as "Product Manager, Central Products" are separated into title and team when the meaning is clear. You can add or remove each location. If the link already belongs to an application, the form warns you and offers to edit the existing entry. Review and edit any imported result before saving. Choose **Saved copy** on an application to read the captured text offline. If a listing blocks automated access, paste the description yourself and save it. The saved copy stays in the database when you edit the working description.
 
-To estimate match strength, save an application with a resume, then choose **Analyze match**. Your selected provider compares the resume with the job description. The app uses a description pasted into the application, its saved listing copy, a saved Plan with the same listing link, or the public listing page. The score and a short explanation are saved with the application. If you edit the resume or description afterward, the previous AI score is cleared. The app only sends job and resume content for analysis when you choose the action.
+When you save an application with a resume and no score, the app automatically asks your selected provider to calculate match strength. It uses a description pasted into the application, its saved listing copy, a saved Plan with the same listing link, or the public listing page. The score and a short explanation are saved with the application. If analysis cannot run, the application stays saved and the error explains what is needed. You can select **Analyze match** to retry or refresh the result. If you edit the resume or description afterward, the previous AI score is cleared and calculated again when possible. Analysis sends job and resume content to the provider selected in Settings.
 
 ## Build from source
 

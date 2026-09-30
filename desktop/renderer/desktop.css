@@ -64,6 +64,7 @@
 .plan-section .field textarea { padding: 11px 12px; line-height: 1.5; resize: vertical; }
 .plan-section .field input:focus, .plan-section .field textarea:focus, .plan-section .field select:focus { border-color: var(--focus); box-shadow: 0 0 0 3px rgba(47,124,103,.14); }
 .plan-section .field input[type="file"] { padding: 8px 10px; font-size: 12px; }
+.plan-section .location-add-input input { min-height: 29px; height: 29px; padding: 4px 7px; }
 .plan-section .field input[type="file"]::file-selector-button { margin-right: 12px; padding: 5px 9px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--paper); color: var(--ink); font-weight: 700; cursor: pointer; }
 .plan-section .listing-input-row { gap: 10px; }
 .plan-section .listing-input-row .button { flex: none; white-space: nowrap; }
@@ -217,9 +218,11 @@ html[data-theme="dark"] .analysis-hint { background: #493925; color: #f5d6af; }
 html[data-theme="dark"] .analysis-hint button,
 html[data-theme="dark"] .plan-section-heading a,
 html[data-theme="dark"] .role-cell a { color: #f0a889; }
-html[data-theme="dark"] .button-delete,
-html[data-theme="dark"] .delete-confirm span,
-html[data-theme="dark"] .delete-confirm button { color: #f2a89c; }
+html[data-theme="dark"] .button-delete { color: #f2a89c; }
+html[data-theme="dark"] .duplicate-warning { background: #4b3920; border-color: #8e7037; color: #f2d5a2; }
+html[data-theme="dark"] .duplicate-warning button { color: #f2d5a2; }
+html[data-theme="dark"] .location-editor, html[data-theme="dark"] .location-chip { background: #26342b; }
+html[data-theme="dark"] .location-editor .location-add, html[data-theme="dark"] .location-summary button { color: #a8ddbd; }
 html[data-theme="dark"] .settings-content .key-status,
 html[data-theme="dark"] .settings-link,
 html[data-theme="dark"] .resume-link,

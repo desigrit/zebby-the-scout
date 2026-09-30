@@ -7,6 +7,7 @@ import {
   Check,
   FileText,
   Globe,
+  NotebookPen,
   Pencil,
   Plus,
   Search,
@@ -23,6 +24,9 @@ import {
   type Resume,
 } from "../lib/application-types";
 import type { JobDetails } from "../lib/job-details";
+import { parseLocations } from "../lib/locations";
+import { pasteJobDescription } from "../lib/job-text-paste";
+import LocationEditor from "./location-editor";
 
 type FormState = Omit<ApplicationInput, "matchStrength"> & { matchStrength: string };
 type BrowserTool = {
@@ -58,6 +62,7 @@ function emptyForm(): FormState {
     locations: "",
     listingUrl: "",
     jobDescription: "",
+    notes: "",
     snapshotText: "",
     snapshotSource: "",
     appliedDate: localToday(),
@@ -84,6 +89,7 @@ function applicationInput(item: Application, status = item.status): ApplicationI
     locations: item.locations,
     listingUrl: item.listingUrl,
     jobDescription: item.jobDescription,
+    notes: item.notes,
     snapshotText: item.snapshotText,
     snapshotSource: item.snapshotSource,
     appliedDate: item.appliedDate,
@@ -105,6 +111,33 @@ function matchTone(score: number) {
   return "low";
 }
 
+function normalizedListingUrl(value: string): string {
+  try {
+    const url = new URL(value.trim());
+    url.hash = "";
+    for (const key of [...url.searchParams.keys()]) {
+      if (/^(utm_.*|source|ref|referrer|gh_src)$/i.test(key)) url.searchParams.delete(key);
+    }
+    url.searchParams.sort();
+    url.pathname = url.pathname.replace(/\/$/, "");
+    return url.toString().replace(/\/$/, "");
+  } catch { return value.trim(); }
+}
+
+function LocationSummary({ value }: { value: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const places = parseLocations(value);
+  if (!places.length) return null;
+  if (places.length === 1) return <span className="role-context">Location: {places[0]}</span>;
+  return <span className="role-context location-summary">
+    <span>Location: Multiple.</span>{" "}
+    <button type="button" aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
+      {expanded ? "See less" : "See more"}
+    </button>
+    {expanded && <span className="location-expanded">{places.join("; ")}</span>}
+  </span>;
+}
+
 export default function ApplicationDashboard({ embedded = false }: { embedded?: boolean }) {
   const [applications, setApplications] = useState<Application[]>([]);
   const [resumes, setResumes] = useState<Resume[]>([]);
@@ -113,6 +146,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
   const [actionError, setActionError] = useState("");
   const [notice, setNotice] = useState("");
   const [query, setQuery] = useState("");
+  const [companyFilter, setCompanyFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("All statuses");
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -123,8 +157,12 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
   const [saving, setSaving] = useState(false);
   const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
-  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<Application | null>(null);
   const [viewingSnapshot, setViewingSnapshot] = useState<Application | null>(null);
+  const [viewingNotes, setViewingNotes] = useState<Application | null>(null);
+  const [notesDraft, setNotesDraft] = useState("");
+  const [savingNotes, setSavingNotes] = useState(false);
+  const [notesError, setNotesError] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const formRef = useRef<HTMLDivElement>(null);
   const listingInputRef = useRef<HTMLInputElement>(null);
@@ -137,6 +175,8 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
   const lastAutofillRef = useRef<Partial<JobDetails>>({});
   const appliedDateTouchedRef = useRef(false);
   const snapshotDialogRef = useRef<HTMLDialogElement>(null);
+  const deleteDialogRef = useRef<HTMLDialogElement>(null);
+  const notesDialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
     const dialog = snapshotDialogRef.current;
@@ -144,6 +184,18 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
     if (viewingSnapshot && !dialog.open) dialog.showModal();
     if (!viewingSnapshot && dialog.open) dialog.close();
   }, [viewingSnapshot]);
+
+  useEffect(() => {
+    const dialog = deleteDialogRef.current;
+    if (confirmingDelete && dialog && !dialog.open) dialog.showModal();
+    if (!confirmingDelete && dialog?.open) dialog.close();
+  }, [confirmingDelete]);
+
+  useEffect(() => {
+    const dialog = notesDialogRef.current;
+    if (viewingNotes && dialog && !dialog.open) dialog.showModal();
+    if (!viewingNotes && dialog?.open) dialog.close();
+  }, [viewingNotes]);
 
   const revealForm = useCallback(() => {
     window.setTimeout(() => {
@@ -277,14 +329,38 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
     const term = query.trim().toLowerCase();
     return applications.filter((item) => {
       const matchesStatus = statusFilter === "All statuses" || item.status === statusFilter;
+      const matchesCompany = !companyFilter || item.company.toLowerCase() === companyFilter.toLowerCase();
       const matchesQuery =
         !term ||
         [item.company, item.title, item.team, item.locations, item.resumeName].some((value) =>
           value.toLowerCase().includes(term),
         );
-      return matchesStatus && matchesQuery;
+      return matchesStatus && matchesCompany && matchesQuery;
     });
-  }, [applications, query, statusFilter]);
+  }, [applications, query, companyFilter, statusFilter]);
+
+  const companyCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of applications) if (item.company.trim()) {
+      const existing = [...counts.keys()].find((name) => name.toLowerCase() === item.company.trim().toLowerCase());
+      const name = existing || item.company.trim();
+      counts.set(name, (counts.get(name) || 0) + 1);
+    }
+    return [...counts].sort(([a], [b]) => a.localeCompare(b));
+  }, [applications]);
+
+  const statusCounts = useMemo(() => {
+    const scope = applications.filter((item) => !companyFilter || item.company.toLowerCase() === companyFilter.toLowerCase());
+    return Object.fromEntries(APPLICATION_STATUSES.map((status) =>
+      [status, scope.filter((item) => item.status === status).length])) as Record<ApplicationStatus, number>;
+  }, [applications, companyFilter]);
+
+  const duplicateApplication = useMemo(() => {
+    if (!form.listingUrl.trim()) return null;
+    const normalized = normalizedListingUrl(form.listingUrl);
+    return applications.find((item) => item.id !== editingId && item.listingUrl &&
+      normalizedListingUrl(item.listingUrl) === normalized) || null;
+  }, [applications, editingId, form.listingUrl]);
 
   function restoreFocus() {
     shouldRestoreFocusRef.current = true;
@@ -443,6 +519,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
         locations: form.locations.trim(),
         listingUrl: form.listingUrl.trim(),
         jobDescription: form.jobDescription.trim(),
+        notes: form.notes,
         snapshotText: form.snapshotText.trim(),
         snapshotSource: form.snapshotSource,
         appliedDate: form.appliedDate,
@@ -471,6 +548,9 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
       setEditingId(null);
       setNotice(editingId ? "Application updated." : "Application added.");
       restoreFocus();
+      if (embedded && saved.application.resumeId && saved.application.matchStrength === null) {
+        void analyzeMatch(saved.application, true);
+      }
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Application could not be saved.");
     } finally {
@@ -499,9 +579,10 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
     }
   }
 
-  async function analyzeMatch(item: Application) {
+  async function analyzeMatch(item: Application, automatic = false) {
     setAnalyzingId(item.id);
-    setActionError(""); setNotice("");
+    setActionError("");
+    if (!automatic) setNotice("");
     try {
       const { application } = await readJson<{ application: Application }>(
         await fetch(`/api/applications/${encodeURIComponent(item.id)}/analyze`, { method: "POST" }),
@@ -509,8 +590,31 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
       setApplications((current) => current.map((existing) => existing.id === item.id ? application : existing));
       setNotice(`Match analysis saved for ${application.title || application.company || "this application"}.`);
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Match analysis could not be completed.");
+      const message = error instanceof Error ? error.message : "Match analysis could not be completed.";
+      setActionError(automatic ? `Application saved, but match analysis needs attention: ${message}` : message);
     } finally { setAnalyzingId(null); }
+  }
+
+  function openNotes(item: Application) {
+    setViewingNotes(item);
+    setNotesDraft(item.notes || "");
+    setNotesError("");
+  }
+
+  async function saveNotes() {
+    if (!viewingNotes) return;
+    setSavingNotes(true);
+    setNotesError("");
+    try {
+      const { application } = await readJson<{ application: Application }>(await fetch(
+        `/api/applications/${encodeURIComponent(viewingNotes.id)}/notes`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ notes: notesDraft }),
+        }));
+      setApplications((current) => current.map((item) => item.id === application.id ? application : item));
+      setViewingNotes(null);
+      setNotice("Notes saved.");
+    } catch (error) { setNotesError(error instanceof Error ? error.message : "Notes could not be saved."); }
+    finally { setSavingNotes(false); }
   }
 
   async function deleteApplication(item: Application) {
@@ -522,7 +626,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
       });
       if (!response.ok) await readJson(response);
       setApplications((current) => current.filter((existing) => existing.id !== item.id));
-      setConfirmingDeleteId(null);
+      setConfirmingDelete(null);
       setNotice("Application deleted.");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Application could not be deleted.");
@@ -598,6 +702,11 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                     ? "A public link can fill available details and save a text copy for offline use. You can leave it blank."
                     : "A public link can fill available details. You can leave it blank."}</small>
                   {lookupMessage && <p className="lookup-message" role="status">{lookupMessage}</p>}
+                  {duplicateApplication && <div className="duplicate-warning" role="status">
+                    <strong>This listing is already saved.</strong>
+                    <span>{duplicateApplication.title || "Untitled role"}{duplicateApplication.company ? ` at ${duplicateApplication.company}` : ""}</span>
+                    <button type="button" onClick={() => openEditForm(duplicateApplication)}>Edit existing application</button>
+                  </div>}
                 </div>
                 <label className="field">
                   <span>Company</span>
@@ -611,10 +720,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                   <span>Team</span>
                   <input value={form.team} onChange={(event) => updateField("team", event.target.value)} placeholder="Product Growth" maxLength={160} />
                 </label>
-                <label className="field">
-                  <span>Location(s)</span>
-                  <input value={form.locations} onChange={(event) => updateField("locations", event.target.value)} placeholder="New York, NY; Remote" maxLength={500} />
-                </label>
+                <LocationEditor value={form.locations} onChange={(value) => updateField("locations", value)} />
                 <label className="field">
                   <span>Date applied</span>
                   <input type="date" value={form.appliedDate} onChange={(event) => { appliedDateTouchedRef.current = true; updateField("appliedDate", event.target.value); }} />
@@ -626,7 +732,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                     <input type="number" min="0" max="100" step="1" value={form.matchStrength} onChange={(event) => updateField("matchStrength", event.target.value)} placeholder="Score later" />
                     <span>%</span>
                   </span>
-                  <small>Leave blank to analyze it after saving.</small>
+                  <small>With a resume selected, the app will calculate this after saving. You can also enter a score.</small>
                 </label>
                 <label className="field">
                   <span>Status</span>
@@ -660,6 +766,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                   <span>Job description</span>
                   <textarea className="application-description" value={form.jobDescription}
                     onChange={(event) => updateField("jobDescription", event.target.value)}
+                    onPaste={(event) => pasteJobDescription(event, (value) => updateField("jobDescription", value))}
                     placeholder="Paste the posting here if you want to analyze your resume match later. A saved Plan for the same link can supply it too."
                     maxLength={80000} />
                   <small>{embedded
@@ -697,10 +804,17 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                 <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search roles or companies" />
               </label>
               <label className="filter-field">
+                <span className="visually-hidden">Filter by company</span>
+                <select aria-label="Filter by company" value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)}>
+                  <option value="">All companies ({applications.length})</option>
+                  {companyCounts.map(([company, count]) => <option key={company} value={company}>{company} ({count})</option>)}
+                </select>
+              </label>
+              <label className="filter-field">
                 <span className="visually-hidden">Filter by status</span>
                 <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-                  <option>All statuses</option>
-                  {APPLICATION_STATUSES.map((status) => <option key={status}>{status}</option>)}
+                  <option value="All statuses">All statuses ({Object.values(statusCounts).reduce((sum, count) => sum + count, 0)})</option>
+                  {APPLICATION_STATUSES.map((status) => <option key={status} value={status}>{status} ({statusCounts[status]})</option>)}
                 </select>
               </label>
             </div>
@@ -748,7 +862,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                         <strong>{item.title || "Untitled role"}</strong>
                         <span>{item.company || "Company not set"}</span>
                         {item.team && <span className="role-context">Team: {item.team}</span>}
-                        {item.locations && <span className="role-context">Location(s): {item.locations}</span>}
+                        <LocationSummary value={item.locations} />
                         {item.listingUrl && <a href={item.listingUrl} target="_blank" rel="noopener noreferrer">
                           View listing <ArrowUpRight size={13} aria-hidden="true" />
                         </a>}
@@ -758,7 +872,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                       <td><span className="mobile-label">Applied</span>{formatDate(item.appliedDate)}</td>
                       <td>
                         <span className="mobile-label">Match</span>
-                        {item.matchStrength === null ? <span className="cell-empty">Not scored</span> :
+                        {item.matchStrength === null ? <span className="cell-empty">{analyzingId === item.id ? "Calculating..." : "Not scored"}</span> :
                           <span className={"match-score " + matchTone(item.matchStrength)} title={item.matchNotes || undefined}>
                             <strong>{item.matchStrength}%</strong>
                             <span className="score-track"><span style={{ width: item.matchStrength + "%" }} /></span>
@@ -796,18 +910,11 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                         </select>
                       </td>
                       <td className="actions-cell">
-                        {confirmingDeleteId === item.id ? (
-                          <span className="delete-confirm">
-                            <span>Delete this role?</span>
-                            <button type="button" onClick={() => void deleteApplication(item)} disabled={deletingId === item.id}>Delete</button>
-                            <button type="button" onClick={() => setConfirmingDeleteId(null)} disabled={deletingId === item.id}>Cancel</button>
-                          </span>
-                        ) : (
                           <span className="row-actions">
+                            {embedded && <button type="button" aria-label={"Notes for " + item.title + " at " + item.company} title="Notes" onClick={() => openNotes(item)}><NotebookPen size={17} aria-hidden="true" />{item.notes && <span className="notes-indicator" />}</button>}
                             <button type="button" aria-label={"Edit " + item.title + " at " + item.company} onClick={() => openEditForm(item)}><Pencil size={17} aria-hidden="true" /></button>
-                            <button type="button" aria-label={"Delete " + item.title + " at " + item.company} onClick={() => setConfirmingDeleteId(item.id)}><Trash2 size={17} aria-hidden="true" /></button>
+                            <button type="button" aria-label={"Delete " + item.title + " at " + item.company} onClick={() => setConfirmingDelete(item)}><Trash2 size={17} aria-hidden="true" /></button>
                           </span>
-                        )}
                       </td>
                     </tr>
                   ))}
@@ -827,6 +934,31 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
           <div className="snapshot-dialog-meta">{viewingSnapshot.snapshotSource === "page" ? "Captured from listing" : "Saved from description"}
             {viewingSnapshot.snapshotCapturedAt && ` · ${formatDate(viewingSnapshot.snapshotCapturedAt.slice(0, 10))}`}</div>
           <pre>{viewingSnapshot.snapshotText}</pre>
+        </>}
+      </dialog>
+      <dialog ref={notesDialogRef} className="snapshot-dialog notes-dialog" aria-labelledby="notes-title"
+        onClose={() => setViewingNotes(null)} onCancel={(event) => { if (savingNotes) event.preventDefault(); else setViewingNotes(null); }}>
+        {viewingNotes && <>
+          <div className="snapshot-dialog-head"><div><h2 id="notes-title">Application notes</h2>
+            <p>{viewingNotes.title || "Untitled role"}{viewingNotes.company ? ` at ${viewingNotes.company}` : ""}</p></div>
+            <button className="icon-button" type="button" aria-label="Close notes" disabled={savingNotes} onClick={() => setViewingNotes(null)}><X size={19} /></button></div>
+          <label className="notes-editor"><span className="visually-hidden">Notes</span>
+            <textarea value={notesDraft} onChange={(event) => setNotesDraft(event.target.value)} maxLength={20000}
+              placeholder="Add pre-screen questions, people to contact, interview details, or anything else." /></label>
+          {notesError && <p className="form-error" role="alert">{notesError}</p>}
+          <div className="dialog-actions"><button className="button button-secondary" type="button" disabled={savingNotes} onClick={() => setViewingNotes(null)}>Cancel</button>
+            <button className="button button-primary" type="button" disabled={savingNotes} onClick={() => void saveNotes()}>{savingNotes ? "Saving..." : "Save notes"}</button></div>
+        </>}
+      </dialog>
+      <dialog ref={deleteDialogRef} className="snapshot-dialog confirm-dialog" aria-labelledby="delete-title"
+        onClose={() => setConfirmingDelete(null)} onCancel={(event) => { if (deletingId) event.preventDefault(); else setConfirmingDelete(null); }}>
+        {confirmingDelete && <>
+          <div className="snapshot-dialog-head"><div><h2 id="delete-title">Delete application?</h2>
+            <p>{confirmingDelete.title || "Untitled role"}{confirmingDelete.company ? ` at ${confirmingDelete.company}` : ""}</p></div></div>
+          <p className="confirm-copy">This removes the application and its notes from the database.</p>
+          {actionError && <p className="form-error" role="alert">{actionError}</p>}
+          <div className="dialog-actions"><button className="button button-secondary" type="button" disabled={Boolean(deletingId)} onClick={() => setConfirmingDelete(null)}>Cancel</button>
+            <button className="button button-danger" type="button" disabled={Boolean(deletingId)} onClick={() => void deleteApplication(confirmingDelete)}>{deletingId ? "Deleting..." : "Delete application"}</button></div>
         </>}
       </dialog>
     </div>

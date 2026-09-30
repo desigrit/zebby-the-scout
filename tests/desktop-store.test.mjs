@@ -31,6 +31,8 @@ test("desktop SQLite file stores applications, resumes, and plans across reopen"
       resumeId: resume.id, keywords: ["strategy", "discovery"],
       themes: ["Lead product strategy"], overview: "Ideal candidate overview." });
     assert.equal(store.listApplications()[0].id, application.id);
+    const withNotes = await store.saveApplicationNotes(application.id, "Pre-screen: discuss roadmap tradeoffs.\nContact: Hiring manager");
+    assert.match(withNotes.notes, /roadmap tradeoffs/);
     assert.equal(store.listPlans()[0].id, plan.id);
     assert.equal(store.listPlans()[0].resumeId, resume.id);
     assert.equal(store.listPlans()[0].currentOverview, "I turn customer insights into product direction.");
@@ -50,10 +52,10 @@ test("desktop SQLite file stores applications, resumes, and plans across reopen"
     assert.equal(draft.matchStrength, null);
     assert.equal(draft.resumeId, "");
     assert.equal(store.listApplications().length, 2);
-    await store.saveMatchAnalysis(application.id, application.updatedAt, 76,
+    await store.saveMatchAnalysis(application.id, withNotes.updatedAt, 76,
       "Relevant product experience, with one gap in analytics tools.", "A detailed job description");
     assert.equal(store.listApplications().find((item) => item.id === application.id).matchStrength, 76);
-    const edited = await store.saveApplication({ ...application, jobDescription: "A different job description",
+    const edited = await store.saveApplication({ ...withNotes, jobDescription: "A different job description",
       matchStrength: 76 }, application.id);
     assert.equal(edited.matchStrength, null);
     assert.equal(edited.matchNotes, "");
@@ -76,6 +78,7 @@ test("desktop SQLite file stores applications, resumes, and plans across reopen"
     assert.equal(store.listPlans()[0].snapshotText, "Original plan posting from the page.");
     assert.equal(store.listApplications().find((item) => item.id === application.id).snapshotText,
       "Original job posting from the page.");
+    assert.match(store.listApplications().find((item) => item.id === application.id).notes, /Hiring manager/);
     assert.deepEqual([...store.getResume(resume.id).data], [37, 80, 68, 70]);
 
     const previous = path.join(root, "previous.sqlite");
@@ -137,7 +140,7 @@ test("version 2 desktop databases migrate without losing applications or resumes
     assert.equal(store.listApplications()[0].matchStrength, 80);
     assert.equal(store.listApplications()[0].resumeName, "Old Resume.pdf");
     const migrated = new DatabaseSync(file, { readOnly: true });
-    assert.equal(migrated.prepare("PRAGMA user_version").get().user_version, 6);
+    assert.equal(migrated.prepare("PRAGMA user_version").get().user_version, 7);
     migrated.close();
     const blank = await store.saveApplication({});
     assert.equal(blank.resumeId, "");
@@ -176,7 +179,7 @@ test("version 1 desktop databases gain Plan and optional application fields", as
     assert.equal(application.matchStrength, null);
     assert.deepEqual(store.listPlans(), []);
     const check = new DatabaseSync(file, { readOnly: true });
-    assert.equal(check.prepare("PRAGMA user_version").get().user_version, 6);
+    assert.equal(check.prepare("PRAGMA user_version").get().user_version, 7);
     check.close();
   } finally {
     store?.close();
@@ -224,7 +227,7 @@ test("version 3 descriptions become offline copies during migration", async () =
     assert.equal(store.listPlans()[0].snapshotText, "Previous plan description");
     assert.equal(store.listPlans()[0].snapshotSource, "saved");
     const check = new DatabaseSync(file, { readOnly: true });
-    assert.equal(check.prepare("PRAGMA user_version").get().user_version, 6);
+    assert.equal(check.prepare("PRAGMA user_version").get().user_version, 7);
     check.close();
   } finally {
     store?.close();
@@ -267,7 +270,7 @@ test("version 4 desktop databases gain CV inputs and match scores", async () => 
     assert.equal(plan.resumeId, "");
     assert.equal(plan.matchStrength, null);
     const check = new DatabaseSync(file, { readOnly: true });
-    try { assert.equal(check.prepare("PRAGMA user_version").get().user_version, 6); }
+    try { assert.equal(check.prepare("PRAGMA user_version").get().user_version, 7); }
     finally { check.close(); }
   } finally {
     store?.close();
@@ -311,7 +314,49 @@ test("version 5 plans gain a saved overview explanation", async () => {
     assert.equal(plan.overview, "I plan products.");
     assert.equal(plan.matchStrength, 72);
     const check = new DatabaseSync(file, { readOnly: true });
-    try { assert.equal(check.prepare("PRAGMA user_version").get().user_version, 6); }
+    try { assert.equal(check.prepare("PRAGMA user_version").get().user_version, 7); }
+    finally { check.close(); }
+  } finally {
+    store?.close();
+    if (!path.resolve(root).startsWith(path.resolve(tmpdir()) + path.sep)) throw new Error("Unexpected test directory");
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("version 6 applications gain editable notes without losing scores", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "pm-tracker-v6-test-"));
+  const file = path.join(root, "legacy.sqlite");
+  const bundle = path.join(root, "store.mjs");
+  let store;
+  try {
+    const db = new DatabaseSync(file);
+    db.exec(`
+      CREATE TABLE resumes (id TEXT PRIMARY KEY, filename TEXT NOT NULL, content_type TEXT NOT NULL,
+        size INTEGER NOT NULL, file_data BLOB NOT NULL, created_at TEXT NOT NULL);
+      CREATE TABLE applications (
+        id TEXT PRIMARY KEY, company TEXT NOT NULL, title TEXT NOT NULL, team TEXT NOT NULL DEFAULT '',
+        locations TEXT NOT NULL DEFAULT '', listing_url TEXT NOT NULL DEFAULT '', job_description TEXT NOT NULL DEFAULT '',
+        snapshot_text TEXT NOT NULL DEFAULT '', snapshot_captured_at TEXT NOT NULL DEFAULT '', snapshot_source TEXT NOT NULL DEFAULT '',
+        applied_date TEXT NOT NULL DEFAULT '', match_strength INTEGER, match_notes TEXT NOT NULL DEFAULT '',
+        match_analyzed_at TEXT NOT NULL DEFAULT '', resume_id TEXT, status TEXT NOT NULL,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+      CREATE TABLE plans (id TEXT PRIMARY KEY);
+      PRAGMA user_version = 6;
+    `);
+    db.prepare("INSERT INTO applications (id, company, title, match_strength, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run("app-v6", "Example Co", "Product Manager", 82, "Applied", "2026-09-01", "2026-09-01");
+    db.close();
+    await build({ entryPoints: [path.resolve("desktop/store.ts")], outfile: bundle,
+      bundle: true, platform: "node", format: "esm", target: "node22" });
+    const { DesktopStore } = await import(pathToFileURL(bundle).href);
+    store = new DesktopStore(path.join(root, "user-data"));
+    await store.open(file);
+    assert.equal(store.listApplications()[0].notes, "");
+    const updated = await store.saveApplicationNotes("app-v6", "Spoke with recruiter.");
+    assert.equal(updated.notes, "Spoke with recruiter.");
+    assert.equal(updated.matchStrength, 82);
+    const check = new DatabaseSync(file, { readOnly: true });
+    try { assert.equal(check.prepare("PRAGMA user_version").get().user_version, 7); }
     finally { check.close(); }
   } finally {
     store?.close();

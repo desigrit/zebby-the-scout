@@ -1,7 +1,7 @@
 import { lookup } from "node:dns/promises";
 import { load } from "cheerio";
 import { Agent, fetch as safeFetch } from "undici";
-import { isPublicAddress } from "./public-address";
+import { isPublicAddress } from "./public-address.ts";
 import {
   companyFromBoardName,
   detailsFromAshby,
@@ -11,7 +11,7 @@ import {
   emptyJobDetails,
   mergeJobDetails,
   type JobDetails,
-} from "./job-details";
+} from "./job-details.ts";
 
 const MAX_BYTES = 4_000_000;
 const MAX_DESCRIPTION_CHARS = 80_000;
@@ -124,38 +124,74 @@ function platformFor(url: URL): Platform | null {
   return null;
 }
 
-function plainText(html: string): string {
+export function formattedJobText(html: string): string {
+  if (!/<[a-z][\s\S]*>/i.test(html)) return html.replace(/\r/g, "").trim().slice(0, MAX_DESCRIPTION_CHARS);
   const $ = load(html);
   $("script, style, nav, header, footer, aside, form, iframe, noscript").remove();
-  const content = $("main").first().length ? $("main").first()
-    : $("article").first().length ? $("article").first() : $("body");
+  const content = $("body").first();
+  content.find("li").each((_index, element) => { $(element).prepend("• "); });
   content.find("br").replaceWith("\n");
-  content.find("h1, h2, h3, h4, p, li, section, article, div").each((_index, element) => {
-    $(element).append("\n");
+  content.find("h1, h2, h3, h4, h5, h6, p, li, ul, ol, section, article, div").each((_index, element) => {
+    $(element).append($(element).is("li, div") ? "\n" : "\n\n");
   });
   return content.text().replace(/\r/g, "").split("\n")
-    .map((line) => line.replace(/[\t ]+/g, " ").trim()).filter(Boolean)
-    .join("\n").slice(0, MAX_DESCRIPTION_CHARS);
+    .map((line) => line.replace(/[\t ]+/g, " ").trim())
+    .join("\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, MAX_DESCRIPTION_CHARS);
 }
 
-function descriptionText(platform: Platform, data: unknown, url: URL): string {
+export function descriptionFromHtml(html: string): string {
+  const $ = load(html);
+  const scripts = $('script[type="application/ld+json"]').toArray().slice(0, 20);
+  for (const script of scripts) {
+    try {
+      const root: unknown = JSON.parse($(script).html() || "");
+      const queue: unknown[] = [root];
+      for (let index = 0; index < queue.length && index < 100; index++) {
+        const value = queue[index];
+        if (Array.isArray(value)) { queue.push(...value); continue; }
+        if (!value || typeof value !== "object") continue;
+        const item = value as Record<string, unknown>;
+        const types = Array.isArray(item["@type"]) ? item["@type"] : [item["@type"]];
+        if (types.some((type) => typeof type === "string" && /(?:^|\/)JobPosting$/i.test(type)) &&
+            typeof item.description === "string" && item.description.trim().length >= 80) {
+          return formattedJobText(item.description);
+        }
+        for (const key of ["@graph", "mainEntity", "itemListElement"]) if (item[key]) queue.push(item[key]);
+      }
+    } catch { /* Continue with visible HTML. */ }
+  }
+  const selectors = ["[itemprop='description']", "[data-testid*='job-description']",
+    "[class*='job-description']", "[class*='jobDescription']", "article", "main", "body"];
+  for (const selector of selectors) {
+    const element = $(selector).first();
+    if (!element.length) continue;
+    const result = formattedJobText(element.html() || "");
+    if (result.length >= 80) return result;
+  }
+  return "";
+}
+
+export function descriptionText(platform: Platform, data: unknown, url: URL): string {
   if (!data || typeof data !== "object") return "";
   const row = data as Record<string, unknown>;
   if (platform.kind === "lever") {
     const lists = Array.isArray(row.lists) ? row.lists : [];
-    return [String(row.descriptionPlain || plainText(String(row.description || ""))),
+    return [formattedJobText(String(row.description || row.descriptionPlain || "")),
       ...lists.map((entry) => {
         const item = entry && typeof entry === "object" ? entry as Record<string, unknown> : {};
-        return `${item.text || ""}\n${plainText(String(item.content || ""))}`.trim();
+        return `${item.text || ""}\n${formattedJobText(String(item.content || ""))}`.trim();
       })].filter(Boolean).join("\n\n").trim().slice(0, MAX_DESCRIPTION_CHARS);
   }
-  if (platform.kind === "greenhouse") return plainText(String(row.content || ""));
-  const postings = Array.isArray(row.jobPostings) ? row.jobPostings : [];
+  if (platform.kind === "greenhouse") return formattedJobText(String(row.content || ""));
+  const postings = Array.isArray(row.jobs) ? row.jobs : [];
   const slug = url.pathname.split("/").filter(Boolean)[1];
   const posting = postings.find((entry) => entry && typeof entry === "object" &&
-    ((entry as Record<string, unknown>).jobUrl === url.href || (entry as Record<string, unknown>).slug === slug));
+    ((entry as Record<string, unknown>).slug === slug || (() => {
+      try { return new URL(String((entry as Record<string, unknown>).jobUrl)).pathname.replace(/\/$/, "") === url.pathname.replace(/\/$/, ""); }
+      catch { return false; }
+    })()));
   const item = posting && typeof posting === "object" ? posting as Record<string, unknown> : {};
-  return plainText(String(item.descriptionHtml || item.descriptionPlain || ""));
+  return formattedJobText(String(item.descriptionHtml || item.descriptionPlain || ""));
 }
 
 export async function fetchJobPosting(value: string, ownHost = ""):
@@ -169,7 +205,8 @@ export async function fetchJobPosting(value: string, ownHost = ""):
   ]);
   let api = emptyJobDetails();
   let apiText = "";
-  if (platform && platformResult.status === "fulfilled" && platformResult.value?.contentType.toLowerCase().includes("json")) {
+  if (platform && platformResult.status === "fulfilled" && platformResult.value &&
+      (platformResult.value.contentType.toLowerCase().includes("json") || platformResult.value.body.trimStart().startsWith("{"))) {
     try {
       const data: unknown = JSON.parse(platformResult.value.body);
       api = platform.kind === "lever" ? detailsFromLever(data)
@@ -179,9 +216,10 @@ export async function fetchJobPosting(value: string, ownHost = ""):
   }
   let html = emptyJobDetails();
   let htmlText = "";
-  if (htmlResult.status === "fulfilled" && htmlResult.value.contentType.toLowerCase().includes("html")) {
+  if (htmlResult.status === "fulfilled" && (htmlResult.value.contentType.toLowerCase().includes("html") ||
+      /^\s*(?:<!doctype html|<html|<head|<body|<main|<article)/i.test(htmlResult.value.body))) {
     html = await detailsFromHtml(htmlResult.value.body);
-    htmlText = plainText(htmlResult.value.body);
+    htmlText = descriptionFromHtml(htmlResult.value.body);
   }
   if (!apiText && !htmlText && !api.company && !api.title && !api.team && !api.locations &&
       htmlResult.status === "rejected") throw htmlResult.reason;
