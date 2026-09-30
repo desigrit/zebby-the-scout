@@ -1,23 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   ArrowUpRight,
   BriefcaseBusiness,
   Check,
+  ChevronDown,
   FileText,
   Globe,
   NotebookPen,
   Pencil,
   Plus,
+  RefreshCw,
   Search,
-  Sparkles,
   Trash2,
   Upload,
   X,
 } from "lucide-react";
 import {
   APPLICATION_STATUSES,
+  MAX_APPLICATION_NOTES_CHARS,
   type Application,
   type ApplicationInput,
   type ApplicationStatus,
@@ -27,6 +29,9 @@ import type { JobDetails } from "../lib/job-details";
 import { parseLocations } from "../lib/locations";
 import { pasteJobDescription } from "../lib/job-text-paste";
 import LocationEditor from "./location-editor";
+import { applicationActivity } from "../lib/application-activity";
+import ApplicationActivity from "./application-activity";
+import MatchProgressRing from "./match-progress-ring";
 
 type FormState = Omit<ApplicationInput, "matchStrength"> & { matchStrength: string };
 type BrowserTool = {
@@ -126,15 +131,21 @@ function normalizedListingUrl(value: string): string {
 
 function LocationSummary({ value }: { value: string }) {
   const [expanded, setExpanded] = useState(false);
+  const disclosureId = useId();
   const places = parseLocations(value);
   if (!places.length) return null;
   if (places.length === 1) return <span className="role-context">Location: {places[0]}</span>;
   return <span className="role-context location-summary">
-    <span>Location: Multiple.</span>{" "}
-    <button type="button" aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
-      {expanded ? "See less" : "See more"}
+    <span>Location: Multiple</span>
+    <button className="location-toggle" type="button" aria-expanded={expanded} aria-controls={disclosureId}
+      aria-label={expanded ? "Hide extra locations" : `Show all ${places.length} locations`}
+      title={expanded ? "Hide extra locations" : `Show all ${places.length} locations`}
+      onClick={() => setExpanded((current) => !current)}>
+      <ChevronDown size={14} aria-hidden="true" />
     </button>
-    {expanded && <span className="location-expanded">{places.join("; ")}</span>}
+    <span className="location-expanded" id={disclosureId} hidden={!expanded}>
+      {places.map((place) => <span className="location-place" key={place}>{place}</span>)}
+    </span>
   </span>;
 }
 
@@ -156,9 +167,9 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
-  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+  const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(() => new Set());
+  const analysisRequestsRef = useRef(new Set<string>());
   const [confirmingDelete, setConfirmingDelete] = useState<Application | null>(null);
-  const [viewingSnapshot, setViewingSnapshot] = useState<Application | null>(null);
   const [viewingNotes, setViewingNotes] = useState<Application | null>(null);
   const [notesDraft, setNotesDraft] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
@@ -174,16 +185,8 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
   const lastLookupUrlRef = useRef("");
   const lastAutofillRef = useRef<Partial<JobDetails>>({});
   const appliedDateTouchedRef = useRef(false);
-  const snapshotDialogRef = useRef<HTMLDialogElement>(null);
   const deleteDialogRef = useRef<HTMLDialogElement>(null);
   const notesDialogRef = useRef<HTMLDialogElement>(null);
-
-  useEffect(() => {
-    const dialog = snapshotDialogRef.current;
-    if (!dialog) return;
-    if (viewingSnapshot && !dialog.open) dialog.showModal();
-    if (!viewingSnapshot && dialog.open) dialog.close();
-  }, [viewingSnapshot]);
 
   useEffect(() => {
     const dialog = deleteDialogRef.current;
@@ -324,6 +327,8 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
       })(),
     };
   }, [applications]);
+
+  const activity = useMemo(() => applicationActivity(applications, localToday()), [applications]);
 
   const visibleApplications = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -580,7 +585,9 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
   }
 
   async function analyzeMatch(item: Application, automatic = false) {
-    setAnalyzingId(item.id);
+    if (analysisRequestsRef.current.has(item.id)) return;
+    analysisRequestsRef.current.add(item.id);
+    setAnalyzingIds((current) => new Set(current).add(item.id));
     setActionError("");
     if (!automatic) setNotice("");
     try {
@@ -592,7 +599,10 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
     } catch (error) {
       const message = error instanceof Error ? error.message : "Match analysis could not be completed.";
       setActionError(automatic ? `Application saved, but match analysis needs attention: ${message}` : message);
-    } finally { setAnalyzingId(null); }
+    } finally {
+      analysisRequestsRef.current.delete(item.id);
+      setAnalyzingIds((current) => { const next = new Set(current); next.delete(item.id); return next; });
+    }
   }
 
   function openNotes(item: Application) {
@@ -648,25 +658,24 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
         </div>
       </header>}
 
-      <main className="main-content">
-        <div className="page-heading">
-          <div>
-            <h1>Applications</h1>
-            <p>Track each role, resume, and hiring update in one place.</p>
-          </div>
+      <main className="main-content" aria-label="Applications">
+        <div className="workspace-toolbar">
           <button ref={addButtonRef} className="button button-primary" type="button" onClick={openNewForm}>
             <Plus size={18} aria-hidden="true" />
             Add application
           </button>
         </div>
 
-        <section className="stats-band" aria-label="Application statistics">
+        <div className="application-overview">
+          <ApplicationActivity days={activity} />
+          <section className="stats-band" aria-label="Application statistics">
           <div className="stat-item"><span>Applications</span><strong>{stats.total}</strong></div>
           <div className="stat-item"><span>This week</span><strong>{stats.thisWeek}</strong></div>
           <div className="stat-item"><span>In conversation</span><strong>{stats.inConversation}</strong></div>
           <div className="stat-item"><span>Interviews</span><strong>{stats.interviews}</strong></div>
           <div className="stat-item"><span>Average match</span><strong>{stats.averageMatch === null ? "No score" : `${stats.averageMatch}%`}</strong></div>
-        </section>
+          </section>
+        </div>
 
         {formOpen && (
           <section className="editor" ref={formRef} aria-labelledby="form-title">
@@ -773,8 +782,6 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                     ? "Used for resume match analysis with your selected provider. If a site blocks access, paste its text here to save a copy."
                     : "Used for resume match analysis. If a site blocks access, paste its description here."}</small>
                 </label>
-                {form.snapshotText && <details className="snapshot-panel field-wide"><summary>Saved listing copy <span>{form.snapshotSource === "page" ? "Captured from link" : "Saved from description"}</span></summary>
-                  <p>This copy stays in the database when you edit the job description.</p><pre>{form.snapshotText}</pre></details>}
                 {editingId && applications.find((item) => item.id === editingId)?.matchNotes &&
                   <div className="field-wide match-explanation"><strong>Match analysis</strong>
                     <p>{applications.find((item) => item.id === editingId)?.matchNotes}</p></div>}
@@ -859,34 +866,33 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                   {visibleApplications.map((item) => (
                     <tr key={item.id}>
                       <td className="role-cell">
-                        <strong>{item.title || "Untitled role"}</strong>
-                        <span>{item.company || "Company not set"}</span>
+                        <div className="role-heading"><strong>{item.title || "Untitled role"}</strong>
+                          <span className="role-company">{item.company || "Company not set"}</span></div>
                         {item.team && <span className="role-context">Team: {item.team}</span>}
                         <LocationSummary value={item.locations} />
                         {item.listingUrl && <a href={item.listingUrl} target="_blank" rel="noopener noreferrer">
                           View listing <ArrowUpRight size={13} aria-hidden="true" />
                         </a>}
-                        {item.snapshotText && <button className="snapshot-link" type="button" onClick={() => setViewingSnapshot(item)}>
-                          <FileText size={13} aria-hidden="true" /> Saved copy</button>}
                       </td>
                       <td><span className="mobile-label">Applied</span>{formatDate(item.appliedDate)}</td>
-                      <td>
+                      <td className="match-cell" aria-busy={analyzingIds.has(item.id)}>
                         <span className="mobile-label">Match</span>
-                        {item.matchStrength === null ? <span className="cell-empty">{analyzingId === item.id ? "Calculating..." : "Not scored"}</span> :
+                        {analyzingIds.has(item.id) ? <MatchProgressRing /> : <div className="match-control">
+                          {item.matchStrength === null ? <span className="cell-empty">Not scored</span> :
                           <span className={"match-score " + matchTone(item.matchStrength)} title={item.matchNotes || undefined}>
                             <strong>{item.matchStrength}%</strong>
                             <span className="score-track"><span style={{ width: item.matchStrength + "%" }} /></span>
                           </span>}
-                        {embedded && item.resumeId && <button className="match-action" type="button"
-                          disabled={analyzingId !== null} onClick={() => void analyzeMatch(item)}>
-                          <Sparkles size={13} aria-hidden="true" />
-                          {analyzingId === item.id ? "Analyzing..." : item.matchAnalyzedAt ? "Analyze again" : "Analyze match"}
-                        </button>}
-                        {embedded && !item.resumeId && <small className="match-help">Add a resume to analyze</small>}
+                          {embedded && item.resumeId && <button className="match-refresh" type="button"
+                            aria-label={`${item.matchStrength === null ? "Analyze" : "Refresh"} match for ${item.title || "untitled role"} at ${item.company || "unknown company"}`}
+                            title={item.matchStrength === null ? "Analyze match" : "Refresh match"}
+                            onClick={() => void analyzeMatch(item)}><RefreshCw size={14} aria-hidden="true" /></button>}
+                        </div>}
+                        {embedded && !item.resumeId && !analyzingIds.has(item.id) && <small className="match-help">Add a resume to analyze</small>}
                       </td>
                       <td>
                         <span className="mobile-label">Resume</span>
-                        {item.resumeId ? <a className="resume-link" href={"/api/resumes/" + encodeURIComponent(item.resumeId)}
+                        {item.resumeId ? <a className="resume-link" title={item.resumeName} href={"/api/resumes/" + encodeURIComponent(item.resumeId)}
                           onClick={window.desktop ? (event) => {
                             event.preventDefault();
                             void window.desktop?.downloadResume(item.resumeId).catch((error) =>
@@ -924,18 +930,6 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
           )}
         </section>
       </main>
-      <dialog ref={snapshotDialogRef} className="snapshot-dialog" aria-labelledby="snapshot-title"
-        onClose={() => setViewingSnapshot(null)} onCancel={() => setViewingSnapshot(null)}>
-        {viewingSnapshot && <>
-          <div className="snapshot-dialog-head"><div><h2 id="snapshot-title">Saved listing copy</h2>
-            <p>{viewingSnapshot.title || "Untitled role"}{viewingSnapshot.company ? ` at ${viewingSnapshot.company}` : ""}</p></div>
-            <button className="icon-button" type="button" aria-label="Close saved copy" onClick={() => setViewingSnapshot(null)}>
-              <X size={19} aria-hidden="true" /></button></div>
-          <div className="snapshot-dialog-meta">{viewingSnapshot.snapshotSource === "page" ? "Captured from listing" : "Saved from description"}
-            {viewingSnapshot.snapshotCapturedAt && ` · ${formatDate(viewingSnapshot.snapshotCapturedAt.slice(0, 10))}`}</div>
-          <pre>{viewingSnapshot.snapshotText}</pre>
-        </>}
-      </dialog>
       <dialog ref={notesDialogRef} className="snapshot-dialog notes-dialog" aria-labelledby="notes-title"
         onClose={() => setViewingNotes(null)} onCancel={(event) => { if (savingNotes) event.preventDefault(); else setViewingNotes(null); }}>
         {viewingNotes && <>
@@ -943,7 +937,8 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
             <p>{viewingNotes.title || "Untitled role"}{viewingNotes.company ? ` at ${viewingNotes.company}` : ""}</p></div>
             <button className="icon-button" type="button" aria-label="Close notes" disabled={savingNotes} onClick={() => setViewingNotes(null)}><X size={19} /></button></div>
           <label className="notes-editor"><span className="visually-hidden">Notes</span>
-            <textarea value={notesDraft} onChange={(event) => setNotesDraft(event.target.value)} maxLength={20000}
+            <textarea value={notesDraft} onChange={(event) => setNotesDraft(event.target.value)} maxLength={MAX_APPLICATION_NOTES_CHARS}
+              onPaste={(event) => pasteJobDescription(event, setNotesDraft)}
               placeholder="Add pre-screen questions, people to contact, interview details, or anything else." /></label>
           {notesError && <p className="form-error" role="alert">{notesError}</p>}
           <div className="dialog-actions"><button className="button button-secondary" type="button" disabled={savingNotes} onClick={() => setViewingNotes(null)}>Cancel</button>

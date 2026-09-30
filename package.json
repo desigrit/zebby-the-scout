@@ -1,6 +1,6 @@
 {
   "name": "pm-application-tracker",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "main": "desktop-dist/main.cjs",
   "engines": {
@@ -12,8 +12,9 @@
     "build": "next build",
     "start": "node scripts/migrate.mjs && next start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern desktop-dist --ignore-pattern desktop-packages",
-    "test": "node --experimental-strip-types --test tests/job-details.test.mjs tests/host-access.test.mjs tests/public-address.test.mjs tests/desktop-store.test.mjs tests/local-analysis.test.mjs",
+    "test": "node --experimental-strip-types --test tests/job-details.test.mjs tests/host-access.test.mjs tests/public-address.test.mjs tests/desktop-store.test.mjs tests/local-analysis.test.mjs tests/application-activity.test.mjs",
     "test:job-details": "node --experimental-strip-types --test tests/job-details.test.mjs",
+    "test:renderer": "node scripts/qa-renderer.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node scripts/migrate.mjs",
     "desktop:build": "node scripts/build-desktop.mjs",

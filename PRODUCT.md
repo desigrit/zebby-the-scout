@@ -26,13 +26,14 @@ The user keeps job listing links and uses different resume versions. They need t
 
 - Record company, job title, team, locations, listing link, date applied, match strength, resume used, and status.
 - Put the listing link first and try to fill company, title, team, and locations from public job data. Start the applied date at today and keep every field editable.
-- Show application statistics.
+- Show application statistics with a slim chart of daily application counts over the last 30 days.
 - Make saved records available across the user's computers.
 - Store uploaded resume files so they can be reused across applications and opened on either computer.
 - Score match strength from 0 to 100 percent.
 - Initial statuses follow the requested stages: Applied, Heard back, Interview scheduled, and Rejected.
 - Provide Plan and Applications tabs. Plan keeps multiple job briefs, editable ATS keywords, resume themes, and ideal candidate CV overviews.
-- Analyze a saved job brief with GPT-6 Sol through the OpenAI API. The user enters an API key in Settings on each computer.
+- Analyze a saved job brief through the selected OpenAI or Ollama provider. Provider settings are local to each computer.
+- Store captured application listing text in editable Notes for offline reference, retaining the original archive fields and taking a full backup before migration.
 - Store uploaded resumes as SQLite BLOBs in the same chosen database file as applications and plans.
 - Keep weekly local backups and detect outside changes to the selected cloud file before saving.
 - Use native file dialogs, platform fonts, and a left navigation for Windows x64, Windows ARM64, and Apple Silicon macOS. No account sign-in is required.

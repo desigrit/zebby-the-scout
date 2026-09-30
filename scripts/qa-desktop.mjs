@@ -68,7 +68,7 @@ try {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize({ width: 1280, height: 880 });
-  await page.getByRole("heading", { name: "Plan", exact: true }).waitFor();
+  await page.getByRole("main", { name: "Plan", exact: true }).waitFor();
   await page.getByText("Northstar Labs").first().waitFor();
   await page.screenshot({ path: path.join(output, "plan.png") });
   await app.evaluate(({ shell }) => {
@@ -107,7 +107,7 @@ try {
   await page.getByRole("button", { name: "Save API key" }).click();
   await page.getByText("API key saved on this computer.").waitFor();
   await nav.getByRole("button", { name: "Plan", exact: true }).click();
-  await page.getByRole("button", { name: "Analyze again" }).click();
+  await page.getByRole("button", { name: "Refresh analysis" }).click();
   await page.getByText("Analysis saved. You can edit any part of it.").waitFor();
   const calls = await app.evaluate(() => globalThis.__analysisCalls);
   assert.equal(calls.length, 1);
@@ -122,7 +122,7 @@ try {
   await unchangedRationale.scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(output, "plan-analyzed.png") });
   await nav.getByRole("button", { name: "Applications" }).click();
-  await page.getByRole("heading", { name: "Applications", exact: true }).waitFor();
+  await page.getByRole("main", { name: "Applications", exact: true }).waitFor();
   await page.screenshot({ path: path.join(output, "applications.png") });
   await page.getByRole("button", { name: "Add application", exact: true }).click();
   await page.screenshot({ path: path.join(output, "application-form.png") });
@@ -160,16 +160,18 @@ try {
   await page.getByRole("button", { name: "Save application" }).click();
   await page.getByRole("table").getByText("78%").waitFor();
   await page.getByRole("table").getByText("QA Company", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "See more" }).click();
-  await page.getByText("Seattle, WA; Redmond, WA").waitFor();
-  await page.getByRole("button", { name: "See less" }).click();
+  await page.getByRole("button", { name: "Show all 2 locations" }).click();
+  await page.locator(".location-expanded").getByText("Redmond, WA", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Hide extra locations" }).click();
   await page.getByRole("combobox", { name: "Filter by company" }).selectOption("QA Company");
   assert.match(await page.getByRole("combobox", { name: "Filter by company" }).textContent(), /QA Company \(1\)/);
   assert.match(await page.getByRole("combobox", { name: "Filter by status" }).textContent(), /Applied \(1\)/);
   await page.getByRole("combobox", { name: "Filter by company" }).selectOption("");
   await page.getByRole("button", { name: "Notes for Product Manager at QA Company" }).click();
-  await page.getByRole("dialog", { name: "Application notes" }).getByRole("textbox", { name: "Notes" })
-    .fill("Pre-screen: discuss team scope.\nPerson: Hiring manager");
+  const notesArea = page.getByRole("dialog", { name: "Application notes" }).getByRole("textbox", { name: "Notes" });
+  const capturedNotes = await notesArea.inputValue();
+  assert.match(capturedNotes, /Original offline job listing/);
+  await notesArea.fill(`${capturedNotes}\n\nPre-screen: discuss team scope.\nPerson: Hiring manager`);
   await page.getByRole("button", { name: "Save notes" }).click();
   await page.getByText("Notes saved.").waitFor();
   await page.getByRole("button", { name: "Notes for Product Manager at QA Company" }).click();
@@ -182,12 +184,12 @@ try {
   await page.locator("#listing-url").fill("https://example.org/jobs/senior-product-manager?utm_source=mail");
   await page.getByText("This listing is already saved.").waitFor();
   await page.getByRole("button", { name: "Close form" }).click();
-  await page.getByRole("button", { name: "Saved copy" }).click();
-  await page.getByRole("dialog", { name: "Saved listing copy" }).getByText("Original offline job listing.", { exact: false }).waitFor();
-  const dialogBounds = await page.getByRole("dialog", { name: "Saved listing copy" }).boundingBox();
+  await page.getByRole("button", { name: "Notes for Product Manager at QA Company" }).click();
+  assert.match(await notesArea.inputValue(), /Original offline job listing/);
+  const dialogBounds = await page.getByRole("dialog", { name: "Application notes" }).boundingBox();
   assert.ok(dialogBounds && Math.abs(dialogBounds.x + dialogBounds.width / 2 - 640) < 20);
-  await page.screenshot({ path: path.join(output, "saved-copy.png") });
-  await page.getByRole("button", { name: "Close saved copy" }).click();
+  await page.screenshot({ path: path.join(output, "listing-notes.png") });
+  await page.getByRole("dialog", { name: "Application notes" }).getByRole("button", { name: "Cancel" }).click();
   assert.equal((await app.evaluate(() => globalThis.__analysisCalls)).length, 2);
   assert.equal((await app.evaluate(() => globalThis.__analysisCalls))[1].input[0].content[0].type, "input_file");
   await page.screenshot({ path: path.join(output, "applications-filled.png") });
@@ -226,7 +228,7 @@ try {
   await page.getByText("Ollama server and model saved on this computer.").waitFor();
   await page.screenshot({ path: path.join(output, "settings.png") });
   await nav.getByRole("button", { name: "Plan", exact: true }).click();
-  await page.getByRole("button", { name: "Analyze again" }).click();
+  await page.getByRole("button", { name: "Refresh analysis" }).click();
   await page.getByText("Analysis saved. You can edit any part of it.").waitFor();
   await page.getByText("What changed").waitFor();
   const changedRationale = page.getByText("Light revision: I brought customer evidence", { exact: false });
@@ -234,7 +236,7 @@ try {
   await changedRationale.scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(output, "plan-revised.png") });
   await nav.getByRole("button", { name: "Applications" }).click();
-  await page.getByRole("button", { name: "Analyze again" }).click();
+  await page.getByRole("button", { name: "Refresh match for Product Manager at QA Company" }).click();
   await page.getByRole("table").getByText("81%").waitFor();
   const ollamaCalls = await app.evaluate(() => globalThis.__ollamaCalls);
   assert.equal(ollamaCalls.length, 2);
@@ -258,11 +260,11 @@ try {
   assert.equal(darkButton.background, "rgb(41, 55, 45)");
   await page.screenshot({ path: path.join(output, "settings-dark.png") });
   await nav.getByRole("button", { name: "Plan", exact: true }).click();
-  await page.getByRole("heading", { name: "Plan", exact: true }).waitFor();
+  await page.getByRole("main", { name: "Plan", exact: true }).waitFor();
   await page.waitForTimeout(220);
   await page.screenshot({ path: path.join(output, "plan-dark.png") });
   await nav.getByRole("button", { name: "Applications" }).click();
-  await page.getByRole("heading", { name: "Applications", exact: true }).waitFor();
+  await page.getByRole("main", { name: "Applications", exact: true }).waitFor();
   await page.waitForTimeout(220);
   await page.screenshot({ path: path.join(output, "applications-dark.png") });
   await nav.getByRole("button", { name: "Settings" }).click();
@@ -294,7 +296,7 @@ try {
   app = await electron.launch({ executablePath, args: [path.resolve(".")],
     cwd: path.resolve("."), env: { ...process.env, PM_TRACKER_TEST_USER_DATA: path.join(root, "fresh-profile") } });
   const freshPage = await app.firstWindow();
-  await freshPage.getByRole("heading", { name: "Plan", exact: true }).waitFor();
+  await freshPage.getByRole("main", { name: "Plan", exact: true }).waitFor();
   assert.equal((await app.evaluate(({ app }) => app.getPath("userData"))).endsWith("fresh-profile"), true);
   await freshPage.getByRole("navigation", { name: "Workspace" }).getByRole("button", { name: "Applications", exact: true }).click();
   await freshPage.getByRole("button", { name: "Add application", exact: true }).click();

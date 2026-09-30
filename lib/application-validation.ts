@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_APPLICATION_NOTES_CHARS } from "./application-types";
 
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
   const date = new Date(`${value}T12:00:00Z`);
@@ -18,7 +19,7 @@ export const applicationInputSchema = z.object({
     } catch { return false; }
   }).default(""),
   jobDescription: z.string().trim().max(80_000).default(""),
-  notes: z.string().max(20_000).default(""),
+  notes: z.string().max(MAX_APPLICATION_NOTES_CHARS).default(""),
   snapshotText: z.string().trim().max(80_000).default(""),
   snapshotSource: z.enum(["page", "manual", "saved", ""]).default(""),
   appliedDate: z.union([z.literal(""), dateSchema]).default(""),

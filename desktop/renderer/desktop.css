@@ -26,6 +26,7 @@
 .desktop-main .page-heading { margin-bottom: 30px; }
 .desktop-main .page-heading h1 { font-family: Georgia, "Times New Roman", serif; font-size: clamp(42px, 4.4vw, 64px); font-weight: 400; line-height: 1.08; letter-spacing: -.035em; }
 .desktop-main .page-heading p { margin: 10px 0 0; color: var(--ink-soft); }
+.desktop-dashboard .main-content, .plan-page { padding-top: 24px; }
 .plan-layout { display: grid; grid-template-columns: minmax(240px, 292px) minmax(0, 1fr); gap: 24px; align-items: start; }
 .plan-list { position: sticky; top: 24px; min-height: 370px; max-height: calc(100vh - 110px); overflow: auto; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 20px 14px 14px; }
 .plan-list-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 0 7px; }
@@ -86,6 +87,10 @@
 .match-result { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 12px; margin-bottom: 22px; padding: 14px 17px; border-radius: 8px; background: #edf4eb; color: var(--ink); }
 .match-result span { font-size: 13px; font-weight: 700; }
 .match-result strong { font-size: 22px; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.match-result-value { display: flex; align-items: center; gap: 8px; }
+.match-result .score-track { width: 70px; }
+.match-result .score-track > span { display: block; height: 100%; border-radius: inherit; background: #2d8864; }
+.match-result .match-refresh:disabled { opacity: .45; cursor: default; }
 .match-result small { flex-basis: 100%; color: var(--ink-soft); font-size: 11px; }
 .analysis-footnote { margin: 10px 0 0; color: var(--ink-faint); font-size: 11px; }
 .plan-actions { display: flex; justify-content: flex-end; align-items: center; gap: 12px; padding-top: 8px; }
@@ -225,9 +230,8 @@ html[data-theme="dark"] .location-editor, html[data-theme="dark"] .location-chip
 html[data-theme="dark"] .location-editor .location-add, html[data-theme="dark"] .location-summary button { color: #a8ddbd; }
 html[data-theme="dark"] .settings-content .key-status,
 html[data-theme="dark"] .settings-link,
-html[data-theme="dark"] .resume-link,
-html[data-theme="dark"] .match-action,
-html[data-theme="dark"] .snapshot-link { color: #a8ddbd; }
+html[data-theme="dark"] .resume-link { color: #a8ddbd; }
+html[data-theme="dark"] .has-applications .activity-bar { background: #6fa88b; }
 html[data-theme="dark"] .switch-track { background: #66786a; }
 html[data-theme="dark"] .notice { background: #294632; color: #c3edce; }
 html[data-theme="dark"] .form-error { background: #4c302a; color: #f5b3a6; }

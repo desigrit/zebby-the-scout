@@ -5,6 +5,8 @@ export const APPLICATION_STATUSES = [
   "Rejected",
 ] as const;
 
+export const MAX_APPLICATION_NOTES_CHARS = 200_000;
+
 export type ApplicationStatus = (typeof APPLICATION_STATUSES)[number];
 
 export type Resume = {

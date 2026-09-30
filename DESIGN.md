@@ -38,10 +38,10 @@ typography:
     fontWeight: 700
   metric:
     fontFamily: '"Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif'
-    fontSize: "clamp(27px, 2.3vw, 34px)"
+    fontSize: "28px"
     fontWeight: 660
     lineHeight: 1.1
-    letterSpacing: "-0.04em"
+    letterSpacing: "-0.03em"
 rounded:
   compact: "6px"
   field: "7px"
@@ -136,23 +136,23 @@ The desktop dark appearance uses `#161d19` canvas, `#202a24` paper, `#ecf1e9` te
 
 **Body Font:** Segoe UI Variable on Windows and the system font on macOS, with Segoe UI, Helvetica Neue, Arial, and sans-serif fallbacks.
 
-**Character:** The serif title adds a measured editorial note. Sans-serif labels and data stay compact and easy to scan across Windows and Mac.
+**Character:** Sans-serif labels and data stay compact and easy to scan across Windows and Mac. Plan and Applications rely on the sidebar for their page identity, with a slim action toolbar instead of a repeated page heading. Serif display type remains available for Settings and setup.
 
 ### Hierarchy
 
-- **Display:** the page title uses the `display` token and adapts to viewport width.
+- **Display:** Settings and setup can use the `display` token; Plan and Applications omit repeated page titles.
 - **Headline:** editor and section headings use the `headline` token; the roles heading is slightly smaller in the current page.
 - **Metric:** application totals use the `metric` token with tabular numerals for stable alignment.
 - **Body:** explanatory copy uses the `body` token. Table details are smaller to fit more records in view.
 - **Label:** field labels and key data labels use the `label` token with stronger weight.
 
-**The One Serif Rule.** Keep expressive serif type on the main page heading; application data stays sans-serif.
+**The One Serif Rule.** Reserve expressive serif type for Settings and setup headings; application data stays sans-serif.
 
 ## Layout
 
-The desktop shell has a 210px left sidebar with Plan, Applications, and Settings. The workspace content is capped at 1440px. Applications flows from title and add action to a five-column statistics band, then search, filter, and records. The editor starts with the listing URL and its autofill action. Company, title, team, locations, applied date, and match strength follow in paired fields.
+The desktop shell has a 210px left sidebar with Plan, Applications, and Settings. The workspace content is capped at 1440px. Applications flows from a compact add action to a shared panel containing a 30-day activity chart and five-column statistics band, then search, filters, and records. The chart uses quiet daily bars with date and count tooltips, and arrow keys move between days. The editor starts with the listing URL and its autofill action. Company, title, team, locations, applied date, and match strength follow in paired fields.
 
-At 850px, the sidebar narrows to 176px and the Plan rail moves above its editor. The statistics band changes to three columns and application rows become two-column record cards with visible field labels. At 650px, the heading, filters, and form stack; the statistics band uses two columns. Preserve these content-driven changes when adding fields.
+When the Applications content pane is 940px or narrower, rows become two-column record cards with visible field labels and actions. This uses available pane width, including the space taken by the sidebar. At 850px window width, the sidebar narrows to 176px, the Plan rail moves above its editor, and the statistics band changes to three columns. At 650px, the heading, filters, and form stack; the statistics band uses two columns. Preserve these content-driven changes when adding fields.
 
 The common rhythm uses tight control gaps, medium field gaps, and generous panel padding. Let separators and whitespace group information before adding new containers.
 
@@ -188,13 +188,13 @@ Inputs have white fill, strong rule borders, and the `field` radius. The green f
 
 ### Application records
 
-The desktop list is a fixed-layout table with clearly separated columns. Match strength combines a percentage and short progress track; green indicates stronger matches, while warmer tones indicate lower matches. Status is a native select styled as a compact tinted control, with each status retaining its own color. On narrow screens, table headers hide and each record carries its own labels and actions.
+The desktop list is a fixed-layout table with clearly separated columns. A compact company label follows the role title on the same baseline when space allows. Multiple locations use a chevron disclosure and separate labels when expanded. Match strength combines a percentage, short progress track, and refresh icon; a single progress ring replaces these while analysis runs. Green indicates stronger matches, while warmer tones indicate lower matches. Saved listing text lives in the editable Notes dialog, accessible from the row actions. Status is a native select styled as a compact tinted control, with each status retaining its own color. On narrow screens, table headers hide and each record carries its own labels and actions.
 
 ## Do's and Don'ts
 
 ### Do:
 
-- **Do** keep the page title expressive and the application data compact.
+- **Do** use the sidebar to identify Plan and Applications, keeping the workspace and its data compact.
 - **Do** keep controls legible and preserve 44px targets for mobile row actions and status changes.
 - **Do** pair match-track color with a numeric percentage, and pair status tint with readable text.
 - **Do** show visible keyboard focus and respect reduced-motion preferences.
