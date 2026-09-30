@@ -18,14 +18,18 @@ export type Plan = {
   snapshotText: string;
   snapshotCapturedAt: string;
   snapshotSource: "page" | "manual" | "saved" | "";
+  currentOverview: string;
+  resumeId: string;
   keywords: string[];
   themes: string[];
   overview: string;
+  matchStrength: number | null;
+  matchAnalyzedAt: string;
   createdAt: string;
   updatedAt: string;
 };
 
-export type PlanInput = Omit<Plan, "id" | "createdAt" | "updatedAt" | "snapshotCapturedAt" | "snapshotText" | "snapshotSource"> & {
+export type PlanInput = Omit<Plan, "id" | "createdAt" | "updatedAt" | "snapshotCapturedAt" | "snapshotText" | "snapshotSource" | "matchStrength" | "matchAnalyzedAt"> & {
   snapshotText?: string;
   snapshotSource?: Plan["snapshotSource"];
 };
@@ -39,6 +43,8 @@ const planInputSchema = z.object({
   description: z.string().trim().max(80_000),
   snapshotText: z.string().trim().max(80_000).default(""),
   snapshotSource: z.enum(["page", "manual", "saved", ""]).default(""),
+  currentOverview: z.string().trim().max(20_000).default(""),
+  resumeId: z.union([z.literal(""), z.string().uuid()]).default(""),
   keywords: z.array(z.string().trim().max(200)).max(100),
   themes: z.array(z.string().trim().max(1000)).max(100),
   overview: z.string().trim().max(20_000),
@@ -98,9 +104,13 @@ function mapPlan(row: Row): Plan {
     snapshotText: String(row.snapshot_text || ""),
     snapshotCapturedAt: String(row.snapshot_captured_at || ""),
     snapshotSource: String(row.snapshot_source || "") as Plan["snapshotSource"],
+    currentOverview: String(row.current_overview || ""),
+    resumeId: String(row.resume_id || ""),
     keywords: JSON.parse(String(row.keywords_json || "[]")) as string[],
     themes: JSON.parse(String(row.themes_json || "[]")) as string[],
     overview: String(row.overview || ""),
+    matchStrength: row.match_strength === null || row.match_strength === undefined ? null : Number(row.match_strength),
+    matchAnalyzedAt: String(row.match_analyzed_at || ""),
     createdAt: String(row.created_at), updatedAt: String(row.updated_at),
   };
 }
@@ -131,19 +141,21 @@ function createSchema(db: DatabaseSync) {
       locations TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',
       snapshot_text TEXT NOT NULL DEFAULT '', snapshot_captured_at TEXT NOT NULL DEFAULT '',
       snapshot_source TEXT NOT NULL DEFAULT '',
+      current_overview TEXT NOT NULL DEFAULT '', resume_id TEXT REFERENCES resumes(id),
       keywords_json TEXT NOT NULL DEFAULT '[]', themes_json TEXT NOT NULL DEFAULT '[]',
-      overview TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      overview TEXT NOT NULL DEFAULT '', match_strength INTEGER CHECK (match_strength BETWEEN 0 AND 100),
+      match_analyzed_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );
     CREATE INDEX applications_date_idx ON applications(applied_date DESC, created_at DESC);
     CREATE INDEX plans_updated_idx ON plans(updated_at DESC);
-    PRAGMA user_version = 4;
+    PRAGMA user_version = 5;
   `);
 }
 
 function migrate(db: DatabaseSync): boolean {
   const version = Number((db.prepare("PRAGMA user_version").get() as Row).user_version);
-  if (version === 4) return false;
-  if (version !== 1 && version !== 2 && version !== 3) throw new Error("This is not a supported PM Application Tracker database.");
+  if (version === 5) return false;
+  if (version !== 1 && version !== 2 && version !== 3 && version !== 4) throw new Error("This is not a supported PM Application Tracker database.");
   if (version === 1) db.exec(`
     CREATE TABLE plans (
       id TEXT PRIMARY KEY, listing_url TEXT NOT NULL, company TEXT NOT NULL DEFAULT '',
@@ -177,7 +189,7 @@ function migrate(db: DatabaseSync): boolean {
     PRAGMA user_version = 3;
     COMMIT;
   `);
-  db.exec(`
+  if (version <= 3) db.exec(`
     BEGIN IMMEDIATE;
     ALTER TABLE applications ADD COLUMN snapshot_text TEXT NOT NULL DEFAULT '';
     ALTER TABLE applications ADD COLUMN snapshot_captured_at TEXT NOT NULL DEFAULT '';
@@ -194,6 +206,15 @@ function migrate(db: DatabaseSync): boolean {
     PRAGMA user_version = 4;
     COMMIT;
   `);
+  db.exec(`
+    BEGIN IMMEDIATE;
+    ALTER TABLE plans ADD COLUMN current_overview TEXT NOT NULL DEFAULT '';
+    ALTER TABLE plans ADD COLUMN resume_id TEXT REFERENCES resumes(id);
+    ALTER TABLE plans ADD COLUMN match_strength INTEGER CHECK (match_strength BETWEEN 0 AND 100);
+    ALTER TABLE plans ADD COLUMN match_analyzed_at TEXT NOT NULL DEFAULT '';
+    PRAGMA user_version = 5;
+    COMMIT;
+  `);
   return true;
 }
 
@@ -201,7 +222,7 @@ function validate(db: DatabaseSync) {
   const check = (db.prepare("PRAGMA quick_check").get() as Row).quick_check;
   if (check !== "ok") throw new Error("The selected database failed its integrity check.");
   const version = Number((db.prepare("PRAGMA user_version").get() as Row).user_version);
-  if (version !== 1 && version !== 2 && version !== 3 && version !== 4) throw new Error("This is not a supported PM Application Tracker database.");
+  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5) throw new Error("This is not a supported PM Application Tracker database.");
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Row[];
   const names = new Set(tables.map((row) => String(row.name)));
   if (!names.has("applications") || !names.has("resumes")) {
@@ -466,28 +487,57 @@ export class DesktopStore {
     const item = parsed.data;
     const resultId = id || randomUUID();
     await this.mutate((db) => {
+      if (item.resumeId && !db.prepare("SELECT id FROM resumes WHERE id = ?").get(item.resumeId)) {
+        throw new Error("The selected resume could not be found.");
+      }
       const now = new Date().toISOString();
       const fields = [item.listingUrl, item.company, item.title, item.team,
-        item.locations, item.description, JSON.stringify(item.keywords.filter(Boolean)),
+        item.locations, item.description, item.currentOverview, item.resumeId || null,
+        JSON.stringify(item.keywords.filter(Boolean)),
         JSON.stringify(item.themes.filter(Boolean)), item.overview];
       if (id) {
         const previous = db.prepare("SELECT * FROM plans WHERE id = ?").get(id) as Row | undefined;
         if (!previous) throw new Error("Plan not found.");
         const snapshot = snapshotValues(item, item.description, previous, now);
+        const sameSource = String(previous.listing_url) === item.listingUrl &&
+          String(previous.company) === item.company && String(previous.title) === item.title &&
+          String(previous.team) === item.team && String(previous.locations) === item.locations &&
+          String(previous.description) === item.description &&
+          String(previous.current_overview || "") === item.currentOverview &&
+          String(previous.resume_id || "") === item.resumeId;
         const result = db.prepare(`UPDATE plans SET listing_url = ?, company = ?, title = ?, team = ?,
-          locations = ?, description = ?, keywords_json = ?, themes_json = ?, overview = ?,
+          locations = ?, description = ?, current_overview = ?, resume_id = ?,
+          keywords_json = ?, themes_json = ?, overview = ?,
           snapshot_text = ?, snapshot_captured_at = ?, snapshot_source = ?,
-          updated_at = ? WHERE id = ?`).run(...fields, ...snapshot, now, id);
+          match_strength = ?, match_analyzed_at = ?, updated_at = ? WHERE id = ?`)
+          .run(...fields, ...snapshot, sameSource && previous.match_strength !== null
+            ? Number(previous.match_strength) : null,
+            sameSource ? String(previous.match_analyzed_at || "") : "", now, id);
         if (!result.changes) throw new Error("Plan not found.");
       } else {
         const snapshot = snapshotValues(item, item.description, undefined, now);
         db.prepare(`INSERT INTO plans (id, listing_url, company, title, team, locations,
-          description, keywords_json, themes_json, overview,
+          description, current_overview, resume_id, keywords_json, themes_json, overview,
           snapshot_text, snapshot_captured_at, snapshot_source, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(resultId, ...fields, ...snapshot, now, now);
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(resultId, ...fields, ...snapshot, now, now);
       }
     });
     return this.getPlan(resultId)!;
+  }
+
+  async savePlanAnalysis(id: string, expectedUpdatedAt: string, keywords: string[],
+    themes: string[], overview: string, matchStrength: number): Promise<Plan> {
+    if (!Number.isInteger(matchStrength) || matchStrength < 0 || matchStrength > 100) {
+      throw new Error("The match score must be between 0 and 100.");
+    }
+    await this.mutate((db) => {
+      const result = db.prepare(`UPDATE plans SET keywords_json = ?, themes_json = ?, overview = ?,
+        match_strength = ?, match_analyzed_at = ?, updated_at = ? WHERE id = ? AND updated_at = ?`)
+        .run(JSON.stringify(keywords), JSON.stringify(themes), overview, matchStrength,
+          new Date().toISOString(), new Date().toISOString(), id, expectedUpdatedAt);
+      if (!result.changes) throw new Error("This plan changed while analysis ran. Run it again from the latest version.");
+    });
+    return this.getPlan(id)!;
   }
 
   async deletePlan(id: string) {
