@@ -12,7 +12,7 @@ An Electron desktop app with one user-selected SQLite file. The file can live in
 
 ## Users
 
-One person applying to several product management roles a day. This personal-use assumption is open to revision.
+People applying to several product management roles a day, including laptop users who do not have a GPU, API key, or experience setting up a local model server.
 
 ## Product Purpose
 
@@ -32,7 +32,9 @@ The user keeps job listing links and uses different resume versions. They need t
 - Score match strength from 0 to 100 percent.
 - Initial statuses follow the requested stages: Applied, Heard back, Interview scheduled, and Rejected.
 - Provide Plan and Applications tabs. Plan keeps multiple job briefs, editable ATS keywords, resume themes, and ideal candidate CV overviews.
-- Analyze a saved job brief through the selected OpenAI or Ollama provider. Provider settings are local to each computer.
+- Analyze a saved job brief through the selected OpenAI, Ollama, or downloadable built-in CPU model. Provider settings and model downloads are local to each computer.
+- Download a local model only when selected. SmolLM2 provides basic keyword coverage and short overview suggestions; the Qwen options use the full analysis prompts. OpenAI and installed Ollama models retain their full provider path, with no automatic fallback.
+- Show download progress, pause, resume, retry, and per-model Delete with native confirmation. Keep models through updates. Windows uninstall removes model downloads; Mac users delete them in Settings before removing the app.
 - Store captured application listing text in editable Notes for offline reference, retaining the original archive fields and taking a full backup before migration.
 - Store uploaded resumes as SQLite BLOBs in the same chosen database file as applications and plans.
 - Keep weekly local backups and detect outside changes to the selected cloud file before saving.

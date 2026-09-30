@@ -24,6 +24,25 @@ Choose **Ollama** in Settings to analyze with a model running on your computer o
 
 Choose **OpenAI** in Settings if you want to use GPT-6 Sol. Save an API key on each computer where you use that provider. Plan analysis sends job text, your current CV overview, and the selected resume to OpenAI. Application match analysis sends job text and the selected resume. API usage may be billed to your account.
 
+### Downloadable local models
+
+Choose **Built-in local, downloadable models** in the **Provider** dropdown, then choose a **Local model**. Selecting a model starts its download, with progress, Pause, Resume, and Retry controls. A completed download is verified and reused, including after app updates. No account, API key, Ollama installation, or GPU is required. These models run on the computer's CPU. Downloads require an internet connection; analysis works offline once a model is ready.
+
+| Model | Download | Recommended installed RAM | Analysis |
+| --- | --- | --- | --- |
+| SmolLM2 360M, Q4_K_M | 271 MB | 4 GB or more | Basic keyword coverage, resume themes, and short overview suggestions |
+| Qwen3 0.6B, Q8_0 | 639 MB | 8 GB or more | Full role and resume analysis with a small model |
+| Qwen3 4B, Q4_K_M | 2.50 GB | 16 GB or more | Full role and resume analysis with a medium model |
+| Qwen3 8B, Q4_K_M | 5.03 GB | 24 GB or more | Full role and resume analysis with the largest built-in model |
+
+Only SmolLM2 uses the compact profile: keywords and themes come from listing terms, match strength is the percentage of those terms found in the resume, and the model suggests a light overview edit from short source excerpts. Unsupported wording is discarded, retaining your original overview with an explanation. This score does not assess experience depth. The Qwen options receive the complete role and extracted resume text with the full analysis prompts. Their results depend on model capacity, and larger models can be slow on CPU. If the request exceeds the chosen model's context or available memory, the app reports it instead of silently shortening the text or changing providers.
+
+OpenAI and Ollama retain their configured model and full analysis path. Choosing a downloadable model does not replace an installed Ollama model such as `qwen3.8:27b`. Providers never fall back to one another automatically.
+
+Models are stored in the local app data folder on each computer, outside the selected SQLite file: `%LOCALAPPDATA%\PM Application Tracker\Models` on Windows, and a `Models` folder inside the app's Application Support folder on macOS. They are excluded from database copies and backups. The installer includes only a small native inference engine, with the model weights downloaded separately. Job and resume text stays on this computer when using the built-in provider. The engine listens only on loopback, requires an app-generated secret, has no web interface or agent tools enabled, and releases its memory after a minute of inactivity.
+
+Use the **Delete** button next to a downloaded model to remove it, with **Cancel** or **Delete model** in a native confirmation dialog. Saved plans, applications, resumes, and Ollama models are preserved. On Windows, uninstalling also removes the app's model downloads, while updating keeps them. On macOS, delete models in Settings before removing the app from your Mac; dragging an app to Trash does not run a cleanup callback. **Open model folder** opens the download location in Explorer or Finder.
+
 ## Plan
 
 Paste a public HTTPS job listing link. The app automatically tries to fill available details and capture a readable text copy of the posting from supported job board APIs, structured job data, or visible page content. **Read listing** retries when needed. If a site blocks automatic reading, paste the description yourself. Headings, paragraphs, and bullets are retained as readable text when available. Save a separate plan for each posting. A separate **Saved listing copy** keeps the original text in the SQLite file for offline reference, even after you edit the working description. The automatic copy can include up to 80,000 characters of readable page text. It does not save the page's images, scripts, or full HTML.
@@ -49,8 +68,10 @@ When you save an application with a resume and no score, the app automatically a
 
 ## Build from source
 
-Use Node.js 22.13 or newer. Run `npm ci`, then `node node_modules/electron/install.js` to download the local Electron runtime. Run `npm run desktop:dev` to launch the desktop app. Run `npm test`, `npx tsc --noEmit`, and `npm run lint` to check changes.
+Use Node.js 22.13 or newer. Run `npm ci`, then `node node_modules/electron/install.js` to download the local Electron runtime. Run `npm run desktop:prepare-model-engine` to download the pinned CPU engine for your platform. Run `npm run desktop:dev` to launch the desktop app. Run `npm test`, `npx tsc --noEmit`, and `npm run lint` to check changes.
 
 After `npm run desktop:build`, `npm run test:renderer` checks the compiled UI invisibly with synthetic data. It does not launch Electron or open a real database. It uses an installed Edge or Chrome browser, or the executable supplied through `PM_TRACKER_BROWSER`, and writes screenshots to `qa-output`.
+
+For an actual CPU inference check without opening Electron, run `node --experimental-strip-types scripts/qa-local-engine.mjs smollm2-360m` or use `qwen3-06b`. This downloads the selected model into `work/local-engine-qa/Models`, uses synthetic job and resume text, checks the analysis, authenticated engine access, and shutdown, then saves a result under `work`. That folder is excluded from source control. Packaged builds prepare their platform's engine automatically and include its license and model notices.
 
 The package commands are `npm run desktop:package:win:x64`, `npm run desktop:package:win:arm64`, and `npm run desktop:package:mac:arm64`. Both Windows packages are built on Windows x64; the macOS package is built on Apple Silicon. Tagging a version as `vX.Y.Z` runs all three builds and publishes the `.exe` and `.dmg` files as GitHub Release assets. GitHub Actions keeps internal build artifacts as ZIP files. The earlier Azure web implementation remains in the repository but is not needed for the desktop app.

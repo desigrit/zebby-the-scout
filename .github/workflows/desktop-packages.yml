@@ -24,7 +24,11 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm run lint -- --quiet
       - run: npm run desktop:build
+      - run: node --experimental-strip-types scripts/qa-local-engine.mjs smollm2-360m
+      - run: node node_modules/playwright-core/cli.js install chromium
+      - run: npm run test:renderer
       - run: npx electron-builder --win nsis --x64 --publish never -c electron-builder.local.cjs
+      - run: node scripts/qa-packaged-engine.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: pm-application-tracker-windows-x64
@@ -49,8 +53,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm test
+      - run: npx tsc --noEmit
       - run: npm run desktop:build
+      - run: node --experimental-strip-types scripts/qa-local-engine.mjs smollm2-360m
+      - run: node node_modules/playwright-core/cli.js install chromium
+      - run: npm run test:renderer
       - run: npx electron-builder --mac dmg --arm64 --publish never
+      - run: node scripts/qa-packaged-engine.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: pm-application-tracker-macos-arm64
@@ -75,4 +85,10 @@ jobs:
       - name: Publish direct installer downloads
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" release-files/*.exe release-files/*.dmg --title "PM Application Tracker $GITHUB_REF_NAME" --generate-notes --target "$GITHUB_SHA"
+        run: |
+          notes="docs/releases/$GITHUB_REF_NAME.md"
+          if [ -f "$notes" ]; then
+            gh release create "$GITHUB_REF_NAME" release-files/*.exe release-files/*.dmg --title "PM Application Tracker $GITHUB_REF_NAME" --notes-file "$notes" --target "$GITHUB_SHA"
+          else
+            gh release create "$GITHUB_REF_NAME" release-files/*.exe release-files/*.dmg --title "PM Application Tracker $GITHUB_REF_NAME" --generate-notes --target "$GITHUB_SHA"
+          fi

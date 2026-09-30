@@ -8,7 +8,7 @@ import { chromium } from "playwright-core";
 // Checks the compiled renderer with synthetic data in an invisible browser.
 // It does not launch Electron, read settings, or open an application database.
 const renderer = path.resolve("desktop-dist/renderer");
-const output = path.resolve("qa-output/renderer-1.0.2");
+const output = path.resolve("qa-output/renderer-1.1.0");
 const executablePath = process.env.PM_TRACKER_BROWSER || [
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
   "C:/Program Files/Google/Chrome/Application/chrome.exe",
@@ -35,7 +35,10 @@ let plan = { id: "plan-1", listingUrl: "https://example.org/jobs/pm", company: "
   matchStrength: 84, matchAnalyzedAt: "2026-09-29T12:00:00Z", createdAt: "2026-09-29T12:00:00Z", updatedAt: "2026-09-29T12:00:00Z" };
 const state = { filePath: "example.sqlite", filename: "Applications.sqlite", dirty: false, startupError: "", hasApiKey: false,
   analysisProvider: "ollama", ollamaUrl: "http://localhost:11434", ollamaModel: "qwen3.8:27b", canSaveApiKey: true,
-  backupsPath: "", appearance: "light", captureLogs: false, logsPath: "", platform: "win32" };
+  backupsPath: "", appearance: "light", captureLogs: false, logsPath: "", platform: "win32",
+  builtInModelId: "", localModels: ["smollm2-360m", "qwen3-06b", "qwen3-4b", "qwen3-8b"].map((id) =>
+    ({ id, status: "not-installed", downloadedBytes: 0, error: "" })), modelsFolder: "example/Models",
+  localEngine: { status: "idle", modelId: "" }, totalMemory: 32e9, availableMemory: 16e9 };
 const pending = new Map();
 const requested = new Map();
 async function completeAnalysis(pathname) {
@@ -59,9 +62,37 @@ try {
   await page.clock.setFixedTime(new Date("2026-09-30T20:00:00Z"));
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  async function captureSettings(filename) {
+    await page.evaluate(async () => {
+      window.scrollTo({ top: 0, behavior: "instant" });
+      await document.fonts.ready;
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    });
+    await page.screenshot({ path: path.join(output, filename), fullPage: true });
+  }
   await page.addInitScript((initialState) => {
+    const listeners = new Set();
+    const snapshot = () => structuredClone(initialState);
+    const update = (id, change) => { initialState.localModels = initialState.localModels.map((item) =>
+      item.id === id ? { ...item, ...change } : item); for (const listener of listeners) listener(snapshot()); };
+    window.modelQA = { confirmDelete: false, deleteRequests: [], selections: [], update,
+      setPlatform: (platform) => { initialState.platform = platform; } };
     window.desktop = { state: async () => initialState, onDatabaseChanged: () => () => {}, onNavigate: () => () => {},
-      downloadResume: async () => true };
+      onLocalModelsChanged: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
+      downloadResume: async () => true,
+      listOllamaModels: async () => ["qwen3.8:27b", "qwen3:8b"],
+      setAnalysisProvider: async (provider) => { initialState.analysisProvider = provider; return snapshot(); },
+      setAppearance: async (appearance) => { initialState.appearance = appearance; return snapshot(); },
+      selectLocalModel: async (id) => { window.modelQA.selections.push(id); initialState.builtInModelId = id;
+        if (initialState.localModels.find((item) => item.id === id).status !== "ready")
+          update(id, { status: "downloading", downloadedBytes: 0, error: "" }); return snapshot(); },
+      pauseModelDownload: async () => { for (const item of initialState.localModels)
+        if (["downloading", "verifying"].includes(item.status)) update(item.id, { status: "paused" }); return snapshot(); },
+      resumeModelDownload: async (id) => { update(id, { status: "downloading", error: "" }); return snapshot(); },
+      deleteLocalModel: async (id) => { window.modelQA.deleteRequests.push(id);
+        if (window.modelQA.confirmDelete) update(id, { status: "not-installed", downloadedBytes: 0, error: "" }); return snapshot(); },
+      openModelFolder: async () => "",
+    };
   }, state);
   await page.route("**/api/**", async (route) => {
     const pathname = new URL(route.request().url()).pathname;
@@ -159,6 +190,72 @@ try {
   assert.equal(await table.locator(".actions-cell").first().evaluate((element) => element.getBoundingClientRect().right <= innerWidth), true);
   await page.setViewportSize({ width: 780, height: 900 });
   await page.screenshot({ path: path.join(output, "applications-narrow.png") });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+
+  // Provider choice, download lifecycle, deletion cancellation, and reuse.
+  // The native confirmation itself is covered in the model removal tests.
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await nav.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
+  const provider = page.getByRole("combobox", { name: "Provider", exact: true });
+  await page.getByRole("combobox", { name: "Model", exact: true }).getByRole("option", { name: "qwen3.8:27b", exact: true }).waitFor({ state: "attached" });
+  await provider.selectOption("builtin");
+  const localModel = page.getByRole("combobox", { name: "Local model", exact: true });
+  assert.equal(await localModel.getByRole("option").count(), 5);
+  assert.equal(await page.getByRole("button", { name: /Delete SmolLM2/ }).count(), 0);
+  await localModel.selectOption("smollm2-360m");
+  await page.getByText("Downloading SmolLM2 360M", { exact: true }).waitFor();
+  await page.evaluate(() => window.modelQA.update("smollm2-360m", { downloadedBytes: 81000000 }));
+  await page.getByText("81 MB / 271 MB", { exact: true }).waitFor();
+  const progress = page.getByRole("progressbar", { name: "SmolLM2 360M download progress" });
+  assert.equal(await progress.getAttribute("max"), "270590880");
+  await captureSettings("settings-windows-download.png");
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await page.getByText("Download paused", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Resume download", exact: true }).click();
+  await page.evaluate(() => window.modelQA.update("smollm2-360m", { status: "error", error: "The download stopped early. Choose Retry download to continue." }));
+  await page.getByRole("alert").getByText(/stopped early/).waitFor();
+  await page.getByRole("button", { name: "Retry download", exact: true }).click();
+  await page.evaluate(() => window.modelQA.update("smollm2-360m", { status: "verifying", downloadedBytes: 270590880 }));
+  await page.getByText("Checking download", { exact: true }).waitFor();
+  await page.evaluate(() => window.modelQA.update("smollm2-360m", { status: "ready" }));
+  await page.getByText("Ready for offline analysis", { exact: true }).waitFor();
+  assert.equal(await progress.count(), 0);
+  const deleteModel = page.getByRole("button", { name: "Delete SmolLM2 360M", exact: true });
+  await deleteModel.click(); // Simulated native Cancel result.
+  assert.equal(await page.getByText("Ready for offline analysis", { exact: true }).count(), 1);
+  await provider.selectOption("openai");
+  await page.getByRole("textbox", { name: "API key", exact: true }).waitFor();
+  await provider.selectOption("ollama");
+  assert.equal(await page.getByRole("textbox", { name: "Server URL", exact: true }).inputValue(), "http://localhost:11434");
+  assert.equal(await page.getByRole("combobox", { name: "Model", exact: true }).inputValue(), "qwen3.8:27b");
+  await provider.selectOption("builtin");
+  assert.equal(await page.getByText("Ready for offline analysis", { exact: true }).count(), 1);
+  await captureSettings("settings-windows-ready.png");
+  await nav.getByRole("button", { name: "Plan", exact: true }).click();
+  await page.getByText("Compact mode uses basic keyword coverage and limited overview suggestions.").waitFor();
+  await nav.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("radio", { name: "Dark", exact: true }).check();
+  await captureSettings("settings-windows-dark.png");
+  await localModel.selectOption("qwen3-4b");
+  await page.evaluate(() => window.modelQA.update("qwen3-4b", { status: "ready", downloadedBytes: 2497280256 }));
+  await page.getByText("Other downloads (1)").click();
+  await page.getByRole("button", { name: "Delete SmolLM2 360M", exact: true }).waitFor();
+  await page.setViewportSize({ width: 790, height: 850 });
+  await captureSettings("settings-windows-compact.png");
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await page.evaluate(() => { window.modelQA.confirmDelete = true; });
+  await page.getByRole("button", { name: "Delete SmolLM2 360M", exact: true }).click();
+  assert.equal(await page.getByText("Other downloads (1)").count(), 0);
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.evaluate(() => { window.modelQA.setPlatform("darwin"); });
+  await page.getByRole("radio", { name: "Light", exact: true }).check();
+  await page.getByText("Delete downloaded models here before removing the app from your Mac.", { exact: false }).waitFor();
+  assert.equal(await page.getByRole("button", { name: /uninstall/i }).count(), 0);
+  await captureSettings("settings-mac-ready.png");
+  await page.setViewportSize({ width: 790, height: 850 });
+  await page.getByRole("radio", { name: "Dark", exact: true }).check();
+  await captureSettings("settings-mac-compact-dark.png");
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   assert.deepEqual(errors, []);
   console.log(`Headless renderer checks passed. No desktop app was launched. Screenshots: ${output}`);

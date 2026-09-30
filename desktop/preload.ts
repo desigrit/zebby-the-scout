@@ -6,9 +6,14 @@ contextBridge.exposeInMainWorld("desktop", {
   retrySync: () => ipcRenderer.invoke("desktop:retry-sync"),
   openBackups: () => ipcRenderer.invoke("desktop:open-backups"),
   setApiKey: (value: string) => ipcRenderer.invoke("desktop:set-api-key", value),
-  setAnalysisProvider: (value: "ollama" | "openai") => ipcRenderer.invoke("desktop:set-analysis-provider", value),
+  setAnalysisProvider: (value: "ollama" | "openai" | "builtin") => ipcRenderer.invoke("desktop:set-analysis-provider", value),
   setOllamaConfig: (value: { url: string; model: string }) => ipcRenderer.invoke("desktop:set-ollama-config", value),
   listOllamaModels: (url: string) => ipcRenderer.invoke("desktop:list-ollama-models", url),
+  selectLocalModel: (id: string) => ipcRenderer.invoke("desktop:select-local-model", id),
+  pauseModelDownload: () => ipcRenderer.invoke("desktop:pause-model-download"),
+  resumeModelDownload: (id: string) => ipcRenderer.invoke("desktop:resume-model-download", id),
+  deleteLocalModel: (id: string) => ipcRenderer.invoke("desktop:delete-local-model", id),
+  openModelFolder: () => ipcRenderer.invoke("desktop:open-model-folder"),
   setAppearance: (value: "auto" | "dark" | "light") => ipcRenderer.invoke("desktop:set-appearance", value),
   setLogCapture: (value: boolean) => ipcRenderer.invoke("desktop:set-log-capture", value),
   openLogs: () => ipcRenderer.invoke("desktop:open-logs"),
@@ -22,6 +27,11 @@ contextBridge.exposeInMainWorld("desktop", {
     const listener = (_event: Electron.IpcRendererEvent, target: string) => callback(target);
     ipcRenderer.on("desktop:navigate", listener);
     return () => ipcRenderer.removeListener("desktop:navigate", listener);
+  },
+  onLocalModelsChanged: (callback: (state: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state);
+    ipcRenderer.on("desktop:local-models-changed", listener);
+    return () => ipcRenderer.removeListener("desktop:local-models-changed", listener);
   },
 });
 
