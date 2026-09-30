@@ -63,6 +63,10 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, onOpenSettings, on
     (["listingUrl", "company", "title", "team", "locations", "description",
       "currentOverview", "resumeId"] as const).every((key) => draft[key] === selectedPlan[key]);
   const matchStrength = matchIsCurrent ? selectedPlan.matchStrength : null;
+  const overviewRationale = matchIsCurrent && draft.overview === selectedPlan.overview
+    ? selectedPlan.overviewRationale : "";
+  const overviewUnchanged = draft.overview.trim().replace(/\s+/g, " ") ===
+    draft.currentOverview.trim().replace(/\s+/g, " ");
   const canAnalyze = Boolean(draft.listingUrl && draft.currentOverview.trim() &&
     (draft.resumeId || resumeFile) &&
     Math.max(draft.description.trim().length, draft.snapshotText?.trim().length || 0) >= 100);
@@ -325,6 +329,10 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, onOpenSettings, on
             <textarea className="overview-area" value={draft.overview}
               onChange={(event) => update("overview", event.target.value)}
               placeholder="Your current overview, tailored to this role, will appear here." /></label>
+          {overviewRationale && <div className="overview-rationale">
+            <strong>{overviewUnchanged ? "No wording changes" : "What changed"}</strong>
+            <p>{overviewRationale}</p>
+          </div>}
           <p className="analysis-footnote">{analysisProvider === "ollama"
             ? `Analysis sends the job posting, CV overview, and extracted resume text to ${ollamaModel || "your selected model"} on your configured Ollama server.`
             : "Analysis sends the job posting, CV overview, and selected resume to OpenAI using your API key. API usage may be billed to your account."}</p>

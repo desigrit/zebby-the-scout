@@ -95,7 +95,9 @@ try {
         return Response.json({ output: [{ type: "message", content: [{ type: "output_text",
           text: JSON.stringify({ keywords: ["Discovery", "Strategy", "Roadmap", "Experimentation", "Activation", "Analytics"],
             themes: ["Lead discovery", "Shape strategy", "Prioritize roadmap", "Run experiments", "Measure outcomes"],
-            score: 83, overview: "I use customer research to set clear product priorities and guide teams toward useful outcomes." }) }] }] });
+            score: 83,
+            overview: "I help teams find customer needs and build useful products with clear priorities.",
+            overviewRationale: "The current overview already highlights customer needs and clear priorities, which match this role's discovery and roadmap work." }) }] }] });
       }
       return originalFetch(url, options);
     };
@@ -114,7 +116,10 @@ try {
   assert.equal(calls[0].input[0].content[0].type, "input_file");
   assert.match(calls[0].input[0].content[1].text, /I help teams find customer needs/);
   await page.getByText("83%").waitFor();
-  await page.getByText("83%").scrollIntoViewIfNeeded();
+  await page.getByText("No wording changes").waitFor();
+  const unchangedRationale = page.getByText("The current overview already highlights customer needs", { exact: false });
+  await unchangedRationale.waitFor();
+  await unchangedRationale.scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(output, "plan-analyzed.png") });
   await nav.getByRole("button", { name: "Applications" }).click();
   await page.getByRole("heading", { name: "Applications", exact: true }).waitFor();
@@ -166,7 +171,8 @@ try {
           ? { score: 81, explanation: "Relevant product work, with one missing metric." }
           : { keywords: ["Discovery", "Strategy", "Roadmap", "Experimentation", "Activation", "Analytics"],
             themes: ["Lead discovery", "Shape strategy", "Prioritize roadmap", "Run experiments", "Measure outcomes"],
-            score: 86, overview: "I lead product strategy with customer evidence and clear priorities." }) } });
+            score: 86, overview: "I lead product strategy with customer evidence and clear priorities.",
+            overviewRationale: "Light revision: I brought customer evidence and product strategy forward to reflect the role's discovery focus." }) } });
       }
       return originalFetch(url, options);
     };
@@ -187,6 +193,11 @@ try {
   await nav.getByRole("button", { name: "Plan", exact: true }).click();
   await page.getByRole("button", { name: "Analyze again" }).click();
   await page.getByText("Analysis saved. You can edit any part of it.").waitFor();
+  await page.getByText("What changed").waitFor();
+  const changedRationale = page.getByText("Light revision: I brought customer evidence", { exact: false });
+  await changedRationale.waitFor();
+  await changedRationale.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(output, "plan-revised.png") });
   await nav.getByRole("button", { name: "Applications" }).click();
   await page.getByRole("button", { name: "Analyze again" }).click();
   await page.getByRole("table").getByText("81%").waitFor();
