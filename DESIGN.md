@@ -113,18 +113,20 @@ components:
   navigation-sidebar:
     backgroundColor: "{colors.forest}"
     textColor: "{colors.ink}"
-    padding: "30px 13px 20px"
+    padding: "12px 13px 20px"
     width: "210px"
   navigation-sidebar-dark:
     backgroundColor: "{colors.dark-forest}"
     textColor: "{colors.dark-ink}"
-    padding: "30px 13px 20px"
+    padding: "12px 13px 20px"
     width: "210px"
   navigation-sidebar-collapsed:
     backgroundColor: "{colors.forest}"
     textColor: "{colors.ink}"
-    padding: "30px 13px 20px"
+    padding: "12px 13px 20px"
     width: "96px"
+  navigation-sidebar-brand:
+    padding: "2px 13px 20px"
   window-title-region:
     backgroundColor: "{colors.canvas}"
     textColor: "{colors.ink-soft}"
@@ -229,17 +231,17 @@ Graphite extends the Search Ledger with neutral actions, information, focus, and
 
 **Body Font:** Segoe UI Variable on Windows and the system font on macOS, with Segoe UI, Helvetica Neue, Arial, and sans-serif fallbacks.
 
-**Character:** Sans-serif labels and data stay compact and easy to scan across Windows and Mac. Plan and Applications rely on the sidebar for their page identity, with a slim action toolbar instead of a repeated page heading. Serif display type remains available for Settings and setup.
+**Character:** Sans-serif labels and data stay compact and easy to scan across Windows and Mac. Plan, Applications, and Settings rely on the sidebar for their page identity. Plan and Applications retain slim action toolbars; Settings starts with its section headings. Serif display type remains available for setup.
 
 ### Hierarchy
 
-- **Display:** Settings and setup can use the `display` token; Plan and Applications omit repeated page titles.
+- **Display:** setup can use the `display` token; Plan, Applications, and Settings omit repeated page titles.
 - **Headline:** editor and section headings use the `headline` token; the roles heading is slightly smaller in the current page.
 - **Metric:** application totals use the `metric` token with tabular numerals for stable alignment.
 - **Body:** explanatory copy uses the `body` token. Table details are smaller to fit more records in view.
 - **Label:** field labels and key data labels use the `label` token with stronger weight.
 
-**The One Serif Rule.** Reserve expressive serif type for Settings and setup headings; application data stays sans-serif.
+**The One Serif Rule.** Reserve expressive serif type for setup headings; application data stays sans-serif.
 
 ## Layout
 
@@ -249,7 +251,7 @@ When the Applications content pane is 940px or narrower, rows become two-column 
 
 The native launch window defaults to 1550 by 850 device-independent pixels, 300 wider than the previous 1250 width. Both dimensions are capped by the primary display work area. Core keyword and theme columns stack when the Plan editor container is 610px or narrower; their editable text, importance badge, and remove control stay together.
 
-The common rhythm uses tight control gaps, medium field gaps, and generous panel padding. Let separators and whitespace group information before adding new containers.
+The common rhythm uses tight control gaps, medium field gaps, and generous panel padding. The navigation-sidebar and navigation-sidebar-brand frontmatter tokens place the zebra and menu higher in the shared rail. Let separators and whitespace group information before adding new containers.
 
 ## Elevation & Depth
 
@@ -277,9 +279,9 @@ The shared native title region is 44px high and shows only Zebby. Windows uses n
 
 The circular zebra is a 54px semantic button containing the unchanged 46px image. It switches the left sidebar between icons plus labels and icons only, without a sidebar wordmark. Expanded navigation is 210px wide, or 176px at the 850px window breakpoint; collapsed navigation is 96px on both platforms. Active destinations use `surface-selected`, readable ink, and the neutral `accent` icon. Hover uses `surface-hover`; the zebra button uses `surface-selected` on hover and a 2px `focus` outline with a 3px offset.
 
-The toggle exposes `aria-expanded`, `aria-controls`, and Expand navigation or Collapse navigation action labels and tooltips. Enter and Space activate the semantic button. Each destination retains its accessible name and current-page state; icons only destinations have tooltips. The expanded footer shows the current database name. The collapsed footer offers a Database settings icon with filename and save-pending information in its tooltip.
+The toggle exposes `aria-expanded`, `aria-controls`, and Expand navigation or Collapse navigation action labels and tooltips. Enter and Space activate the semantic button. Each destination retains its accessible name and current-page state; icons only destinations have tooltips. The expanded footer shows the current database name and save-pending state. Collapsed navigation omits the whole database footer, including its divider and action. Current file details remain available in Settings.
 
-The navigation preference is saved on each computer. A failed save restores the previous layout and displays an error. Toggling preserves the current draft and destination. Windows has no native menu bar; macOS keeps only the native app menu. Settings is an uncluttered four-section page for Database, OpenAI key, Appearance, and Logs.
+The navigation preference is saved on each computer. A failed save restores the previous layout and displays an error. Toggling preserves the current draft and destination. Windows has no native menu bar; macOS keeps only the native app menu. Settings starts directly with four sections: Database, Analysis, Appearance, and Logs. Section headings provide its hierarchy without a repeated page heading or introductory subheading.
 
 ### Cards and containers
 
@@ -293,6 +295,14 @@ Inputs use the appearance-specific field fill, strong rule borders, and the `fie
 
 Core ATS keywords use editable single-line fields; Core resume themes use editable multi-line fields. Each row reserves a separate 52px column for a read-only percentage badge and a 26px column for Remove. Badges use neutral Graphite information ink on its wash, a 5px corner radius, and tabular numerals. Unrated values use quieter canvas and ink-faint colors. Add keyword and Add theme are Graphite information text actions, and a new row receives focus. Labels, tooltips, and the nearby explanation identify the percentage as estimated importance to the job; resume match remains a separate value.
 
+### Plan analysis
+
+The primary Analyze button sits at the end of Your CV for both new and previously analyzed plans, with a quiet provider or model caption. Busy analysis replaces its icon with a spinner and uses a progress ring in the match summary. The existing refresh action remains beside a saved score. A native Why disclosure sits within the match summary, below its estimate caption, using a fine divider and keyboard focus. Its body describes the score's resume evidence and gaps; the overview wording rationale has its own place below the generated overview.
+
+### Settings links
+
+Database keeps its native Open and Create new database actions and one concise helper line. Logs uses brief automatic-error copy followed by underlined Open logs folder and Report an issue actions with external-arrow icons. These actions use Graphite information and shared keyboard focus.
+
 ### Application records
 
 The desktop list is a fixed-layout table with clearly separated columns. A compact company label follows the role title on the same baseline when space allows. Multiple locations use a chevron disclosure and separate labels when expanded. Match strength combines a percentage, short progress track, and refresh icon; a single progress ring replaces these while analysis runs. Green indicates stronger matches, while warmer tones indicate lower matches. Saved listing text lives in the editable Notes dialog, accessible from the row actions. Status is a native select styled as a compact tinted control, with each status retaining its own color. On narrow screens, table headers hide and each record carries its own labels and actions.
@@ -301,7 +311,7 @@ The desktop list is a fixed-layout table with clearly separated columns. A compa
 
 ### Do:
 
-- **Do** use the sidebar to identify Plan and Applications, keeping the workspace and its data compact.
+- **Do** use the sidebar to identify Plan, Applications, and Settings, keeping the workspace and its data compact.
 - **Do** keep controls legible and preserve 44px targets for mobile row actions and status changes.
 - **Do** pair match-track color with a numeric percentage, and pair status tint with readable text.
 - **Do** show visible keyboard focus and respect reduced-motion preferences.

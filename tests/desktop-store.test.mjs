@@ -40,12 +40,15 @@ test("desktop SQLite file stores applications, resumes, and plans across reopen"
     const analyzedPlan = await store.savePlanAnalysis(plan.id, plan.updatedAt,
       ["Customer research", "Product strategy"], ["Lead customer discovery"],
       "I use customer research to guide product strategy.",
-      "I brought customer research forward because the role emphasizes discovery.", 84);
+      "I brought customer research forward because the role emphasizes discovery.", 84, [], [],
+      "Customer discovery and product strategy are well supported. Analytics depth is less clear.");
     assert.equal(analyzedPlan.matchStrength, 84);
     assert.match(analyzedPlan.overviewRationale, /customer research forward/);
+    assert.match(analyzedPlan.matchNotes, /Analytics depth/);
     const preservedPlan = await store.savePlan({ ...analyzedPlan, overview: "Edited overview." }, plan.id);
     assert.equal(preservedPlan.matchStrength, 84);
     assert.equal(preservedPlan.overviewRationale, "");
+    assert.equal(preservedPlan.matchNotes, analyzedPlan.matchNotes);
     assert.deepEqual([...store.getResume(resume.id).data], [37, 80, 68, 70]);
     const draft = await store.saveApplication({ company: "", title: "", team: "", locations: "",
       listingUrl: "", jobDescription: "", appliedDate: "", matchStrength: null,
@@ -66,8 +69,9 @@ test("desktop SQLite file stores applications, resumes, and plans across reopen"
     assert.equal(editedPlan.snapshotText, "Original plan posting from the page.");
     assert.equal(editedPlan.description, "A tailored analysis description");
     assert.equal(editedPlan.matchStrength, null);
+    assert.equal(editedPlan.matchNotes, "");
     assert.equal(store.status.dirty, false);
-    assert.ok((await readdir(store.backupsPath)).some((name) => name.endsWith(".sqlite")));
+    assert.deepEqual(await readdir(store.backupsPath).catch(() => []), [], "Ordinary saves do not create recurring backups.");
     store.close();
 
     store = new DesktopStore(path.join(root, "computer-b"));
@@ -90,10 +94,83 @@ test("desktop SQLite file stores applications, resumes, and plans across reopen"
     await copyFile(previous, file);
     await store.open(file);
     assert.equal((await readFile(file)).subarray(0, 15).toString(), "SQLite format 3");
-    const copy = path.join(root, "cloud", "second.sqlite");
-    await store.copyCurrentTo(copy);
+    const originalBytes = await readFile(file);
+    const fresh = path.join(root, "cloud", "second.sqlite");
+    await store.create(fresh);
+    assert.equal(store.status.filePath, fresh);
+    assert.equal(store.listApplications().length, 0);
+    assert.equal(store.listPlans().length, 0);
+    assert.equal(store.listResumes().length, 0);
+    assert.equal(store.getLastCurrentOverview(), "");
+    assert.deepEqual(await readFile(file), originalBytes, "Creating a blank database preserves the original.");
+    await assert.rejects(store.create(file), /already exists/);
+    assert.equal(store.status.filePath, fresh);
+    assert.deepEqual(await readFile(file), originalBytes);
+    await store.open(file);
     assert.equal(store.listApplications().length, 2);
     assert.equal(store.listPlans()[0].title, "Senior PM");
+  } finally {
+    store?.close();
+    if (!path.resolve(root).startsWith(path.resolve(tmpdir()) + path.sep)) throw new Error("Unexpected test directory");
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("v9 upgrade preserves all records and stores a match explanation with its score", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "zebby-match-notes-test-"));
+  const file = path.join(root, "cloud", "applications.sqlite");
+  let store;
+  try {
+    const bundle = path.join(root, "store.mjs");
+    await build({ entryPoints: [path.resolve("desktop/store.ts")], outfile: bundle,
+      bundle: true, platform: "node", format: "esm", target: "node22" });
+    const { DesktopStore } = await import(pathToFileURL(bundle).href);
+    store = new DesktopStore(path.join(root, "profile-a"));
+    await store.create(file);
+    const resume = await store.addResume("CV.pdf", "application/pdf", new Uint8Array([37, 80, 68, 70]));
+    const application = await store.saveApplication({ company: "Example", resumeId: resume.id,
+      snapshotText: "Original job posting\n• Lead discovery" });
+    const noted = await store.saveApplicationNotes(application.id, "Recruiter: Sam. Archived copy deliberately removed.");
+    const plan = await store.savePlan({ listingUrl: "https://example.org/job", company: "Example", title: "PM", team: "", locations: "", overview: "",
+      currentOverview: "I turn customer insights into useful products.", resumeId: resume.id,
+      description: "Responsibilities\n• Lead discovery and delivery", keywords: ["Discovery"], themes: ["Lead discovery"] });
+    const priorAnalysis = await store.savePlanAnalysis(plan.id, plan.updatedAt, plan.keywords, plan.themes,
+      "I lead discovery to shape useful products.", "Discovery is the main requirement.", 73, [94], [91], "Prior explanation.");
+    store.close();
+    const legacy = new DatabaseSync(file);
+    legacy.exec("ALTER TABLE plans DROP COLUMN match_notes; PRAGMA user_version = 9;");
+    legacy.close();
+    const originalBytes = await readFile(file);
+    store = new DesktopStore(path.join(root, "profile-b"));
+    await store.open(file);
+    const upgraded = store.getPlan(plan.id);
+    assert.deepEqual(upgraded, { ...priorAnalysis, matchNotes: "" });
+    assert.deepEqual(store.listApplications()[0], noted, "The Notes migration does not repeat for v9.");
+    assert.deepEqual([...store.getResume(resume.id).data], [37, 80, 68, 70]);
+    assert.equal(store.getLastCurrentOverview(), plan.currentOverview);
+    const backups = (await readdir(store.backupsPath)).filter((name) => name.includes("before-v10"));
+    assert.equal(backups.length, 1);
+    assert.deepEqual(await readFile(path.join(store.backupsPath, backups[0])), originalBytes);
+    await assert.rejects(store.savePlanAnalysis(plan.id, upgraded.updatedAt, upgraded.keywords, upgraded.themes,
+      upgraded.overview, upgraded.overviewRationale, 90, [94], [91], ""), /explanation was incomplete/);
+    assert.deepEqual(store.getPlan(plan.id), upgraded, "An incomplete explanation cannot replace the saved analysis.");
+    const analyzed = await store.savePlanAnalysis(plan.id, upgraded.updatedAt, upgraded.keywords, upgraded.themes,
+      upgraded.overview, upgraded.overviewRationale, 81, [94], [91],
+      "Discovery and delivery experience are supported. Leadership scope is less clear.");
+    store.close();
+    await store.open(file);
+    assert.deepEqual(store.getPlan(plan.id), analyzed);
+    assert.equal((await readdir(store.backupsPath)).length, 1, "Reopening a current database does not make another backup.");
+    const stale = await store.savePlan({ ...analyzed, description: "A revised job description" }, plan.id);
+    await assert.rejects(store.savePlanAnalysis(plan.id, analyzed.updatedAt, analyzed.keywords, analyzed.themes,
+      analyzed.overview, analyzed.overviewRationale, 88, [94], [91], "A stale explanation."), /changed/);
+    assert.equal(store.getPlan(plan.id).matchStrength, null);
+    assert.equal(stale.matchNotes, "");
+    store.close();
+    store = new DesktopStore(path.join(root, "profile-c"));
+    await store.open(file);
+    assert.deepEqual(store.getPlan(plan.id), stale);
+    assert.deepEqual(store.listApplications()[0], noted);
   } finally {
     store?.close();
     if (!path.resolve(root).startsWith(path.resolve(tmpdir()) + path.sep)) throw new Error("Unexpected test directory");
@@ -141,7 +218,7 @@ test("version 2 desktop databases migrate without losing applications or resumes
     assert.equal(store.listApplications()[0].matchStrength, 80);
     assert.equal(store.listApplications()[0].resumeName, "Old Resume.pdf");
     const migrated = new DatabaseSync(file, { readOnly: true });
-    assert.equal(migrated.prepare("PRAGMA user_version").get().user_version, 9);
+    assert.equal(migrated.prepare("PRAGMA user_version").get().user_version, 10);
     migrated.close();
     const blank = await store.saveApplication({});
     assert.equal(blank.resumeId, "");
@@ -180,7 +257,7 @@ test("version 1 desktop databases gain Plan and optional application fields", as
     assert.equal(application.matchStrength, null);
     assert.deepEqual(store.listPlans(), []);
     const check = new DatabaseSync(file, { readOnly: true });
-    assert.equal(check.prepare("PRAGMA user_version").get().user_version, 9);
+    assert.equal(check.prepare("PRAGMA user_version").get().user_version, 10);
     check.close();
   } finally {
     store?.close();
@@ -229,7 +306,7 @@ test("version 3 descriptions become offline copies during migration", async () =
     assert.equal(store.listPlans()[0].snapshotText, "Previous plan description");
     assert.equal(store.listPlans()[0].snapshotSource, "saved");
     const check = new DatabaseSync(file, { readOnly: true });
-    assert.equal(check.prepare("PRAGMA user_version").get().user_version, 9);
+    assert.equal(check.prepare("PRAGMA user_version").get().user_version, 10);
     check.close();
   } finally {
     store?.close();
@@ -272,7 +349,7 @@ test("version 4 desktop databases gain CV inputs and match scores", async () => 
     assert.equal(plan.resumeId, "");
     assert.equal(plan.matchStrength, null);
     const check = new DatabaseSync(file, { readOnly: true });
-    try { assert.equal(check.prepare("PRAGMA user_version").get().user_version, 9); }
+    try { assert.equal(check.prepare("PRAGMA user_version").get().user_version, 10); }
     finally { check.close(); }
   } finally {
     store?.close();
@@ -316,7 +393,7 @@ test("version 5 plans gain a saved overview explanation", async () => {
     assert.equal(plan.overview, "I plan products.");
     assert.equal(plan.matchStrength, 72);
     const check = new DatabaseSync(file, { readOnly: true });
-    try { assert.equal(check.prepare("PRAGMA user_version").get().user_version, 9); }
+    try { assert.equal(check.prepare("PRAGMA user_version").get().user_version, 10); }
     finally { check.close(); }
   } finally {
     store?.close();
@@ -364,7 +441,7 @@ test("version 6 applications gain editable notes without losing scores", async (
     assert.equal(updated.notes, "Spoke with recruiter.");
     assert.equal(updated.matchStrength, 82);
     const check = new DatabaseSync(file, { readOnly: true });
-    try { assert.equal(check.prepare("PRAGMA user_version").get().user_version, 9); }
+    try { assert.equal(check.prepare("PRAGMA user_version").get().user_version, 10); }
     finally { check.close(); }
   } finally {
     store?.close();
@@ -402,6 +479,7 @@ test("version 7 moves saved listings into Notes once and keeps an untouched upgr
     legacy.prepare("UPDATE applications SET notes = ? WHERE id = ?").run(oldNotes, existingNotes.id);
     legacy.exec(`ALTER TABLE plans DROP COLUMN keyword_importance_json;
       ALTER TABLE plans DROP COLUMN theme_importance_json;
+      ALTER TABLE plans DROP COLUMN match_notes;
       DROP TABLE workspace_preferences; PRAGMA user_version = 7;`);
     legacy.close();
     const originalBytes = await readFile(file);
@@ -415,7 +493,7 @@ test("version 7 moves saved listings into Notes once and keeps an untouched upgr
     assert.deepEqual(byId.get(noCopy.id), noCopy);
     assert.deepEqual(store.getPlan(plan.id), plan);
     assert.deepEqual([...store.getResume(resume.id).data], [37, 80, 68, 70]);
-    const upgrades = (await readdir(store.backupsPath)).filter((name) => name.includes("before-v9"));
+    const upgrades = (await readdir(store.backupsPath)).filter((name) => name.includes("before-v10"));
     assert.equal(upgrades.length, 1);
     assert.deepEqual(await readFile(path.join(store.backupsPath, upgrades[0])), originalBytes);
     const backupDb = new DatabaseSync(path.join(store.backupsPath, upgrades[0]), { readOnly: true });
@@ -427,7 +505,7 @@ test("version 7 moves saved listings into Notes once and keeps an untouched upgr
     store.close();
     await store.open(file);
     assert.deepEqual(store.listApplications().find((item) => item.id === existingNotes.id), byId.get(existingNotes.id));
-    assert.equal((await readdir(store.backupsPath)).filter((name) => name.includes("before-v9")).length, 1);
+    assert.equal((await readdir(store.backupsPath)).filter((name) => name.includes("before-v10")).length, 1);
     const edited = await store.saveApplicationNotes(emptyNotes.id, `${longListing}\n\nRecruiter conversation`);
     assert.ok(edited.notes.length > 20_000);
     assert.equal(edited.snapshotText, longListing);
@@ -497,6 +575,7 @@ test("v8 upgrade preserves data and notes, remembers the overview, and keeps job
     const legacy = new DatabaseSync(file);
     legacy.exec(`ALTER TABLE plans DROP COLUMN keyword_importance_json;
       ALTER TABLE plans DROP COLUMN theme_importance_json;
+      ALTER TABLE plans DROP COLUMN match_notes;
       DROP TABLE workspace_preferences; PRAGMA user_version = 8;`);
     legacy.close();
     const originalBytes = await readFile(file);
@@ -508,24 +587,27 @@ test("v8 upgrade preserves data and notes, remembers the overview, and keeps job
     assert.deepEqual([...store.getResume(resume.id).data], [37, 80, 68, 70]);
     assert.deepEqual(store.getPlan(plan.id).keywordImportance, [null, null]);
     assert.equal(store.getLastCurrentOverview(), plan.currentOverview);
-    const backups = (await readdir(store.backupsPath)).filter((name) => name.includes("before-v9"));
+    const backups = (await readdir(store.backupsPath)).filter((name) => name.includes("before-v10"));
     assert.equal(backups.length, 1);
     assert.deepEqual(await readFile(path.join(store.backupsPath, backups[0])), originalBytes);
 
     const analyzed = await store.savePlanAnalysis(plan.id, plan.updatedAt, plan.keywords, plan.themes,
-      "I focus on discovery to shape useful products.", "Discovery is the role's main requirement.", 42, [96, 80], [94]);
+      "I focus on discovery to shape useful products.", "Discovery is the role's main requirement.", 42, [96, 80], [94],
+      "Some discovery evidence is present, but the requested leadership scope is not demonstrated.");
     assert.equal(analyzed.matchStrength, 42);
     assert.deepEqual(analyzed.keywordImportance, [96, 80]);
     const cvChanged = await store.savePlan({ ...analyzed, currentOverview: "I lead product delivery.", resumeId: "" }, plan.id);
     assert.equal(cvChanged.matchStrength, null);
+    assert.equal(cvChanged.matchNotes, "");
     assert.deepEqual(cvChanged.keywordImportance, [96, 80], "Job importance is independent of the resume and overview.");
     const edited = await store.savePlan({ ...cvChanged, keywords: ["Roadmap", "New skill", "Discovery"], themes: ["A revised theme"] }, plan.id);
     assert.deepEqual(edited.keywordImportance, [80, null, 96]);
     assert.deepEqual(edited.themeImportance, [null]);
-    await assert.rejects(store.savePlanAnalysis(plan.id, plan.updatedAt, ["Bad"], ["Bad"], "Bad", "Bad", 99, [101], [80]), /importance/);
+    await assert.rejects(store.savePlanAnalysis(plan.id, plan.updatedAt, ["Bad"], ["Bad"], "Bad", "Bad", 99, [101], [80], "Bad evidence."), /importance/);
     const jobChanged = await store.savePlan({ ...edited, description: "Responsibilities\n• Focus on product delivery" }, plan.id);
     assert.deepEqual(jobChanged.keywordImportance, [null, null, null]);
-    const scored = await store.savePlanAnalysis(plan.id, jobChanged.updatedAt, ["Product delivery"], ["Own delivery"], "A supported overview.", "Delivery matters here.", 61, [91], [89]);
+    const scored = await store.savePlanAnalysis(plan.id, jobChanged.updatedAt, ["Product delivery"], ["Own delivery"], "A supported overview.", "Delivery matters here.", 61, [91], [89],
+      "Delivery experience is supported, but ownership at this role's scale is unclear.");
 
     store.close();
     store = new DesktopStore(path.join(root, "computer-b"));

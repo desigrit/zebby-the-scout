@@ -17,10 +17,8 @@ export type DesktopState = {
   totalMemory: number;
   availableMemory: number;
   canSaveApiKey: boolean;
-  backupsPath: string;
   appearance: "auto" | "dark" | "light";
   sidebarCollapsed: boolean;
-  captureLogs: boolean;
   logsPath: string;
   platform: string;
 };
@@ -29,7 +27,6 @@ export type DesktopBridge = {
   state(): Promise<DesktopState>;
   chooseDatabase(kind: "open" | "create"): Promise<DesktopState | null>;
   retrySync(): Promise<DesktopState>;
-  openBackups(): Promise<string>;
   setApiKey(value: string): Promise<DesktopState>;
   setAnalysisProvider(value: DesktopState["analysisProvider"]): Promise<DesktopState>;
   setOllamaConfig(value: { url: string; model: string }): Promise<DesktopState>;
@@ -41,8 +38,7 @@ export type DesktopBridge = {
   openModelFolder(): Promise<string>;
   setAppearance(value: DesktopState["appearance"]): Promise<DesktopState>;
   setSidebarCollapsed(value: boolean): Promise<DesktopState>;
-  setLogCapture(value: boolean): Promise<DesktopState>;
-  openLogs(): Promise<string>;
+  openLogs(): Promise<void>;
   downloadResume(id: string): Promise<boolean>;
   onDatabaseChanged(callback: (state: DesktopState) => void): () => void;
   onNavigate(callback: (target: string) => void): () => void;

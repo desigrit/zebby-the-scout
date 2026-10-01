@@ -4,35 +4,37 @@
 
 MODE: Operate.
 
-THESIS: Choose the analysis source and install a local model without knowing about servers or command line tools. Provider selection, model terms, downloads, appearance, and logging stay familiar within the approved Graphite palette and Zebby shell.
+THESIS: Choose an analysis source, manage the selected database, and find troubleshooting actions without extra setup knowledge.
 
-OWN-WORLD: Extend the Search Ledger in DESIGN.md with the approved neutral Graphite palette and Zebby identity. Reuse native selects, platform fonts, fine rules, and existing section spacing. Graphite marks primary and agreement actions, informational links, download progress, selected appearance, and focus. The unchanged full circular zebra toggles labeled or icons only navigation.
+OWN-WORLD: Preserve the approved Graphite Search Ledger, Zebby identity, native selects, platform fonts, fine rules, and existing widths. The unchanged circular zebra and menu sit higher through the shared sidebar spacing refinement.
 
-STORY: Select Built-in local, choose one of six named models, see its size and memory guidance, and watch the download finish. LFM2.5 and Gemma show linked terms and an inline Agree and download action on first use. Installed models and accepted terms are reused. Pause, resume, retry, and removal remain inline actions.
+STORY: Open an existing database or create a blank one. Select a provider and local model, accept required terms, and manage its download inline. Choose appearance and open automatic error logs or report an issue.
 
-FIRST VIEWPORT: The shared 44px native title region reads only Zebby, and the sidebar has no wordmark. Keep Database above Analysis. Provider and Local model use vertically stacked native dropdowns. The selected model's description and slim progress bar sit immediately below. Installed downloads live in a collapsible management list. Appearance and Logs retain their positions. Narrow windows stack section headings above their controls.
+FIRST VIEWPORT: The shared 44px native title region reads only Zebby. Settings starts directly with Database, followed by Analysis, Appearance, and Logs, without a page heading or introductory subheading. Database shows the current file, Open database, Create new database, and one helper line. Provider and Local model remain stacked native dropdowns. Narrow windows stack section headings above their controls.
 
-FORM: Preserve the established Settings composition and operating controls. This is the approved cross-surface Graphite, Zebby, and shared native shell expansion, with no new concept seed. The signature interaction remains the selected model's inline status changing from download progress to Ready, without a modal or navigation change.
+FORM: A scoped refinement of the approved operating ledger. Preserve the palette, artwork, shell, typography, widths, and provider behavior. The selected model's inline progress-to-Ready interaction remains the signature.
 
-FINISH: The fresh v1.3.0 full renderer review returned ship across all 32 supplied captures and scoped source, with no material fixes. All five contract sections are present in [the finish review](../review/zebby-finish-review.md). The craft ceiling was reached within the captured renderer scope. DESIGN.md and .impeccable/design.json record the exact approved Graphite tokens and shared native shell.
+FINISH: The fresh v1.4.0 review returned ship across 34 supplied captures and scoped source, with no material fixes. Its persistence, fidelity, ceiling, material_fixes, and keep sections are present in [the finish review](../review/settings-plan-finish-review.md). This verdict covers source and the supplied renderer captures, recorded before the release build.
 
-## Constraints
+## Database and logs
 
-- Downloads and provider settings remain local to each computer, outside the shared database.
-- Navigation expansion is also saved on each computer. The unchanged 46px zebra sits in a 54px button with an expanded-state announcement, action labels, tooltips, and Enter or Space activation. Expanded navigation is 210px, or 176px at the 850px window breakpoint; collapsed navigation is 96px on both platforms. Failed saves restore the previous state and show an error. The collapsed Database settings footer opens this page.
-- Retain native Windows overlay controls and macOS traffic lights at x=18, y=16 in the 44px title region. Its sidebar segment blends into the rail below. Show only Zebby in the title region, without a database filename or sidebar wordmark.
-- Version 1.3.0 keeps the internal package name pm-application-tracker, app ID com.desigrit.pmapplications, legacy profile and model folders, and schema v9. It performs no data migration.
-- LFM2.5 and Gemma require linked terms and an inline Agree and download action on first use. Versioned acceptance is checked before download or inference. An installed model without accepted terms offers Agree and use. Terms links remain underlined at rest.
-- Installed and partial models retain per-model Delete on Windows and macOS, with native Cancel and Delete model confirmation. Cancel is the default.
-- Updates keep downloaded models. Windows uninstall removes them; Mac users delete them in Settings before removing the app.
-- Preserve the user's database and installed Ollama models. No provider silently falls back to another model.
-- Light and dark controls use their corresponding field, hover, selection, focus-ring, and button-ink tokens. Auto follows the system preference, including the native startup background.
-- The last saved Current CV Overview is a preference in the selected database, rather than a per-computer Settings value. New Plan drafts receive it; existing plans keep their own overview.
-- Verify the renderer headlessly. Do not open the desktop app on the user's PC or inspect their real settings, database, resumes, or models.
+- Create new database always creates and selects a blank SQLite file. Exclusive creation protects existing files and preserves the previously selected database. Pending writes are awaited; unsaved database changes block switching. Canceling the native dialog preserves the selection.
+- Version 1.4.0 uses schema 10. An older selected file receives a complete original before-v10 backup before upgrade. Existing data and backup files remain; there are no recurring weekly backups or backup pruning. Install version 1.4.0 on both computers before sharing an upgraded database.
+- Logs saves errors automatically on each computer with no capture preference, switch, or verbose warning. Log files are created lazily for errors, separate from the database, with ordered writes, bounded entries, rotation, and known API key redaction.
+- Open logs folder opens the local folder. Report an issue is an underlined external link to [the Zebby issue form](https://github.com/desigrit/zebby-the-scout/issues/new). Both actions retain shared keyboard focus and an external-arrow icon.
+
+## Preserved constraints
+
+- Provider settings, accepted model terms, downloads, appearance, and navigation expansion stay local to each computer. The last saved Current CV Overview stays in the selected database.
+- The unchanged 46px zebra sits in a 54px toggle. Expanded navigation is 210px, or 176px at the 850px window breakpoint; collapsed navigation is 96px on both platforms. The shared rail uses 12px top padding and 20px below the brand. Only expanded navigation shows the current database footer. Settings retains the file details in both states.
+- The toggle retains its expanded-state announcement, action labels, tooltips, and Enter or Space activation. Failed preference saves restore the previous layout and show an error; drafts and destination stay intact.
+- Keep native Windows overlay controls and macOS traffic lights at x=18, y=16 in the 44px title region. Show only Zebby, without a database filename or sidebar wordmark.
+- Retain pm-application-tracker, com.desigrit.pmapplications, and legacy profile and model folders.
+- LFM2.5 and Gemma require linked terms and inline Agree and download or Agree and use. Versioned acceptance is checked before download or inference. Terms remain underlined at rest.
+- Installed and partial models retain per-model Delete on both platforms, with native confirmation and Cancel as the default. Updates keep downloads. Windows uninstall removes them; Mac users delete them in Settings before removing the app.
+- Preserve the selected database and installed Ollama models. No provider silently falls back. Light, dark, and Auto retain the approved appearance tokens and native startup background.
 
 ## Analysis paths
-
-Analysis has three providers: OpenAI, Ollama, and Built-in local. The six built-in CPU models retain their existing sizes and analysis routing:
 
 | Model | Download | Analysis path |
 | --- | --- | --- |
@@ -43,27 +45,27 @@ Analysis has three providers: OpenAI, Ollama, and Built-in local. The six built-
 | Qwen3 4B | 2.50 GB | Complete input and full analysis instructions |
 | Qwen3 8B | 5.03 GB | Complete input and full analysis instructions |
 
-OpenAI and configured Ollama retain full analysis. The Plan recommendations describe job requirements and ideal-candidate CV priorities, with job importance independent of resume coverage. Resume match is a separate directional fit estimate. These paths describe implementation behavior; they do not certify inference quality.
+OpenAI and configured Ollama retain their full provider paths. Job importance is independent of resume coverage and match strength. New Plan match explanations describe evidence and gaps beside the saved score; overview rationale remains separate. These paths describe implementation behavior and do not certify inference quality.
 
 ## Finish evidence
 
-Current source evidence covers app/globals.css, desktop/renderer/desktop.css, desktop/renderer/App.tsx, desktop/main.ts, desktop/bridge.ts, desktop/window-appearance.ts, desktop/app-identity.ts, and package.json. This documenter directly inspected the Mac collapsed light simulation. The fresh reviewer validated these 12 Settings and README files within the full 32-capture matrix:
+Current captures are listed in [the 34-file manifest](../review/settings-plan-1.4.0/capture-manifest.txt). Settings uses 1440 by 960 wide and 790 by 850 compact viewports:
 
-- [Windows download](../review/settings-windows-download.png)
-- [Windows Ready](../review/settings-windows-ready.png)
-- [Windows dark](../review/settings-windows-dark.png)
-- [Windows compact](../review/settings-windows-compact.png)
-- [Mac branch Ready simulation](../review/settings-mac-ready.png)
-- [Mac branch compact dark simulation](../review/settings-mac-compact-dark.png)
-- [LFM2.5 terms](../review/settings-lfm25-350m-terms.png)
-- [LFM2.5 Ready](../review/settings-lfm25-350m-ready.png)
-- [Gemma terms](../review/settings-gemma3-270m-terms.png)
-- [Gemma Ready](../review/settings-gemma3-270m-ready.png)
-- [Mac branch collapsed light simulation](../review/settings-mac-collapsed-light.png)
-- [README Settings](../review/readme-settings.png)
+- [Windows download](../review/settings-plan-1.4.0/settings-windows-download.png)
+- [Windows Ready](../review/settings-plan-1.4.0/settings-windows-ready.png)
+- [Windows dark](../review/settings-plan-1.4.0/settings-windows-dark.png)
+- [Windows compact](../review/settings-plan-1.4.0/settings-windows-compact.png)
+- [Mac branch Ready simulation](../review/settings-plan-1.4.0/settings-mac-ready.png)
+- [Mac branch compact dark simulation](../review/settings-plan-1.4.0/settings-mac-compact-dark.png)
+- [LFM2.5 terms](../review/settings-plan-1.4.0/settings-lfm25-350m-terms.png)
+- [LFM2.5 Ready](../review/settings-plan-1.4.0/settings-lfm25-350m-ready.png)
+- [Gemma terms](../review/settings-plan-1.4.0/settings-gemma3-270m-terms.png)
+- [Gemma Ready](../review/settings-plan-1.4.0/settings-gemma3-270m-ready.png)
+- [Mac branch collapsed light simulation](../review/settings-plan-1.4.0/settings-mac-collapsed-light.png)
+- [README Settings](../review/settings-plan-1.4.0/readme-settings.png)
 
-All captures use invisible headless Chromium on Windows with synthetic state and the compiled renderer. Wide Settings uses a 1440 by 960 viewport; compact uses 790 by 850. LFM2.5 terms and Ready use Windows light at 1440 by 960; Gemma terms and Ready use the Mac branch in dark appearance at 790 by 850. Mac filenames exercise that branch on Windows and do not prove native macOS fonts, window controls, or dialogs. The capture helper waits for finite transitions and fonts.
+This documenter inspected Windows Ready light and Mac compact dark. Parent and reviewer opened and validated all 34 captures. All use synthetic state and the compiled renderer in headless Chromium on Windows; Mac filenames exercise the Mac renderer branch on Windows.
 
-The independent reviewer passed 56 tests, typecheck, lint with zero errors and three existing image warnings, and diff whitespace checks. Renderer/build results were supplied and QA source inspected, not rerun by the reviewer or documenter. Parent headless QA confirms keyboard toggle activation, draft preservation, preference success and failure, and the database footer action. Existing provider, terms, download, and model behavior remain unchanged.
+Scoped source includes desktop/renderer/App.tsx, desktop/renderer/desktop.css, desktop/main.ts, desktop/bridge.ts, desktop/preload.ts, desktop/store.ts, desktop/diagnostic-log.ts, desktop/analysis-contracts.ts, desktop/basic-local-analysis.ts, package.json, and docs/guide.md. The fresh reviewer independently passed 58 tests, typecheck, lint with zero errors, and diff checks. Lint recorded three established image warnings plus one ignored exploratory-file warning. Parent supplied successful desktop build and headless renderer QA; reviewer inspected that evidence and QA source without rerunning the renderer.
 
-The desktop app and personal database, resumes, settings, and models were not opened for documentation. No detector ran for this desktop task. Native installer upgrades, native chrome, actual macOS fonts and controls, and a Keychain decryption roundtrip remain untested; release CI is a later gate. These checks do not certify inference accuracy.
+No detector ran for this desktop task. No app, browser, real settings, database, resumes, or installed models were opened for documentation. Native installer upgrades, actual macOS fonts and chrome, Keychain upgrade behavior, and live provider inference remain unverified. Packaged inference and release CI are assessed separately from this documentation review. The review does not certify accuracy.

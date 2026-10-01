@@ -61,7 +61,7 @@ try {
     assert.ok(typeof item.text === "string" && item.text.trim());
     assert.ok(Number.isInteger(item.importance) && item.importance >= 0 && item.importance <= 100);
   }
-  assert.ok(plan.overview && plan.overviewRationale);
+  assert.ok(plan.overview && plan.overviewRationale && plan.explanation);
   assert.ok(Number.isInteger(plan.score) && plan.score >= 0 && plan.score <= 100);
   assert.ok(Number.isInteger(match.score) && match.score >= 0 && match.score <= 100 && match.explanation);
   const engineUrl = engine.baseUrl;

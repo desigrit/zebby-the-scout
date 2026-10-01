@@ -1,6 +1,6 @@
 import { planInstructions, planSchema, matchInstructions, matchSchema } from "./analysis-contracts";
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, safeStorage, screen, shell } from "electron";
-import { appendFile, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fetchJobPosting } from "../lib/job-fetch";
 import type { ApplicationInput } from "../lib/application-types";
@@ -18,6 +18,7 @@ import { parsePlanRecommendations } from "./plan-importance";
 import { freemem, totalmem } from "node:os";
 import { APP_NAME, preserveApplicationProfile } from "./app-identity";
 import { nativeWindowShell, windowColors, type Appearance } from "./window-appearance";
+import { DiagnosticLog } from "./diagnostic-log";
 
 protocol.registerSchemesAsPrivileged([{
   scheme: "tracker", privileges: { standard: true, secure: true, supportFetchAPI: true },
@@ -34,28 +35,15 @@ let modelEngine: LocalModelEngine;
 let shuttingDown = false;
 type AnalysisProvider = "ollama" | "openai" | "builtin";
 let settings: { databasePath?: string; encryptedApiKey?: string; appearance?: Appearance; sidebarCollapsed?: boolean;
-  captureLogs?: boolean; analysisProvider?: AnalysisProvider; ollamaUrl?: string; ollamaModel?: string; builtInModelId?: string;
+  analysisProvider?: AnalysisProvider; ollamaUrl?: string; ollamaModel?: string; builtInModelId?: string;
   acceptedModelTerms?: AcceptedModelTerms } = {};
-let logQueue = Promise.resolve();
+const diagnosticLog = new DiagnosticLog(() => logsPath(), () => [apiKey]);
 
 function settingsPath() { return path.join(app.getPath("userData"), "settings.json"); }
 function logsPath() { return path.join(app.getPath("userData"), "Logs"); }
 
 function logDiagnostic(message: string, error?: unknown) {
-  if (!settings.captureLogs) return;
-  const detail = error instanceof Error ? error.stack || error.message : error ? String(error) : "";
-  const line = `${new Date().toISOString()} ${message}${detail ? `: ${detail}` : ""}\n`.slice(0, 8000);
-  logQueue = logQueue.then(async () => {
-    const folder = logsPath();
-    const file = path.join(folder, "tracker.log");
-    await mkdir(folder, { recursive: true });
-    if (((await stat(file).catch(() => null))?.size || 0) > 2_000_000) {
-      const previous = path.join(folder, "tracker.previous.log");
-      await unlink(previous).catch(() => undefined);
-      await rename(file, previous);
-    }
-    await appendFile(file, line, "utf8");
-  }).catch((failure) => console.error("Could not write diagnostic log", failure));
+  diagnosticLog.error(message, error);
 }
 
 async function saveSettings() {
@@ -64,7 +52,10 @@ async function saveSettings() {
 
 async function loadSettings() {
   try { settings = JSON.parse(await readFile(settingsPath(), "utf8")); }
-  catch { settings = {}; }
+  catch (error) {
+    settings = {};
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") logDiagnostic("Could not read local settings", error);
+  }
   if (!["auto", "dark", "light"].includes(settings.appearance || "auto")) settings.appearance = "auto";
   if (!["ollama", "openai", "builtin"].includes(settings.analysisProvider || "")) {
     settings.analysisProvider = settings.encryptedApiKey ? "openai" : "ollama";
@@ -76,10 +67,10 @@ async function loadSettings() {
   if (!settings.acceptedModelTerms || typeof settings.acceptedModelTerms !== "object" || Array.isArray(settings.acceptedModelTerms)) {
     settings.acceptedModelTerms = {};
   }
-  settings.captureLogs = settings.captureLogs === true;
+  delete (settings as typeof settings & { captureLogs?: boolean }).captureLogs;
   if (settings.encryptedApiKey && safeStorage.isEncryptionAvailable()) {
     try { apiKey = safeStorage.decryptString(Buffer.from(settings.encryptedApiKey, "base64")); }
-    catch { apiKey = ""; }
+    catch (error) { apiKey = ""; logDiagnostic("Could not read the saved API key", error); }
   }
   if (settings.databasePath) {
     try { await store.open(settings.databasePath); }
@@ -110,14 +101,14 @@ function state() {
     localEngine: { status: modelEngine?.status || "idle", modelId: modelEngine?.modelId || "" },
     totalMemory: totalmem(), availableMemory: freemem(),
     canSaveApiKey: safeStorage.isEncryptionAvailable(),
-    backupsPath: store.backupsPath,
     appearance: settings.appearance || "auto", sidebarCollapsed: settings.sidebarCollapsed === true,
-    captureLogs: Boolean(settings.captureLogs), logsPath: logsPath(),
+    logsPath: logsPath(),
     platform: process.platform,
   };
 }
 
 async function chooseDatabase(kind: "open" | "create") {
+  if (kind !== "open" && kind !== "create") throw new Error("Choose whether to open or create a database.");
   const parent = mainWindow || undefined;
   const defaultPath = settings.databasePath ? path.dirname(settings.databasePath) : app.getPath("documents");
   let filePath = "";
@@ -132,13 +123,12 @@ async function chooseDatabase(kind: "open" | "create") {
     await store.open(filePath);
   } else {
     const result = await dialog.showSaveDialog(parent!, {
-      title: "Create application database", defaultPath: path.join(defaultPath, "PM Applications.sqlite"),
+      title: "Create new database", defaultPath: path.join(defaultPath, "Zebby Applications.sqlite"),
       filters: [{ name: "SQLite database", extensions: ["sqlite"] }],
     });
     if (result.canceled || !result.filePath) return null;
     filePath = result.filePath;
-    if (store.status.filePath) await store.copyCurrentTo(filePath);
-    else await store.create(filePath);
+    await store.create(filePath);
   }
   settings.databasePath = filePath;
   startupError = "";
@@ -247,13 +237,14 @@ async function analyzePlan(id: string) {
     ? "The overview was returned unchanged. Review it against the role and edit it if you want to emphasize different experience."
     : rawRationale;
   const score = analysis.score;
+  const explanation = typeof analysis.explanation === "string" ? publicAnalysisText(analysis.explanation.trim()) : "";
   if (keywords.length < 6 || keywords.length > 20 || themes.length < 5 || themes.length > 6 || !overview || !overviewRationale ||
-      typeof score !== "number" || !Number.isInteger(score) || score < 0 || score > 100) {
+      !explanation || typeof score !== "number" || !Number.isInteger(score) || score < 0 || score > 100) {
     throw new Error("The analysis was incomplete. Try again.");
   }
   return store.savePlanAnalysis(id, plan.updatedAt, keywords.map((item) => item.text),
     themes.map((item) => item.text), overview, overviewRationale, score,
-    keywords.map((item) => item.importance), themes.map((item) => item.importance));
+    keywords.map((item) => item.importance), themes.map((item) => item.importance), explanation);
 }
 
 async function analyzeApplicationMatch(id: string) {
@@ -383,17 +374,17 @@ function registerProtocol() {
 }
 
 function registerIpc() {
-  ipcMain.handle("desktop:state", () => state());
-  ipcMain.handle("desktop:choose-database", async (_event, kind: "open" | "create") => {
-    try { return await chooseDatabase(kind); }
-    catch (error) { logDiagnostic(`Could not ${kind} database`, error); throw error; }
-  });
-  ipcMain.handle("desktop:retry-sync", async () => {
-    try { return await store.retrySync(); }
-    catch (error) { logDiagnostic("Could not save database", error); throw error; }
-  });
-  ipcMain.handle("desktop:open-backups", () => shell.openPath(store.backupsPath));
-  ipcMain.handle("desktop:set-appearance", async (_event, value: Appearance) => {
+  function handle<Args extends unknown[], Result>(channel: string,
+    listener: (event: Electron.IpcMainInvokeEvent, ...args: Args) => Result | Promise<Result>) {
+    ipcMain.handle(channel, async (event, ...args: Args) => {
+      try { return await listener(event, ...args); }
+      catch (error) { logDiagnostic(`Request failed (${channel})`, error); throw error; }
+    });
+  }
+  handle("desktop:state", () => state());
+  handle("desktop:choose-database", (_event, kind: "open" | "create") => chooseDatabase(kind));
+  handle("desktop:retry-sync", () => store.retrySync());
+  handle("desktop:set-appearance", async (_event, value: Appearance) => {
     if (value !== "auto" && value !== "dark" && value !== "light") throw new Error("Choose an appearance option.");
     settings.appearance = value;
     nativeTheme.themeSource = value === "auto" ? "system" : value;
@@ -401,28 +392,22 @@ function registerIpc() {
     await saveSettings();
     return state();
   });
-  ipcMain.handle("desktop:set-sidebar-collapsed", async (_event, value: boolean) => {
+  handle("desktop:set-sidebar-collapsed", async (_event, value: boolean) => {
     if (typeof value !== "boolean") throw new Error("Choose a navigation layout.");
     const previous = settings.sidebarCollapsed;
     settings.sidebarCollapsed = value;
     try { await saveSettings(); return state(); }
     catch (error) { settings.sidebarCollapsed = previous; throw error; }
   });
-  ipcMain.handle("desktop:set-log-capture", async (_event, value: boolean) => {
-    if (typeof value !== "boolean") throw new Error("Choose whether to capture logs.");
-    settings.captureLogs = value;
-    await saveSettings();
-    if (value) logDiagnostic("Diagnostic logging enabled");
-    return state();
-  });
-  ipcMain.handle("desktop:open-logs", async () => {
+  handle("desktop:open-logs", async () => {
     await mkdir(logsPath(), { recursive: true });
-    return shell.openPath(logsPath());
+    const error = await shell.openPath(logsPath());
+    if (error) throw new Error(error);
   });
   ipcMain.on("desktop:renderer-error", (_event, message: unknown) => {
     if (typeof message === "string") logDiagnostic("Renderer error", message.slice(0, 4000));
   });
-  ipcMain.handle("desktop:set-api-key", async (_event, value: string) => {
+  handle("desktop:set-api-key", async (_event, value: string) => {
     if (typeof value !== "string" || value.length > 500) throw new Error("The API key is invalid.");
     apiKey = value.trim();
     settings.encryptedApiKey = apiKey && safeStorage.isEncryptionAvailable()
@@ -430,13 +415,13 @@ function registerIpc() {
     await saveSettings();
     return state();
   });
-  ipcMain.handle("desktop:set-analysis-provider", async (_event, value: AnalysisProvider) => {
+  handle("desktop:set-analysis-provider", async (_event, value: AnalysisProvider) => {
     if (value !== "ollama" && value !== "openai" && value !== "builtin") throw new Error("Choose an analysis provider.");
     settings.analysisProvider = value;
     await saveSettings();
     return state();
   });
-  ipcMain.handle("desktop:set-ollama-config", async (_event, value: { url?: string; model?: string }) => {
+  handle("desktop:set-ollama-config", async (_event, value: { url?: string; model?: string }) => {
     if (!value || typeof value.url !== "string" || typeof value.model !== "string" ||
         value.model.length > 200 || /[\r\n]/.test(value.model)) {
       throw new Error("Enter an Ollama server URL and model.");
@@ -446,11 +431,11 @@ function registerIpc() {
     await saveSettings();
     return state();
   });
-  ipcMain.handle("desktop:list-ollama-models", async (_event, url: string) => {
+  handle("desktop:list-ollama-models", async (_event, url: string) => {
     if (typeof url !== "string" || url.length > 500) throw new Error("Enter an Ollama server URL.");
     return listOllamaModels(url);
   });
-  ipcMain.handle("desktop:select-local-model", async (_event, id: string) => {
+  handle("desktop:select-local-model", async (_event, id: string) => {
     const model = getLocalModel(id);
     settings.builtInModelId = id;
     await saveSettings();
@@ -458,21 +443,21 @@ function registerIpc() {
     else await modelDownloads.pause();
     return state();
   });
-  ipcMain.handle("desktop:pause-model-download", async () => { await modelDownloads.pause(); return state(); });
-  ipcMain.handle("desktop:resume-model-download", async (_event, id: string, termsVersion?: string) => {
+  handle("desktop:pause-model-download", async () => { await modelDownloads.pause(); return state(); });
+  handle("desktop:resume-model-download", async (_event, id: string, termsVersion?: string) => {
     const accepted = settings.acceptedModelTerms || {};
     const next = acceptModelTerms(getLocalModel(id), accepted, termsVersion);
     if (next !== accepted) { settings.acceptedModelTerms = next; await saveSettings(); }
     await modelDownloads.start(id); return state();
   });
-  ipcMain.handle("desktop:delete-local-model", async (_event, id: string) => {
+  handle("desktop:delete-local-model", async (_event, id: string) => {
     await deleteDownloadedModel(id, { engine: modelEngine, downloads: modelDownloads,
       confirm: async (options) => (await dialog.showMessageBox(mainWindow!, options)).response === 1,
     });
     return state();
   });
-  ipcMain.handle("desktop:open-model-folder", () => shell.openPath(modelDownloads.folder));
-  ipcMain.handle("desktop:download-resume", async (_event, id: string) => {
+  handle("desktop:open-model-folder", () => shell.openPath(modelDownloads.folder));
+  handle("desktop:download-resume", async (_event, id: string) => {
     const file = store.getResume(id);
     if (!file) throw new Error("Resume not found.");
     const result = await dialog.showSaveDialog(mainWindow!, { defaultPath: file.resume.filename,
@@ -548,7 +533,16 @@ else {
     await loadSettings();
     nativeTheme.themeSource = settings.appearance === "auto" || !settings.appearance ? "system" : settings.appearance;
     nativeTheme.on("updated", updateWindowAppearance);
-    const modelsChanged = () => mainWindow?.webContents.send("desktop:local-models-changed", state());
+    const downloadErrors = new Map<string, string>();
+    const modelsChanged = () => {
+      for (const model of modelDownloads?.list() || []) {
+        if (model.status === "error" && model.error) {
+          if (downloadErrors.get(model.id) !== model.error) logDiagnostic(`Model download failed (${model.id})`, model.error);
+          downloadErrors.set(model.id, model.error);
+        } else downloadErrors.delete(model.id);
+      }
+      mainWindow?.webContents.send("desktop:local-models-changed", state());
+    };
     const platformFolder = `${process.platform === "darwin" ? "mac" : "win"}-${process.arch}`;
     const runtimeFolder = app.isPackaged ? path.join(process.resourcesPath, "local-runtime")
       : path.resolve(appRoot, "../build/llama", platformFolder);
@@ -575,6 +569,8 @@ else {
     } else if (!shuttingDown) {
       event.preventDefault(); shuttingDown = true;
       void Promise.all([modelDownloads?.pause(), modelEngine?.shutdown()])
+        .catch((error) => logDiagnostic("Could not stop the local model", error))
+        .then(() => diagnosticLog.flush())
         .finally(() => { store?.close(); app.quit(); });
     } else store?.close();
   });

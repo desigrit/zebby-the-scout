@@ -4,62 +4,63 @@
 
 MODE: Operate.
 
-THESIS: Read a job posting, prioritize truthful CV evidence, and retain a separate resume-to-role match estimate. Each Core ATS keyword and Core resume theme displays its independent estimated importance to the job beside editable text.
+THESIS: Turn a job posting into truthful CV priorities, then understand the saved resume match through its evidence and gaps. Each Core ATS keyword and Core resume theme retains a separate estimate of importance to the job.
 
-OWN-WORLD: Preserve the Search Ledger layout, native controls, and platform fonts. Use Zebby and the approved Graphite palette for neutral actions, information, focus, and selected surfaces in light and dark appearance. The full circular sunglasses zebra remains unchanged and toggles labeled or icons only navigation. Saved and unsaved notices retain semantic green and amber.
+OWN-WORLD: Preserve the approved Graphite Search Ledger, Zebby identity, native controls, platform fonts, and established layout. Neutral Graphite marks actions, information, focus, and selected surfaces. The unchanged circular zebra remains the navigation toggle; notices retain semantic green and amber.
 
-STORY: Start a role brief with the last saved Current CV Overview, read or paste a posting, select a saved resume or upload one, and analyze with the chosen provider. Edit keywords, themes, and the tailored overview, then save the plan. Existing role briefs retain their own overview when selected again.
+STORY: Start with the last saved Current CV Overview, read or paste a posting, choose or upload a resume, and select Analyze below Your CV. Read Why beside the saved match, edit recommendations and overview, and save. Existing plans keep their own overview when selected again.
 
-FIRST VIEWPORT: The shared 44px native title region reads only Zebby above the left Plan, Applications, and Settings navigation. The sidebar has no wordmark. A Graphite New plan action sits above saved plans beside the role editor. The editor begins with job posting fields, then Your CV and Resume direction. A separate Resume match summary precedes the importance explanation and two editable recommendation lists. As the window narrows, saved plans move above the editor and the two lists stack.
+FIRST VIEWPORT: The 44px native title region reads only Zebby. A Graphite New plan action remains above the saved-plan rail and role editor. The editor proceeds from job fields to Your CV, its primary Analyze action and quiet model caption, then Resume direction. Resume match includes a native Why disclosure before the importance explanation and editable lists. Narrow windows move saved plans above the editor and stack the lists.
 
-FORM: An approved expansion of the existing operating ledger, without a replacement layout or new concept seed. The signature interaction is an editable requirement with a separate, read-only importance badge that becomes Unrated when its text or job source changes. The native launch width is 1550 device-independent pixels, 300 wider than the previous 1250 width; height remains 850. Both are capped to the primary display work area.
+FORM: A scoped refinement of the approved operating ledger, retaining its widths, palette, artwork, and provider paths. The existing editable requirement and independent importance badge remain the signature. Analyze is present for every plan, including previously analyzed plans, once its required inputs are ready.
 
-FINISH: The fresh v1.3.0 full renderer review returned ship across all 32 supplied captures and scoped source, with no material fixes. Its persistence, fidelity, ceiling, material_fixes, and keep sections are present in [the finish review](../review/zebby-finish-review.md). The craft ceiling was reached within the captured renderer scope. DESIGN.md and .impeccable/design.json record the exact approved Graphite tokens and shared native shell.
+FINISH: The fresh v1.4.0 review returned ship across 34 supplied captures and scoped source, with no material fixes. Its persistence, fidelity, ceiling, material_fixes, and keep sections are present in [the finish review](../review/settings-plan-finish-review.md). This verdict covers source and the supplied renderer captures, recorded before the release build.
 
 ## Shared navigation
 
-The unchanged zebra is a 54px button with a 46px image. Expanded navigation is 210px, or 176px at the 850px window breakpoint; icons only navigation is 96px on Windows and Mac. The native title region blends with the top of the sidebar, and macOS traffic lights retain their reserved space. The title shows only Zebby.
+The unchanged 46px zebra sits in a 54px accessible toggle. The shared rail uses 12px top padding and 20px below the brand. Expanded navigation is 210px, or 176px at the 850px window breakpoint; collapsed navigation stays 96px on Windows and Mac. Only expanded navigation shows the current database footer. The collapsed rail contains destination icons without a database footer; current file details remain in Settings.
 
-The toggle exposes its expanded state and Expand navigation or Collapse navigation action label, supports Enter and Space, and leaves the current Plan draft and destination intact. Navigation labels and tooltips remain accessible in either state. The preference is saved on each computer; failure restores the previous state and shows an error. The collapsed footer opens Database settings.
+The native title region retains the established platform configuration and shows only Zebby. The toggle retains its expanded state, action labels, tooltips, Enter or Space activation, draft preservation, and destination preservation. Navigation preference saves locally and rolls back with an error on failure.
 
-## Importance and match behavior
+## Analysis, importance, and match
 
-- Every keyword and theme has editable text, a separate read-only percentage or Unrated badge, and a Remove control. Add keyword and Add theme focus the new editable row. Keywords use single-line inputs; themes use multi-line fields.
-- Importance is an integer estimate from 0 to 100 of how much the job calls for that requirement. Higher values mark stronger CV priorities. It is derived from the posting, independently of the selected resume's support or coverage. The values do not sum to 100 and are not recruiter ratings or measurements from an ATS.
-- Recommendations identify the terms, experience, and outcomes an ideal candidate's CV should demonstrate. They are targets to support with truthful evidence, not claims that the user already has that experience. Newly generated lists are ordered by importance.
-- Resume match remains a separate directional fit estimate using evidence in the selected resume and job. Its number does not determine the importance badges.
-- Older analyses keep their existing text with Unrated importance. New or changed terms stay Unrated until analysis refreshes them. Unchanged text retains its prior rating when the job is unchanged. Changing the listing link, company, title, team, locations, or job description clears all job-importance ratings.
-- Changing Current CV Overview or the selected/uploaded resume clears the match score while retaining unchanged job-importance ratings. Refresh analysis supplies new estimates. Relevant disabled controls prevent edits during analysis.
-- Labels and tooltips identify each read-only badge as importance to the job. The nearby explanation and Unrated text keep its meaning visible without relying on color.
+- Analyze sits at the end of Your CV and starts analysis of the current plan, including a new draft or a previously analyzed plan. The selected provider or model appears as a quiet caption. Required inputs and provider readiness govern availability; analysis shows a busy spinner and prevents conflicting actions.
+- The existing refresh icon remains beside a saved match result. Busy analysis replaces the score display with a progress ring and hides Why.
+- Resume match is a directional estimate using the selected resume and posting. Why is a native collapsible disclosure with keyboard focus, containing the stored strongest evidence and main missing or weakly demonstrated requirements. It is separate from job importance and the generated overview's wording rationale.
+- New analysis saves a nonempty explanation with the score. Legacy scores keep their values without invented notes and display: Refresh analysis to add an explanation for this saved score.
+- Each keyword or theme has editable text, a read-only percentage or Unrated badge, and Remove. Add keyword and Add theme focus the new row. Keywords use single-line inputs; themes use multi-line fields.
+- Importance estimates how strongly the job calls for a requirement, independently of resume support or match strength. Values range from 0 to 100, do not sum to 100, and are not recruiter or ATS measurements. New lists are ordered by importance and describe targets to support with truthful evidence.
+- Older analyses retain text with Unrated importance. New or changed terms remain Unrated until refresh. Changing job fields clears job importance; unchanged terms retain their ratings when the job is unchanged.
+- Changing the job or CV source clears the score and its explanation. CV-only changes retain unchanged job importance. The renderer hides stale values immediately, and guarded persistence rejects an analysis result if the saved plan changed while it ran.
 
-## Overview and data persistence
+## Overview and persistence
 
-New drafts start with the selected database's last saved Current CV Overview. Saving a plan or its analysis updates the default. Existing plans keep the overview stored with that plan; creating a new draft does not replace older plans' overviews. The saved default travels with the selected SQLite file when cloud sync completes.
+New drafts start with the selected database's last saved Current CV Overview. Saving a plan or analysis updates that default; existing plans keep their own stored overview. The default travels with the selected SQLite file after cloud sync.
 
-Schema v9 adds keyword_importance_json and theme_importance_json beside the existing text arrays and workspace_preferences.last_current_overview for the default. Migration seeds that preference from the most recently updated saved plan when one exists and takes a full source-file backup with a before-v9 name. The v8-to-v9 step does not repeat the earlier Notes migration. Existing application, plan, and resume tables are preserved.
+Version 1.4.0 uses schema 10, adding plans.match_notes to the existing importance arrays and workspace_preferences.last_current_overview. An older selected file receives a complete original before-v10 backup before migration. Existing application, plan, resume, Notes, importance, and overview data are preserved. The v9-to-v10 step does not repeat older migrations. Prior backups remain, without recurring weekly backups or pruning. Install version 1.4.0 on both computers before sharing the upgraded file.
 
-Analysis routing and model-download controls retain their existing paths. Only SmolLM2 uses the compact heuristic importance and match profile. LFM2.5, Gemma, Qwen, OpenAI, and configured Ollama receive complete inputs and full instructions, without an automatic fallback. The generated overview adapts the user's current wording to the role only where resume evidence supports it.
+Only SmolLM2 retains the compact heuristic profile. LFM2.5, Gemma, Qwen, OpenAI, and configured Ollama receive complete inputs and full instructions, with no automatic fallback. The generated overview adapts current wording only where resume evidence supports it. Its own rationale explains wording changes or why the overview stayed unchanged.
 
 ## Finish evidence
 
-The fresh reviewer validated these 11 current Plan captures as part of the full 32-capture matrix:
+The [34-file manifest](../review/settings-plan-1.4.0/capture-manifest.txt) includes these 13 Plan and README captures:
 
-- [Windows light](../review/plan-windows-light.png)
-- [Windows dark](../review/plan-windows-dark.png)
-- [Analysis light](../review/plan-analysis-light.png)
-- [Analysis dark](../review/plan-analysis-dark.png)
-- [Windows compact](../review/plan-windows-compact.png)
-- [Windows narrow](../review/plan-windows-narrow.png)
-- [Mac branch light simulation](../review/plan-mac-light.png)
-- [Mac branch compact dark simulation](../review/plan-mac-compact-dark.png)
-- [Windows collapsed light](../review/plan-windows-collapsed-light.png)
-- [Mac branch collapsed dark simulation](../review/plan-mac-collapsed-dark.png)
-- [README Plan crop](../review/readme-plan.png)
+- [Windows light](../review/settings-plan-1.4.0/plan-windows-light.png)
+- [Windows dark](../review/settings-plan-1.4.0/plan-windows-dark.png)
+- [Why light](../review/settings-plan-1.4.0/plan-analysis-light.png)
+- [Why dark](../review/settings-plan-1.4.0/plan-analysis-dark.png)
+- [CV actions light](../review/settings-plan-1.4.0/plan-cv-actions-light.png)
+- [CV actions dark](../review/settings-plan-1.4.0/plan-cv-actions-dark.png)
+- [Windows compact](../review/settings-plan-1.4.0/plan-windows-compact.png)
+- [Windows narrow](../review/settings-plan-1.4.0/plan-windows-narrow.png)
+- [Mac branch light simulation](../review/settings-plan-1.4.0/plan-mac-light.png)
+- [Mac branch compact dark simulation](../review/settings-plan-1.4.0/plan-mac-compact-dark.png)
+- [Windows collapsed light](../review/settings-plan-1.4.0/plan-windows-collapsed-light.png)
+- [Mac branch collapsed dark simulation](../review/settings-plan-1.4.0/plan-mac-collapsed-dark.png)
+- [README Plan](../review/settings-plan-1.4.0/readme-plan.png)
 
-Wide Plan captures begin at a 1550 by 850 viewport; full-page images extend below it. Windows compact uses 1050 by 900, and narrow and Mac compact use 790 by 850. Analysis images crop the analysis section. All were rendered in invisible headless Chromium on Windows with synthetic data and the current compiled renderer. The Mac captures exercise that platform branch on Windows, not native macOS rendering. The capture helper waits for finite transitions and fonts. This documenter directly inspected Windows light and the Mac collapsed dark simulation; the independent report covers the complete matrix.
+Wide Plan uses 1550 by 850, Windows compact 1050 by 900, and narrow and Mac compact 790 by 850 viewports; full-page images extend below the viewport. Why and CV images crop their respective sections. This documenter inspected CV actions light, Why dark, and Mac collapsed dark. Parent and reviewer opened and validated all 34 captures, produced headlessly in Windows Chromium with synthetic state. Mac captures exercise the Mac renderer branch on Windows.
 
-Current shell and palette evidence comes from app/globals.css, desktop/renderer/desktop.css, desktop/renderer/App.tsx, desktop/main.ts, desktop/bridge.ts, desktop/window-appearance.ts, desktop/app-identity.ts, and package.json. Existing importance, invalidation, overview reuse, provider routing, and schema v9 behavior remain unchanged. Version 1.3.0 performs no data migration.
+Scoped source includes desktop/renderer/App.tsx, desktop/renderer/desktop.css, desktop/main.ts, desktop/bridge.ts, desktop/preload.ts, desktop/store.ts, desktop/diagnostic-log.ts, desktop/analysis-contracts.ts, desktop/basic-local-analysis.ts, package.json, and docs/guide.md. The fresh reviewer independently passed 58 tests, typecheck, lint with zero errors, and diff checks. Lint recorded three established image warnings plus one ignored exploratory-file warning. Parent supplied successful desktop build and headless renderer QA; reviewer inspected that evidence and QA source without rerunning the renderer.
 
-The independent reviewer passed 56 tests, typecheck, lint with zero errors and three existing image warnings, and diff whitespace checks. The reviewer inspected supplied renderer/build evidence and QA source rather than rerunning the build or renderer. Parent headless QA confirms toggle keyboard activation, draft preservation, preference success and failure, and the database footer action. These are supplied verification results, not additional runtime checks by this documenter.
-
-No detector ran for this desktop task. No desktop app, visible browser, real database, resumes, local settings, or installed models were opened for documentation. Native installer upgrades, native chrome, actual macOS fonts and controls, and a Keychain decryption roundtrip remain untested; release CI is a later gate. The renderer verdict does not certify inference accuracy.
+No detector ran for this desktop task. No app, browser, real database, resumes, settings, or installed models were opened for documentation. Native installer upgrades, actual macOS fonts and chrome, Keychain upgrade behavior, and live provider inference remain unverified. Packaged inference and release CI are assessed separately from this documentation review. The review does not certify accuracy.
