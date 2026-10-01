@@ -4,7 +4,7 @@
 
 **Your job search sidekick. Excellent stripes. Questionable sunglasses.**
 
-I wanted to build something useful for my fellow peers: a simple place to prepare for roles, keep track of applications, and stop wondering which resume went where. Meet Zebby.
+I wanted to build something useful for my fellow peers: a simple place to prepare for roles, keep track of applications, and stop wondering which resume went where. Meet Zebby. Zebby's cool, and Zebby doesn't require you to sign in.
 
 ## Get Zebby
 
@@ -27,8 +27,6 @@ These builds are unsigned. See the [installation notes](docs/guide.md#install) i
 ### A plan for the next role
 
 ![Zebby's Plan workspace with sample keyword importance, themes, and a CV overview](docs/screenshots/plan.png)
-
-Screenshots use sample data. Graphite supports light, dark, and system appearance. Click the zebra to switch between icons only and icons with labels.
 
 Built-in analysis stays on your computer. OpenAI and configured Ollama servers receive the job and resume text needed for analysis. API keys and downloaded models stay on each computer, outside the shared database. Zebby keeps local backups and detects changes to the shared file, but a cloud drive cannot merge simultaneous SQLite edits.
 
