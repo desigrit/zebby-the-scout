@@ -405,6 +405,7 @@ try {
   await page.getByRole("combobox", { name: "Model", exact: true }).getByRole("option", { name: "qwen3.8:27b", exact: true }).waitFor({ state: "attached" });
   await provider.selectOption("builtin");
   const localModel = page.getByRole("combobox", { name: "Local model", exact: true });
+  await localModel.waitFor();
   assert.equal(await localModel.getByRole("option").count(), LOCAL_MODELS.length + 1);
   assert.equal(await page.getByRole("button", { name: /Delete SmolLM2/ }).count(), 0);
   await localModel.selectOption("smollm2-360m");
@@ -434,6 +435,7 @@ try {
   assert.equal(await page.getByRole("textbox", { name: "Server URL", exact: true }).inputValue(), "http://localhost:11434");
   assert.equal(await page.getByRole("combobox", { name: "Model", exact: true }).inputValue(), "qwen3.8:27b");
   await provider.selectOption("builtin");
+  await page.getByText("Ready for offline analysis", { exact: true }).waitFor();
   assert.equal(await page.getByText("Ready for offline analysis", { exact: true }).count(), 1);
   await captureSettings("settings-windows-ready.png");
   await nav.getByRole("button", { name: "Plan", exact: true }).click();

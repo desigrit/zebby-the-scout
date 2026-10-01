@@ -14,7 +14,7 @@ These are unsigned personal builds. Windows SmartScreen or macOS Gatekeeper may 
 
 On first launch, the app creates a local SQLite database automatically, so you can use Plan and Applications immediately. **Create new database** in Settings creates an empty file and switches to it, leaving your existing database intact. Save a new file in a cloud synced folder to share it between computers, then use **Open database** on the second computer. To move a database that already contains your jobs, quit Zebby, move or copy the file in Explorer or Finder, then open it in Settings. Wait for your cloud drive to finish syncing before switching computers. Keep only one computer editing the file at a time.
 
-Install version 1.4.0 or newer on both computers before opening a shared database that has been upgraded by this release. Older versions cannot open the upgraded file.
+Install version 1.4.1 or newer on both computers before opening a shared database that has been upgraded by this release. Older versions cannot open the upgraded file.
 
 The app keeps a local working copy and writes complete snapshots back to the selected file after changes. It detects if that cloud file changed outside the app before it saves. Before upgrading an older database to this release, it saves a complete original copy in the local backups folder with `before-v10` in its filename. Existing Notes, captured listings, resumes, Plan text, and prior backup files are retained. Zebby does not create weekly backups. You can copy the database on disk while the app is closed.
 
