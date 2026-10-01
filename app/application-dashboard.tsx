@@ -649,7 +649,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
     <div className={embedded ? "desktop-dashboard" : "site-shell"}>
       {!embedded && <header className="topbar">
         <div className="brand" aria-label="PM Application Tracker">
-          <span className="brand-mark" aria-hidden="true"><span /><span /><span /></span>
+          <img className="brand-mark" src="/brand-icon.png" alt="" />
           <span>PM Application Tracker</span>
         </div>
         <div className="account-note">

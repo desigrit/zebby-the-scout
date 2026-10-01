@@ -15,6 +15,7 @@ import { availableModelMemory, reclaimableMacMemory } from "../desktop/local-mod
 import { acceptModelTerms, modelTermsAccepted } from "../desktop/local-model-consent.ts";
 import { localModelMessages, localModelResponseSchema } from "../desktop/local-model-engine.ts";
 import { planSchema, matchSchema } from "../desktop/analysis-contracts.ts";
+import { importanceForTerms, parsePlanRecommendations } from "../desktop/plan-importance.ts";
 
 test("licensed models need explicit agreement to the exact terms, and only SmolLM2 uses basic analysis", async () => {
   const original = {};
@@ -53,7 +54,9 @@ test("Gemma bounds repetitive output fields while retaining the entire source an
   const schema = localModelResponseSchema("gemma3-270m", planSchema, input);
   assert.equal(schema.properties.overview.maxLength, input.currentCvOverview.length * 2);
   assert.equal(schema.properties.overviewRationale.maxLength, 600);
-  assert.equal(schema.properties.keywords.items.maxLength, 80);
+  assert.equal(schema.properties.keywords.items.properties.text.maxLength, 80);
+  assert.equal(schema.properties.themes.items.properties.text.maxLength, 180);
+  assert.deepEqual(schema.properties.keywords.items.properties.importance, planSchema.properties.keywords.items.properties.importance);
   assert.equal(schema.properties.themes.minItems, 5);
   assert.deepEqual(schema.properties.score, planSchema.properties.score);
   assert.equal(localModelResponseSchema("gemma3-270m", matchSchema, input).properties.explanation.maxLength, 800);
@@ -64,6 +67,30 @@ test("Gemma bounds repetitive output fields while retaining the entire source an
     assert.equal(model.sampling, undefined);
   }
   assert.ok(getLocalModel("gemma3-270m").sampling.temperature > 0);
+});
+
+test("Plan recommendations accept only explicit job importance, sort by priority, and never invent legacy scores", () => {
+  const values = [{ text: "Roadmap", importance: 72 }, { text: "Discovery", importance: 97 }];
+  assert.deepEqual(parsePlanRecommendations(values, 2, 3, 200), [values[1], values[0]]);
+  for (const value of [["Roadmap", "Discovery"], [{ text: "Roadmap", importance: 101 }, values[1]],
+    [{ text: "Roadmap", importance: "72" }, values[1]], [{ text: "Roadmap", importance: 72.5 }, values[1]],
+    [{ text: "", importance: 72 }, values[1]]]) assert.throws(() => parsePlanRecommendations(value, 2, 3, 200), /priorities/);
+  assert.deepEqual(importanceForTerms(["Discovery", "Roadmap"], [97, 72], ["Roadmap", "New skill", "Discovery"]), [72, null, 97]);
+  assert.deepEqual(importanceForTerms(["Discovery", "Roadmap"], [], ["Discovery", "Roadmap"]), [null, null]);
+  assert.deepEqual(importanceForTerms(["Discovery"], [101], ["Discovery"]), [null]);
+});
+
+test("compact job importance follows requirements and preferred wording, regardless of resume coverage", () => {
+  const job = "Required qualifications:\nSQL is required.\nLead product strategy and own the roadmap.\nPrioritization and customer discovery.\nPreferred qualifications:\nExperience with experimentation is preferred.\nAnalytics is a bonus.";
+  const weak = basicEvidence(job, "No relevant experience.");
+  const strong = basicEvidence(job, "SQL product strategy roadmap prioritization customer discovery experimentation analytics");
+  assert.deepEqual(weak.keywords, strong.keywords);
+  assert.deepEqual(weak.keywordImportance, strong.keywordImportance);
+  assert.ok(strong.score > weak.score);
+  const importance = new Map(weak.keywords.map((text, index) => [text, weak.keywordImportance[index]]));
+  assert.ok(importance.get("SQL") > importance.get("Experimentation"));
+  assert.ok(importance.get("Product strategy") > importance.get("Analytics"));
+  assert.ok(weak.keywordImportance.every((score) => Number.isInteger(score) && score >= 0 && score <= 100));
 });
 
 test("Mac model memory includes reclaimable pages without adding active or overlapping counters", async () => {

@@ -141,7 +141,7 @@ test("version 2 desktop databases migrate without losing applications or resumes
     assert.equal(store.listApplications()[0].matchStrength, 80);
     assert.equal(store.listApplications()[0].resumeName, "Old Resume.pdf");
     const migrated = new DatabaseSync(file, { readOnly: true });
-    assert.equal(migrated.prepare("PRAGMA user_version").get().user_version, 8);
+    assert.equal(migrated.prepare("PRAGMA user_version").get().user_version, 9);
     migrated.close();
     const blank = await store.saveApplication({});
     assert.equal(blank.resumeId, "");
@@ -180,7 +180,7 @@ test("version 1 desktop databases gain Plan and optional application fields", as
     assert.equal(application.matchStrength, null);
     assert.deepEqual(store.listPlans(), []);
     const check = new DatabaseSync(file, { readOnly: true });
-    assert.equal(check.prepare("PRAGMA user_version").get().user_version, 8);
+    assert.equal(check.prepare("PRAGMA user_version").get().user_version, 9);
     check.close();
   } finally {
     store?.close();
@@ -229,7 +229,7 @@ test("version 3 descriptions become offline copies during migration", async () =
     assert.equal(store.listPlans()[0].snapshotText, "Previous plan description");
     assert.equal(store.listPlans()[0].snapshotSource, "saved");
     const check = new DatabaseSync(file, { readOnly: true });
-    assert.equal(check.prepare("PRAGMA user_version").get().user_version, 8);
+    assert.equal(check.prepare("PRAGMA user_version").get().user_version, 9);
     check.close();
   } finally {
     store?.close();
@@ -272,7 +272,7 @@ test("version 4 desktop databases gain CV inputs and match scores", async () => 
     assert.equal(plan.resumeId, "");
     assert.equal(plan.matchStrength, null);
     const check = new DatabaseSync(file, { readOnly: true });
-    try { assert.equal(check.prepare("PRAGMA user_version").get().user_version, 8); }
+    try { assert.equal(check.prepare("PRAGMA user_version").get().user_version, 9); }
     finally { check.close(); }
   } finally {
     store?.close();
@@ -316,7 +316,7 @@ test("version 5 plans gain a saved overview explanation", async () => {
     assert.equal(plan.overview, "I plan products.");
     assert.equal(plan.matchStrength, 72);
     const check = new DatabaseSync(file, { readOnly: true });
-    try { assert.equal(check.prepare("PRAGMA user_version").get().user_version, 8); }
+    try { assert.equal(check.prepare("PRAGMA user_version").get().user_version, 9); }
     finally { check.close(); }
   } finally {
     store?.close();
@@ -342,7 +342,13 @@ test("version 6 applications gain editable notes without losing scores", async (
         applied_date TEXT NOT NULL DEFAULT '', match_strength INTEGER, match_notes TEXT NOT NULL DEFAULT '',
         match_analyzed_at TEXT NOT NULL DEFAULT '', resume_id TEXT, status TEXT NOT NULL,
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-      CREATE TABLE plans (id TEXT PRIMARY KEY);
+      CREATE TABLE plans (id TEXT PRIMARY KEY, listing_url TEXT NOT NULL, company TEXT NOT NULL DEFAULT '',
+        title TEXT NOT NULL DEFAULT '', team TEXT NOT NULL DEFAULT '', locations TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '', current_overview TEXT NOT NULL DEFAULT '', resume_id TEXT,
+        keywords_json TEXT NOT NULL DEFAULT '[]', themes_json TEXT NOT NULL DEFAULT '[]',
+        overview TEXT NOT NULL DEFAULT '', overview_rationale TEXT NOT NULL DEFAULT '',
+        snapshot_text TEXT NOT NULL DEFAULT '', snapshot_captured_at TEXT NOT NULL DEFAULT '', snapshot_source TEXT NOT NULL DEFAULT '',
+        match_strength INTEGER, match_analyzed_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
       PRAGMA user_version = 6;
     `);
     db.prepare("INSERT INTO applications (id, company, title, match_strength, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
@@ -358,7 +364,7 @@ test("version 6 applications gain editable notes without losing scores", async (
     assert.equal(updated.notes, "Spoke with recruiter.");
     assert.equal(updated.matchStrength, 82);
     const check = new DatabaseSync(file, { readOnly: true });
-    try { assert.equal(check.prepare("PRAGMA user_version").get().user_version, 8); }
+    try { assert.equal(check.prepare("PRAGMA user_version").get().user_version, 9); }
     finally { check.close(); }
   } finally {
     store?.close();
@@ -394,7 +400,9 @@ test("version 7 moves saved listings into Notes once and keeps an untouched upgr
     const legacy = new DatabaseSync(file);
     legacy.prepare("UPDATE applications SET notes = '' WHERE id = ?").run(emptyNotes.id);
     legacy.prepare("UPDATE applications SET notes = ? WHERE id = ?").run(oldNotes, existingNotes.id);
-    legacy.exec("PRAGMA user_version = 7");
+    legacy.exec(`ALTER TABLE plans DROP COLUMN keyword_importance_json;
+      ALTER TABLE plans DROP COLUMN theme_importance_json;
+      DROP TABLE workspace_preferences; PRAGMA user_version = 7;`);
     legacy.close();
     const originalBytes = await readFile(file);
 
@@ -407,7 +415,7 @@ test("version 7 moves saved listings into Notes once and keeps an untouched upgr
     assert.deepEqual(byId.get(noCopy.id), noCopy);
     assert.deepEqual(store.getPlan(plan.id), plan);
     assert.deepEqual([...store.getResume(resume.id).data], [37, 80, 68, 70]);
-    const upgrades = (await readdir(store.backupsPath)).filter((name) => name.includes("before-v8"));
+    const upgrades = (await readdir(store.backupsPath)).filter((name) => name.includes("before-v9"));
     assert.equal(upgrades.length, 1);
     assert.deepEqual(await readFile(path.join(store.backupsPath, upgrades[0])), originalBytes);
     const backupDb = new DatabaseSync(path.join(store.backupsPath, upgrades[0]), { readOnly: true });
@@ -419,7 +427,7 @@ test("version 7 moves saved listings into Notes once and keeps an untouched upgr
     store.close();
     await store.open(file);
     assert.deepEqual(store.listApplications().find((item) => item.id === existingNotes.id), byId.get(existingNotes.id));
-    assert.equal((await readdir(store.backupsPath)).filter((name) => name.includes("before-v8")).length, 1);
+    assert.equal((await readdir(store.backupsPath)).filter((name) => name.includes("before-v9")).length, 1);
     const edited = await store.saveApplicationNotes(emptyNotes.id, `${longListing}\n\nRecruiter conversation`);
     assert.ok(edited.notes.length > 20_000);
     assert.equal(edited.snapshotText, longListing);
@@ -461,6 +469,78 @@ test("new listing captures and analysis-supplied descriptions stay available in 
     assert.equal(savedStaleForm.snapshotText, manual.snapshotText);
     const savedStaleStatus = await store.saveApplication({ ...manual, status: "Heard back" }, manual.id);
     assert.equal(savedStaleStatus.notes, freshNotes);
+  } finally {
+    store?.close();
+    if (!path.resolve(root).startsWith(path.resolve(tmpdir()) + path.sep)) throw new Error("Unexpected test directory");
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("v8 upgrade preserves data and notes, remembers the overview, and keeps job importance independent of match", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "pm-tracker-priorities-test-"));
+  const file = path.join(root, "cloud", "applications.sqlite");
+  let store;
+  try {
+    const bundle = path.join(root, "store.mjs");
+    await build({ entryPoints: [path.resolve("desktop/store.ts")], outfile: bundle,
+      bundle: true, platform: "node", format: "esm", target: "node22" });
+    const { DesktopStore } = await import(pathToFileURL(bundle).href);
+    store = new DesktopStore(path.join(root, "original-profile"));
+    await store.create(file);
+    const resume = await store.addResume("CV.pdf", "application/pdf", new Uint8Array([37, 80, 68, 70]));
+    const application = await store.saveApplication({ company: "Example", snapshotText: "Archived job\n• Lead discovery", resumeId: resume.id });
+    const clearedNotes = await store.saveApplicationNotes(application.id, "Recruiter: Sam. I deliberately removed the old listing from these notes.");
+    const plan = await store.savePlan({ listingUrl: "https://example.org/job", company: "Example", title: "PM", team: "Growth", locations: "Remote",
+      description: "Responsibilities\n• Lead discovery and roadmap", currentOverview: "I turn customer insights into product direction.",
+      resumeId: resume.id, keywords: ["Discovery", "Roadmap"], themes: ["Lead customer discovery"], overview: "An existing overview." });
+    store.close();
+    const legacy = new DatabaseSync(file);
+    legacy.exec(`ALTER TABLE plans DROP COLUMN keyword_importance_json;
+      ALTER TABLE plans DROP COLUMN theme_importance_json;
+      DROP TABLE workspace_preferences; PRAGMA user_version = 8;`);
+    legacy.close();
+    const originalBytes = await readFile(file);
+
+    store = new DesktopStore(path.join(root, "computer-a"));
+    await store.open(file);
+    assert.deepEqual(store.getPlan(plan.id), plan);
+    assert.deepEqual(store.listApplications()[0], clearedNotes, "The v7 Notes migration must not run again on v8 data.");
+    assert.deepEqual([...store.getResume(resume.id).data], [37, 80, 68, 70]);
+    assert.deepEqual(store.getPlan(plan.id).keywordImportance, [null, null]);
+    assert.equal(store.getLastCurrentOverview(), plan.currentOverview);
+    const backups = (await readdir(store.backupsPath)).filter((name) => name.includes("before-v9"));
+    assert.equal(backups.length, 1);
+    assert.deepEqual(await readFile(path.join(store.backupsPath, backups[0])), originalBytes);
+
+    const analyzed = await store.savePlanAnalysis(plan.id, plan.updatedAt, plan.keywords, plan.themes,
+      "I focus on discovery to shape useful products.", "Discovery is the role's main requirement.", 42, [96, 80], [94]);
+    assert.equal(analyzed.matchStrength, 42);
+    assert.deepEqual(analyzed.keywordImportance, [96, 80]);
+    const cvChanged = await store.savePlan({ ...analyzed, currentOverview: "I lead product delivery.", resumeId: "" }, plan.id);
+    assert.equal(cvChanged.matchStrength, null);
+    assert.deepEqual(cvChanged.keywordImportance, [96, 80], "Job importance is independent of the resume and overview.");
+    const edited = await store.savePlan({ ...cvChanged, keywords: ["Roadmap", "New skill", "Discovery"], themes: ["A revised theme"] }, plan.id);
+    assert.deepEqual(edited.keywordImportance, [80, null, 96]);
+    assert.deepEqual(edited.themeImportance, [null]);
+    await assert.rejects(store.savePlanAnalysis(plan.id, plan.updatedAt, ["Bad"], ["Bad"], "Bad", "Bad", 99, [101], [80]), /importance/);
+    const jobChanged = await store.savePlan({ ...edited, description: "Responsibilities\n• Focus on product delivery" }, plan.id);
+    assert.deepEqual(jobChanged.keywordImportance, [null, null, null]);
+    const scored = await store.savePlanAnalysis(plan.id, jobChanged.updatedAt, ["Product delivery"], ["Own delivery"], "A supported overview.", "Delivery matters here.", 61, [91], [89]);
+
+    store.close();
+    store = new DesktopStore(path.join(root, "computer-b"));
+    await store.open(file);
+    assert.deepEqual(store.getPlan(plan.id), scored);
+    assert.equal(store.getLastCurrentOverview(), "I lead product delivery.");
+    assert.deepEqual(store.listApplications()[0], clearedNotes);
+    const blank = await store.savePlan({ ...scored, currentOverview: "" }, plan.id);
+    assert.equal(store.getLastCurrentOverview(), "", "An explicitly cleared overview stays cleared.");
+    store.close();
+    await store.open(file);
+    assert.equal(store.getLastCurrentOverview(), "");
+    assert.deepEqual(store.getPlan(plan.id).keywordImportance, blank.keywordImportance);
+    await store.create(path.join(root, "other.sqlite"));
+    assert.equal(store.getLastCurrentOverview(), "", "The default belongs to the selected database only.");
   } finally {
     store?.close();
     if (!path.resolve(root).startsWith(path.resolve(tmpdir()) + path.sep)) throw new Error("Unexpected test directory");

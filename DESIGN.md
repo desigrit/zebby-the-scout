@@ -2,18 +2,48 @@
 name: PM Application Tracker
 description: A calm personal ledger for tracking product management applications.
 colors:
-  accent: "#cf5c38"
-  accent-hover: "#a94324"
-  accent-wash: "#fff1ea"
-  forest: "#1d3831"
-  focus: "#2f7c67"
-  canvas: "#f5f3ed"
-  paper: "#fffefa"
-  ink: "#213630"
-  ink-soft: "#53665f"
-  ink-faint: "#708078"
-  line: "#d9e0d7"
-  line-strong: "#c3cfc4"
+  accent: "#b84239"
+  accent-hover: "#96332c"
+  accent-wash: "#ffeee9"
+  forest: "#24242c"
+  focus: "#087b98"
+  canvas: "#f7f5f1"
+  paper: "#fffdf8"
+  ink: "#262222"
+  ink-soft: "#665f60"
+  ink-faint: "#766d70"
+  line: "#e6dddb"
+  line-strong: "#cfc2c0"
+  cyan: "#176d82"
+  cyan-wash: "#e9f3f5"
+  field: "#fff"
+  surface-hover: "#f1efeb"
+  surface-selected: "#ffeee9"
+  focus-ring: "rgba(8,123,152,.16)"
+  button-ink: "#fffdf8"
+  selection-bg: "#bfe5ef"
+  selection-ink: "#173643"
+  dark-accent: "#fa887d"
+  dark-accent-hover: "#ffaaa1"
+  dark-accent-wash: "#402d32"
+  dark-forest: "#16181e"
+  dark-focus: "#58bad1"
+  dark-canvas: "#191b22"
+  dark-paper: "#232731"
+  dark-ink: "#f6f1e8"
+  dark-ink-soft: "#c7c1bb"
+  dark-ink-faint: "#aaa6ab"
+  dark-line: "#3b3d47"
+  dark-line-strong: "#5c5d68"
+  dark-cyan: "#64c7da"
+  dark-cyan-wash: "#273841"
+  dark-field: "#2a2f39"
+  dark-surface-hover: "#2f343e"
+  dark-surface-selected: "#402d32"
+  dark-focus-ring: "rgba(88,186,209,.2)"
+  dark-button-ink: "#241f23"
+  dark-selection-bg: "#315d70"
+  dark-selection-ink: "#fffdf8"
 typography:
   display:
     fontFamily: 'Georgia, "Times New Roman", serif'
@@ -44,6 +74,7 @@ typography:
     letterSpacing: "-0.03em"
 rounded:
   compact: "6px"
+  badge: "5px"
   field: "7px"
   button: "8px"
   panel: "12px"
@@ -55,12 +86,12 @@ spacing:
 components:
   button-primary:
     backgroundColor: "{colors.accent}"
-    textColor: "{colors.paper}"
+    textColor: "{colors.button-ink}"
     rounded: "{rounded.button}"
     padding: "10px 17px"
   button-primary-hover:
     backgroundColor: "{colors.accent-hover}"
-    textColor: "{colors.paper}"
+    textColor: "{colors.button-ink}"
     rounded: "{rounded.button}"
     padding: "10px 17px"
   button-secondary:
@@ -69,7 +100,7 @@ components:
     rounded: "{rounded.button}"
     padding: "10px 17px"
   input-field:
-    backgroundColor: "#fff"
+    backgroundColor: "{colors.field}"
     textColor: "{colors.ink}"
     rounded: "{rounded.field}"
     padding: "9px 12px"
@@ -82,6 +113,36 @@ components:
     backgroundColor: "{colors.forest}"
     textColor: "#f8f7ef"
     padding: "30px 13px 20px"
+  button-primary-dark:
+    backgroundColor: "{colors.dark-accent}"
+    textColor: "{colors.dark-button-ink}"
+    rounded: "{rounded.button}"
+    padding: "10px 17px"
+  button-secondary-dark:
+    backgroundColor: "{colors.dark-field}"
+    textColor: "{colors.dark-ink}"
+    rounded: "{rounded.button}"
+    padding: "10px 17px"
+  recommendation-field:
+    backgroundColor: "{colors.field}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.field}"
+    padding: "9px 10px"
+  job-importance:
+    backgroundColor: "{colors.cyan-wash}"
+    textColor: "{colors.cyan}"
+    rounded: "{rounded.badge}"
+    padding: "5px 2px"
+  job-importance-dark:
+    backgroundColor: "{colors.dark-cyan-wash}"
+    textColor: "{colors.dark-cyan}"
+    rounded: "{rounded.badge}"
+    padding: "5px 2px"
+  job-importance-unrated:
+    backgroundColor: "{colors.canvas}"
+    textColor: "{colors.ink-faint}"
+    rounded: "{rounded.badge}"
+    padding: "5px 2px"
 ---
 
 # Design System: PM Application Tracker
@@ -90,45 +151,51 @@ components:
 
 **Creative North Star: "The Search Ledger"**
 
-The app should feel like a dependable working ledger for a busy job search. Warm paper and fine green rules keep rows readable, while a dark forest sidebar gives the workspace a clear identity. The terracotta action color points to the next useful step without competing with application data.
+The app should feel like a dependable working ledger for a busy job search. Cream paper and fine neutral rules keep rows readable, while a charcoal sidebar gives the workspace a clear identity. The approved detailed sunglasses zebra supplies the circular brand mark. Coral points to the next useful action, and cyan identifies information and focus.
 
-The interface is compact enough for several entries a day. One expressive serif heading gives the page character; controls, statistics, and row details use a direct sans-serif voice. The form opens within the same workspace so the list remains a useful reference while editing.
+The interface stays compact enough for several entries a day. The existing serif and platform sans-serif hierarchy, native controls, and left navigation remain the working grammar. The full striped zebra, cyan lenses, and yellow mane provide expression inside the icon; the surrounding workspace keeps application data and editable role priorities easy to scan.
 
 **Key Characteristics:**
 
-- Warm paper surfaces on a muted canvas.
+- Cream paper surfaces on a muted canvas, with a charcoal sidebar.
+- The full circular zebra as the recognizable app identity.
+- Coral actions and cyan information and focus accents.
 - Strong hierarchy through typography and spacing, with light borders between data.
 - Compact native controls with visible focus treatment.
 - A table on wide screens that becomes readable record cards on narrow screens.
 
 ## Colors
 
-The palette pairs a single warm action accent with forest green structure and quiet paper neutrals. The values in the frontmatter match the CSS custom properties in `app/globals.css`.
-
-The desktop dark appearance uses `#161d19` canvas, `#202a24` paper, `#ecf1e9` text, `#becbbf` secondary text, and `#35463b` rules. Its sidebar uses `#12231c`. State colors use muted green, amber, and terracotta surfaces so status remains readable without relying on color alone.
+The palette extends the Search Ledger with coral actions, cyan information, cream surfaces, and charcoal structure. Unprefixed frontmatter colors are the exact light values from `app/globals.css`; `dark-` entries are the exact overrides from `desktop/renderer/desktop.css`. Selection entries record the corresponding global text-selection rules. The existing `forest` property name is retained for compatibility and now means charcoal.
 
 ### Primary
 
-- **Terracotta** (`accent`): the main action fill and most prominent call to action.
-- **Deep Terracotta** (`accent-hover`): the main action's hover state.
-- **Terracotta Wash** (`accent-wash`): a pale companion tint available for restrained accent surfaces.
+- **Coral** (`accent`): the main action fill.
+- **Coral Hover** (`accent-hover`): the action hover and existing model-agreement fill.
+- **Coral Wash** (`accent-wash`, `surface-selected`): restrained accent surfaces and selected plans.
+- **Button Ink** (`button-ink`): readable primary-action text in each appearance, independent of the paper color.
 
 ### Secondary
 
-- **Deep Forest** (`forest`): the sidebar.
-- **Focus Green** (`focus`): focused controls and keyboard outlines.
+- **Information Cyan** (`cyan`): job-importance percentages, activity bars, resume links, and informational actions.
+- **Cyan Wash** (`cyan-wash`): importance badges, resume-match summary, and selected appearance options.
+- **Focus Cyan** (`focus`, `focus-ring`): keyboard outlines, field borders, and translucent field focus rings.
+- **Selection** (`selection-bg`, `selection-ink`): text selection, distinct from selected-plan surfaces.
 
 ### Neutral
 
-- **Warm Canvas** (`canvas`): the page background that separates work surfaces.
+- **Charcoal** (`forest`): the sidebar.
+- **Cream Canvas** (`canvas`): the light workspace background; its dark counterpart is charcoal.
 - **Paper** (`paper`): panels, table, statistic band, and secondary button fill.
-- **Forest Ink** (`ink`): main reading text.
+- **Ink** (`ink`): main reading text.
 - **Soft Ink** (`ink-soft`): secondary text and table details.
 - **Faint Ink** (`ink-faint`): small labels on mobile records.
 - **Fine Rule** (`line`): separators between statistics and applications.
 - **Strong Rule** (`line-strong`): input borders and the editor outline.
+- **Field** (`field`): editable controls, white in light appearance and charcoal in dark appearance.
+- **Hover Surface** (`surface-hover`): neutral feedback on rows and secondary controls.
 
-**The One Accent Rule.** Reserve terracotta for the primary action and deliberate links. Use greens for identity, focus, and positive progress.
+**The Color Roles Rule.** Use coral for deliberate actions and cyan for information and focus. Keep semantic green notices and hiring stages, amber warnings, and match-strength colors in their existing roles, with readable text and values.
 
 ## Typography
 
@@ -154,29 +221,33 @@ The desktop shell has a 210px left sidebar with Plan, Applications, and Settings
 
 When the Applications content pane is 940px or narrower, rows become two-column record cards with visible field labels and actions. This uses available pane width, including the space taken by the sidebar. At 850px window width, the sidebar narrows to 176px, the Plan rail moves above its editor, and the statistics band changes to three columns. At 650px, the heading, filters, and form stack; the statistics band uses two columns. Preserve these content-driven changes when adding fields.
 
+The native launch window defaults to 1550 by 850 device-independent pixels, 300 wider than the previous 1250 width. Both dimensions are capped by the primary display work area. Core keyword and theme columns stack when the Plan editor container is 610px or narrower; their editable text, importance badge, and remove control stay together.
+
 The common rhythm uses tight control gaps, medium field gaps, and generous panel padding. Let separators and whitespace group information before adding new containers.
 
 ## Elevation & Depth
 
-The workspace is mostly flat. Contrast between the muted canvas and paper surfaces, plus fine rules, establishes structure. The open editor alone receives a soft ambient shadow (`0 12px 35px rgba(22, 50, 38, .07)`) to make the active work area clear. Input focus uses a green ring (`0 0 0 3px rgba(47, 124, 103, .14)`).
+The workspace is mostly flat. Contrast between the muted canvas and paper surfaces, plus fine rules, establishes structure. The open editor alone receives a soft ambient shadow (`0 12px 35px rgba(22, 50, 38, .07)`) to make the active work area clear. Input focus uses a cyan ring (`0 0 0 3px var(--focus-ring)`), with the appearance-specific color in the frontmatter. Keyboard outlines use `focus`.
 
 **The Active Editor Rule.** Apply the ambient shadow to the open editor only; resting data surfaces remain flat.
 
 ## Shapes
 
-Corners are gently rounded: compact controls use the `compact` and `field` radii, buttons use the `button` radius, and larger surfaces use the `panel` radius. Fine borders define panels and rows. The small brand mark is a rotated two-column tile, echoing the ordered ledger without adding an image asset.
+Corners are gently rounded: compact controls use the `compact` and `field` radii, buttons use the `button` radius, and larger surfaces use the `panel` radius. Fine borders define panels and rows. The brand mark is the approved detailed zebra in a coral circle, including the full striped head, sunglasses, cyan lenses, and yellow mane. Keep the clear circular silhouette and recognizable detail. The sidebar renders the mark at 46px; the shared header uses 42px.
+
+`public/brand-icon.png` is the shipping source for the app and installer. Its PNG metadata carries the exact image-generation prompt. `scripts/build-desktop.mjs` preserves the source text provenance when resizing it to `build/desktop-icon.png` and copying `desktop-dist/renderer/icon.png`. The former tile SVGs are retired.
 
 ## Components
 
 ### Buttons
 
-- **Primary:** terracotta fill, paper text, medium weight, and a 44px minimum target height. It darkens on hover and moves down by 1px while pressed.
-- **Secondary:** paper fill, forest ink, and a strong rule border. Hover adds a pale green surface and clearer border.
+- **Primary:** coral fill, appearance-specific button ink, medium weight, and a 44px minimum target height. Hover deepens the fill in light appearance and brightens it in dark appearance; pressing moves it down by 1px.
+- **Secondary:** paper fill in light appearance, field fill in dark appearance, ink text, and a strong rule border. Hover uses the neutral hover surface and clearer ink-faint border.
 - **Focus and motion:** keyboard focus uses the shared 3px outline. The 180ms color and transform transitions stop when reduced motion is requested.
 
 ### Navigation
 
-The left sidebar holds the tile mark, product name, Plan, Applications, Settings, and the current database name. The active destination has a distinct muted green surface. Windows has no native menu bar; macOS keeps only the native app menu. Settings is an uncluttered four-section page for Database, OpenAI key, Appearance, and Logs.
+The left sidebar holds the circular zebra, product name, Plan, Applications, Settings, and the current database name. The active destination has a distinct muted charcoal and coral surface with a coral icon; keyboard focus is cyan. Windows has no native menu bar; macOS keeps only the native app menu. Settings is an uncluttered four-section page for Database, OpenAI key, Appearance, and Logs.
 
 ### Cards and containers
 
@@ -184,7 +255,11 @@ The statistic band, application list, empty state, and editor sit on paper. The 
 
 ### Inputs and fields
 
-Inputs have white fill, strong rule borders, and the `field` radius. The green focus border and ring work with the global keyboard outline. Field labels sit above controls. The resume upload button uses a dashed green border to distinguish file selection from data entry.
+Inputs use the appearance-specific field fill, strong rule borders, and the `field` radius. The cyan focus border and ring work with the global keyboard outline. Field labels sit above controls. The resume upload button uses a dashed green border to distinguish file selection from data entry.
+
+### Job importance
+
+Core ATS keywords use editable single-line fields; Core resume themes use editable multi-line fields. Each row reserves a separate 52px column for a read-only percentage badge and a 26px column for Remove. Badges use cyan on cyan wash, a 5px corner radius, and tabular numerals. Unrated values use quieter canvas and ink-faint colors. Add keyword and Add theme are cyan text actions, and a new row receives focus. Labels, tooltips, and the nearby explanation identify the percentage as estimated importance to the job; resume match remains a separate value.
 
 ### Application records
 

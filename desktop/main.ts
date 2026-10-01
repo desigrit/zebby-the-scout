@@ -1,5 +1,5 @@
 import { planInstructions, planSchema, matchInstructions, matchSchema } from "./analysis-contracts";
-import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, safeStorage, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, safeStorage, screen, shell } from "electron";
 import { appendFile, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fetchJobPosting } from "../lib/job-fetch";
@@ -14,6 +14,7 @@ import { publicAnalysisText, runSelectedAnalysis } from "./analysis-routing";
 import { deleteDownloadedModel } from "./local-model-removal";
 import { localModelFolder } from "./local-model-storage";
 import { acceptModelTerms, modelTermsAccepted, type AcceptedModelTerms } from "./local-model-consent";
+import { parsePlanRecommendations } from "./plan-importance";
 import { freemem, totalmem } from "node:os";
 
 protocol.registerSchemesAsPrivileged([{
@@ -234,8 +235,8 @@ async function analyzePlan(id: string) {
   const analysis = await analyzeWithSelectedProvider(planInstructions,
     input, "resume_plan", planSchema,
     "The analysis was incomplete. Try again.", selected);
-  const keywords = Array.isArray(analysis.keywords) ? analysis.keywords.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map(publicAnalysisText) : [];
-  const themes = Array.isArray(analysis.themes) ? analysis.themes.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map(publicAnalysisText) : [];
+  const keywords = parsePlanRecommendations(analysis.keywords, 6, 20, 200);
+  const themes = parsePlanRecommendations(analysis.themes, 5, 6, 1000);
   const overview = typeof analysis.overview === "string" ? publicAnalysisText(analysis.overview.trim()) : "";
   const rawRationale = typeof analysis.overviewRationale === "string" ? publicAnalysisText(analysis.overviewRationale.trim()) : "";
   const sameOverview = overview.replace(/\s+/g, " ") === plan.currentOverview.trim().replace(/\s+/g, " ");
@@ -248,7 +249,9 @@ async function analyzePlan(id: string) {
       typeof score !== "number" || !Number.isInteger(score) || score < 0 || score > 100) {
     throw new Error("The analysis was incomplete. Try again.");
   }
-  return store.savePlanAnalysis(id, plan.updatedAt, keywords, themes, overview, overviewRationale, score);
+  return store.savePlanAnalysis(id, plan.updatedAt, keywords.map((item) => item.text),
+    themes.map((item) => item.text), overview, overviewRationale, score,
+    keywords.map((item) => item.importance), themes.map((item) => item.importance));
 }
 
 async function analyzeApplicationMatch(id: string) {
@@ -338,7 +341,7 @@ async function handleApi(request: Request, pathname: string): Promise<Response> 
       return Response.json(await fetchJobPosting(input.url));
     }
     if (pathname === "/api/plans") {
-      if (method === "GET") return Response.json({ plans: store.listPlans() });
+      if (method === "GET") return Response.json({ plans: store.listPlans(), lastCurrentOverview: store.getLastCurrentOverview() });
       if (method === "POST") return Response.json({ plan: await store.savePlan(
         await captureListing(await request.json() as PlanInput)) }, { status: 201 });
     }
@@ -489,9 +492,12 @@ function openWebLink(url: string) {
 }
 
 function createWindow() {
+  const workArea = screen.getPrimaryDisplay().workAreaSize;
+  const dark = settings.appearance === "dark" || (settings.appearance !== "light" && nativeTheme.shouldUseDarkColors);
   mainWindow = new BrowserWindow({
-    width: 1250, height: 850, minWidth: 790, minHeight: 620,
-    backgroundColor: "#f5f3ed", title: "PM Application Tracker", autoHideMenuBar: true,
+    width: Math.min(1550, workArea.width), height: Math.min(850, workArea.height),
+    minWidth: Math.min(790, workArea.width), minHeight: Math.min(620, workArea.height),
+    backgroundColor: dark ? "#191b22" : "#f7f5f1", title: "PM Application Tracker", autoHideMenuBar: true,
     icon: path.join(rendererRoot, "icon.png"),
     webPreferences: { preload: path.join(appRoot, "preload.cjs"), contextIsolation: true,
       nodeIntegration: false, sandbox: true, webSecurity: true },

@@ -7,6 +7,7 @@ import { z } from "zod";
 import { applicationInputSchema } from "../lib/application-validation";
 import { MAX_APPLICATION_NOTES_CHARS } from "../lib/application-types";
 import type { Application, ApplicationInput, Resume } from "../lib/application-types";
+import { importanceForTerms } from "./plan-importance";
 
 export type Plan = {
   id: string;
@@ -23,6 +24,8 @@ export type Plan = {
   resumeId: string;
   keywords: string[];
   themes: string[];
+  keywordImportance: Array<number | null>;
+  themeImportance: Array<number | null>;
   overview: string;
   overviewRationale: string;
   matchStrength: number | null;
@@ -31,7 +34,7 @@ export type Plan = {
   updatedAt: string;
 };
 
-export type PlanInput = Omit<Plan, "id" | "createdAt" | "updatedAt" | "snapshotCapturedAt" | "snapshotText" | "snapshotSource" | "overviewRationale" | "matchStrength" | "matchAnalyzedAt"> & {
+export type PlanInput = Omit<Plan, "id" | "createdAt" | "updatedAt" | "snapshotCapturedAt" | "snapshotText" | "snapshotSource" | "overviewRationale" | "matchStrength" | "matchAnalyzedAt" | "keywordImportance" | "themeImportance"> & {
   snapshotText?: string;
   snapshotSource?: Plan["snapshotSource"];
 };
@@ -108,6 +111,8 @@ function mapResume(row: Row): Resume {
 }
 
 function mapPlan(row: Row): Plan {
+  const keywords = JSON.parse(String(row.keywords_json || "[]")) as string[];
+  const themes = JSON.parse(String(row.themes_json || "[]")) as string[];
   return {
     id: String(row.id), listingUrl: String(row.listing_url),
     company: String(row.company || ""), title: String(row.title || ""),
@@ -118,8 +123,9 @@ function mapPlan(row: Row): Plan {
     snapshotSource: String(row.snapshot_source || "") as Plan["snapshotSource"],
     currentOverview: String(row.current_overview || ""),
     resumeId: String(row.resume_id || ""),
-    keywords: JSON.parse(String(row.keywords_json || "[]")) as string[],
-    themes: JSON.parse(String(row.themes_json || "[]")) as string[],
+    keywords, themes,
+    keywordImportance: importanceForTerms(keywords, JSON.parse(String(row.keyword_importance_json || "[]")), keywords),
+    themeImportance: importanceForTerms(themes, JSON.parse(String(row.theme_importance_json || "[]")), themes),
     overview: String(row.overview || ""),
     overviewRationale: String(row.overview_rationale || ""),
     matchStrength: row.match_strength === null || row.match_strength === undefined ? null : Number(row.match_strength),
@@ -157,20 +163,22 @@ function createSchema(db: DatabaseSync) {
       snapshot_source TEXT NOT NULL DEFAULT '',
       current_overview TEXT NOT NULL DEFAULT '', resume_id TEXT REFERENCES resumes(id),
       keywords_json TEXT NOT NULL DEFAULT '[]', themes_json TEXT NOT NULL DEFAULT '[]',
+      keyword_importance_json TEXT NOT NULL DEFAULT '[]', theme_importance_json TEXT NOT NULL DEFAULT '[]',
       overview TEXT NOT NULL DEFAULT '', overview_rationale TEXT NOT NULL DEFAULT '',
       match_strength INTEGER CHECK (match_strength BETWEEN 0 AND 100),
       match_analyzed_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );
     CREATE INDEX applications_date_idx ON applications(applied_date DESC, created_at DESC);
     CREATE INDEX plans_updated_idx ON plans(updated_at DESC);
-    PRAGMA user_version = 8;
+    CREATE TABLE workspace_preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    PRAGMA user_version = 9;
   `);
 }
 
 function migrate(db: DatabaseSync): boolean {
   const version = Number((db.prepare("PRAGMA user_version").get() as Row).user_version);
-  if (version === 8) return false;
-  if (version < 1 || version > 7) throw new Error("This is not a supported PM Application Tracker database.");
+  if (version === 9) return false;
+  if (version < 1 || version > 8) throw new Error("This is not a supported PM Application Tracker database.");
   if (version === 1) db.exec(`
     CREATE TABLE plans (
       id TEXT PRIMARY KEY, listing_url TEXT NOT NULL, company TEXT NOT NULL DEFAULT '',
@@ -242,7 +250,7 @@ function migrate(db: DatabaseSync): boolean {
     PRAGMA user_version = 7;
     COMMIT;
   `);
-  db.exec(`
+  if (version <= 7) db.exec(`
     BEGIN IMMEDIATE;
     UPDATE applications SET notes = CASE
       WHEN length(trim(notes)) = 0 THEN snapshot_text
@@ -252,6 +260,16 @@ function migrate(db: DatabaseSync): boolean {
     PRAGMA user_version = 8;
     COMMIT;
   `);
+  db.exec(`
+    BEGIN IMMEDIATE;
+    ALTER TABLE plans ADD COLUMN keyword_importance_json TEXT NOT NULL DEFAULT '[]';
+    ALTER TABLE plans ADD COLUMN theme_importance_json TEXT NOT NULL DEFAULT '[]';
+    CREATE TABLE workspace_preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    INSERT INTO workspace_preferences (key, value)
+      SELECT 'last_current_overview', current_overview FROM plans ORDER BY updated_at DESC LIMIT 1;
+    PRAGMA user_version = 9;
+    COMMIT;
+  `);
   return true;
 }
 
@@ -259,7 +277,7 @@ function validate(db: DatabaseSync) {
   const check = (db.prepare("PRAGMA quick_check").get() as Row).quick_check;
   if (check !== "ok") throw new Error("The selected database failed its integrity check.");
   const version = Number((db.prepare("PRAGMA user_version").get() as Row).user_version);
-  if (version < 1 || version > 8) throw new Error("This is not a supported PM Application Tracker database.");
+  if (version < 1 || version > 9) throw new Error("This is not a supported PM Application Tracker database.");
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Row[];
   const names = new Set(tables.map((row) => String(row.name)));
   if (!names.has("applications") || !names.has("resumes")) {
@@ -330,11 +348,11 @@ export class DesktopStore {
       validate(checkDb);
       previousVersion = Number((checkDb.prepare("PRAGMA user_version").get() as Row).user_version);
     } finally { checkDb.close(); }
-    if (previousVersion < 8) {
+    if (previousVersion < 9) {
       await mkdir(this.backupsPath, { recursive: true });
       const prefix = createHash("sha256").update(target.toLowerCase()).digest("hex").slice(0, 12);
       await copyFile(target, path.join(this.backupsPath,
-        `${prefix}-${new Date().toISOString().slice(0, 10)}-before-v8-${randomUUID()}.sqlite`));
+        `${prefix}-${new Date().toISOString().slice(0, 10)}-before-v9-${randomUUID()}.sqlite`));
     }
     const workingDir = path.join(this.userData, "working");
     await mkdir(workingDir, { recursive: true });
@@ -546,6 +564,11 @@ export class DesktopStore {
     return row ? mapPlan(row) : null;
   }
 
+  getLastCurrentOverview(): string {
+    const row = this.requireDb().prepare("SELECT value FROM workspace_preferences WHERE key = 'last_current_overview'").get() as Row | undefined;
+    return String(row?.value || "");
+  }
+
   async savePlan(input: PlanInput, id?: string): Promise<Plan> {
     const parsed = planInputSchema.safeParse(input);
     if (!parsed.success) throw new Error("Check the plan fields and enter a public HTTPS job listing link.");
@@ -564,10 +587,11 @@ export class DesktopStore {
         const previous = db.prepare("SELECT * FROM plans WHERE id = ?").get(id) as Row | undefined;
         if (!previous) throw new Error("Plan not found.");
         const snapshot = snapshotValues(item, item.description, previous, now);
-        const sameSource = String(previous.listing_url) === item.listingUrl &&
+        const sameJob = String(previous.listing_url) === item.listingUrl &&
           String(previous.company) === item.company && String(previous.title) === item.title &&
           String(previous.team) === item.team && String(previous.locations) === item.locations &&
-          String(previous.description) === item.description &&
+          String(previous.description) === item.description;
+        const sameSource = sameJob &&
           String(previous.current_overview || "") === item.currentOverview &&
           String(previous.resume_id || "") === item.resumeId;
         const keepRationale = sameSource && String(previous.overview || "") === item.overview;
@@ -575,11 +599,15 @@ export class DesktopStore {
           locations = ?, description = ?, current_overview = ?, resume_id = ?,
           keywords_json = ?, themes_json = ?, overview = ?, overview_rationale = ?,
           snapshot_text = ?, snapshot_captured_at = ?, snapshot_source = ?,
-          match_strength = ?, match_analyzed_at = ?, updated_at = ? WHERE id = ?`)
+          match_strength = ?, match_analyzed_at = ?, keyword_importance_json = ?, theme_importance_json = ?, updated_at = ? WHERE id = ?`)
           .run(...fields, keepRationale ? String(previous.overview_rationale || "") : "",
             ...snapshot, sameSource && previous.match_strength !== null
             ? Number(previous.match_strength) : null,
-            sameSource ? String(previous.match_analyzed_at || "") : "", now, id);
+            sameSource ? String(previous.match_analyzed_at || "") : "",
+            JSON.stringify(sameJob ? importanceForTerms(JSON.parse(String(previous.keywords_json)),
+              JSON.parse(String(previous.keyword_importance_json)), item.keywords.filter(Boolean)) : []),
+            JSON.stringify(sameJob ? importanceForTerms(JSON.parse(String(previous.themes_json)),
+              JSON.parse(String(previous.theme_importance_json)), item.themes.filter(Boolean)) : []), now, id);
         if (!result.changes) throw new Error("Plan not found.");
       } else {
         const snapshot = snapshotValues(item, item.description, undefined, now);
@@ -588,22 +616,33 @@ export class DesktopStore {
           snapshot_text, snapshot_captured_at, snapshot_source, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(resultId, ...fields, ...snapshot, now, now);
       }
+      db.prepare(`INSERT INTO workspace_preferences (key, value) VALUES ('last_current_overview', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(item.currentOverview);
     });
     return this.getPlan(resultId)!;
   }
 
   async savePlanAnalysis(id: string, expectedUpdatedAt: string, keywords: string[],
-    themes: string[], overview: string, overviewRationale: string, matchStrength: number): Promise<Plan> {
+    themes: string[], overview: string, overviewRationale: string, matchStrength: number,
+    keywordImportance: number[] = [], themeImportance: number[] = []): Promise<Plan> {
     if (!Number.isInteger(matchStrength) || matchStrength < 0 || matchStrength > 100) {
       throw new Error("The match score must be between 0 and 100.");
     }
     if (!overviewRationale.trim()) throw new Error("The overview explanation was incomplete. Try again.");
+    for (const [items, values] of [[keywords, keywordImportance], [themes, themeImportance]] as const) {
+      if (values.length && (values.length !== items.length || values.some((value) => !Number.isInteger(value) || value < 0 || value > 100))) {
+        throw new Error("Job importance must be between 0 and 100 for every recommendation.");
+      }
+    }
     await this.mutate((db) => {
       const result = db.prepare(`UPDATE plans SET keywords_json = ?, themes_json = ?, overview = ?, overview_rationale = ?,
-        match_strength = ?, match_analyzed_at = ?, updated_at = ? WHERE id = ? AND updated_at = ?`)
+        match_strength = ?, keyword_importance_json = ?, theme_importance_json = ?, match_analyzed_at = ?, updated_at = ? WHERE id = ? AND updated_at = ?`)
         .run(JSON.stringify(keywords), JSON.stringify(themes), overview, overviewRationale.trim().slice(0, 2000), matchStrength,
-          new Date().toISOString(), new Date().toISOString(), id, expectedUpdatedAt);
+          JSON.stringify(keywordImportance), JSON.stringify(themeImportance), new Date().toISOString(), new Date().toISOString(), id, expectedUpdatedAt);
       if (!result.changes) throw new Error("This plan changed while analysis ran. Run it again from the latest version.");
+      db.prepare(`INSERT INTO workspace_preferences (key, value)
+        SELECT 'last_current_overview', current_overview FROM plans WHERE id = ?
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(id);
     });
     return this.getPlan(id)!;
   }
