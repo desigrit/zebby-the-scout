@@ -1,49 +1,49 @@
 ---
-name: PM Application Tracker
+name: Zebby
 description: A calm personal ledger for tracking product management applications.
 colors:
-  accent: "#b84239"
-  accent-hover: "#96332c"
-  accent-wash: "#ffeee9"
-  forest: "#24242c"
-  focus: "#087b98"
-  canvas: "#f7f5f1"
-  paper: "#fffdf8"
-  ink: "#262222"
-  ink-soft: "#665f60"
-  ink-faint: "#766d70"
-  line: "#e6dddb"
-  line-strong: "#cfc2c0"
-  cyan: "#176d82"
-  cyan-wash: "#e9f3f5"
+  accent: "#30343c"
+  accent-hover: "#171b22"
+  accent-wash: "#e6e9ef"
+  forest: "#e9ebef"
+  focus: "#49566a"
+  canvas: "#f4f5f7"
+  paper: "#fff"
+  ink: "#23252a"
+  ink-soft: "#616670"
+  ink-faint: "#626a77"
+  line: "#dce0e5"
+  line-strong: "#858d9a"
+  cyan: "#4b5566"
+  cyan-wash: "#e9edf3"
   field: "#fff"
-  surface-hover: "#f1efeb"
-  surface-selected: "#ffeee9"
-  focus-ring: "rgba(8,123,152,.16)"
-  button-ink: "#fffdf8"
-  selection-bg: "#bfe5ef"
-  selection-ink: "#173643"
-  dark-accent: "#fa887d"
-  dark-accent-hover: "#ffaaa1"
-  dark-accent-wash: "#402d32"
-  dark-forest: "#16181e"
-  dark-focus: "#58bad1"
-  dark-canvas: "#191b22"
-  dark-paper: "#232731"
-  dark-ink: "#f6f1e8"
-  dark-ink-soft: "#c7c1bb"
-  dark-ink-faint: "#aaa6ab"
-  dark-line: "#3b3d47"
-  dark-line-strong: "#5c5d68"
-  dark-cyan: "#64c7da"
-  dark-cyan-wash: "#273841"
-  dark-field: "#2a2f39"
-  dark-surface-hover: "#2f343e"
-  dark-surface-selected: "#402d32"
-  dark-focus-ring: "rgba(88,186,209,.2)"
-  dark-button-ink: "#241f23"
-  dark-selection-bg: "#315d70"
-  dark-selection-ink: "#fffdf8"
+  surface-hover: "#eceff3"
+  surface-selected: "#d7dce3"
+  focus-ring: "rgba(73,86,106,.18)"
+  button-ink: "#fff"
+  selection-bg: "#d0d7e3"
+  selection-ink: "#23252a"
+  dark-accent: "#e5e8ef"
+  dark-accent-hover: "#fff"
+  dark-accent-wash: "#343943"
+  dark-forest: "#16181d"
+  dark-focus: "#c2c9d8"
+  dark-canvas: "#1d1f24"
+  dark-paper: "#272a30"
+  dark-ink: "#f0f1f4"
+  dark-ink-soft: "#b1b5bf"
+  dark-ink-faint: "#adb5c4"
+  dark-line: "#444953"
+  dark-line-strong: "#747e8d"
+  dark-cyan: "#c2c9d8"
+  dark-cyan-wash: "#323740"
+  dark-field: "#2d3038"
+  dark-surface-hover: "#30343c"
+  dark-surface-selected: "#343943"
+  dark-focus-ring: "rgba(194,201,216,.2)"
+  dark-button-ink: "#24272e"
+  dark-selection-bg: "#454f61"
+  dark-selection-ink: "#f0f1f4"
 typography:
   display:
     fontFamily: 'Georgia, "Times New Roman", serif'
@@ -78,6 +78,7 @@ rounded:
   field: "7px"
   button: "8px"
   panel: "12px"
+  brand: "50%"
 spacing:
   tight: "9px"
   field-gap: "18px"
@@ -111,8 +112,34 @@ components:
     padding: "clamp(22px, 3vw, 36px)"
   navigation-sidebar:
     backgroundColor: "{colors.forest}"
-    textColor: "#f8f7ef"
+    textColor: "{colors.ink}"
     padding: "30px 13px 20px"
+    width: "210px"
+  navigation-sidebar-dark:
+    backgroundColor: "{colors.dark-forest}"
+    textColor: "{colors.dark-ink}"
+    padding: "30px 13px 20px"
+    width: "210px"
+  navigation-sidebar-collapsed:
+    backgroundColor: "{colors.forest}"
+    textColor: "{colors.ink}"
+    padding: "30px 13px 20px"
+    width: "96px"
+  window-title-region:
+    backgroundColor: "{colors.canvas}"
+    textColor: "{colors.ink-soft}"
+    height: "44px"
+  window-title-region-dark:
+    backgroundColor: "{colors.dark-canvas}"
+    textColor: "{colors.dark-ink-soft}"
+    height: "44px"
+  navigation-zebra-toggle:
+    rounded: "{rounded.brand}"
+    padding: "4px"
+    size: "54px"
+  navigation-zebra-image:
+    rounded: "{rounded.brand}"
+    size: "46px"
   button-primary-dark:
     backgroundColor: "{colors.dark-accent}"
     textColor: "{colors.dark-button-ink}"
@@ -145,57 +172,56 @@ components:
     padding: "5px 2px"
 ---
 
-# Design System: PM Application Tracker
+# Design System: Zebby
 
 ## Overview
 
 **Creative North Star: "The Search Ledger"**
 
-The app should feel like a dependable working ledger for a busy job search. Cream paper and fine neutral rules keep rows readable, while a charcoal sidebar gives the workspace a clear identity. The approved detailed sunglasses zebra supplies the circular brand mark. Coral points to the next useful action, and cyan identifies information and focus.
+Zebby should feel like a dependable working ledger for a busy job search. Graphite uses cool neutral paper, fine rules, and clear ink to keep rows readable in light and dark appearance. Neutral actions, informational accents, focus, and selected surfaces let the application data carry the emphasis. The approved detailed sunglasses zebra supplies the circular brand mark.
 
 The interface stays compact enough for several entries a day. The existing serif and platform sans-serif hierarchy, native controls, and left navigation remain the working grammar. The full striped zebra, cyan lenses, and yellow mane provide expression inside the icon; the surrounding workspace keeps application data and editable role priorities easy to scan.
 
 **Key Characteristics:**
 
-- Cream paper surfaces on a muted canvas, with a charcoal sidebar.
+- Cool neutral paper surfaces on a muted Graphite canvas, with an appearance-specific sidebar.
 - The full circular zebra as the recognizable app identity.
-- Coral actions and cyan information and focus accents.
+- Neutral Graphite actions, information, focus, and selected surfaces.
 - Strong hierarchy through typography and spacing, with light borders between data.
-- Compact native controls with visible focus treatment.
+- Compact native controls, a 44px native title region, and visible focus treatment.
+- A zebra button that switches between labeled and icons only navigation.
 - A table on wide screens that becomes readable record cards on narrow screens.
 
 ## Colors
 
-The palette extends the Search Ledger with coral actions, cyan information, cream surfaces, and charcoal structure. Unprefixed frontmatter colors are the exact light values from `app/globals.css`; `dark-` entries are the exact overrides from `desktop/renderer/desktop.css`. Selection entries record the corresponding global text-selection rules. The existing `forest` property name is retained for compatibility and now means charcoal.
+Graphite extends the Search Ledger with neutral actions, information, focus, and selected surfaces. Unprefixed frontmatter colors are the exact light values from `app/globals.css`; `dark-` entries are the exact overrides from `desktop/renderer/desktop.css`. Selection entries record the corresponding text-selection rules. Existing `forest`, `cyan`, and `cyan-wash` property names remain for compatibility; they now describe the sidebar and neutral information roles.
 
 ### Primary
 
-- **Coral** (`accent`): the main action fill.
-- **Coral Hover** (`accent-hover`): the action hover and existing model-agreement fill.
-- **Coral Wash** (`accent-wash`, `surface-selected`): restrained accent surfaces and selected plans.
+- **Graphite Action** (`accent`): a deep neutral action fill in light appearance and a pale silver fill in dark appearance.
+- **Graphite Action Hover** (`accent-hover`): the action hover and existing model-agreement fill.
+- **Graphite Action Wash** (`accent-wash`): restrained action-related surfaces.
 - **Button Ink** (`button-ink`): readable primary-action text in each appearance, independent of the paper color.
-
-### Secondary
-
-- **Information Cyan** (`cyan`): job-importance percentages, activity bars, resume links, and informational actions.
-- **Cyan Wash** (`cyan-wash`): importance badges, resume-match summary, and selected appearance options.
-- **Focus Cyan** (`focus`, `focus-ring`): keyboard outlines, field borders, and translucent field focus rings.
-- **Selection** (`selection-bg`, `selection-ink`): text selection, distinct from selected-plan surfaces.
 
 ### Neutral
 
-- **Charcoal** (`forest`): the sidebar.
-- **Cream Canvas** (`canvas`): the light workspace background; its dark counterpart is charcoal.
+- **Graphite Sidebar** (`forest`): the sidebar and its matching segment in the shared native title region.
+- **Graphite Canvas** (`canvas`): the workspace and remaining title-region background.
 - **Paper** (`paper`): panels, table, statistic band, and secondary button fill.
-- **Ink** (`ink`): main reading text.
-- **Soft Ink** (`ink-soft`): secondary text and table details.
+- **Ink** (`ink`): main reading text and sidebar labels.
+- **Soft Ink** (`ink-soft`): secondary text, inactive navigation, and the Zebby title caption.
 - **Faint Ink** (`ink-faint`): small labels on mobile records.
-- **Fine Rule** (`line`): separators between statistics and applications.
+- **Fine Rule** (`line`): separators between statistics, applications, and the sidebar database footer.
 - **Strong Rule** (`line-strong`): input borders and the editor outline.
-- **Field** (`field`): editable controls, white in light appearance and charcoal in dark appearance.
+- **Field** (`field`): editable controls.
 - **Hover Surface** (`surface-hover`): neutral feedback on rows and secondary controls.
+- **Selected Surface** (`surface-selected`): selected plans, active navigation, and zebra-toggle hover.
+- **Graphite Information** (`cyan`): job-importance percentages, activity bars, resume links, and informational actions.
+- **Graphite Information Wash** (`cyan-wash`): importance badges, resume-match summary, and selected appearance options.
+- **Graphite Focus** (`focus`, `focus-ring`): keyboard outlines, field borders, and translucent field focus rings.
+- **Text Selection** (`selection-bg`, `selection-ink`): selected text, distinct from selected-plan surfaces.
 
-**The Color Roles Rule.** Use coral for deliberate actions and cyan for information and focus. Keep semantic green notices and hiring stages, amber warnings, and match-strength colors in their existing roles, with readable text and values.
+**The Color Roles Rule.** Use neutral Graphite for deliberate actions, information, focus, and selected surfaces. Keep semantic green notices and hiring stages, amber warnings, red errors and destructive actions, and match-strength colors in their existing roles, with readable text and values.
 
 ## Typography
 
@@ -217,9 +243,9 @@ The palette extends the Search Ledger with coral actions, cyan information, crea
 
 ## Layout
 
-The desktop shell has a 210px left sidebar with Plan, Applications, and Settings. The workspace content is capped at 1440px. Applications flows from a compact add action to a shared panel containing a 30-day activity chart and five-column statistics band, then search, filters, and records. The chart uses quiet daily bars with date and count tooltips, and arrow keys move between days. The editor starts with the listing URL and its autofill action. Company, title, team, locations, applied date, and match strength follow in paired fields.
+The desktop shell has a shared 44px native title region above Plan, Applications, and Settings. Its sidebar segment blends into the rail below. The sidebar is 210px wide when expanded and 96px wide when collapsed on both platforms; the collapsed width reserves room for native macOS traffic lights. The workspace content is capped at 1440px. Applications flows from a compact add action to a shared panel containing a 30-day activity chart and five-column statistics band, then search, filters, and records. The chart uses quiet daily bars with date and count tooltips, and arrow keys move between days. The editor starts with the listing URL and its autofill action. Company, title, team, locations, applied date, and match strength follow in paired fields.
 
-When the Applications content pane is 940px or narrower, rows become two-column record cards with visible field labels and actions. This uses available pane width, including the space taken by the sidebar. At 850px window width, the sidebar narrows to 176px, the Plan rail moves above its editor, and the statistics band changes to three columns. At 650px, the heading, filters, and form stack; the statistics band uses two columns. Preserve these content-driven changes when adding fields.
+When the Applications content pane is 940px or narrower, rows become two-column record cards with visible field labels and actions. This uses available pane width, including the space taken by the sidebar. At 850px window width, the expanded sidebar narrows to 176px while the collapsed sidebar stays 96px, the Plan rail moves above its editor, and the statistics band changes to three columns. At 650px, the heading, filters, and form stack; the statistics band uses two columns. Preserve these content-driven changes when adding fields.
 
 The native launch window defaults to 1550 by 850 device-independent pixels, 300 wider than the previous 1250 width. Both dimensions are capped by the primary display work area. Core keyword and theme columns stack when the Plan editor container is 610px or narrower; their editable text, importance badge, and remove control stay together.
 
@@ -227,13 +253,13 @@ The common rhythm uses tight control gaps, medium field gaps, and generous panel
 
 ## Elevation & Depth
 
-The workspace is mostly flat. Contrast between the muted canvas and paper surfaces, plus fine rules, establishes structure. The open editor alone receives a soft ambient shadow (`0 12px 35px rgba(22, 50, 38, .07)`) to make the active work area clear. Input focus uses a cyan ring (`0 0 0 3px var(--focus-ring)`), with the appearance-specific color in the frontmatter. Keyboard outlines use `focus`.
+The workspace is mostly flat. Contrast between the muted canvas and paper surfaces, plus fine rules, establishes structure. The open editor alone receives a soft ambient shadow (`0 12px 35px rgba(22, 50, 38, .07)`) to make the active work area clear. Input focus uses a Graphite ring (`0 0 0 3px var(--focus-ring)`), with the appearance-specific color in the frontmatter. Keyboard outlines use `focus`.
 
 **The Active Editor Rule.** Apply the ambient shadow to the open editor only; resting data surfaces remain flat.
 
 ## Shapes
 
-Corners are gently rounded: compact controls use the `compact` and `field` radii, buttons use the `button` radius, and larger surfaces use the `panel` radius. Fine borders define panels and rows. The brand mark is the approved detailed zebra in a coral circle, including the full striped head, sunglasses, cyan lenses, and yellow mane. Keep the clear circular silhouette and recognizable detail. The sidebar renders the mark at 46px; the shared header uses 42px.
+Corners are gently rounded: compact controls use the `compact` and `field` radii, buttons use the `button` radius, and larger surfaces use the `panel` radius. Fine borders define panels and rows. The brand mark is the approved detailed zebra in a coral circle, including the full striped head, sunglasses, cyan lenses, and yellow mane. Keep the clear circular silhouette and recognizable detail. The sidebar places the 46px mark inside a 54px circular navigation-toggle button. The native title region shows only Zebby.
 
 `public/brand-icon.png` is the shipping source for the app and installer. Its PNG metadata carries the exact image-generation prompt. `scripts/build-desktop.mjs` preserves the source text provenance when resizing it to `build/desktop-icon.png` and copying `desktop-dist/renderer/icon.png`. The former tile SVGs are retired.
 
@@ -241,13 +267,19 @@ Corners are gently rounded: compact controls use the `compact` and `field` radii
 
 ### Buttons
 
-- **Primary:** coral fill, appearance-specific button ink, medium weight, and a 44px minimum target height. Hover deepens the fill in light appearance and brightens it in dark appearance; pressing moves it down by 1px.
+- **Primary:** Graphite fill, appearance-specific button ink, medium weight, and a 44px minimum target height. Hover deepens the fill in light appearance and brightens it in dark appearance; pressing moves it down by 1px.
 - **Secondary:** paper fill in light appearance, field fill in dark appearance, ink text, and a strong rule border. Hover uses the neutral hover surface and clearer ink-faint border.
 - **Focus and motion:** keyboard focus uses the shared 3px outline. The 180ms color and transform transitions stop when reduced motion is requested.
 
 ### Navigation
 
-The left sidebar holds the circular zebra, product name, Plan, Applications, Settings, and the current database name. The active destination has a distinct muted charcoal and coral surface with a coral icon; keyboard focus is cyan. Windows has no native menu bar; macOS keeps only the native app menu. Settings is an uncluttered four-section page for Database, OpenAI key, Appearance, and Logs.
+The shared native title region is 44px high and shows only Zebby. Windows uses native overlay controls; macOS uses native traffic lights at x=18, y=16. The sidebar segment uses the same `forest` fill as the rail below, and the remaining title region uses `canvas`. Keep the title free of database filenames and do not add HTML window controls.
+
+The circular zebra is a 54px semantic button containing the unchanged 46px image. It switches the left sidebar between icons plus labels and icons only, without a sidebar wordmark. Expanded navigation is 210px wide, or 176px at the 850px window breakpoint; collapsed navigation is 96px on both platforms. Active destinations use `surface-selected`, readable ink, and the neutral `accent` icon. Hover uses `surface-hover`; the zebra button uses `surface-selected` on hover and a 2px `focus` outline with a 3px offset.
+
+The toggle exposes `aria-expanded`, `aria-controls`, and Expand navigation or Collapse navigation action labels and tooltips. Enter and Space activate the semantic button. Each destination retains its accessible name and current-page state; icons only destinations have tooltips. The expanded footer shows the current database name. The collapsed footer offers a Database settings icon with filename and save-pending information in its tooltip.
+
+The navigation preference is saved on each computer. A failed save restores the previous layout and displays an error. Toggling preserves the current draft and destination. Windows has no native menu bar; macOS keeps only the native app menu. Settings is an uncluttered four-section page for Database, OpenAI key, Appearance, and Logs.
 
 ### Cards and containers
 
@@ -255,11 +287,11 @@ The statistic band, application list, empty state, and editor sit on paper. The 
 
 ### Inputs and fields
 
-Inputs use the appearance-specific field fill, strong rule borders, and the `field` radius. The cyan focus border and ring work with the global keyboard outline. Field labels sit above controls. The resume upload button uses a dashed green border to distinguish file selection from data entry.
+Inputs use the appearance-specific field fill, strong rule borders, and the `field` radius. The Graphite focus border and ring work with the global keyboard outline. Field labels sit above controls. The resume upload button uses a dashed green border to distinguish file selection from data entry.
 
 ### Job importance
 
-Core ATS keywords use editable single-line fields; Core resume themes use editable multi-line fields. Each row reserves a separate 52px column for a read-only percentage badge and a 26px column for Remove. Badges use cyan on cyan wash, a 5px corner radius, and tabular numerals. Unrated values use quieter canvas and ink-faint colors. Add keyword and Add theme are cyan text actions, and a new row receives focus. Labels, tooltips, and the nearby explanation identify the percentage as estimated importance to the job; resume match remains a separate value.
+Core ATS keywords use editable single-line fields; Core resume themes use editable multi-line fields. Each row reserves a separate 52px column for a read-only percentage badge and a 26px column for Remove. Badges use neutral Graphite information ink on its wash, a 5px corner radius, and tabular numerals. Unrated values use quieter canvas and ink-faint colors. Add keyword and Add theme are Graphite information text actions, and a new row receives focus. Labels, tooltips, and the nearby explanation identify the percentage as estimated importance to the job; resume match remains a separate value.
 
 ### Application records
 
@@ -273,9 +305,11 @@ The desktop list is a fixed-layout table with clearly separated columns. A compa
 - **Do** keep controls legible and preserve 44px targets for mobile row actions and status changes.
 - **Do** pair match-track color with a numeric percentage, and pair status tint with readable text.
 - **Do** show visible keyboard focus and respect reduced-motion preferences.
+- **Do** keep the unchanged zebra accessible as the navigation toggle and retain native platform window controls.
 
 ### Don't:
 
 - **Don't** add shadows to every row or metric; the editor is the elevated surface.
 - **Don't** rely on color alone to communicate match strength or status.
+- **Don't** add a sidebar wordmark, put a database filename in the title region, or draw HTML window controls.
 - **Don't** compress application records into an unreadable mobile table; use labeled record cards.

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { ArrowRight, ArrowUpRight, BriefcaseBusiness, Check, ClipboardList, FileText, FolderOpen,
+import { ArrowRight, ArrowUpRight, BriefcaseBusiness, Check, ClipboardList, Database, FileText, FolderOpen,
   KeyRound, LoaderCircle, Monitor, Moon, Plus, RefreshCw, RotateCw, Search, Settings2, Sparkles, Sun, Trash2 } from "lucide-react";
 import ApplicationDashboard from "../../app/application-dashboard";
 import LocationEditor from "../../app/location-editor";
@@ -590,10 +590,24 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("plan");
   const [dirtyPlan, setDirtyPlan] = useState(false);
   const [databaseVersion, setDatabaseVersion] = useState(0);
+  const [sidebarSaving, setSidebarSaving] = useState(false);
+  const [shellError, setShellError] = useState("");
   const navigate = useCallback((target: Tab) => {
     if (target !== "plan" && dirtyPlan && !window.confirm("Discard unsaved changes to this plan?")) return;
     setTab(target);
   }, [dirtyPlan]);
+
+  async function toggleSidebar() {
+    if (!state || sidebarSaving) return;
+    const collapsed = !state.sidebarCollapsed;
+    setShellError(""); setSidebarSaving(true);
+    setState((current) => current ? { ...current, sidebarCollapsed: collapsed } : current);
+    try { await window.desktop!.setSidebarCollapsed(collapsed); }
+    catch {
+      setState((current) => current ? { ...current, sidebarCollapsed: !collapsed } : current);
+      setShellError("Could not save the navigation preference. Try again.");
+    } finally { setSidebarSaving(false); }
+  }
 
   useEffect(() => {
     void window.desktop!.state().then(setState);
@@ -623,24 +637,38 @@ export default function App() {
   }, [appearance]);
 
   if (!state) return <div className="desktop-loading"><LoaderCircle className="spin" size={24} /> Opening workspace...</div>;
-  return <div className={`desktop-shell ${state.platform === "darwin" ? "platform-mac" : "platform-windows"}`}>
+  return <div className={`desktop-shell ${state.platform === "darwin" ? "platform-mac" : "platform-windows"}${state.sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+    <header className="desktop-titlebar" aria-label="Window title bar">
+      <div className="titlebar-sidebar" aria-hidden="true" />
+      <div className="titlebar-caption">Zebby</div>
+    </header>
     <aside className="desktop-sidebar">
-      <div className="sidebar-brand"><img className="brand-mark" src="./icon.png" alt="" />
-        <strong>PM Application<br />Tracker</strong></div>
-      <nav className="sidebar-nav" aria-label="Workspace">
+      <div className="sidebar-brand"><button className="sidebar-toggle" type="button" onClick={() => void toggleSidebar()}
+        disabled={sidebarSaving} aria-expanded={!state.sidebarCollapsed} aria-controls="desktop-navigation"
+        aria-label={state.sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}
+        title={state.sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}>
+        <img className="brand-mark" src="./icon.png" alt="" /></button></div>
+      <nav id="desktop-navigation" className="sidebar-nav" aria-label="Workspace">
         <button type="button" className={tab === "plan" ? "active" : ""} onClick={() => navigate("plan")}
-          aria-current={tab === "plan" ? "page" : undefined}><ClipboardList size={19} aria-hidden="true" /> Plan</button>
+          aria-label="Plan" title={state.sidebarCollapsed ? "Plan" : undefined}
+          aria-current={tab === "plan" ? "page" : undefined}><ClipboardList size={19} aria-hidden="true" /><span className="nav-label">Plan</span></button>
         <button type="button" className={tab === "applications" ? "active" : ""} onClick={() => navigate("applications")}
-          aria-current={tab === "applications" ? "page" : undefined}><BriefcaseBusiness size={19} aria-hidden="true" /> Applications</button>
+          aria-label="Applications" title={state.sidebarCollapsed ? "Applications" : undefined}
+          aria-current={tab === "applications" ? "page" : undefined}><BriefcaseBusiness size={19} aria-hidden="true" /><span className="nav-label">Applications</span></button>
         <button type="button" className={tab === "settings" ? "active" : ""} onClick={() => navigate("settings")}
-          aria-current={tab === "settings" ? "page" : undefined}><Settings2 size={19} aria-hidden="true" /> Settings</button>
+          aria-label="Settings" title={state.sidebarCollapsed ? "Settings" : undefined}
+          aria-current={tab === "settings" ? "page" : undefined}><Settings2 size={19} aria-hidden="true" /><span className="nav-label">Settings</span></button>
       </nav>
       {state.filePath && <div className="sidebar-database" title={state.filePath}>
-        <span>Current database</span><strong>{state.filename}</strong>
-        {state.dirty && <small>Save pending</small>}
+        {state.sidebarCollapsed ? <button className="sidebar-database-button" type="button" onClick={() => navigate("settings")}
+          aria-label="Database settings" title={`${state.filename}${state.dirty ? ", save pending" : ""}`}>
+          <Database size={19} aria-hidden="true" />{state.dirty && <i className="database-pending" aria-hidden="true" />}</button>
+          : <><span>Current database</span><strong>{state.filename}</strong>
+            {state.dirty && <small>Save pending</small>}</>}
       </div>}
     </aside>
     <div className="desktop-workspace">
+      {shellError && <div className="workspace-warning" role="alert">{shellError}</div>}
       {state.startupError && <div className="workspace-warning" role="alert">
         <span>The previous database is unavailable. This workspace is stored locally.</span>
         <button type="button" onClick={() => navigate("settings")}>Open Settings</button>

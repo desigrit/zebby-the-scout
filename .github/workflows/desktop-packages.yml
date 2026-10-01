@@ -39,14 +39,14 @@ jobs:
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
-          name: pm-application-tracker-windows-x64
+          name: zebby-windows-x64
           path: desktop-packages/*-win-x64.exe
           if-no-files-found: error
       - run: node scripts/download-electron-arm64.mjs
       - run: npx electron-builder --win nsis --arm64 --publish never -c electron-builder.arm64.cjs
       - uses: actions/upload-artifact@v4
         with:
-          name: pm-application-tracker-windows-arm64
+          name: zebby-windows-arm64
           path: desktop-packages/*-win-arm64.exe
           if-no-files-found: error
 
@@ -79,7 +79,7 @@ jobs:
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
-          name: pm-application-tracker-macos-arm64
+          name: zebby-macos-arm64
           path: desktop-packages/*-mac-arm64.dmg
           if-no-files-found: error
 
@@ -95,7 +95,7 @@ jobs:
         run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
       - uses: actions/download-artifact@v4
         with:
-          pattern: pm-application-tracker-*
+          pattern: zebby-*
           path: release-files
           merge-multiple: true
       - name: Publish direct installer downloads
@@ -104,7 +104,7 @@ jobs:
         run: |
           notes="docs/releases/$GITHUB_REF_NAME.md"
           if [ -f "$notes" ]; then
-            gh release create "$GITHUB_REF_NAME" release-files/*.exe release-files/*.dmg --title "PM Application Tracker $GITHUB_REF_NAME" --notes-file "$notes" --target "$GITHUB_SHA"
+            gh release create "$GITHUB_REF_NAME" release-files/*.exe release-files/*.dmg --title "Zebby $GITHUB_REF_NAME" --notes-file "$notes" --target "$GITHUB_SHA"
           else
-            gh release create "$GITHUB_REF_NAME" release-files/*.exe release-files/*.dmg --title "PM Application Tracker $GITHUB_REF_NAME" --generate-notes --target "$GITHUB_SHA"
+            gh release create "$GITHUB_REF_NAME" release-files/*.exe release-files/*.dmg --title "Zebby $GITHUB_REF_NAME" --generate-notes --target "$GITHUB_SHA"
           fi
