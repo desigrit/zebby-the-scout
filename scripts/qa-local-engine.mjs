@@ -18,7 +18,7 @@ const packaged = process.argv.includes("--packaged");
 if (!packaged) await prepareRuntime(process.platform, process.arch);
 const platformFolder = `${process.platform === "darwin" ? "mac" : "win"}-${process.arch}`;
 const resources = process.platform === "darwin"
-  ? path.resolve("desktop-packages/mac-arm64/PM Application Tracker.app/Contents/Resources")
+  ? path.resolve("desktop-packages/mac-arm64/Zebby.app/Contents/Resources")
   : path.resolve(`desktop-packages/${process.arch === "arm64" ? "win-arm64-unpacked" : "win-unpacked"}/resources`);
 let lastStatus = "";
 const downloads = new LocalModelDownloads(path.join(output, "Models"), {

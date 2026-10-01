@@ -16,7 +16,7 @@ People applying to several product management roles a day, including laptop user
 
 ## Product Purpose
 
-Plan a resume for each job posting, record each application, and see application volume, match strength, and progress through hiring stages.
+Zebby helps the user plan a resume for each job posting, record each application, and see application volume, match strength, and progress through hiring stages.
 
 ## Operating Context
 
@@ -26,7 +26,9 @@ The user keeps job listing links and uses different resume versions. They need t
 
 Use the approved full, detailed zebra wearing sunglasses as the main circular app and installer icon. The shipping source is `public/brand-icon.png`. Its stripes, cyan lenses, yellow mane, and coral circle remain recognizable at the small sidebar size.
 
-Extend the existing Search Ledger with cream and charcoal neutrals, coral actions, and cyan information and focus accents. Preserve the operating layout, Plan, Applications, and Settings left navigation, platform fonts, and native controls. Semantic green notices and hiring stages, plus amber warnings, keep their existing roles.
+The public app name is Zebby. The approved public repository identity is `desigrit/zebby-the-scout`. Extend the existing Search Ledger with the approved Graphite palette: neutral actions, information, focus, and selected surfaces in light and dark appearance. Preserve the operating layout, Plan, Applications, and Settings left navigation, platform fonts, and native controls. Semantic green notices and hiring stages, amber warnings, and red errors and destructive actions keep their existing roles.
+
+The shared native title region shows only Zebby. Remove the sidebar wordmark. The unchanged circular zebra switches between icons only and icons plus labels, with accessible action labels and keyboard activation. The navigation preference belongs to each computer.
 
 ## Capabilities and Constraints
 
@@ -50,7 +52,9 @@ Extend the existing Search Ledger with cream and charcoal neutrals, coral action
 - Keep weekly local backups and detect outside changes to the selected cloud file before saving.
 - Use native file dialogs, platform fonts, and a left navigation for Windows x64, Windows ARM64, and Apple Silicon macOS. No account sign-in is required.
 - Start the desktop window at 1550 by 850 device-independent pixels, 300 wider than the previous 1250 width, capped to the primary display's work area. Auto appearance uses the native system preference for the initial window background.
-- Keep appearance and optional diagnostic logging in local settings on each computer.
+- Keep appearance, navigation expansion, and optional diagnostic logging in local settings on each computer. If saving navigation expansion fails, restore the previous layout and show an error. Preserve drafts and the selected destination when toggling.
+- Use a 44px native title region with native Windows overlay controls or native macOS traffic lights at x=18, y=16. Expanded navigation is 210px, or 176px at 850px window width; collapsed navigation is 96px on both platforms. The 54px zebra button contains the unchanged 46px image. The collapsed database footer opens Database settings.
+- Version 1.3.0 keeps schema v9 and performs no data migration. Retain the internal package name pm-application-tracker, app ID com.desigrit.pmapplications, and legacy userData and model-folder paths when presenting the new public name.
 
 ## Product Principles
 

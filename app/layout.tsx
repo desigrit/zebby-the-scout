@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "PM Application Tracker",
+  title: "Zebby",
   description: "Track product management applications, match scores, resumes, and progress.",
   robots: { index: false, follow: false, nocache: true },
   icons: {

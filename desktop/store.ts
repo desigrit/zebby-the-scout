@@ -178,7 +178,7 @@ function createSchema(db: DatabaseSync) {
 function migrate(db: DatabaseSync): boolean {
   const version = Number((db.prepare("PRAGMA user_version").get() as Row).user_version);
   if (version === 9) return false;
-  if (version < 1 || version > 8) throw new Error("This is not a supported PM Application Tracker database.");
+  if (version < 1 || version > 8) throw new Error("This is not a supported Zebby database.");
   if (version === 1) db.exec(`
     CREATE TABLE plans (
       id TEXT PRIMARY KEY, listing_url TEXT NOT NULL, company TEXT NOT NULL DEFAULT '',
@@ -277,11 +277,11 @@ function validate(db: DatabaseSync) {
   const check = (db.prepare("PRAGMA quick_check").get() as Row).quick_check;
   if (check !== "ok") throw new Error("The selected database failed its integrity check.");
   const version = Number((db.prepare("PRAGMA user_version").get() as Row).user_version);
-  if (version < 1 || version > 9) throw new Error("This is not a supported PM Application Tracker database.");
+  if (version < 1 || version > 9) throw new Error("This is not a supported Zebby database.");
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Row[];
   const names = new Set(tables.map((row) => String(row.name)));
   if (!names.has("applications") || !names.has("resumes")) {
-    throw new Error("This file does not contain a PM Application Tracker database.");
+    throw new Error("This file does not contain a Zebby database.");
   }
 }
 

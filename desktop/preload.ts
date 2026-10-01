@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld("desktop", {
   deleteLocalModel: (id: string) => ipcRenderer.invoke("desktop:delete-local-model", id),
   openModelFolder: () => ipcRenderer.invoke("desktop:open-model-folder"),
   setAppearance: (value: "auto" | "dark" | "light") => ipcRenderer.invoke("desktop:set-appearance", value),
+  setSidebarCollapsed: (value: boolean) => ipcRenderer.invoke("desktop:set-sidebar-collapsed", value),
   setLogCapture: (value: boolean) => ipcRenderer.invoke("desktop:set-log-capture", value),
   openLogs: () => ipcRenderer.invoke("desktop:open-logs"),
   downloadResume: (id: string) => ipcRenderer.invoke("desktop:download-resume", id),

@@ -6,15 +6,21 @@ MODE: Operate.
 
 THESIS: Read a job posting, prioritize truthful CV evidence, and retain a separate resume-to-role match estimate. Each Core ATS keyword and Core resume theme displays its independent estimated importance to the job beside editable text.
 
-OWN-WORLD: Preserve the Search Ledger layout, native controls, and platform fonts. Use the approved full circular sunglasses zebra, coral actions, cyan importance and focus accents, cream surfaces, and charcoal sidebar. Saved and unsaved notices retain semantic green and amber.
+OWN-WORLD: Preserve the Search Ledger layout, native controls, and platform fonts. Use Zebby and the approved Graphite palette for neutral actions, information, focus, and selected surfaces in light and dark appearance. The full circular sunglasses zebra remains unchanged and toggles labeled or icons only navigation. Saved and unsaved notices retain semantic green and amber.
 
 STORY: Start a role brief with the last saved Current CV Overview, read or paste a posting, select a saved resume or upload one, and analyze with the chosen provider. Edit keywords, themes, and the tailored overview, then save the plan. Existing role briefs retain their own overview when selected again.
 
-FIRST VIEWPORT: The left Plan, Applications, and Settings navigation remains in place. A coral New plan action sits above saved plans beside the role editor. The editor begins with job posting fields, then Your CV and Resume direction. A separate Resume match summary precedes the importance explanation and two editable recommendation lists. As the window narrows, saved plans move above the editor and the two lists stack.
+FIRST VIEWPORT: The shared 44px native title region reads only Zebby above the left Plan, Applications, and Settings navigation. The sidebar has no wordmark. A Graphite New plan action sits above saved plans beside the role editor. The editor begins with job posting fields, then Your CV and Resume direction. A separate Resume match summary precedes the importance explanation and two editable recommendation lists. As the window narrows, saved plans move above the editor and the two lists stack.
 
 FORM: An approved expansion of the existing operating ledger, without a replacement layout or new concept seed. The signature interaction is an editable requirement with a separate, read-only importance badge that becomes Unrated when its text or job source changes. The native launch width is 1550 device-independent pixels, 300 wider than the previous 1250 width; height remains 850. Both are capped to the primary display work area.
 
-FINISH: The fresh v1.2.0 full renderer review returned ship, with no material fixes, after refreshed captures settled their theme transitions. Its persistence, fidelity, ceiling, material_fixes, and keep sections are present in [the finish review](../review/zebra-finish-review.md). The craft ceiling was reached within the captured renderer scope. The approved token system is recorded in DESIGN.md and .impeccable/design.json.
+FINISH: The fresh v1.3.0 full renderer review returned ship across all 32 supplied captures and scoped source, with no material fixes. Its persistence, fidelity, ceiling, material_fixes, and keep sections are present in [the finish review](../review/zebby-finish-review.md). The craft ceiling was reached within the captured renderer scope. DESIGN.md and .impeccable/design.json record the exact approved Graphite tokens and shared native shell.
+
+## Shared navigation
+
+The unchanged zebra is a 54px button with a 46px image. Expanded navigation is 210px, or 176px at the 850px window breakpoint; icons only navigation is 96px on Windows and Mac. The native title region blends with the top of the sidebar, and macOS traffic lights retain their reserved space. The title shows only Zebby.
+
+The toggle exposes its expanded state and Expand navigation or Collapse navigation action label, supports Enter and Space, and leaves the current Plan draft and destination intact. Navigation labels and tooltips remain accessible in either state. The preference is saved on each computer; failure restores the previous state and shows an error. The collapsed footer opens Database settings.
 
 ## Importance and match behavior
 
@@ -36,7 +42,7 @@ Analysis routing and model-download controls retain their existing paths. Only S
 
 ## Finish evidence
 
-The fresh reviewer validated these eight current Plan captures:
+The fresh reviewer validated these 11 current Plan captures as part of the full 32-capture matrix:
 
 - [Windows light](../review/plan-windows-light.png)
 - [Windows dark](../review/plan-windows-dark.png)
@@ -46,9 +52,14 @@ The fresh reviewer validated these eight current Plan captures:
 - [Windows narrow](../review/plan-windows-narrow.png)
 - [Mac branch light simulation](../review/plan-mac-light.png)
 - [Mac branch compact dark simulation](../review/plan-mac-compact-dark.png)
+- [Windows collapsed light](../review/plan-windows-collapsed-light.png)
+- [Mac branch collapsed dark simulation](../review/plan-mac-collapsed-dark.png)
+- [README Plan crop](../review/readme-plan.png)
 
-Wide Plan captures use a 1550 by 850 viewport and show the full page. Windows compact uses 1050 by 900; narrow and Mac compact use 790 by 850. All were rendered in headless Chromium on Windows with synthetic data and the current compiled renderer. The Mac captures exercise that platform branch on Windows, not native macOS rendering. The capture helper waits for finite transitions and fonts. The documenter directly inspected Windows light, both analysis crops, and the Mac compact dark simulation, with the fresh report covering the complete matrix.
+Wide Plan captures begin at a 1550 by 850 viewport; full-page images extend below it. Windows compact uses 1050 by 900, and narrow and Mac compact use 790 by 850. Analysis images crop the analysis section. All were rendered in invisible headless Chromium on Windows with synthetic data and the current compiled renderer. The Mac captures exercise that platform branch on Windows, not native macOS rendering. The capture helper waits for finite transitions and fonts. This documenter directly inspected Windows light and the Mac collapsed dark simulation; the independent report covers the complete matrix.
 
-Source checks cover desktop/renderer/PlanRecommendations.tsx, desktop/renderer/App.tsx, desktop/renderer/desktop.css, app/globals.css, desktop/analysis-contracts.ts, desktop/plan-importance.ts, desktop/store.ts, desktop/main.ts, and scripts/build-desktop.mjs. Legacy and invalidated ratings, overview reuse, and migration behavior are supported by source and supplied QA assertions; they were not each captured as separate visual states.
+Current shell and palette evidence comes from app/globals.css, desktop/renderer/desktop.css, desktop/renderer/App.tsx, desktop/main.ts, desktop/bridge.ts, desktop/window-appearance.ts, desktop/app-identity.ts, and package.json. Existing importance, invalidation, overview reuse, provider routing, and schema v9 behavior remain unchanged. Version 1.3.0 performs no data migration.
 
-The parent reports 52 automated tests, typecheck, lint, desktop production build, and headless UI actions and overflow checks passing. Hidden synthetic CPU Plan, match, authentication, and shutdown checks passed for SmolLM2, LFM2.5, and Gemma. They establish those exercised paths, not inference accuracy. No detector ran for this desktop task. No desktop app, visible browser, real settings, database, resumes, or installed models were opened for review or documentation. Native chrome, native macOS fonts, installer lifecycle, and inference accuracy are outside the renderer verdict; native release builds remain a separate gate.
+The independent reviewer passed 56 tests, typecheck, lint with zero errors and three existing image warnings, and diff whitespace checks. The reviewer inspected supplied renderer/build evidence and QA source rather than rerunning the build or renderer. Parent headless QA confirms toggle keyboard activation, draft preservation, preference success and failure, and the database footer action. These are supplied verification results, not additional runtime checks by this documenter.
+
+No detector ran for this desktop task. No desktop app, visible browser, real database, resumes, local settings, or installed models were opened for documentation. Native installer upgrades, native chrome, actual macOS fonts and controls, and a Keychain decryption roundtrip remain untested; release CI is a later gate. The renderer verdict does not certify inference accuracy.

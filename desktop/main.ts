@@ -16,6 +16,8 @@ import { localModelFolder } from "./local-model-storage";
 import { acceptModelTerms, modelTermsAccepted, type AcceptedModelTerms } from "./local-model-consent";
 import { parsePlanRecommendations } from "./plan-importance";
 import { freemem, totalmem } from "node:os";
+import { APP_NAME, preserveApplicationProfile } from "./app-identity";
+import { nativeWindowShell, windowColors, type Appearance } from "./window-appearance";
 
 protocol.registerSchemesAsPrivileged([{
   scheme: "tracker", privileges: { standard: true, secure: true, supportFetchAPI: true },
@@ -30,9 +32,8 @@ let startupError = "";
 let modelDownloads: LocalModelDownloads;
 let modelEngine: LocalModelEngine;
 let shuttingDown = false;
-type Appearance = "auto" | "dark" | "light";
 type AnalysisProvider = "ollama" | "openai" | "builtin";
-let settings: { databasePath?: string; encryptedApiKey?: string; appearance?: Appearance;
+let settings: { databasePath?: string; encryptedApiKey?: string; appearance?: Appearance; sidebarCollapsed?: boolean;
   captureLogs?: boolean; analysisProvider?: AnalysisProvider; ollamaUrl?: string; ollamaModel?: string; builtInModelId?: string;
   acceptedModelTerms?: AcceptedModelTerms } = {};
 let logQueue = Promise.resolve();
@@ -110,7 +111,8 @@ function state() {
     totalMemory: totalmem(), availableMemory: freemem(),
     canSaveApiKey: safeStorage.isEncryptionAvailable(),
     backupsPath: store.backupsPath,
-    appearance: settings.appearance || "auto", captureLogs: Boolean(settings.captureLogs), logsPath: logsPath(),
+    appearance: settings.appearance || "auto", sidebarCollapsed: settings.sidebarCollapsed === true,
+    captureLogs: Boolean(settings.captureLogs), logsPath: logsPath(),
     platform: process.platform,
   };
 }
@@ -394,8 +396,17 @@ function registerIpc() {
   ipcMain.handle("desktop:set-appearance", async (_event, value: Appearance) => {
     if (value !== "auto" && value !== "dark" && value !== "light") throw new Error("Choose an appearance option.");
     settings.appearance = value;
+    nativeTheme.themeSource = value === "auto" ? "system" : value;
+    updateWindowAppearance();
     await saveSettings();
     return state();
+  });
+  ipcMain.handle("desktop:set-sidebar-collapsed", async (_event, value: boolean) => {
+    if (typeof value !== "boolean") throw new Error("Choose a navigation layout.");
+    const previous = settings.sidebarCollapsed;
+    settings.sidebarCollapsed = value;
+    try { await saveSettings(); return state(); }
+    catch (error) { settings.sidebarCollapsed = previous; throw error; }
   });
   ipcMain.handle("desktop:set-log-capture", async (_event, value: boolean) => {
     if (typeof value !== "boolean") throw new Error("Choose whether to capture logs.");
@@ -491,13 +502,22 @@ function openWebLink(url: string) {
   } catch { /* Ignore malformed links. */ }
 }
 
+function updateWindowAppearance() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const colors = windowColors(settings.appearance, nativeTheme.shouldUseDarkColors);
+  mainWindow.setBackgroundColor(colors.background);
+  if (process.platform !== "darwin") {
+    mainWindow.setTitleBarOverlay({ color: colors.background, symbolColor: colors.foreground });
+  }
+}
+
 function createWindow() {
   const workArea = screen.getPrimaryDisplay().workAreaSize;
-  const dark = settings.appearance === "dark" || (settings.appearance !== "light" && nativeTheme.shouldUseDarkColors);
   mainWindow = new BrowserWindow({
     width: Math.min(1550, workArea.width), height: Math.min(850, workArea.height),
     minWidth: Math.min(790, workArea.width), minHeight: Math.min(620, workArea.height),
-    backgroundColor: dark ? "#191b22" : "#f7f5f1", title: "PM Application Tracker", autoHideMenuBar: true,
+    ...nativeWindowShell(process.platform, settings.appearance, nativeTheme.shouldUseDarkColors),
+    title: APP_NAME, autoHideMenuBar: true,
     icon: path.join(rendererRoot, "icon.png"),
     webPreferences: { preload: path.join(appRoot, "preload.cjs"), contextIsolation: true,
       nodeIntegration: false, sandbox: true, webSecurity: true },
@@ -523,9 +543,11 @@ if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on("second-instance", () => { mainWindow?.show(); mainWindow?.focus(); });
   app.whenReady().then(async () => {
-    app.setName("PM Application Tracker");
+    await preserveApplicationProfile(app);
     store = new DesktopStore(app.getPath("userData"));
     await loadSettings();
+    nativeTheme.themeSource = settings.appearance === "auto" || !settings.appearance ? "system" : settings.appearance;
+    nativeTheme.on("updated", updateWindowAppearance);
     const modelsChanged = () => mainWindow?.webContents.send("desktop:local-models-changed", state());
     const platformFolder = `${process.platform === "darwin" ? "mac" : "win"}-${process.arch}`;
     const runtimeFolder = app.isPackaged ? path.join(process.resourcesPath, "local-runtime")
@@ -541,9 +563,9 @@ else {
     createMenu();
     createWindow();
     app.on("activate", () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
-  }).catch((error) => { console.error("Could not start PM Application Tracker", error);
+  }).catch((error) => { console.error("Could not start Zebby", error);
     logDiagnostic("Could not start the app", error);
-    dialog.showErrorBox("Could not start PM Application Tracker", String(error)); app.quit(); });
+    dialog.showErrorBox("Could not start Zebby", String(error)); app.quit(); });
   app.on("before-quit", (event) => {
     if (store?.status.dirty) {
       event.preventDefault();

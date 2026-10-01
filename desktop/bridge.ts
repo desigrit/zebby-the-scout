@@ -19,6 +19,7 @@ export type DesktopState = {
   canSaveApiKey: boolean;
   backupsPath: string;
   appearance: "auto" | "dark" | "light";
+  sidebarCollapsed: boolean;
   captureLogs: boolean;
   logsPath: string;
   platform: string;
@@ -39,6 +40,7 @@ export type DesktopBridge = {
   deleteLocalModel(id: string): Promise<DesktopState>;
   openModelFolder(): Promise<string>;
   setAppearance(value: DesktopState["appearance"]): Promise<DesktopState>;
+  setSidebarCollapsed(value: boolean): Promise<DesktopState>;
   setLogCapture(value: boolean): Promise<DesktopState>;
   openLogs(): Promise<string>;
   downloadResume(id: string): Promise<boolean>;

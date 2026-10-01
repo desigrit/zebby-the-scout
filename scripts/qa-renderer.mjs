@@ -10,14 +10,14 @@ import { importanceForTerms } from "../desktop/plan-importance.ts";
 // Checks the compiled renderer with synthetic data in an invisible browser.
 // It does not launch Electron, read settings, or open an application database.
 const renderer = path.resolve("desktop-dist/renderer");
-const output = path.resolve("qa-output/renderer-1.2.0");
+const output = path.resolve("qa-output/renderer-1.3.0");
 const executablePath = process.env.PM_TRACKER_BROWSER || [
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
   "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
 ].find((candidate) => existsSync(candidate));
 const description = "Responsibilities\n\n• Lead discovery and product strategy\n• Prioritize roadmap work with design and engineering\n\nQualifications\n\nExperience delivering products and measuring customer outcomes.";
-const resume = { id: "resume-1", filename: "Raunak Oberoi - AI Product Manager.pdf", contentType: "application/pdf", size: 4, createdAt: "2026-09-01T12:00:00Z" };
+const resume = { id: "resume-1", filename: "Sample Product CV.pdf", contentType: "application/pdf", size: 4, createdAt: "2026-09-01T12:00:00Z" };
 const base = { team: "", listingUrl: "https://example.org/jobs/pm", jobDescription: description, notes: description,
   snapshotText: description, snapshotSource: "page", snapshotCapturedAt: "2026-09-29T12:00:00Z",
   appliedDate: "2026-09-29", matchStrength: 92, matchNotes: "Strong product strategy experience.", matchAnalyzedAt: "2026-09-29T12:00:00Z",
@@ -40,7 +40,7 @@ let plans = [plan];
 let lastCurrentOverview = plan.currentOverview;
 const state = { filePath: "example.sqlite", filename: "Applications.sqlite", dirty: false, startupError: "", hasApiKey: false,
   analysisProvider: "ollama", ollamaUrl: "http://localhost:11434", ollamaModel: "qwen3.8:27b", canSaveApiKey: true,
-  backupsPath: "", appearance: "light", captureLogs: false, logsPath: "", platform: "win32",
+  backupsPath: "", appearance: "light", sidebarCollapsed: false, captureLogs: false, logsPath: "", platform: "win32",
   builtInModelId: "", acceptedModelTerms: [], localModels: LOCAL_MODELS.map(({ id }) =>
     ({ id, status: "not-installed", downloadedBytes: 0, error: "" })), modelsFolder: "example/Models",
   localEngine: { status: "idle", modelId: "" }, totalMemory: 32e9, availableMemory: 16e9 };
@@ -77,12 +77,30 @@ try {
     });
     await page.screenshot({ path: path.join(output, filename), fullPage });
   }
+  async function captureAnalysis(filename, docsFilename) {
+    const viewport = page.viewportSize();
+    await page.setViewportSize({ ...viewport, height: 1200 });
+    const section = page.locator(".analysis-section");
+    await section.evaluate((element) => window.scrollTo({
+      top: element.getBoundingClientRect().top + window.scrollY - 68, behavior: "instant",
+    }));
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      await Promise.all(document.getAnimations().filter((animation) =>
+        animation.effect?.getTiming().iterations !== Infinity).map((animation) => animation.finished.catch(() => undefined)));
+    });
+    await section.screenshot({ path: path.join(output, filename) });
+    if (process.env.ZEBBY_CAPTURE_DOCS && docsFilename) await page.screenshot({ path: path.join(output, docsFilename) });
+    await page.setViewportSize(viewport);
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+  }
   await page.addInitScript(({ initialState, licenseVersions }) => {
     const listeners = new Set();
     const snapshot = () => structuredClone(initialState);
     const update = (id, change) => { initialState.localModels = initialState.localModels.map((item) =>
       item.id === id ? { ...item, ...change } : item); for (const listener of listeners) listener(snapshot()); };
-    window.modelQA = { confirmDelete: false, deleteRequests: [], selections: [], update,
+    window.modelQA = { confirmDelete: false, deleteRequests: [], selections: [], rejectSidebarSave: false, update,
       setPlatform: (platform) => { initialState.platform = platform; } };
     window.desktop = { state: async () => initialState, onDatabaseChanged: () => () => {}, onNavigate: () => () => {},
       onLocalModelsChanged: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
@@ -90,6 +108,10 @@ try {
       listOllamaModels: async () => ["qwen3.8:27b", "qwen3:8b"],
       setAnalysisProvider: async (provider) => { initialState.analysisProvider = provider; return snapshot(); },
       setAppearance: async (appearance) => { initialState.appearance = appearance; return snapshot(); },
+      setSidebarCollapsed: async (collapsed) => {
+        if (window.modelQA.rejectSidebarSave) throw new Error("Synthetic settings save error");
+        initialState.sidebarCollapsed = collapsed; return snapshot();
+      },
       selectLocalModel: async (id) => { window.modelQA.selections.push(id); initialState.builtInModelId = id;
         if ((!licenseVersions[id] || initialState.acceptedModelTerms.includes(id)) &&
           initialState.localModels.find((item) => item.id === id).status !== "ready")
@@ -156,6 +178,20 @@ try {
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   const nav = page.getByRole("navigation", { name: "Workspace" });
   await page.getByRole("main", { name: "Plan", exact: true }).waitFor();
+  assert.equal(await page.title(), "Zebby");
+  assert.equal(await page.locator(".desktop-titlebar").innerText(), "Zebby");
+  assert.equal(await page.locator(".sidebar-brand").innerText(), "");
+  const chrome = await page.locator(".desktop-titlebar").evaluate((element) => ({
+    height: element.getBoundingClientRect().height,
+    background: getComputedStyle(element).backgroundColor,
+    drag: getComputedStyle(element).getPropertyValue("-webkit-app-region"),
+    sidebar: getComputedStyle(document.querySelector(".titlebar-sidebar")).backgroundColor,
+    sidebarBody: getComputedStyle(document.querySelector(".desktop-sidebar")).backgroundColor,
+  }));
+  assert.equal(chrome.height, 44);
+  assert.equal(chrome.background, "rgb(244, 245, 247)");
+  assert.equal(chrome.drag, "drag");
+  assert.equal(chrome.sidebar, chrome.sidebarBody);
   assert.equal(await page.getByRole("heading", { name: "Plan", exact: true }).count(), 0);
   await page.getByRole("button", { name: "Refresh analysis" }).click();
   await page.getByRole("status", { name: "Analyzing role" }).waitFor();
@@ -169,10 +205,25 @@ try {
   assert.equal(await page.getByText("Percentages estimate importance to the job.", { exact: false }).count(), 1);
   assert.equal(await page.locator(".brand-mark").evaluate((element) => element.complete && element.naturalWidth > 0), true);
   await captureSettings("plan-windows-light.png");
-  await page.locator(".analysis-section").screenshot({ path: path.join(output, "plan-analysis-light.png") });
+  const overviewBeforeCollapse = await page.getByRole("textbox", { name: "Current CV Overview", exact: true }).inputValue();
+  await page.getByRole("button", { name: "Collapse navigation", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => document.querySelector(".sidebar-toggle")?.getAttribute("aria-expanded") === "false" && !document.querySelector(".sidebar-toggle")?.disabled);
+  assert.equal(await nav.locator(".nav-label").first().isVisible(), false);
+  assert.equal(await nav.getByRole("button", { name: "Plan", exact: true }).isVisible(), true);
+  assert.equal(await page.locator(".desktop-sidebar").evaluate((element) => element.getBoundingClientRect().width), 96);
+  assert.equal(await page.locator(".titlebar-sidebar").evaluate((element) => element.getBoundingClientRect().width), 96);
+  assert.equal(await page.getByRole("textbox", { name: "Current CV Overview", exact: true }).inputValue(), overviewBeforeCollapse);
+  assert.equal(await page.evaluate(async () => (await window.desktop.state()).sidebarCollapsed), true);
+  await captureSettings("plan-windows-collapsed-light.png");
+  await page.getByRole("button", { name: "Expand navigation", exact: true }).focus();
+  await page.keyboard.press("Space");
+  await page.getByRole("button", { name: "Collapse navigation", exact: true }).waitFor();
+  assert.equal(await nav.locator(".nav-label").first().isVisible(), true);
+  await captureAnalysis("plan-analysis-light.png", "readme-plan.png");
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
   await captureSettings("plan-windows-dark.png");
-  await page.locator(".analysis-section").screenshot({ path: path.join(output, "plan-analysis-dark.png") });
+  await captureAnalysis("plan-analysis-dark.png");
   await page.setViewportSize({ width: 1050, height: 900 });
   await captureSettings("plan-windows-compact.png");
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
@@ -264,6 +315,22 @@ try {
   await completeAnalysis("/api/applications/app-2/analyze");
   await table.getByText("89%").first().waitFor();
   await page.waitForFunction(() => document.querySelectorAll(".match-progress").length === 0);
+  await captureSettings("applications-ready-light.png", false);
+  await page.getByRole("button", { name: "Collapse navigation", exact: true }).click();
+  await page.getByRole("button", { name: "Expand navigation", exact: true }).waitFor();
+  await captureSettings("applications-collapsed-light.png", false);
+  await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
+  await captureSettings("applications-collapsed-dark.png", false);
+  await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
+  await page.getByRole("button", { name: "Expand navigation", exact: true }).click();
+  await page.getByRole("button", { name: "Collapse navigation", exact: true }).waitFor();
+  if (process.env.ZEBBY_CAPTURE_DOCS) {
+    await page.getByRole("button", { name: "Plan", exact: true }).click();
+    await page.getByRole("button", { name: "Applications", exact: true }).click();
+    await page.getByRole("button", { name: "Add application", exact: true }).waitFor();
+    await page.mouse.move(30, 30);
+    await captureSettings("readme-applications.png", false);
+  }
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
   await captureSettings("applications-dark.png", false);
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -339,9 +406,17 @@ try {
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.evaluate(() => { window.modelQA.setPlatform("darwin"); });
   await page.getByRole("radio", { name: "Light", exact: true }).check();
+  if (process.env.ZEBBY_CAPTURE_DOCS) await captureSettings("readme-settings.png", false);
   await page.getByText("Delete downloaded models here before removing the app from your Mac.", { exact: false }).waitFor();
   assert.equal(await page.getByRole("button", { name: /uninstall/i }).count(), 0);
   await captureSettings("settings-mac-ready.png");
+  await page.getByRole("button", { name: "Collapse navigation", exact: true }).click();
+  await page.getByRole("button", { name: "Expand navigation", exact: true }).waitFor();
+  await captureSettings("settings-mac-collapsed-light.png");
+  await page.getByRole("button", { name: "Database settings", exact: true }).click();
+  assert.equal(await nav.getByRole("button", { name: "Settings", exact: true }).getAttribute("aria-current"), "page");
+  await page.getByRole("button", { name: "Expand navigation", exact: true }).click();
+  await page.getByRole("button", { name: "Collapse navigation", exact: true }).waitFor();
   await page.setViewportSize({ width: 790, height: 850 });
   await page.getByRole("radio", { name: "Dark", exact: true }).check();
   await captureSettings("settings-mac-compact-dark.png");
@@ -382,6 +457,16 @@ try {
   await page.setViewportSize({ width: 790, height: 850 });
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
   await captureSettings("plan-mac-compact-dark.png");
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await page.evaluate(() => { window.modelQA.rejectSidebarSave = true; });
+  await page.getByRole("button", { name: "Collapse navigation", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "Could not save the navigation preference. Try again." }).waitFor();
+  assert.equal(await page.locator(".desktop-shell").evaluate((element) => element.classList.contains("sidebar-collapsed")), false);
+  await page.evaluate(() => { window.modelQA.rejectSidebarSave = false; });
+  await page.getByRole("button", { name: "Collapse navigation", exact: true }).click();
+  await page.getByRole("button", { name: "Expand navigation", exact: true }).waitFor();
+  assert.equal(await page.getByRole("alert").filter({ hasText: "Could not save the navigation preference. Try again." }).count(), 0);
+  await captureSettings("plan-mac-collapsed-dark.png");
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   assert.deepEqual(errors, []);
   console.log(`Headless renderer checks passed. No desktop app was launched. Screenshots: ${output}`);
