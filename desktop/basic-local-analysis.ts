@@ -101,7 +101,8 @@ export async function analyzeBasicLocal(input: Record<string, unknown>, plan: bo
   const overview = usable ? suggestion : current;
   const changed = overview.replace(/\s+/g, " ") !== current.replace(/\s+/g, " ");
   return { keywords: evidence.keywords.map((text, index) => ({ text, importance: evidence.keywordImportance[index] })),
-    themes: evidence.themes.map((text, index) => ({ text, importance: evidence.themeImportance[index] })), score: evidence.score, overview,
+    themes: evidence.themes.map((text, index) => ({ text, importance: evidence.themeImportance[index] })), score: evidence.score,
+    explanation: basicMatchExplanation(evidence), overview,
     overviewRationale: changed
       ? "The compact local model suggested light wording edits using the supplied resume. Review the draft for accuracy and style. Match strength reflects basic keyword coverage."
       : "The compact local model did not produce a supported, useful revision, so your current overview is retained. Use the listed themes to guide your edits. Match strength reflects basic keyword coverage." };

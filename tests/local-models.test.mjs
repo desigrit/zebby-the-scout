@@ -54,6 +54,7 @@ test("Gemma bounds repetitive output fields while retaining the entire source an
   const schema = localModelResponseSchema("gemma3-270m", planSchema, input);
   assert.equal(schema.properties.overview.maxLength, input.currentCvOverview.length * 2);
   assert.equal(schema.properties.overviewRationale.maxLength, 600);
+  assert.equal(schema.properties.explanation.maxLength, 800);
   assert.equal(schema.properties.keywords.items.properties.text.maxLength, 80);
   assert.equal(schema.properties.themes.items.properties.text.maxLength, 180);
   assert.deepEqual(schema.properties.keywords.items.properties.importance, planSchema.properties.keywords.items.properties.importance);
@@ -302,6 +303,7 @@ test("SmolLM2's basic score uses resume evidence and is consistent between Plan 
   assert.equal(evidence.score, Math.round(evidence.matched.length / evidence.keywords.length * 100));
   const match = await analyzeBasicLocal(input, false, async () => { throw new Error("Keyword coverage needs no generation."); });
   const plan = await analyzeBasicLocal(input, true, async () => ({ overview: currentCvOverview }));
+  assert.equal(plan.explanation, match.explanation);
   assert.equal(match.score, plan.score); assert.match(match.explanation, /Basic keyword coverage/);
   assert.equal(plan.overview, currentCvOverview); assert.match(plan.overviewRationale, /retained/);
 });

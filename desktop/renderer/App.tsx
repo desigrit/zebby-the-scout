@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { ArrowRight, ArrowUpRight, BriefcaseBusiness, Check, ClipboardList, Database, FileText, FolderOpen,
+import { ArrowRight, ArrowUpRight, BriefcaseBusiness, Check, ClipboardList, FileText, FolderOpen,
   KeyRound, LoaderCircle, Monitor, Moon, Plus, RefreshCw, RotateCw, Search, Settings2, Sparkles, Sun, Trash2 } from "lucide-react";
 import ApplicationDashboard from "../../app/application-dashboard";
 import LocationEditor from "../../app/location-editor";
@@ -81,6 +81,7 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, bu
     (["listingUrl", "company", "title", "team", "locations", "description",
       "currentOverview", "resumeId"] as const).every((key) => draft[key] === selectedPlan[key]);
   const matchStrength = matchIsCurrent ? selectedPlan.matchStrength : null;
+  const matchNotes = matchIsCurrent ? selectedPlan.matchNotes : "";
   const overviewRationale = matchIsCurrent && draft.overview === selectedPlan.overview
     ? selectedPlan.overviewRationale : "";
   const overviewUnchanged = draft.overview.trim().replace(/\s+/g, " ") ===
@@ -324,16 +325,14 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, bu
                 setResumeFile(file); if (file) update("resumeId", ""); }} />
             <small>{resumeFile ? `${resumeFile.name} will be saved in this database with the plan.`
               : "PDF, DOCX, or DOC, up to 10 MB. You can reuse this file for applications."}</small></label>
-        </div>
-        <div className="plan-section analysis-section">
-          <div className="plan-section-heading"><div><h3>Resume direction</h3>
-            <p>Generated suggestions are editable. Check them against the posting and your experience.</p></div>
-            {!hasAnalysis && <button className="button button-secondary analysis-button" type="button" onClick={() => void analyze()}
-              disabled={busy || !canAnalyze}>
-              <Sparkles size={17} aria-hidden="true" />
-              {`Analyze with ${analysisProvider === "ollama" ? (ollamaModel || "Ollama") : analysisProvider === "builtin"
-                ? (builtInModel?.name || "a local model") : "GPT-6 Sol"}`}
-            </button>}
+          <div className="plan-analyze-actions">
+            <button className="button button-primary analysis-button" type="button" onClick={() => void analyze()}
+              disabled={busy || !canAnalyze} aria-label={analyzing ? "Analysis in progress" : "Analyze"}>
+              {analyzing ? <LoaderCircle className="spin" size={17} aria-hidden="true" /> : <Sparkles size={17} aria-hidden="true" />}
+              Analyze
+            </button>
+            <small>{analysisProvider === "ollama" ? (ollamaModel || "Ollama") : analysisProvider === "builtin"
+              ? (builtInModel?.name || "Local model") : "GPT-6 Sol"}</small>
           </div>
           {analysisProvider === "openai" && !hasApiKey && <p className="analysis-hint"><KeyRound size={16} aria-hidden="true" />
             Add an OpenAI API key in <button type="button" onClick={onOpenSettings}>Settings</button> to run analysis.</p>}
@@ -344,6 +343,10 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, bu
           {analysisProvider === "builtin" && builtInReady && builtInModel?.basic && <p className="analysis-hint">
             Compact mode uses basic keyword coverage and limited overview suggestions.</p>}
           {!canAnalyze && <p className="analysis-requirements">Add a job description of at least 100 characters, your current CV overview, and a resume to analyze this role.</p>}
+        </div>
+        <div className="plan-section analysis-section">
+          <div className="plan-section-heading"><div><h3>Resume direction</h3>
+            <p>Generated suggestions are editable. Check them against the posting and your experience.</p></div></div>
           <div className="match-result" aria-busy={analyzing}><span>Resume match</span>
             {analyzing ? <MatchProgressRing label="Analyzing role" /> : <div className="match-result-value">
               <strong>{matchStrength === null ? "Not analyzed" : `${matchStrength}%`}</strong>
@@ -351,7 +354,12 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, bu
               {hasAnalysis && <button className="match-refresh" type="button" aria-label="Refresh analysis" title="Refresh analysis"
                 onClick={() => void analyze()} disabled={busy || !canAnalyze}><RefreshCw size={16} aria-hidden="true" /></button>}
             </div>}
-            <small>Estimated fit based on the selected resume and job posting.</small></div>
+            <small>Estimated fit based on the selected resume and job posting.</small>
+            {!analyzing && matchStrength !== null && <details className="match-why">
+              <summary>Why</summary>
+              <p>{matchNotes || "Refresh analysis to add an explanation for this saved score."}</p>
+            </details>}
+          </div>
           <p className="job-importance-hint">Percentages estimate importance to the job. Higher values mark bigger priorities for your CV.</p>
           <div className="analysis-grid">
             <PlanRecommendations kind="keywords" values={draft.keywords} importance={keywordImportance} busy={busy}
@@ -433,7 +441,7 @@ function SettingsView({ state, onState }: { state: DesktopState; onState: (value
   async function choose(kind: "open" | "create") {
     setWorking(true); setError(""); setNotice("");
     try { const result = await window.desktop!.chooseDatabase(kind);
-      if (result) { onState(result); setNotice(kind === "create" ? "Database copy created and ready." : "Database opened."); }
+      if (result) { onState(result); setNotice(kind === "create" ? "New database created." : "Database opened."); }
     } catch (cause) { setError(errorText(cause)); }
     finally { setWorking(false); }
   }
@@ -461,17 +469,14 @@ function SettingsView({ state, onState }: { state: DesktopState; onState: (value
     finally { setWorking(false); }
   }
 
-  async function changeLogCapture(value: boolean) {
+  async function openLogs() {
     setWorking(true); setError(""); setNotice("");
-    onState({ ...state, captureLogs: value });
-    try { onState(await window.desktop!.setLogCapture(value));
-      setNotice(value ? "Diagnostic logging is on." : "Diagnostic logging is off."); }
-    catch (cause) { onState(state); setError(errorText(cause)); }
+    try { await window.desktop!.openLogs(); }
+    catch (cause) { setError(errorText(cause)); }
     finally { setWorking(false); }
   }
 
-  return <main className="desktop-main settings-page">
-    <div className="page-heading"><div><h1>Settings</h1><p>Preferences for this computer.</p></div></div>
+  return <main className="desktop-main settings-page" aria-label="Settings">
     {error && <p className="form-error" role="alert">{error}</p>}
     {notice && <p className="notice" role="status">{notice}</p>}
     <section className="settings-section" aria-labelledby="database-settings">
@@ -484,11 +489,11 @@ function SettingsView({ state, onState }: { state: DesktopState; onState: (value
         <div className="settings-actions"><button className="button button-secondary" type="button" onClick={() => void choose("open")} disabled={working}>
           <FolderOpen size={17} aria-hidden="true" /> Open database</button>
           <button className="button button-secondary" type="button" onClick={() => void choose("create")} disabled={working}>
-          <Plus size={17} aria-hidden="true" /> Create database copy</button>
+          <Plus size={17} aria-hidden="true" /> Create new database</button>
           {state.dirty && <button className="button button-primary" type="button" onClick={() => void retry()} disabled={working}>
             <RotateCw size={16} aria-hidden="true" /> Retry save</button>}
         </div>
-        <p className="settings-help">The app creates a local database automatically. Create database copy saves your current plans and applications to a new file, including a cloud folder. Quit and wait for sync before switching computers. Weekly backups stay local.</p>
+        <p className="settings-help">Open an existing file or create an empty database.</p>
       </div>
     </section>
     <section className="settings-section" aria-labelledby="ai-settings">
@@ -552,12 +557,13 @@ function SettingsView({ state, onState }: { state: DesktopState; onState: (value
       <div className="settings-section-heading"><h2 id="logs-settings">Logs</h2>
         <p>For troubleshooting</p></div>
       <div className="settings-content">
-        <label className="log-toggle"><span><strong>Capture diagnostic logs</strong><small>Save app errors on this computer when something goes wrong.</small></span>
-          <input type="checkbox" role="switch" checked={state.captureLogs} disabled={working}
-            onChange={(event) => void changeLogCapture(event.target.checked)} /><span className="switch-track" aria-hidden="true" /></label>
-        {state.captureLogs && <button className="settings-link" type="button" onClick={() => void window.desktop!.openLogs()}>
-          Open logs folder <ArrowUpRight size={15} aria-hidden="true" /></button>}
-        <p className="settings-help">Logs may include file paths and error details. They are never added to your database.</p>
+        <p className="settings-help">Errors are saved automatically on this computer.</p>
+        <div className="settings-links">
+          <button className="settings-link" type="button" onClick={() => void openLogs()} disabled={working}>
+            Open logs folder <ArrowUpRight size={15} aria-hidden="true" /></button>
+          <a className="settings-link" href="https://github.com/desigrit/zebby-the-scout/issues/new" target="_blank" rel="noopener noreferrer">
+            Report an issue <ArrowUpRight size={15} aria-hidden="true" /></a>
+        </div>
       </div>
     </section>
   </main>;
@@ -659,12 +665,9 @@ export default function App() {
           aria-label="Settings" title={state.sidebarCollapsed ? "Settings" : undefined}
           aria-current={tab === "settings" ? "page" : undefined}><Settings2 size={19} aria-hidden="true" /><span className="nav-label">Settings</span></button>
       </nav>
-      {state.filePath && <div className="sidebar-database" title={state.filePath}>
-        {state.sidebarCollapsed ? <button className="sidebar-database-button" type="button" onClick={() => navigate("settings")}
-          aria-label="Database settings" title={`${state.filename}${state.dirty ? ", save pending" : ""}`}>
-          <Database size={19} aria-hidden="true" />{state.dirty && <i className="database-pending" aria-hidden="true" />}</button>
-          : <><span>Current database</span><strong>{state.filename}</strong>
-            {state.dirty && <small>Save pending</small>}</>}
+      {state.filePath && !state.sidebarCollapsed && <div className="sidebar-database" title={state.filePath}>
+        <span>Current database</span><strong>{state.filename}</strong>
+        {state.dirty && <small>Save pending</small>}
       </div>}
     </aside>
     <div className="desktop-workspace">

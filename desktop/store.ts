@@ -1,6 +1,6 @@
 import { randomUUID, createHash } from "node:crypto";
-import { existsSync } from "node:fs";
-import { copyFile, mkdir, readFile, readdir, rename, stat, unlink } from "node:fs/promises";
+import { constants, existsSync } from "node:fs";
+import { copyFile, mkdir, readFile, rename, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync, backup } from "node:sqlite";
 import { z } from "zod";
@@ -29,12 +29,13 @@ export type Plan = {
   overview: string;
   overviewRationale: string;
   matchStrength: number | null;
+  matchNotes: string;
   matchAnalyzedAt: string;
   createdAt: string;
   updatedAt: string;
 };
 
-export type PlanInput = Omit<Plan, "id" | "createdAt" | "updatedAt" | "snapshotCapturedAt" | "snapshotText" | "snapshotSource" | "overviewRationale" | "matchStrength" | "matchAnalyzedAt" | "keywordImportance" | "themeImportance"> & {
+export type PlanInput = Omit<Plan, "id" | "createdAt" | "updatedAt" | "snapshotCapturedAt" | "snapshotText" | "snapshotSource" | "overviewRationale" | "matchStrength" | "matchNotes" | "matchAnalyzedAt" | "keywordImportance" | "themeImportance"> & {
   snapshotText?: string;
   snapshotSource?: Plan["snapshotSource"];
 };
@@ -128,6 +129,7 @@ function mapPlan(row: Row): Plan {
     themeImportance: importanceForTerms(themes, JSON.parse(String(row.theme_importance_json || "[]")), themes),
     overview: String(row.overview || ""),
     overviewRationale: String(row.overview_rationale || ""),
+    matchNotes: String(row.match_notes || ""),
     matchStrength: row.match_strength === null || row.match_strength === undefined ? null : Number(row.match_strength),
     matchAnalyzedAt: String(row.match_analyzed_at || ""),
     createdAt: String(row.created_at), updatedAt: String(row.updated_at),
@@ -166,19 +168,20 @@ function createSchema(db: DatabaseSync) {
       keyword_importance_json TEXT NOT NULL DEFAULT '[]', theme_importance_json TEXT NOT NULL DEFAULT '[]',
       overview TEXT NOT NULL DEFAULT '', overview_rationale TEXT NOT NULL DEFAULT '',
       match_strength INTEGER CHECK (match_strength BETWEEN 0 AND 100),
+      match_notes TEXT NOT NULL DEFAULT '',
       match_analyzed_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );
     CREATE INDEX applications_date_idx ON applications(applied_date DESC, created_at DESC);
     CREATE INDEX plans_updated_idx ON plans(updated_at DESC);
     CREATE TABLE workspace_preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-    PRAGMA user_version = 9;
+    PRAGMA user_version = 10;
   `);
 }
 
 function migrate(db: DatabaseSync): boolean {
   const version = Number((db.prepare("PRAGMA user_version").get() as Row).user_version);
-  if (version === 9) return false;
-  if (version < 1 || version > 8) throw new Error("This is not a supported Zebby database.");
+  if (version === 10) return false;
+  if (version < 1 || version > 9) throw new Error("This is not a supported Zebby database.");
   if (version === 1) db.exec(`
     CREATE TABLE plans (
       id TEXT PRIMARY KEY, listing_url TEXT NOT NULL, company TEXT NOT NULL DEFAULT '',
@@ -260,7 +263,7 @@ function migrate(db: DatabaseSync): boolean {
     PRAGMA user_version = 8;
     COMMIT;
   `);
-  db.exec(`
+  if (version <= 8) db.exec(`
     BEGIN IMMEDIATE;
     ALTER TABLE plans ADD COLUMN keyword_importance_json TEXT NOT NULL DEFAULT '[]';
     ALTER TABLE plans ADD COLUMN theme_importance_json TEXT NOT NULL DEFAULT '[]';
@@ -270,6 +273,12 @@ function migrate(db: DatabaseSync): boolean {
     PRAGMA user_version = 9;
     COMMIT;
   `);
+  db.exec(`
+    BEGIN IMMEDIATE;
+    ALTER TABLE plans ADD COLUMN match_notes TEXT NOT NULL DEFAULT '';
+    PRAGMA user_version = 10;
+    COMMIT;
+  `);
   return true;
 }
 
@@ -277,7 +286,7 @@ function validate(db: DatabaseSync) {
   const check = (db.prepare("PRAGMA quick_check").get() as Row).quick_check;
   if (check !== "ok") throw new Error("The selected database failed its integrity check.");
   const version = Number((db.prepare("PRAGMA user_version").get() as Row).user_version);
-  if (version < 1 || version > 9) throw new Error("This is not a supported Zebby database.");
+  if (version < 1 || version > 10) throw new Error("This is not a supported Zebby database.");
   const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Row[];
   const names = new Set(tables.map((row) => String(row.name)));
   if (!names.has("applications") || !names.has("resumes")) {
@@ -311,6 +320,8 @@ export class DesktopStore {
   }
 
   async create(filePath: string) {
+    await this.writeQueue;
+    if (this.dirty) throw new Error("Save the pending database changes before creating a new file.");
     const target = path.resolve(filePath);
     if (existsSync(target)) throw new Error("That file already exists. Use Open database instead.");
     await mkdir(path.dirname(target), { recursive: true });
@@ -321,24 +332,13 @@ export class DesktopStore {
       createSchema(db);
     } finally { db.close(); }
     try {
-      await copyFile(scratch, target);
+      await copyFile(scratch, target, constants.COPYFILE_EXCL);
       await this.open(target);
     } finally { await unlink(scratch).catch(() => undefined); }
   }
 
-  async copyCurrentTo(filePath: string) {
-    const target = path.resolve(filePath);
-    if (existsSync(target)) throw new Error("That file already exists. Choose another name.");
-    await this.writeQueue;
-    if (this.dirty) throw new Error("Retry the pending save before copying this database.");
-    await this.assertCurrentFile();
-    await mkdir(path.dirname(target), { recursive: true });
-    await copyFile(this.filePath, target);
-    await this.open(target);
-    return this.status;
-  }
-
   async open(filePath: string) {
+    await this.writeQueue;
     if (this.dirty) throw new Error("Save the pending database changes before switching files.");
     const target = path.resolve(filePath);
     if (!(await stat(target).catch(() => null))?.isFile()) throw new Error("The database file could not be found. Wait for cloud sync, then try again.");
@@ -348,11 +348,11 @@ export class DesktopStore {
       validate(checkDb);
       previousVersion = Number((checkDb.prepare("PRAGMA user_version").get() as Row).user_version);
     } finally { checkDb.close(); }
-    if (previousVersion < 9) {
+    if (previousVersion < 10) {
       await mkdir(this.backupsPath, { recursive: true });
       const prefix = createHash("sha256").update(target.toLowerCase()).digest("hex").slice(0, 12);
       await copyFile(target, path.join(this.backupsPath,
-        `${prefix}-${new Date().toISOString().slice(0, 10)}-before-v9-${randomUUID()}.sqlite`));
+        `${prefix}-${new Date().toISOString().slice(0, 10)}-before-v10-${randomUUID()}.sqlite`));
     }
     const workingDir = path.join(this.userData, "working");
     await mkdir(workingDir, { recursive: true });
@@ -374,7 +374,6 @@ export class DesktopStore {
     this.syncedHash = await hashFile(target);
     this.dirty = migrated;
     if (migrated) await this.flush();
-    await this.weeklyBackup();
     return this.status;
   }
 
@@ -396,7 +395,6 @@ export class DesktopStore {
       await rename(temp, this.filePath);
       this.syncedHash = await hashFile(this.filePath);
       this.dirty = false;
-      await this.weeklyBackup().catch((error) => console.error("Weekly backup failed", error));
     } finally { await unlink(temp).catch(() => undefined); }
   }
 
@@ -420,19 +418,6 @@ export class DesktopStore {
     });
     this.writeQueue = run.catch(() => undefined);
     return run;
-  }
-
-  private async weeklyBackup() {
-    await mkdir(this.backupsPath, { recursive: true });
-    const prefix = createHash("sha256").update(this.filePath.toLowerCase()).digest("hex").slice(0, 12);
-    const backups = (await readdir(this.backupsPath)).filter((name) => name.startsWith(prefix + "-") && name.endsWith(".sqlite")).sort().reverse();
-    const newest = backups[0] ? await stat(path.join(this.backupsPath, backups[0])).catch(() => null) : null;
-    if (!newest || Date.now() - newest.mtimeMs >= 7 * 24 * 60 * 60 * 1000) {
-      const name = `${prefix}-${new Date().toISOString().slice(0, 10)}.sqlite`;
-      const target = path.join(this.backupsPath, name);
-      if (!existsSync(target)) await copyFile(this.filePath, target);
-    }
-    for (const old of backups.slice(12)) await unlink(path.join(this.backupsPath, old)).catch(() => undefined);
   }
 
   listApplications(): Application[] {
@@ -599,11 +584,12 @@ export class DesktopStore {
           locations = ?, description = ?, current_overview = ?, resume_id = ?,
           keywords_json = ?, themes_json = ?, overview = ?, overview_rationale = ?,
           snapshot_text = ?, snapshot_captured_at = ?, snapshot_source = ?,
-          match_strength = ?, match_analyzed_at = ?, keyword_importance_json = ?, theme_importance_json = ?, updated_at = ? WHERE id = ?`)
+          match_strength = ?, match_analyzed_at = ?, match_notes = ?, keyword_importance_json = ?, theme_importance_json = ?, updated_at = ? WHERE id = ?`)
           .run(...fields, keepRationale ? String(previous.overview_rationale || "") : "",
             ...snapshot, sameSource && previous.match_strength !== null
             ? Number(previous.match_strength) : null,
             sameSource ? String(previous.match_analyzed_at || "") : "",
+            sameSource ? String(previous.match_notes || "") : "",
             JSON.stringify(sameJob ? importanceForTerms(JSON.parse(String(previous.keywords_json)),
               JSON.parse(String(previous.keyword_importance_json)), item.keywords.filter(Boolean)) : []),
             JSON.stringify(sameJob ? importanceForTerms(JSON.parse(String(previous.themes_json)),
@@ -624,11 +610,12 @@ export class DesktopStore {
 
   async savePlanAnalysis(id: string, expectedUpdatedAt: string, keywords: string[],
     themes: string[], overview: string, overviewRationale: string, matchStrength: number,
-    keywordImportance: number[] = [], themeImportance: number[] = []): Promise<Plan> {
+    keywordImportance: number[] = [], themeImportance: number[] = [], matchNotes = ""): Promise<Plan> {
     if (!Number.isInteger(matchStrength) || matchStrength < 0 || matchStrength > 100) {
       throw new Error("The match score must be between 0 and 100.");
     }
     if (!overviewRationale.trim()) throw new Error("The overview explanation was incomplete. Try again.");
+    if (!matchNotes.trim()) throw new Error("The match explanation was incomplete. Try again.");
     for (const [items, values] of [[keywords, keywordImportance], [themes, themeImportance]] as const) {
       if (values.length && (values.length !== items.length || values.some((value) => !Number.isInteger(value) || value < 0 || value > 100))) {
         throw new Error("Job importance must be between 0 and 100 for every recommendation.");
@@ -636,9 +623,9 @@ export class DesktopStore {
     }
     await this.mutate((db) => {
       const result = db.prepare(`UPDATE plans SET keywords_json = ?, themes_json = ?, overview = ?, overview_rationale = ?,
-        match_strength = ?, keyword_importance_json = ?, theme_importance_json = ?, match_analyzed_at = ?, updated_at = ? WHERE id = ? AND updated_at = ?`)
+        match_strength = ?, keyword_importance_json = ?, theme_importance_json = ?, match_notes = ?, match_analyzed_at = ?, updated_at = ? WHERE id = ? AND updated_at = ?`)
         .run(JSON.stringify(keywords), JSON.stringify(themes), overview, overviewRationale.trim().slice(0, 2000), matchStrength,
-          JSON.stringify(keywordImportance), JSON.stringify(themeImportance), new Date().toISOString(), new Date().toISOString(), id, expectedUpdatedAt);
+          JSON.stringify(keywordImportance), JSON.stringify(themeImportance), matchNotes.trim().slice(0, 4000), new Date().toISOString(), new Date().toISOString(), id, expectedUpdatedAt);
       if (!result.changes) throw new Error("This plan changed while analysis ran. Run it again from the latest version.");
       db.prepare(`INSERT INTO workspace_preferences (key, value)
         SELECT 'last_current_overview', current_overview FROM plans WHERE id = ?

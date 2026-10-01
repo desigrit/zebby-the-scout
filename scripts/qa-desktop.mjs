@@ -95,7 +95,7 @@ try {
         return Response.json({ output: [{ type: "message", content: [{ type: "output_text",
           text: JSON.stringify({ keywords: ["Discovery", "Strategy", "Roadmap", "Experimentation", "Activation", "Analytics"],
             themes: ["Lead discovery", "Shape strategy", "Prioritize roadmap", "Run experiments", "Measure outcomes"],
-            score: 83,
+            score: 83, explanation: "Discovery and strategy are supported. The resume shows less experimentation experience than this role requires.",
             overview: "I help teams find customer needs and build useful products with clear priorities.",
             overviewRationale: "The current overview already highlights customer needs and clear priorities, which match this role's discovery and roadmap work." }) }] }] });
       }
@@ -208,7 +208,7 @@ try {
           ? { score: 81, explanation: "Relevant product work, with one missing metric." }
           : { keywords: ["Discovery", "Strategy", "Roadmap", "Experimentation", "Activation", "Analytics"],
             themes: ["Lead discovery", "Shape strategy", "Prioritize roadmap", "Run experiments", "Measure outcomes"],
-            score: 86, overview: "I lead product strategy with customer evidence and clear priorities.",
+            score: 86, explanation: "Strong discovery and roadmap evidence. Analytics depth is less clear.", overview: "I lead product strategy with customer evidence and clear priorities.",
             overviewRationale: "Light revision: I brought customer evidence and product strategy forward to reflect the role's discovery focus." }) } });
       }
       return originalFetch(url, options);
@@ -270,12 +270,11 @@ try {
   await nav.getByRole("button", { name: "Settings" }).click();
   await page.getByRole("radio", { name: "Light" }).check();
   await page.locator('html[data-theme="light"]').waitFor();
-  await page.getByRole("switch", { name: "Capture diagnostic logs" }).check();
-  await page.getByText("Diagnostic logging is on.").waitFor();
+  assert.equal(await page.getByRole("switch").count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Open logs folder", exact: true }).count(), 1);
   const savedSettings = JSON.parse(await readFile(path.join(userData, "settings.json"), "utf8"));
   assert.equal(savedSettings.appearance, "light");
-  assert.equal(savedSettings.captureLogs, true);
-  assert.match(await readFile(path.join(userData, "Logs", "tracker.log"), "utf8"), /Diagnostic logging enabled/);
+  assert.equal(savedSettings.captureLogs, undefined);
   await nav.getByRole("button", { name: "Plan", exact: true }).click();
   await page.getByRole("button", { name: "New plan" }).click();
   await page.getByPlaceholder("https://...").fill("https://example.org/jobs/new-role");

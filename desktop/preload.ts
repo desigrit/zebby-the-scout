@@ -4,7 +4,6 @@ contextBridge.exposeInMainWorld("desktop", {
   state: () => ipcRenderer.invoke("desktop:state"),
   chooseDatabase: (kind: "open" | "create") => ipcRenderer.invoke("desktop:choose-database", kind),
   retrySync: () => ipcRenderer.invoke("desktop:retry-sync"),
-  openBackups: () => ipcRenderer.invoke("desktop:open-backups"),
   setApiKey: (value: string) => ipcRenderer.invoke("desktop:set-api-key", value),
   setAnalysisProvider: (value: "ollama" | "openai" | "builtin") => ipcRenderer.invoke("desktop:set-analysis-provider", value),
   setOllamaConfig: (value: { url: string; model: string }) => ipcRenderer.invoke("desktop:set-ollama-config", value),
@@ -16,7 +15,6 @@ contextBridge.exposeInMainWorld("desktop", {
   openModelFolder: () => ipcRenderer.invoke("desktop:open-model-folder"),
   setAppearance: (value: "auto" | "dark" | "light") => ipcRenderer.invoke("desktop:set-appearance", value),
   setSidebarCollapsed: (value: boolean) => ipcRenderer.invoke("desktop:set-sidebar-collapsed", value),
-  setLogCapture: (value: boolean) => ipcRenderer.invoke("desktop:set-log-capture", value),
   openLogs: () => ipcRenderer.invoke("desktop:open-logs"),
   downloadResume: (id: string) => ipcRenderer.invoke("desktop:download-resume", id),
   onDatabaseChanged: (callback: (state: unknown) => void) => {

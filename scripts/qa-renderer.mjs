@@ -10,7 +10,7 @@ import { importanceForTerms } from "../desktop/plan-importance.ts";
 // Checks the compiled renderer with synthetic data in an invisible browser.
 // It does not launch Electron, read settings, or open an application database.
 const renderer = path.resolve("desktop-dist/renderer");
-const output = path.resolve("qa-output/renderer-1.3.0");
+const output = path.resolve("qa-output/renderer-1.4.0");
 const executablePath = process.env.PM_TRACKER_BROWSER || [
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
   "C:/Program Files/Google/Chrome/Application/chrome.exe",
@@ -35,12 +35,12 @@ let plan = { id: "plan-1", listingUrl: "https://example.org/jobs/pm", company: "
   keywords: ["Product strategy", "Customer discovery", "Roadmap", "Analytics", "Prioritization", "Leadership"], themes: ["Lead discovery", "Shape strategy", "Prioritize roadmap", "Measure outcomes", "Align teams"],
   keywordImportance: [96, 94, 89, 82, 80, 73], themeImportance: [95, 92, 87, 81, 76],
   overview: "I help teams find customer needs and build useful products with clear priorities.", overviewRationale: "The overview already reflects discovery and priorities.",
-  matchStrength: 84, matchAnalyzedAt: "2026-09-29T12:00:00Z", createdAt: "2026-09-29T12:00:00Z", updatedAt: "2026-09-29T12:00:00Z" };
+  matchStrength: 84, matchNotes: "", matchAnalyzedAt: "2026-09-29T12:00:00Z", createdAt: "2026-09-29T12:00:00Z", updatedAt: "2026-09-29T12:00:00Z" };
 let plans = [plan];
 let lastCurrentOverview = plan.currentOverview;
 const state = { filePath: "example.sqlite", filename: "Applications.sqlite", dirty: false, startupError: "", hasApiKey: false,
   analysisProvider: "ollama", ollamaUrl: "http://localhost:11434", ollamaModel: "qwen3.8:27b", canSaveApiKey: true,
-  backupsPath: "", appearance: "light", sidebarCollapsed: false, captureLogs: false, logsPath: "", platform: "win32",
+  appearance: "light", sidebarCollapsed: false, logsPath: "", platform: "win32",
   builtInModelId: "", acceptedModelTerms: [], localModels: LOCAL_MODELS.map(({ id }) =>
     ({ id, status: "not-installed", downloadedBytes: 0, error: "" })), modelsFolder: "example/Models",
   localEngine: { status: "idle", modelId: "" }, totalMemory: 32e9, availableMemory: 16e9 };
@@ -100,11 +100,14 @@ try {
     const snapshot = () => structuredClone(initialState);
     const update = (id, change) => { initialState.localModels = initialState.localModels.map((item) =>
       item.id === id ? { ...item, ...change } : item); for (const listener of listeners) listener(snapshot()); };
-    window.modelQA = { confirmDelete: false, deleteRequests: [], selections: [], rejectSidebarSave: false, update,
+    window.modelQA = { confirmDelete: false, deleteRequests: [], selections: [], rejectSidebarSave: false,
+      logOpens: 0, failLogOpen: false, databaseRequests: [], update,
       setPlatform: (platform) => { initialState.platform = platform; } };
     window.desktop = { state: async () => initialState, onDatabaseChanged: () => () => {}, onNavigate: () => () => {},
       onLocalModelsChanged: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
       downloadResume: async () => true,
+      chooseDatabase: async (kind) => { window.modelQA.databaseRequests.push(kind); return null; },
+      openLogs: async () => { if (window.modelQA.failLogOpen) throw new Error("Synthetic logs folder error"); window.modelQA.logOpens++; },
       listOllamaModels: async () => ["qwen3.8:27b", "qwen3:8b"],
       setAnalysisProvider: async (provider) => { initialState.analysisProvider = provider; return snapshot(); },
       setAppearance: async (appearance) => { initialState.appearance = appearance; return snapshot(); },
@@ -142,7 +145,7 @@ try {
     else if (pathname === "/api/plans" && method === "POST") {
       const input = route.request().postDataJSON();
       const saved = { ...plan, ...input, id: `plan-${plans.length + 1}`, keywordImportance: [], themeImportance: [], matchStrength: null,
-        matchAnalyzedAt: "", overviewRationale: "", updatedAt: "2026-09-30T20:00:00Z" };
+        matchAnalyzedAt: "", matchNotes: "", overviewRationale: "", updatedAt: "2026-09-30T20:00:00Z" };
       plans = [saved, ...plans]; lastCurrentOverview = saved.currentOverview;
       data = { plan: saved };
     }
@@ -153,7 +156,9 @@ try {
         const id = pathname.split("/")[3];
         applications = applications.map((item) => item.id === id ? { ...item, matchStrength: 89, updatedAt: "2026-09-30T20:00:00Z" } : item);
         data = { application: applications.find((item) => item.id === id) };
-      } else { plan = { ...plan, matchStrength: 86 }; plans = plans.map((item) => item.id === plan.id ? plan : item); data = { plan }; }
+      } else { plan = { ...plan, matchStrength: 86,
+        matchNotes: "Customer discovery and roadmap delivery are well demonstrated in the selected resume. The posting asks for deeper experimentation experience than the resume shows." };
+        plans = plans.map((item) => item.id === plan.id ? plan : item); data = { plan }; }
     } else if (pathname.startsWith("/api/plans/") && method === "PUT") {
       const id = pathname.split("/")[3];
       const previous = plans.find((item) => item.id === id);
@@ -193,11 +198,29 @@ try {
   assert.equal(chrome.drag, "drag");
   assert.equal(chrome.sidebar, chrome.sidebarBody);
   assert.equal(await page.getByRole("heading", { name: "Plan", exact: true }).count(), 0);
-  await page.getByRole("button", { name: "Refresh analysis" }).click();
+  const sidebarPosition = await page.locator(".desktop-sidebar").evaluate((element) => ({
+    padding: getComputedStyle(element).paddingTop,
+    brandBottom: getComputedStyle(element.querySelector(".sidebar-brand")).paddingBottom,
+  }));
+  assert.deepEqual(sidebarPosition, { padding: "12px", brandBottom: "20px" });
+  await page.locator(".match-why summary").click();
+  assert.match(await page.locator(".match-why").innerText(), /Refresh analysis to add an explanation/);
+  assert.equal(await page.locator(".cv-section").getByRole("button", { name: "Analyze", exact: true }).count(), 1);
+  assert.equal(await page.locator(".analysis-section").getByRole("button", { name: "Analyze", exact: true }).count(), 0);
+  const analyzePosition = await page.locator(".cv-section").evaluate((element) =>
+    element.querySelector(".plan-analyze-actions").getBoundingClientRect().top >= element.querySelector(".plan-upload").getBoundingClientRect().bottom);
+  assert.equal(analyzePosition, true);
+  await page.getByRole("button", { name: "Analyze", exact: true }).click();
   await page.getByRole("status", { name: "Analyzing role" }).waitFor();
   assert.doesNotMatch(await page.locator(".match-result").innerText(), /Analyzing|Calculating|84%/);
+  assert.equal(await page.locator(".match-why").count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Analysis in progress", exact: true }).isDisabled(), true);
   await completeAnalysis("/api/plans/plan-1/analyze");
   await page.locator(".match-result").getByText("86%").waitFor();
+  await page.locator(".match-why summary").focus();
+  await page.keyboard.press("Enter");
+  assert.equal(await page.locator(".match-why").getAttribute("open"), "");
+  assert.match(await page.locator(".match-why").innerText(), /deeper experimentation experience/);
   const keywordRows = page.locator(".recommendations-keywords .recommendation-row");
   const themeRows = page.locator(".recommendations-themes .recommendation-row");
   assert.equal(await keywordRows.first().locator(".recommendation-importance").innerText(), "96%");
@@ -205,6 +228,7 @@ try {
   assert.equal(await page.getByText("Percentages estimate importance to the job.", { exact: false }).count(), 1);
   assert.equal(await page.locator(".brand-mark").evaluate((element) => element.complete && element.naturalWidth > 0), true);
   await captureSettings("plan-windows-light.png");
+  await page.locator(".cv-section").screenshot({ path: path.join(output, "plan-cv-actions-light.png") });
   const overviewBeforeCollapse = await page.getByRole("textbox", { name: "Current CV Overview", exact: true }).inputValue();
   await page.getByRole("button", { name: "Collapse navigation", exact: true }).focus();
   await page.keyboard.press("Enter");
@@ -215,6 +239,7 @@ try {
   assert.equal(await page.locator(".titlebar-sidebar").evaluate((element) => element.getBoundingClientRect().width), 96);
   assert.equal(await page.getByRole("textbox", { name: "Current CV Overview", exact: true }).inputValue(), overviewBeforeCollapse);
   assert.equal(await page.evaluate(async () => (await window.desktop.state()).sidebarCollapsed), true);
+  assert.equal(await page.locator(".sidebar-database").count(), 0);
   await captureSettings("plan-windows-collapsed-light.png");
   await page.getByRole("button", { name: "Expand navigation", exact: true }).focus();
   await page.keyboard.press("Space");
@@ -224,6 +249,7 @@ try {
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
   await captureSettings("plan-windows-dark.png");
   await captureAnalysis("plan-analysis-dark.png");
+  await page.locator(".cv-section").screenshot({ path: path.join(output, "plan-cv-actions-dark.png") });
   await page.setViewportSize({ width: 1050, height: 900 });
   await captureSettings("plan-windows-compact.png");
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
@@ -235,6 +261,8 @@ try {
   const currentOverview = page.getByRole("textbox", { name: "Current CV Overview", exact: true });
   const originalOverview = await currentOverview.inputValue();
   await currentOverview.fill("I lead product teams and measure customer outcomes.");
+  assert.equal(await page.locator(".match-why").count(), 0);
+  assert.equal(await page.locator(".match-result").getByText("Not analyzed", { exact: true }).count(), 1);
   assert.equal(await keywordRows.first().locator(".recommendation-importance").innerText(), "96%");
   await currentOverview.fill(originalOverview);
   await page.getByRole("textbox", { name: "Core ATS keyword 1", exact: true }).fill("Product vision");
@@ -354,6 +382,26 @@ try {
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
   const provider = page.getByRole("combobox", { name: "Provider", exact: true });
+  await page.getByRole("main", { name: "Settings", exact: true }).waitFor();
+  assert.equal(await page.getByRole("heading", { name: "Settings", exact: true }).count(), 0);
+  assert.equal(await page.getByText("Preferences for this computer.", { exact: true }).count(), 0);
+  assert.equal(await page.getByRole("switch").count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Create database copy", exact: true }).count(), 0);
+  assert.doesNotMatch(await page.locator(".settings-page").innerText(), /weekly backups|Logs may include/i);
+  assert.equal(await page.getByText("Open an existing file or create an empty database.", { exact: true }).count(), 1);
+  await page.getByRole("button", { name: "Create new database", exact: true }).click();
+  await page.getByRole("button", { name: "Open database", exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => window.modelQA.databaseRequests), ["create", "open"]);
+  assert.equal(await page.getByRole("link", { name: "Report an issue", exact: true }).getAttribute("href"),
+    "https://github.com/desigrit/zebby-the-scout/issues/new");
+  assert.equal(await page.getByRole("link", { name: "Report an issue", exact: true }).getAttribute("target"), "_blank");
+  await page.evaluate(() => { window.modelQA.failLogOpen = true; });
+  await page.getByRole("button", { name: "Open logs folder", exact: true }).click();
+  await page.getByRole("alert").getByText("Synthetic logs folder error", { exact: true }).waitFor();
+  await page.evaluate(() => { window.modelQA.failLogOpen = false; });
+  await page.getByRole("button", { name: "Open logs folder", exact: true }).click();
+  assert.equal(await page.evaluate(() => window.modelQA.logOpens), 1);
+  assert.equal(await page.getByRole("alert").count(), 0);
   await page.getByRole("combobox", { name: "Model", exact: true }).getByRole("option", { name: "qwen3.8:27b", exact: true }).waitFor({ state: "attached" });
   await provider.selectOption("builtin");
   const localModel = page.getByRole("combobox", { name: "Local model", exact: true });
@@ -413,7 +461,8 @@ try {
   await page.getByRole("button", { name: "Collapse navigation", exact: true }).click();
   await page.getByRole("button", { name: "Expand navigation", exact: true }).waitFor();
   await captureSettings("settings-mac-collapsed-light.png");
-  await page.getByRole("button", { name: "Database settings", exact: true }).click();
+  assert.equal(await page.getByRole("button", { name: "Database settings", exact: true }).count(), 0);
+  assert.equal(await page.locator(".sidebar-database").count(), 0);
   assert.equal(await nav.getByRole("button", { name: "Settings", exact: true }).getAttribute("aria-current"), "page");
   await page.getByRole("button", { name: "Expand navigation", exact: true }).click();
   await page.getByRole("button", { name: "Collapse navigation", exact: true }).waitFor();

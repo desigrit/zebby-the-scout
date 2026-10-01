@@ -14,7 +14,7 @@ These builds are unsigned. See the [installation notes](docs/guide.md#install) i
 
 ## A little scout for the whole search
 
-- **Plan a role.** Paste a listing, attach a resume, and get ATS keywords, resume themes, a match score, and a CV overview that keeps your writing style. Keyword and theme percentages estimate importance to the job.
+- **Plan a role.** Paste a listing, attach a resume, and get ATS keywords, resume themes, a match score with an explanation, and a CV overview that keeps your writing style. Keyword and theme percentages estimate importance to the job.
 - **Track the application.** Save the company, role, locations, status, resume, and notes. Details are optional. A 30-day chart shows how your search is moving.
 - **Keep the receipts.** Zebby saves a readable listing copy when the site allows it, so a closed posting does not have to disappear. You can paste it yourself, too.
 - **Pick your AI.** Use OpenAI, your own Ollama model, or download a built-in CPU model from Settings. The smallest options need no GPU. Review suggestions before using them, especially with smaller models.
@@ -28,8 +28,8 @@ These builds are unsigned. See the [installation notes](docs/guide.md#install) i
 
 ![Zebby's Plan workspace with sample keyword importance, themes, and a CV overview](docs/screenshots/plan.png)
 
-Built-in analysis stays on your computer. OpenAI and configured Ollama servers receive the job and resume text needed for analysis. API keys and downloaded models stay on each computer, outside the shared database. Zebby keeps local backups and detects changes to the shared file, but a cloud drive cannot merge simultaneous SQLite edits.
+Built-in analysis stays on your computer. OpenAI and configured Ollama servers receive the job and resume text needed for analysis. API keys and downloaded models stay on each computer, outside the shared database. Zebby detects changes to the shared file and keeps an original copy before upgrading its database format. A cloud drive cannot merge simultaneous SQLite edits.
 
 ## Peek under the stripes
 
-Built with Electron, React, TypeScript, SQLite, and a small native inference engine. For setup, model terms, backups, and build instructions, see the [full guide](docs/guide.md). Ideas and bug reports are welcome in [Issues](https://github.com/desigrit/zebby-the-scout/issues).
+Built with Electron, React, TypeScript, SQLite, and a small native inference engine. For setup, model terms, and build instructions, see the [full guide](docs/guide.md). Ideas and bug reports are welcome in [Issues](https://github.com/desigrit/zebby-the-scout/issues).
