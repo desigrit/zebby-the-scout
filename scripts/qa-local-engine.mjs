@@ -57,6 +57,10 @@ try {
     : await generate(matchInstructions, { jobDescription, resumeText }, matchSchema);
   assert.ok(plan.keywords.length >= 6 && plan.keywords.length <= 20);
   assert.ok(plan.themes.length >= 5 && plan.themes.length <= 6);
+  for (const item of [...plan.keywords, ...plan.themes]) {
+    assert.ok(typeof item.text === "string" && item.text.trim());
+    assert.ok(Number.isInteger(item.importance) && item.importance >= 0 && item.importance <= 100);
+  }
   assert.ok(plan.overview && plan.overviewRationale);
   assert.ok(Number.isInteger(plan.score) && plan.score >= 0 && plan.score <= 100);
   assert.ok(Number.isInteger(match.score) && match.score >= 0 && match.score <= 100 && match.explanation);

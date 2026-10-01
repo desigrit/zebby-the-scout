@@ -29,7 +29,14 @@ export function localModelResponseSchema(id: string, schema: Record<string, unkn
   return { ...schema, properties: Object.fromEntries(Object.entries(properties).map(([key, field]) => {
     if (field.type === "string" && limits[key]) return [key, { ...field, minLength: 1, maxLength: limits[key] }];
     if (["keywords", "themes"].includes(key) && field.type === "array") {
-      return [key, { ...field, items: { ...(field.items as object), minLength: 1, maxLength: key === "keywords" ? 80 : 180 } }];
+      const item = field.items as Record<string, unknown>;
+      const maxLength = key === "keywords" ? 80 : 180;
+      if (item.type === "object") {
+        const properties = item.properties as Record<string, Record<string, unknown>>;
+        return [key, { ...field, items: { ...item, properties: { ...properties,
+          text: { ...properties.text, minLength: 1, maxLength } } } }];
+      }
+      return [key, { ...field, items: { ...item, minLength: 1, maxLength } }];
     }
     return [key, field];
   })) };

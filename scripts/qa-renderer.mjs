@@ -5,11 +5,12 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { chromium } from "playwright-core";
 import { LOCAL_MODELS } from "../desktop/local-model-catalog.ts";
+import { importanceForTerms } from "../desktop/plan-importance.ts";
 
 // Checks the compiled renderer with synthetic data in an invisible browser.
 // It does not launch Electron, read settings, or open an application database.
 const renderer = path.resolve("desktop-dist/renderer");
-const output = path.resolve("qa-output/renderer-1.1.1");
+const output = path.resolve("qa-output/renderer-1.2.0");
 const executablePath = process.env.PM_TRACKER_BROWSER || [
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
   "C:/Program Files/Google/Chrome/Application/chrome.exe",
@@ -32,8 +33,11 @@ let plan = { id: "plan-1", listingUrl: "https://example.org/jobs/pm", company: "
   description, snapshotText: description, snapshotSource: "page", snapshotCapturedAt: "2026-09-29T12:00:00Z",
   currentOverview: "I help teams find customer needs and build useful products with clear priorities.", resumeId: resume.id,
   keywords: ["Product strategy", "Customer discovery", "Roadmap", "Analytics", "Prioritization", "Leadership"], themes: ["Lead discovery", "Shape strategy", "Prioritize roadmap", "Measure outcomes", "Align teams"],
+  keywordImportance: [96, 94, 89, 82, 80, 73], themeImportance: [95, 92, 87, 81, 76],
   overview: "I help teams find customer needs and build useful products with clear priorities.", overviewRationale: "The overview already reflects discovery and priorities.",
   matchStrength: 84, matchAnalyzedAt: "2026-09-29T12:00:00Z", createdAt: "2026-09-29T12:00:00Z", updatedAt: "2026-09-29T12:00:00Z" };
+let plans = [plan];
+let lastCurrentOverview = plan.currentOverview;
 const state = { filePath: "example.sqlite", filename: "Applications.sqlite", dirty: false, startupError: "", hasApiKey: false,
   analysisProvider: "ollama", ollamaUrl: "http://localhost:11434", ollamaModel: "qwen3.8:27b", canSaveApiKey: true,
   backupsPath: "", appearance: "light", captureLogs: false, logsPath: "", platform: "win32",
@@ -59,17 +63,19 @@ try {
   await mkdir(output, { recursive: true });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, timezoneId: "America/Los_Angeles", locale: "en-US" });
+  const page = await browser.newPage({ viewport: { width: 1550, height: 850 }, timezoneId: "America/Los_Angeles", locale: "en-US" });
   await page.clock.setFixedTime(new Date("2026-09-30T20:00:00Z"));
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  async function captureSettings(filename) {
+  async function captureSettings(filename, fullPage = true) {
     await page.evaluate(async () => {
       window.scrollTo({ top: 0, behavior: "instant" });
       await document.fonts.ready;
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      await Promise.all(document.getAnimations().filter((animation) =>
+        animation.effect?.getTiming().iterations !== Infinity).map((animation) => animation.finished.catch(() => undefined)));
     });
-    await page.screenshot({ path: path.join(output, filename), fullPage: true });
+    await page.screenshot({ path: path.join(output, filename), fullPage });
   }
   await page.addInitScript(({ initialState, licenseVersions }) => {
     const listeners = new Set();
@@ -108,8 +114,16 @@ try {
     const method = route.request().method();
     let data;
     if (pathname === "/api/applications") data = { applications };
+    else if (pathname === "/api/job-posting") data = { details: { company: "Example", title: "Product Manager", team: "", locations: "Remote" }, text: description };
     else if (pathname === "/api/resumes") data = { resumes: [resume] };
-    else if (pathname === "/api/plans") data = { plans: [plan] };
+    else if (pathname === "/api/plans" && method === "GET") data = { plans, lastCurrentOverview };
+    else if (pathname === "/api/plans" && method === "POST") {
+      const input = route.request().postDataJSON();
+      const saved = { ...plan, ...input, id: `plan-${plans.length + 1}`, keywordImportance: [], themeImportance: [], matchStrength: null,
+        matchAnalyzedAt: "", overviewRationale: "", updatedAt: "2026-09-30T20:00:00Z" };
+      plans = [saved, ...plans]; lastCurrentOverview = saved.currentOverview;
+      data = { plan: saved };
+    }
     else if (pathname.endsWith("/analyze")) {
       await new Promise((resolve) => { pending.set(pathname, resolve); requested.get(pathname)?.(); requested.delete(pathname); });
       pending.delete(pathname);
@@ -117,7 +131,16 @@ try {
         const id = pathname.split("/")[3];
         applications = applications.map((item) => item.id === id ? { ...item, matchStrength: 89, updatedAt: "2026-09-30T20:00:00Z" } : item);
         data = { application: applications.find((item) => item.id === id) };
-      } else { plan = { ...plan, matchStrength: 86 }; data = { plan }; }
+      } else { plan = { ...plan, matchStrength: 86 }; plans = plans.map((item) => item.id === plan.id ? plan : item); data = { plan }; }
+    } else if (pathname.startsWith("/api/plans/") && method === "PUT") {
+      const id = pathname.split("/")[3];
+      const previous = plans.find((item) => item.id === id);
+      const input = route.request().postDataJSON();
+      const saved = { ...previous, ...input,
+        keywordImportance: importanceForTerms(previous.keywords, previous.keywordImportance, input.keywords),
+        themeImportance: importanceForTerms(previous.themes, previous.themeImportance, input.themes), updatedAt: "2026-09-30T20:00:00Z" };
+      plans = plans.map((item) => item.id === id ? saved : item); if (id === plan.id) plan = saved;
+      lastCurrentOverview = saved.currentOverview; data = { plan: saved };
     } else if (pathname.endsWith("/notes") && method === "PATCH") {
       const id = pathname.split("/")[3];
       applications = applications.map((item) => item.id === id ? { ...item, notes: route.request().postDataJSON().notes } : item);
@@ -139,6 +162,63 @@ try {
   assert.doesNotMatch(await page.locator(".match-result").innerText(), /Analyzing|Calculating|84%/);
   await completeAnalysis("/api/plans/plan-1/analyze");
   await page.locator(".match-result").getByText("86%").waitFor();
+  const keywordRows = page.locator(".recommendations-keywords .recommendation-row");
+  const themeRows = page.locator(".recommendations-themes .recommendation-row");
+  assert.equal(await keywordRows.first().locator(".recommendation-importance").innerText(), "96%");
+  assert.equal(await themeRows.first().locator(".recommendation-importance").innerText(), "95%");
+  assert.equal(await page.getByText("Percentages estimate importance to the job.", { exact: false }).count(), 1);
+  assert.equal(await page.locator(".brand-mark").evaluate((element) => element.complete && element.naturalWidth > 0), true);
+  await captureSettings("plan-windows-light.png");
+  await page.locator(".analysis-section").screenshot({ path: path.join(output, "plan-analysis-light.png") });
+  await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
+  await captureSettings("plan-windows-dark.png");
+  await page.locator(".analysis-section").screenshot({ path: path.join(output, "plan-analysis-dark.png") });
+  await page.setViewportSize({ width: 1050, height: 900 });
+  await captureSettings("plan-windows-compact.png");
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await page.setViewportSize({ width: 790, height: 850 });
+  await captureSettings("plan-windows-narrow.png");
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await page.setViewportSize({ width: 1550, height: 850 });
+  // Percentages survive CV edits but become unknown when the job or term changes.
+  const currentOverview = page.getByRole("textbox", { name: "Current CV Overview", exact: true });
+  const originalOverview = await currentOverview.inputValue();
+  await currentOverview.fill("I lead product teams and measure customer outcomes.");
+  assert.equal(await keywordRows.first().locator(".recommendation-importance").innerText(), "96%");
+  await currentOverview.fill(originalOverview);
+  await page.getByRole("textbox", { name: "Core ATS keyword 1", exact: true }).fill("Product vision");
+  assert.equal(await keywordRows.first().locator(".recommendation-importance").innerText(), "Unrated");
+  assert.equal(await keywordRows.nth(1).locator(".recommendation-importance").innerText(), "94%");
+  await page.getByRole("textbox", { name: "Core ATS keyword 1", exact: true }).fill("Product strategy");
+  await page.getByRole("textbox", { name: "Company", exact: true }).fill("Changed company");
+  assert.equal(await page.locator(".recommendation-importance:not(.unrated)").count(), 0);
+  await page.getByRole("textbox", { name: "Company", exact: true }).fill("Expedia Group");
+  await page.getByRole("button", { name: "Add keyword", exact: true }).click();
+  await page.getByRole("textbox", { name: "Core ATS keyword 7", exact: true }).fill("SQL");
+  assert.equal(await keywordRows.last().locator(".recommendation-importance").innerText(), "Unrated");
+  await page.getByRole("button", { name: "Remove keyword 7", exact: true }).click();
+  await page.getByRole("button", { name: "New plan", exact: true }).click();
+  assert.equal(await currentOverview.inputValue(), originalOverview);
+  assert.equal(await page.getByText("Unsaved changes", { exact: true }).count(), 0);
+  assert.equal(await keywordRows.count(), 0);
+  await currentOverview.fill("I lead discovery and turn evidence into clear product decisions.");
+  await page.getByRole("textbox", { name: "Job listing link", exact: true }).fill("https://example.org/new-role");
+  await page.getByRole("button", { name: "Save plan", exact: true }).click();
+  await page.getByText("Plan saved.", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "New plan", exact: true }).click();
+  assert.equal(await currentOverview.inputValue(), lastCurrentOverview);
+  assert.equal(lastCurrentOverview, "I lead discovery and turn evidence into clear product decisions.");
+  await page.getByRole("button", { name: /Senior Product Manager.*Expedia Group.*Edited/ }).click();
+  assert.equal(await currentOverview.inputValue(), originalOverview, "Opening an existing plan keeps that plan's overview.");
+  const savedPriority = plan.keywordImportance;
+  plan = { ...plan, keywordImportance: [], themeImportance: [] }; plans = [plan, ...plans.filter((item) => item.id !== plan.id)];
+  await page.reload();
+  await page.getByRole("textbox", { name: "Core ATS keyword 1", exact: true }).waitFor();
+  assert.equal(await page.locator(".recommendation-importance:not(.unrated)").count(), 0);
+  plan = { ...plan, keywordImportance: savedPriority, themeImportance: [95, 92, 87, 81, 76] }; plans = plans.map((item) => item.id === plan.id ? plan : item);
+  await page.reload();
+  await page.getByRole("textbox", { name: "Core ATS keyword 1", exact: true }).waitFor();
+  await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
   await nav.getByRole("button", { name: "Applications", exact: true }).click();
   await page.getByRole("main", { name: "Applications", exact: true }).waitFor();
   const table = page.getByRole("table");
@@ -165,7 +245,7 @@ try {
   const notes = page.getByRole("dialog", { name: "Application notes" }).getByRole("textbox", { name: "Notes" });
   assert.equal(await notes.inputValue(), description);
   await notes.fill(`${description}\n\nRecruiter: Sam`);
-  await page.screenshot({ path: path.join(output, "notes.png") });
+  await captureSettings("notes.png", false);
   await page.getByRole("button", { name: "Save notes" }).click();
   await page.getByText("Notes saved.").waitFor();
   assert.equal(applications[0].notes, `${description}\n\nRecruiter: Sam`);
@@ -177,7 +257,7 @@ try {
   assert.equal(await table.locator(".match-cell").first().innerText(), "");
   assert.equal(await table.getByRole("button", { name: "Refresh match for Product Manager at Meta" }).count(), 1);
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
-  await page.screenshot({ path: path.join(output, "applications-light.png") });
+  await captureSettings("applications-light.png", false);
   await page.getByRole("button", { name: "Refresh match for Product Manager at Meta" }).click();
   assert.equal(await table.getByRole("status", { name: "Analyzing resume match" }).count(), 2);
   await completeAnalysis("/api/applications/app-1/analyze");
@@ -185,7 +265,7 @@ try {
   await table.getByText("89%").first().waitFor();
   await page.waitForFunction(() => document.querySelectorAll(".match-progress").length === 0);
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
-  await page.screenshot({ path: path.join(output, "applications-dark.png") });
+  await captureSettings("applications-dark.png", false);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.getByRole("button", { name: "Refresh match for Senior Product Manager at Expedia Group" }).click();
   await page.getByRole("status", { name: "Analyzing resume match" }).waitFor();
@@ -193,12 +273,12 @@ try {
   await completeAnalysis("/api/applications/app-1/analyze");
   await page.waitForFunction(() => document.querySelectorAll(".match-progress").length === 0);
   await page.setViewportSize({ width: 1050, height: 900 });
-  await page.screenshot({ path: path.join(output, "applications-compact.png") });
+  await captureSettings("applications-compact.png", false);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   assert.equal(await table.locator("thead").isVisible(), false);
   assert.equal(await table.locator(".actions-cell").first().evaluate((element) => element.getBoundingClientRect().right <= innerWidth), true);
   await page.setViewportSize({ width: 780, height: 900 });
-  await page.screenshot({ path: path.join(output, "applications-narrow.png") });
+  await captureSettings("applications-narrow.png", false);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
 
   // Provider choice, download lifecycle, deletion cancellation, and reuse.
@@ -292,6 +372,17 @@ try {
     await nav.getByRole("button", { name: "Settings", exact: true }).click();
     await captureSettings(`settings-${id}-ready.png`);
   }
+  await page.setViewportSize({ width: 1550, height: 850 });
+  await page.evaluate(() => window.modelQA.setPlatform("darwin"));
+  await provider.selectOption("ollama");
+  await page.getByRole("radio", { name: "Light", exact: true }).check();
+  await nav.getByRole("button", { name: "Plan", exact: true }).click();
+  await page.getByRole("textbox", { name: "Core ATS keyword 1", exact: true }).waitFor();
+  await captureSettings("plan-mac-light.png");
+  await page.setViewportSize({ width: 790, height: 850 });
+  await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
+  await captureSettings("plan-mac-compact-dark.png");
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   assert.deepEqual(errors, []);
   console.log(`Headless renderer checks passed. No desktop app was launched. Screenshots: ${output}`);
 } finally {

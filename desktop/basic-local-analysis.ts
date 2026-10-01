@@ -18,7 +18,29 @@ const stopWords = new Set("a an and are as at be been being by can company could
 function normalized(value: string) { return ` ${value.toLowerCase().replace(/[^a-z0-9/+-]+/g, " ")} `; }
 function hasPhrase(text: string, phrase: string) { return text.includes(normalized(phrase)); }
 
-export type BasicEvidence = { keywords: string[]; matched: string[]; missing: string[]; score: number; themes: string[] };
+export type BasicEvidence = { keywords: string[]; keywordImportance: number[]; matched: string[]; missing: string[];
+  score: number; themes: string[]; themeImportance: number[] };
+
+// Compact mode uses the listing's section and wording to estimate priority.
+// Resume evidence affects the match score only, never these importance values.
+function jobImportance(description: string, aliases: string[]): number {
+  let section = 70;
+  let strongest = 0;
+  let occurrences = 0;
+  for (const line of description.split(/\n|(?<=[.!?])\s+/)) {
+    const heading = line.trim().replace(/^#+\s*/, "");
+    if (/^(?:preferred|nice.to.have|bonus|desired)\b/i.test(heading)) section = 55;
+    else if (/^(?:minimum|required|basic|essential)\s*(?:qualifications|requirements|skills)?\s*:?$/i.test(heading)) section = 88;
+    else if (/^(?:responsibilities|what you.ll do|your role|the role|about the role)\s*:?$/i.test(heading)) section = 80;
+    else if (/^(?:benefits|about us|about the company)\b/i.test(heading)) section = 40;
+    if (!aliases.some((alias) => hasPhrase(normalized(line), alias))) continue;
+    occurrences++;
+    const weight = /\b(?:nice.to.have|preferred|bonus|optional|a plus)\b/i.test(line) ? 55
+      : /\b(?:must|required|essential|need to|minimum)\b/i.test(line) ? 95 : section;
+    strongest = Math.max(strongest, weight);
+  }
+  return Math.min(100, (strongest || 70) + Math.min(5, Math.max(0, occurrences - 1) * 2));
+}
 
 export function basicEvidence(description: string, resume: string): BasicEvidence {
   const job = normalized(description);
@@ -38,12 +60,14 @@ export function basicEvidence(description: string, resume: string): BasicEvidenc
     if (candidates.length >= 12) break;
     candidates.push({ keyword: term, aliases: [term] });
   }
-  const selected = candidates.slice(0, 12);
+  const selected = candidates.slice(0, 12).map((item) => ({ ...item, importance: jobImportance(description, item.aliases) }))
+    .sort((a, b) => b.importance - a.importance);
   const matched = selected.filter((item) => item.aliases.some((alias) => hasPhrase(cv, alias))).map((item) => item.keyword);
   const missing = selected.filter((item) => !matched.includes(item.keyword)).map((item) => item.keyword);
-  return { keywords: selected.map((item) => item.keyword), matched, missing,
+  return { keywords: selected.map((item) => item.keyword), keywordImportance: selected.map((item) => item.importance), matched, missing,
     score: selected.length ? Math.round(matched.length / selected.length * 100) : 0,
-    themes: selected.slice(0, 6).map((item) => `Show resume evidence for ${item.keyword.toLowerCase()}.`) };
+    themes: selected.slice(0, 6).map((item) => `Show resume evidence for ${item.keyword.toLowerCase()}.`),
+    themeImportance: selected.slice(0, 6).map((item) => item.importance) };
 }
 
 export function basicMatchExplanation(evidence: BasicEvidence): string {
@@ -76,7 +100,8 @@ export async function analyzeBasicLocal(input: Record<string, unknown>, plan: bo
   const usable = Boolean(suggestion) && words.length >= originalWords * .65 && words.length <= originalWords * 1.5 + 5 && additions.length === 0;
   const overview = usable ? suggestion : current;
   const changed = overview.replace(/\s+/g, " ") !== current.replace(/\s+/g, " ");
-  return { keywords: evidence.keywords, themes: evidence.themes, score: evidence.score, overview,
+  return { keywords: evidence.keywords.map((text, index) => ({ text, importance: evidence.keywordImportance[index] })),
+    themes: evidence.themes.map((text, index) => ({ text, importance: evidence.themeImportance[index] })), score: evidence.score, overview,
     overviewRationale: changed
       ? "The compact local model suggested light wording edits using the supplied resume. Review the draft for accuracy and style. Match strength reflects basic keyword coverage."
       : "The compact local model did not produce a supported, useful revision, so your current overview is retained. Use the listed themes to guide your edits. Match strength reflects basic keyword coverage." };

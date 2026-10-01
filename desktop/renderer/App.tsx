@@ -9,13 +9,15 @@ import type { DesktopState } from "../bridge";
 import type { Plan, PlanInput } from "../store";
 import type { Resume } from "../../lib/application-types";
 import LocalModelsSettings from "./LocalModelsSettings";
+import PlanRecommendations from "./PlanRecommendations";
 import { LOCAL_MODELS } from "../local-model-catalog";
+import { importanceForTerms } from "../plan-importance";
 
 type Tab = "plan" | "applications" | "settings";
 
-function emptyPlan(): PlanInput {
+function emptyPlan(currentOverview = ""): PlanInput {
   return { listingUrl: "", company: "", title: "", team: "", locations: "",
-    description: "", snapshotText: "", snapshotSource: "", currentOverview: "",
+    description: "", snapshotText: "", snapshotSource: "", currentOverview,
     resumeId: "", keywords: [], themes: [], overview: "" };
 }
 
@@ -50,8 +52,9 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, bu
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<PlanInput>(emptyPlan);
-  const [savedDraft, setSavedDraft] = useState<PlanInput>(emptyPlan);
+  const [draft, setDraft] = useState<PlanInput>(() => emptyPlan());
+  const [savedDraft, setSavedDraft] = useState<PlanInput>(() => emptyPlan());
+  const [lastCurrentOverview, setLastCurrentOverview] = useState("");
   const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [reading, setReading] = useState(false);
@@ -67,6 +70,13 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, bu
   const busy = reading || saving || analyzing;
   const selectedPlan = plans.find((plan) => plan.id === selectedId);
   const hasAnalysis = Boolean(selectedPlan && (selectedPlan.matchAnalyzedAt || selectedPlan.keywords.length));
+  const jobIsCurrent = selectedPlan &&
+    (["listingUrl", "company", "title", "team", "locations", "description"] as const)
+      .every((key) => draft[key] === selectedPlan[key]);
+  const keywordImportance = importanceForTerms(selectedPlan?.keywords || [],
+    jobIsCurrent ? selectedPlan.keywordImportance : [], draft.keywords);
+  const themeImportance = importanceForTerms(selectedPlan?.themes || [],
+    jobIsCurrent ? selectedPlan.themeImportance : [], draft.themes);
   const matchIsCurrent = selectedPlan && !resumeFile &&
     (["listingUrl", "company", "title", "team", "locations", "description",
       "currentOverview", "resumeId"] as const).every((key) => draft[key] === selectedPlan[key]);
@@ -83,12 +93,15 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, bu
 
   useEffect(() => {
     void Promise.all([
-      fetch("/api/plans", { cache: "no-store" }).then((response) => readJson<{ plans: Plan[] }>(response)),
+      fetch("/api/plans", { cache: "no-store" }).then((response) => readJson<{ plans: Plan[]; lastCurrentOverview: string }>(response)),
       fetch("/api/resumes", { cache: "no-store" }).then((response) => readJson<{ resumes: Resume[] }>(response)),
     ])
-      .then(([{ plans }, { resumes }]) => { setPlans(plans); setResumes(resumes); if (plans[0]) {
+      .then(([{ plans, lastCurrentOverview }, { resumes }]) => {
+        setPlans(plans); setResumes(resumes); setLastCurrentOverview(lastCurrentOverview || "");
+        if (plans[0]) {
         setSelectedId(plans[0].id); setDraft(inputFromPlan(plans[0])); setSavedDraft(inputFromPlan(plans[0]));
-      } })
+        } else { setDraft(emptyPlan(lastCurrentOverview)); setSavedDraft(emptyPlan(lastCurrentOverview)); }
+      })
       .catch((cause) => setError(errorText(cause)))
       .finally(() => setLoading(false));
   }, []);
@@ -114,8 +127,8 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, bu
     if (dirty && !window.confirm("Discard unsaved changes to this plan?")) return;
     listingController.current?.abort();
     setSelectedId(plan?.id || null);
-    setDraft(plan ? inputFromPlan(plan) : emptyPlan());
-    setSavedDraft(plan ? inputFromPlan(plan) : emptyPlan());
+    setDraft(plan ? inputFromPlan(plan) : emptyPlan(lastCurrentOverview));
+    setSavedDraft(plan ? inputFromPlan(plan) : emptyPlan(lastCurrentOverview));
     setResumeFile(null); if (resumeInput.current) resumeInput.current.value = "";
     setError(""); setNotice("");
   }
@@ -186,6 +199,7 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, bu
       setPlans((current) => [plan, ...current.filter((item) => item.id !== plan.id)]
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
       setSelectedId(plan.id); setDraft(inputFromPlan(plan)); setSavedDraft(inputFromPlan(plan));
+      setLastCurrentOverview(plan.currentOverview);
       setNotice("Plan saved.");
       return plan;
     } finally { setSaving(false); }
@@ -210,6 +224,7 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, bu
       setPlans((current) => [plan, ...current.filter((item) => item.id !== plan.id)]
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
       setDraft(inputFromPlan(plan)); setSavedDraft(inputFromPlan(plan));
+      setLastCurrentOverview(plan.currentOverview);
       setNotice("Analysis saved. You can edit any part of it.");
     } catch (cause) { setError(errorText(cause)); }
     finally { setAnalyzing(false); }
@@ -225,8 +240,8 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, bu
       setPlans(remaining);
       const next = remaining[0] || null;
       setSelectedId(next?.id || null);
-      setDraft(next ? inputFromPlan(next) : emptyPlan());
-      setSavedDraft(next ? inputFromPlan(next) : emptyPlan());
+      setDraft(next ? inputFromPlan(next) : emptyPlan(lastCurrentOverview));
+      setSavedDraft(next ? inputFromPlan(next) : emptyPlan(lastCurrentOverview));
       setResumeFile(null); if (resumeInput.current) resumeInput.current.value = "";
       setNotice("Plan deleted.");
     } catch (cause) { setError(errorText(cause)); }
@@ -266,9 +281,9 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, bu
         {notice && <p className="notice" role="status">{notice}</p>}
         <div className="plan-section">
           <div className="plan-section-heading"><h3>Job posting</h3>{draft.listingUrl && <a href={draft.listingUrl} target="_blank" rel="noopener noreferrer">Open listing <ArrowUpRight size={14} aria-hidden="true" /></a>}</div>
-          <label className="field"><span>Job listing link</span><div className="listing-input-row">
+          <label className="field"><span id="plan-listing-label">Job listing link</span><div className="listing-input-row">
             <input type="url" value={draft.listingUrl} onChange={(event) => update("listingUrl", event.target.value)}
-              placeholder="https://..." required maxLength={2000} />
+              aria-labelledby="plan-listing-label" placeholder="https://..." required maxLength={2000} />
             <button className="button button-secondary" type="button" onClick={() => void readListing(draft.listingUrl)}
               disabled={!draft.listingUrl || busy}>{reading ? <LoaderCircle className="spin" size={16} /> : <ArrowRight size={16} />} Read listing</button>
           </div></label>
@@ -290,11 +305,12 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, bu
         <div className="plan-section cv-section">
           <div className="plan-section-heading"><div><h3>Your CV</h3>
             <p>Use your own overview and the resume you plan to send for this role.</p></div></div>
-          <label className="field"><span>Current CV Overview</span>
+          <label className="field"><span id="current-cv-overview-label">Current CV Overview</span>
             <textarea className="current-overview-area" value={draft.currentOverview}
+              aria-labelledby="current-cv-overview-label" aria-describedby="current-cv-overview-help"
               onChange={(event) => update("currentOverview", event.target.value)}
               placeholder="Paste the overview from your current CV here." maxLength={20000} />
-            <small>The rewrite will follow your wording and style while focusing on this job.</small></label>
+            <small id="current-cv-overview-help">Your last saved overview is filled in for new plans. Edit it for each role.</small></label>
           <label className="field"><span>Resume for this role</span>
             <select value={resumeFile ? "" : draft.resumeId}
               onChange={(event) => { setResumeFile(null); if (resumeInput.current) resumeInput.current.value = "";
@@ -336,15 +352,12 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, bu
                 onClick={() => void analyze()} disabled={busy || !canAnalyze}><RefreshCw size={16} aria-hidden="true" /></button>}
             </div>}
             <small>Estimated fit based on the selected resume and job posting.</small></div>
+          <p className="job-importance-hint">Percentages estimate importance to the job. Higher values mark bigger priorities for your CV.</p>
           <div className="analysis-grid">
-            <label className="field"><span>Core ATS keywords <small>{draft.keywords.filter(Boolean).length} keywords, aim for 6-20</small></span>
-              <textarea className="keywords-area" value={draft.keywords.join("\n")}
-                onChange={(event) => update("keywords", event.target.value.split("\n"))}
-                placeholder="One keyword or phrase per line" /></label>
-            <label className="field"><span>Core resume themes <small>{draft.themes.filter(Boolean).length} themes, aim for 5-6</small></span>
-              <textarea className="themes-area" value={draft.themes.join("\n")}
-                onChange={(event) => update("themes", event.target.value.split("\n"))}
-                placeholder="One theme per line" /></label>
+            <PlanRecommendations kind="keywords" values={draft.keywords} importance={keywordImportance} busy={busy}
+              onChange={(value) => update("keywords", value)} />
+            <PlanRecommendations kind="themes" values={draft.themes} importance={themeImportance} busy={busy}
+              onChange={(value) => update("themes", value)} />
           </div>
           <label className="field"><span>Ideal candidate CV overview</span>
             <textarea className="overview-area" value={draft.overview}
@@ -559,7 +572,7 @@ function Welcome({ state, onState }: { state: DesktopState; onState: (value: Des
     catch (cause) { setError(errorText(cause)); }
     finally { setWorking(false); }
   }
-  return <main className="welcome-page"><div className="welcome-graphic" aria-hidden="true"><span /><span /><span /></div>
+  return <main className="welcome-page"><img className="welcome-graphic" src="./icon.png" alt="" />
     <div className="welcome-copy"><h1>Your search, in one place.</h1>
       <p>Plan for the roles you want, then track every application and resume you send.</p></div>
     {error && <p className="form-error" role="alert">{error}</p>}
@@ -612,7 +625,7 @@ export default function App() {
   if (!state) return <div className="desktop-loading"><LoaderCircle className="spin" size={24} /> Opening workspace...</div>;
   return <div className={`desktop-shell ${state.platform === "darwin" ? "platform-mac" : "platform-windows"}`}>
     <aside className="desktop-sidebar">
-      <div className="sidebar-brand"><span className="brand-mark" aria-hidden="true"><span /><span /><span /></span>
+      <div className="sidebar-brand"><img className="brand-mark" src="./icon.png" alt="" />
         <strong>PM Application<br />Tracker</strong></div>
       <nav className="sidebar-nav" aria-label="Workspace">
         <button type="button" className={tab === "plan" ? "active" : ""} onClick={() => navigate("plan")}
