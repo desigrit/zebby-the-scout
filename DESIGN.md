@@ -203,7 +203,7 @@ The interface stays compact enough for several entries a day. The existing serif
 
 ## Colors
 
-Graphite extends the Search Ledger with neutral actions, information, focus, and selected surfaces. Unprefixed frontmatter colors are the exact light values from `app/globals.css`; `dark-` entries are the exact overrides from `desktop/renderer/desktop.css`. Selection entries record the corresponding text-selection rules. Existing `forest`, `cyan`, and `cyan-wash` property names remain for compatibility; they now describe the sidebar and neutral information roles.
+Graphite extends the Search Ledger with neutral actions, information, focus, and selected surfaces. Unprefixed frontmatter colors are the exact light values from `desktop/renderer/base.css`; `dark-` entries are the exact overrides from `desktop/renderer/desktop.css`. Selection entries record the corresponding text-selection rules. Existing `forest`, `cyan`, and `cyan-wash` property names remain for compatibility; they now describe the sidebar and neutral information roles.
 
 ### Primary
 

@@ -1,6 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import "../../app/globals.css";
+import "./base.css";
 import "./desktop.css";
 import App from "./App";
 

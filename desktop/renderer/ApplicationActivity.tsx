@@ -1,7 +1,5 @@
-"use client";
-
 import { useRef, useState } from "react";
-import type { ApplicationDay } from "../lib/application-activity";
+import type { ApplicationDay } from "../../lib/application-activity";
 
 function dayLabel(date: string, long = false) {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", ...(long ? { year: "numeric" } : {}) })

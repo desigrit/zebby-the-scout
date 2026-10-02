@@ -1,8 +1,6 @@
-"use client";
-
 import { useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
-import { parseLocations, serializeLocations } from "../lib/locations";
+import { parseLocations, serializeLocations } from "../../lib/locations";
 
 export default function LocationEditor({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const [adding, setAdding] = useState(false);

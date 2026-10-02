@@ -50,18 +50,6 @@ a { color: inherit; text-underline-offset: 3px; }
   border: 0;
 }
 
-.site-shell { min-height: 100vh; }
-.topbar {
-  min-height: 76px;
-  padding: 0 clamp(22px, 4vw, 68px);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  background: var(--forest);
-  color: var(--ink);
-}
-.brand { display: inline-flex; align-items: center; gap: 13px; font-size: 17px; font-weight: 690; letter-spacing: -.025em; }
 .brand-mark {
   display: block;
   flex: none;
@@ -70,12 +58,10 @@ a { color: inherit; text-underline-offset: 3px; }
   border-radius: 50%;
   object-fit: contain;
 }
-.account-note { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-soft); font-size: 13px; white-space: nowrap; max-width: 44vw; overflow: hidden; text-overflow: ellipsis; }
-.account-note span { overflow: hidden; text-overflow: ellipsis; }
 
 .main-content { container-type: inline-size; width: min(100%, 1440px); margin: 0 auto; padding: 48px clamp(22px, 4vw, 68px) 90px; }
 .page-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 32px; }
-.page-heading h1, .sign-in-panel h1 {
+.page-heading h1 {
   margin: 0;
   font-family: Georgia, "Times New Roman", serif;
   font-weight: 400;
@@ -355,9 +341,6 @@ a { color: inherit; text-underline-offset: 3px; }
   .activity-caption { font-size: 11px; }
   .activity-period { display: block; text-align: right; }
   .activity-bars { gap: 3px; }
-  .topbar { min-height: 67px; }
-  .brand { font-size: 14px; }
-  .account-note span { display: none; }
   .page-heading { align-items: stretch; flex-direction: column; gap: 19px; margin-bottom: 24px; }
   .page-heading h1 { font-size: 47px; }
   .page-heading .button { align-self: flex-start; }

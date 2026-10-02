@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   ArrowUpRight,
@@ -7,7 +5,6 @@ import {
   Check,
   ChevronDown,
   FileText,
-  Globe,
   NotebookPen,
   Pencil,
   Plus,
@@ -24,34 +21,16 @@ import {
   type ApplicationInput,
   type ApplicationStatus,
   type Resume,
-} from "../lib/application-types";
-import type { JobDetails } from "../lib/job-details";
-import { parseLocations } from "../lib/locations";
-import { pasteJobDescription } from "../lib/job-text-paste";
-import LocationEditor from "./location-editor";
-import { applicationActivity } from "../lib/application-activity";
-import ApplicationActivity from "./application-activity";
-import MatchProgressRing from "./match-progress-ring";
+} from "../../lib/application-types";
+import type { JobDetails } from "../../lib/job-details";
+import { parseLocations } from "../../lib/locations";
+import { pasteJobDescription } from "../../lib/job-text-paste";
+import LocationEditor from "./LocationEditor";
+import { applicationActivity } from "../../lib/application-activity";
+import ApplicationActivity from "./ApplicationActivity";
+import MatchProgressRing from "./MatchProgressRing";
 
 type FormState = Omit<ApplicationInput, "matchStrength"> & { matchStrength: string };
-type BrowserTool = {
-  name: string;
-  title: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-  annotations: { readOnlyHint: boolean; untrustedContentHint: boolean };
-  execute: (input: unknown) => unknown | Promise<unknown>;
-};
-type BrowserModelContext = {
-  registerTool: (tool: BrowserTool, options: { signal: AbortSignal }) => void | Promise<void>;
-};
-
-function assertNoArguments(input: unknown) {
-  if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).length) {
-    throw new Error("This tool does not accept input.");
-  }
-}
-
 function localToday() {
   const now = new Date();
   return new Date(now.getTime() - now.getTimezoneOffset() * 60_000)
@@ -149,7 +128,7 @@ function LocationSummary({ value }: { value: string }) {
   </span>;
 }
 
-export default function ApplicationDashboard({ embedded = false }: { embedded?: boolean }) {
+export default function ApplicationDashboard() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [loading, setLoading] = useState(true);
@@ -259,54 +238,6 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
     return () => window.clearTimeout(timer);
   }, [loadData]);
 
-  useEffect(() => {
-    const context = (document as Document & { modelContext?: BrowserModelContext }).modelContext;
-    if (!context?.registerTool) return;
-    const lifecycle = new AbortController();
-    try {
-      void Promise.all([
-        Promise.resolve(context.registerTool({
-          name: "list_pm_applications",
-          title: "List PM applications",
-          description: "Read the saved PM applications, including their status and match score.",
-          inputSchema: { type: "object", properties: {}, additionalProperties: false },
-          annotations: { readOnlyHint: true, untrustedContentHint: true },
-          execute: (input) => {
-            assertNoArguments(input);
-            return applications.map((item) => ({
-              id: item.id,
-              company: item.company,
-              title: item.title,
-              team: item.team,
-              locations: item.locations,
-              listingUrl: item.listingUrl,
-              appliedDate: item.appliedDate,
-              matchStrength: item.matchStrength,
-              resumeName: item.resumeName,
-              status: item.status,
-            }));
-          },
-        }, { signal: lifecycle.signal })),
-        Promise.resolve(context.registerTool({
-          name: "start_pm_application_entry",
-          title: "Start an application entry",
-          description: "Open the application form so the user can record a role and choose or upload a resume.",
-          inputSchema: { type: "object", properties: {}, additionalProperties: false },
-          annotations: { readOnlyHint: false, untrustedContentHint: false },
-          execute: async (input) => {
-            assertNoArguments(input);
-            openNewForm();
-            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-            return { formOpen: true };
-          },
-        }, { signal: lifecycle.signal })),
-      ]).catch((error) => console.warn("Browser tools could not be registered", error));
-    } catch (error) {
-      console.warn("Browser tools could not be registered", error);
-    }
-    return () => lifecycle.abort();
-  }, [applications, openNewForm]);
-
   const stats = useMemo(() => {
     const weekStart = new Date();
     weekStart.setHours(0, 0, 0, 0);
@@ -381,7 +312,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
     setLookingUp(true);
     setLookupMessage("Reading the job listing...");
     try {
-      const response = await fetch(embedded ? "/api/job-posting" : "/api/job-details", {
+      const response = await fetch("/api/job-posting", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: listingUrl }),
@@ -410,9 +341,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
         details.company && "company", details.title && "job title",
         details.team && "team", details.locations && "locations",
       ].filter(Boolean);
-      setLookupMessage(!embedded
-        ? fields.length ? `Found ${fields.join(", ")}. Check the details before saving.` : "No listing details were available. Fill the fields manually."
-        : text
+      setLookupMessage(text
         ? `Saved a copy of the listing text for offline reference.${fields.length ? ` Found ${fields.join(", ")}.` : ""}`
         : fields.length ? `Found ${fields.join(", ")}, but no job text. Paste it below to keep a copy.`
           : "The site did not share listing details. Paste the description below to keep a copy.");
@@ -425,7 +354,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
         setLookingUp(false);
       }
     }
-  }, [embedded]);
+  }, []);
 
   useEffect(() => {
     if (!formOpen || editingId || !/^https:\/\//i.test(form.listingUrl.trim())) return;
@@ -553,7 +482,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
       setEditingId(null);
       setNotice(editingId ? "Application updated." : "Application added.");
       restoreFocus();
-      if (embedded && saved.application.resumeId && saved.application.matchStrength === null) {
+      if (saved.application.resumeId && saved.application.matchStrength === null) {
         void analyzeMatch(saved.application, true);
       }
     } catch (error) {
@@ -646,18 +575,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
   }
 
   return (
-    <div className={embedded ? "desktop-dashboard" : "site-shell"}>
-      {!embedded && <header className="topbar">
-        <div className="brand" aria-label="Zebby">
-          <img className="brand-mark" src="/brand-icon.png" alt="" />
-          <span>Zebby</span>
-        </div>
-        <div className="account-note">
-          <Globe size={15} aria-hidden="true" />
-          <span>Open workspace</span>
-        </div>
-      </header>}
-
+    <div className="desktop-dashboard">
       <main className="main-content" aria-label="Applications">
         <div className="workspace-toolbar">
           <button ref={addButtonRef} className="button button-primary" type="button" onClick={openNewForm}>
@@ -707,9 +625,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                       {lookingUp ? "Reading..." : "Fill from link"}
                     </button>
                   </div>
-                  <small id="listing-help">{embedded
-                    ? "A public link can fill available details and save a text copy for offline use. You can leave it blank."
-                    : "A public link can fill available details. You can leave it blank."}</small>
+                  <small id="listing-help">A public link can fill available details and save a text copy for offline use. You can leave it blank.</small>
                   {lookupMessage && <p className="lookup-message" role="status">{lookupMessage}</p>}
                   {duplicateApplication && <div className="duplicate-warning" role="status">
                     <strong>This listing is already saved.</strong>
@@ -778,9 +694,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                     onPaste={(event) => pasteJobDescription(event, (value) => updateField("jobDescription", value))}
                     placeholder="Paste the posting here if you want to analyze your resume match later. A saved Plan for the same link can supply it too."
                     maxLength={80000} />
-                  <small>{embedded
-                    ? "Used for resume match analysis with your selected provider. If a site blocks access, paste its text here to save a copy."
-                    : "Used for resume match analysis. If a site blocks access, paste its description here."}</small>
+                  <small>Used for resume match analysis with your selected provider. If a site blocks access, paste its text here to save a copy.</small>
                 </label>
                 {editingId && applications.find((item) => item.id === editingId)?.matchNotes &&
                   <div className="field-wide match-explanation"><strong>Match analysis</strong>
@@ -883,12 +797,12 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                             <strong>{item.matchStrength}%</strong>
                             <span className="score-track"><span style={{ width: item.matchStrength + "%" }} /></span>
                           </span>}
-                          {embedded && item.resumeId && <button className="match-refresh" type="button"
+                          {item.resumeId && <button className="match-refresh" type="button"
                             aria-label={`${item.matchStrength === null ? "Analyze" : "Refresh"} match for ${item.title || "untitled role"} at ${item.company || "unknown company"}`}
                             title={item.matchStrength === null ? "Analyze match" : "Refresh match"}
                             onClick={() => void analyzeMatch(item)}><RefreshCw size={14} aria-hidden="true" /></button>}
                         </div>}
-                        {embedded && !item.resumeId && !analyzingIds.has(item.id) && <small className="match-help">Add a resume to analyze</small>}
+                        {!item.resumeId && !analyzingIds.has(item.id) && <small className="match-help">Add a resume to analyze</small>}
                       </td>
                       <td>
                         <span className="mobile-label">Resume</span>
@@ -917,7 +831,7 @@ export default function ApplicationDashboard({ embedded = false }: { embedded?: 
                       </td>
                       <td className="actions-cell">
                           <span className="row-actions">
-                            {embedded && <button type="button" aria-label={"Notes for " + item.title + " at " + item.company} title="Notes" onClick={() => openNotes(item)}><NotebookPen size={17} aria-hidden="true" />{item.notes && <span className="notes-indicator" />}</button>}
+                            <button type="button" aria-label={"Notes for " + item.title + " at " + item.company} title="Notes" onClick={() => openNotes(item)}><NotebookPen size={17} aria-hidden="true" />{item.notes && <span className="notes-indicator" />}</button>
                             <button type="button" aria-label={"Edit " + item.title + " at " + item.company} onClick={() => openEditForm(item)}><Pencil size={17} aria-hidden="true" /></button>
                             <button type="button" aria-label={"Delete " + item.title + " at " + item.company} onClick={() => setConfirmingDelete(item)}><Trash2 size={17} aria-hidden="true" /></button>
                           </span>
