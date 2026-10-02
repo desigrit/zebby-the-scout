@@ -24,11 +24,11 @@ From version 1.5.0, Zebby checks for new releases. Click **Update**, keep workin
 
 ### Applications, without the spreadsheet shuffle
 
-![Zebby's Graphite Applications workspace with sample jobs](docs/screenshots/applications.png)
+![Zebby's Ember Applications workspace with synthetic roles and a selected role inspector](docs/screenshots/applications.png)
 
 ### A plan for the next role
 
-![Zebby's Plan workspace with sample keyword importance, themes, and a CV overview](docs/screenshots/plan.png)
+![Zebby's Ember Plan workspace with synthetic job importance and editable resume themes](docs/screenshots/plan.png)
 
 Built-in analysis stays on your computer. OpenAI and configured Ollama servers receive the job and resume text needed for analysis. API keys and downloaded models stay on each computer, outside the shared database. Zebby detects changes to the shared file and keeps an original copy before upgrading its database format. A cloud drive cannot merge simultaneous SQLite edits.
 

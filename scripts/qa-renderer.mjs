@@ -217,7 +217,7 @@ try {
     sidebarBody: getComputedStyle(document.querySelector(".desktop-sidebar")).backgroundColor,
   }));
   assert.equal(chrome.height, 44);
-  assert.equal(chrome.background, "rgb(244, 245, 247)");
+  assert.equal(chrome.background, "rgb(248, 246, 243)");
   assert.equal(chrome.drag, "drag");
   assert.equal(chrome.sidebar, chrome.sidebarBody);
   assert.equal(await page.getByRole("heading", { name: "Plan", exact: true }).count(), 0);
@@ -267,7 +267,7 @@ try {
     page.locator('.match-why summary'), page.getByRole('button', { name: 'Analyze', exact: true })]) {
     assert.equal(await control.evaluate(element => getComputedStyle(element).cursor), "default");
   }
-  assert.equal(await page.getByRole('textbox', { name: 'Current CV Overview', exact: true }).evaluate(element => getComputedStyle(element).cursor), "text");
+  assert.equal(await page.getByRole('textbox', { name: 'Current resume overview', exact: true }).evaluate(element => getComputedStyle(element).cursor), "text");
   await page.locator(".match-why summary").click();
   assert.match(await page.locator(".match-why").innerText(), /Refresh analysis to add an explanation/);
   assert.equal(await page.locator(".cv-section").getByRole("button", { name: "Analyze", exact: true }).count(), 1);
@@ -277,7 +277,7 @@ try {
   assert.equal(analyzePosition, true);
   await page.getByRole("button", { name: "Analyze", exact: true }).click();
   await page.getByRole("status", { name: "Analyzing role" }).waitFor();
-  assert.doesNotMatch(await page.locator(".match-result").innerText(), /Analyzing|Calculating|84%/);
+  assert.doesNotMatch(await page.locator(".match-result").innerText(), /Analyzing|Calculating/);
   assert.equal(await page.locator(".match-why").count(), 0);
   assert.equal(await page.getByRole("button", { name: "Analysis in progress", exact: true }).isDisabled(), true);
   await completeAnalysis("/api/plans/plan-1/analyze");
@@ -290,11 +290,11 @@ try {
   const themeRows = page.locator(".recommendations-themes .recommendation-row");
   assert.equal(await keywordRows.first().locator(".recommendation-importance").innerText(), "96%");
   assert.equal(await themeRows.first().locator(".recommendation-importance").innerText(), "95%");
-  assert.equal(await page.getByText("Percentages estimate importance to the job.", { exact: false }).count(), 1);
+  assert.equal(await page.getByText("Estimated job importance.", { exact: false }).count(), 1);
   assert.equal(await page.locator(".brand-mark").evaluate((element) => element.complete && element.naturalWidth > 0), true);
   await captureSettings("plan-windows-light.png");
   await page.locator(".cv-section").screenshot({ path: path.join(output, "plan-cv-actions-light.png") });
-  const overviewBeforeCollapse = await page.getByRole("textbox", { name: "Current CV Overview", exact: true }).inputValue();
+  const overviewBeforeCollapse = await page.getByRole("textbox", { name: "Current resume overview", exact: true }).inputValue();
   await page.getByRole("button", { name: "Collapse navigation", exact: true }).focus();
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => document.querySelector(".sidebar-toggle")?.getAttribute("aria-expanded") === "false" && !document.querySelector(".sidebar-toggle")?.disabled);
@@ -302,7 +302,7 @@ try {
   assert.equal(await nav.getByRole("button", { name: "Plan", exact: true }).isVisible(), true);
   assert.equal(await page.locator(".desktop-sidebar").evaluate((element) => element.getBoundingClientRect().width), 96);
   assert.equal(await page.locator(".titlebar-sidebar").evaluate((element) => element.getBoundingClientRect().width), 96);
-  assert.equal(await page.getByRole("textbox", { name: "Current CV Overview", exact: true }).inputValue(), overviewBeforeCollapse);
+  assert.equal(await page.getByRole("textbox", { name: "Current resume overview", exact: true }).inputValue(), overviewBeforeCollapse);
   assert.equal(await page.evaluate(async () => (await window.desktop.state()).sidebarCollapsed), true);
   assert.equal(await page.locator(".sidebar-database").count(), 0);
   await captureSettings("plan-windows-collapsed-light.png");
@@ -323,7 +323,7 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   await page.setViewportSize({ width: 1550, height: 850 });
   // Percentages survive CV edits but become unknown when the job or term changes.
-  const currentOverview = page.getByRole("textbox", { name: "Current CV Overview", exact: true });
+  const currentOverview = page.getByRole("textbox", { name: "Current resume overview", exact: true });
   const originalOverview = await currentOverview.inputValue();
   await currentOverview.fill("I lead product teams and measure customer outcomes.");
   assert.equal(await page.locator(".match-why").count(), 0);
@@ -365,7 +365,7 @@ try {
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
   await nav.getByRole("button", { name: "Applications", exact: true }).click();
   await page.getByRole("main", { name: "Applications", exact: true }).waitFor();
-  const table = page.getByRole("table");
+  const table = page.locator(".application-list");
   await table.getByText("Expedia Group", { exact: true }).waitFor();
   assert.equal(await page.getByRole("heading", { name: "Applications", exact: true }).count(), 0);
   assert.equal(await page.getByRole("button", { name: "Analyze again" }).count(), 0);
@@ -383,9 +383,9 @@ try {
   assert.equal(await expanded.isVisible(), true);
   await page.getByRole("button", { name: "Hide extra locations" }).click();
   assert.equal(await expanded.isVisible(), false);
-  await page.getByRole("button", { name: "Edit Senior Product Manager at Expedia Group" }).click();
+  await table.getByRole("button", { name: "Edit Senior Product Manager at Expedia Group" }).click();
   await page.getByLabel("Team", { exact: true }).fill("Search & Recommendations");
-  await page.getByRole("button", { name: "Notes for Senior Product Manager at Expedia Group" }).click();
+  await table.getByRole("button", { name: "Notes for Senior Product Manager at Expedia Group" }).click();
   const notes = page.getByRole("dialog", { name: "Application notes" }).getByRole("textbox", { name: "Notes" });
   assert.equal(await notes.inputValue(), description);
   await notes.fill(`${description}\n\nRecruiter: Sam`);
@@ -396,9 +396,9 @@ try {
   await page.getByRole("button", { name: "Save changes" }).click();
   await page.getByText("Application updated.").waitFor();
   assert.equal(applications[0].notes, `${description}\n\nRecruiter: Sam`);
-  await page.getByRole("button", { name: "Refresh match for Senior Product Manager at Expedia Group" }).click();
-  await page.getByRole("status", { name: "Analyzing resume match" }).waitFor();
-  assert.equal(await table.locator(".match-cell").first().innerText(), "");
+  await table.getByRole("button", { name: "Refresh match for Senior Product Manager at Expedia Group" }).click();
+  await table.getByRole("status", { name: "Analyzing resume match" }).first().waitFor();
+  assert.equal(await table.locator(".match-control").first().innerText(), "");
   assert.equal(await table.getByRole("button", { name: "Refresh match for Product Manager at Meta" }).count(), 1);
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   await captureSettings("applications-light.png", false);
@@ -427,16 +427,16 @@ try {
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
   await captureSettings("applications-dark.png", false);
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.getByRole("button", { name: "Refresh match for Senior Product Manager at Expedia Group" }).click();
-  await page.getByRole("status", { name: "Analyzing resume match" }).waitFor();
-  assert.equal(await page.locator(".match-progress-arc").evaluate((element) => getComputedStyle(element).animationName), "none");
+  await table.getByRole("button", { name: "Refresh match for Senior Product Manager at Expedia Group" }).click();
+  await table.getByRole("status", { name: "Analyzing resume match" }).first().waitFor();
+  assert.equal(await table.locator(".match-progress-arc").evaluate((element) => getComputedStyle(element).animationName), "none");
   await completeAnalysis("/api/applications/app-1/analyze");
   await page.waitForFunction(() => document.querySelectorAll(".match-progress").length === 0);
   await page.setViewportSize({ width: 1050, height: 900 });
   await captureSettings("applications-compact.png", false);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-  assert.equal(await table.locator("thead").isVisible(), false);
-  assert.equal(await table.locator(".actions-cell").first().evaluate((element) => element.getBoundingClientRect().right <= innerWidth), true);
+  assert.equal(await page.locator(".application-inspector").count(), 0);
+  assert.equal(await table.locator(".row-actions").first().evaluate((element) => element.getBoundingClientRect().right <= innerWidth), true);
   await page.setViewportSize({ width: 780, height: 900 });
   await captureSettings("applications-narrow.png", false);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
@@ -446,14 +446,14 @@ try {
   await page.setViewportSize({ width: 1440, height: 960 });
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
-  const provider = page.getByRole("combobox", { name: "Provider", exact: true });
+  const provider = page.getByRole("combobox", { name: "Analyze with", exact: true });
   await page.getByRole("main", { name: "Settings", exact: true }).waitFor();
   assert.equal(await page.getByRole("heading", { name: "Settings", exact: true }).count(), 0);
   assert.equal(await page.getByText("Preferences for this computer.", { exact: true }).count(), 0);
   assert.equal(await page.getByRole("switch").count(), 0);
   assert.equal(await page.getByRole("button", { name: "Create database copy", exact: true }).count(), 0);
   assert.doesNotMatch(await page.locator(".settings-page").innerText(), /weekly backups|Logs may include/i);
-  assert.equal(await page.getByText("Open an existing file or create an empty database.", { exact: true }).count(), 1);
+  assert.equal(await page.getByText("Quit Zebby and wait for file sync before switching computers.", { exact: true }).count(), 1);
   await page.getByRole("button", { name: "Create new database", exact: true }).click();
   await page.getByRole("button", { name: "Open database", exact: true }).click();
   assert.deepEqual(await page.evaluate(() => window.modelQA.databaseRequests), ["create", "open"]);
@@ -489,19 +489,19 @@ try {
   await page.evaluate(() => window.modelQA.update("smollm2-360m", { status: "verifying", downloadedBytes: 270590880 }));
   await page.getByText("Checking download", { exact: true }).waitFor();
   await page.evaluate(() => window.modelQA.update("smollm2-360m", { status: "ready" }));
-  await page.getByText("Ready for offline analysis", { exact: true }).waitFor();
+  await page.getByText("Ready", { exact: true }).waitFor();
   assert.equal(await progress.count(), 0);
   const deleteModel = page.getByRole("button", { name: "Delete SmolLM2 360M", exact: true });
   await deleteModel.click(); // Simulated native Cancel result.
-  assert.equal(await page.getByText("Ready for offline analysis", { exact: true }).count(), 1);
+  assert.equal(await page.getByText("Ready", { exact: true }).count(), 1);
   await provider.selectOption("openai");
   await page.getByRole("textbox", { name: "API key", exact: true }).waitFor();
   await provider.selectOption("ollama");
   assert.equal(await page.getByRole("textbox", { name: "Server URL", exact: true }).inputValue(), "http://localhost:11434");
   assert.equal(await page.getByRole("combobox", { name: "Model", exact: true }).inputValue(), "qwen3.8:27b");
   await provider.selectOption("builtin");
-  await page.getByText("Ready for offline analysis", { exact: true }).waitFor();
-  assert.equal(await page.getByText("Ready for offline analysis", { exact: true }).count(), 1);
+  await page.getByText("Ready", { exact: true }).waitFor();
+  assert.equal(await page.getByText("Ready", { exact: true }).count(), 1);
   await captureSettings("settings-windows-ready.png");
   await nav.getByRole("button", { name: "Plan", exact: true }).click();
   await page.getByText("Compact mode uses basic keyword coverage and limited overview suggestions.").waitFor();
@@ -522,7 +522,8 @@ try {
   await page.evaluate(() => { window.modelQA.setPlatform("darwin"); });
   await page.getByRole("radio", { name: "Light", exact: true }).check();
   if (process.env.ZEBBY_CAPTURE_DOCS) await captureSettings("readme-settings.png", false);
-  await page.getByText("Delete downloaded models here before removing the app from your Mac.", { exact: false }).waitFor();
+  await page.getByText("Storage and privacy", { exact: true }).click();
+  await page.getByText("Delete models here before removing Zebby from your Mac.", { exact: false }).waitFor();
   assert.equal(await page.getByRole("button", { name: /uninstall/i }).count(), 0);
   await captureSettings("settings-mac-ready.png");
   await page.getByRole("button", { name: "Collapse navigation", exact: true }).click();
@@ -555,10 +556,10 @@ try {
     await page.getByText(`Downloading ${LOCAL_MODELS.find((model) => model.id === id).name}`, { exact: true }).waitFor();
     await page.evaluate(({ id, bytes }) => window.modelQA.update(id, { status: "ready", downloadedBytes: bytes }),
       { id, bytes: LOCAL_MODELS.find((model) => model.id === id).bytes });
-    await page.getByText("Ready for offline analysis", { exact: true }).waitFor();
+    await page.getByText("Ready", { exact: true }).waitFor();
     assert.equal(await page.getByRole("button", { name: "Agree and download", exact: true }).count(), 0);
     await nav.getByRole("button", { name: "Plan", exact: true }).click();
-    await page.getByText(`Analysis runs on this computer with ${LOCAL_MODELS.find((model) => model.id === id).name}.`, { exact: false }).waitFor();
+    assert.equal(await page.locator(".plan-analyze-actions small").innerText(), LOCAL_MODELS.find((model) => model.id === id).name);
     assert.equal(await page.getByText("Compact mode uses basic keyword coverage and limited overview suggestions.").count(), 0);
     await nav.getByRole("button", { name: "Settings", exact: true }).click();
     await captureSettings(`settings-${id}-ready.png`);
@@ -622,12 +623,12 @@ try {
   await page.getByRole('button', { name: 'Close form', exact: true }).click();
   await nav.getByRole('button', { name: 'Plan', exact: true }).click();
   await page.getByRole('textbox', { name: 'Core ATS keyword 1', exact: true }).waitFor();
-  await page.getByRole('textbox', { name: 'Current CV Overview', exact: true }).fill('Unsaved update guard fixture');
+  await page.getByRole('textbox', { name: 'Current resume overview', exact: true }).fill('Unsaved update guard fixture');
   await page.locator('.save-state.unsaved').waitFor();
   page.once('dialog', dialog => dialog.dismiss());
   await page.locator('.desktop-sidebar').getByRole('button', { name: 'Restart to update', exact: true }).click();
   assert.equal(await page.evaluate(() => window.modelQA.installRequests), 1);
-  assert.equal(await page.getByRole('textbox', { name: 'Current CV Overview', exact: true }).inputValue(), 'Unsaved update guard fixture');
+  assert.equal(await page.getByRole('textbox', { name: 'Current resume overview', exact: true }).inputValue(), 'Unsaved update guard fixture');
   page.once('dialog', dialog => dialog.accept());
   await page.locator('.desktop-sidebar').getByRole('button', { name: 'Restart to update', exact: true }).click();
   await page.getByRole('button', { name: 'Restarting', exact: true }).waitFor();

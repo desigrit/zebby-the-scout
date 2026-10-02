@@ -94,11 +94,13 @@ export class LocalModelEngine {
 
   async shutdown() { this.shuttingDown = true; await this.stop(true); }
 
-  private async start(id: string) {
+  private async start(id: string, requestSignal?: AbortSignal) {
+    requestSignal?.throwIfAborted();
     if (this.shuttingDown) throw new Error("The app is closing.");
     const modelFile = await this.options.downloads.readyPath(id);
     if (this.loadedId === id && this.child?.exitCode === null && this.child.signalCode === null) return;
     await this.stop(true);
+    requestSignal?.throwIfAborted();
     const model = getLocalModel(id);
     if (await availableModelMemory() < model.minimumFreeMemory) {
       throw new Error(`${model.name} needs more available memory. Close other apps or choose a smaller built-in model.`);
@@ -113,6 +115,7 @@ export class LocalModelEngine {
       throw new Error("The local analysis engine could not be found. Reinstall the app.");
     }
     const port = await availablePort();
+    requestSignal?.throwIfAborted();
     if (this.shuttingDown) throw new Error("The app is closing.");
     this.secret = randomBytes(32).toString("hex");
     this.baseUrl = `http://127.0.0.1:${port}`;
@@ -134,28 +137,31 @@ export class LocalModelEngine {
       this.child = null; this.loadedId = ""; this.status = "idle"; this.changed();
     } });
     const deadline = Date.now() + 120_000;
+    const loadingSignal = requestSignal ? AbortSignal.any([this.controller.signal, requestSignal]) : this.controller.signal;
     while (Date.now() < deadline) {
       if (failed || this.child !== child) throw new Error("The local analysis engine stopped. Close other apps or reinstall the app.");
-      this.controller.signal.throwIfAborted();
+      loadingSignal.throwIfAborted();
       const health = await (this.options.fetcher || fetch)(`${this.baseUrl}/health`,
-        { signal: AbortSignal.any([this.controller.signal, AbortSignal.timeout(1500)]) }).catch(() => null);
+        { signal: AbortSignal.any([loadingSignal, AbortSignal.timeout(1500)]) }).catch(() => null);
       if (health?.ok) return;
-      await delay(250, undefined, { signal: this.controller.signal });
+      await delay(250, undefined, { signal: loadingSignal });
     }
     await this.stop(true);
     throw new Error("The local model took too long to load. Close other apps or choose a smaller model.");
   }
 
-  analyze(id: string, instructions: string, input: unknown, schema: Record<string, unknown>, maxTokens = 1800): Promise<Record<string, unknown>> {
+  analyze(id: string, instructions: string, input: unknown, schema: Record<string, unknown>, maxTokens = 1800, requestSignal?: AbortSignal): Promise<Record<string, unknown>> {
     if (this.shuttingDown) return Promise.reject(new Error("The app is closing."));
     this.pending++; clearTimeout(this.idleTimer);
     const result = this.requests.then(async () => {
-      await this.start(id);
+      requestSignal?.throwIfAborted();
+      await this.start(id, requestSignal);
+      requestSignal?.throwIfAborted();
       this.status = "analyzing"; this.changed();
       const content = typeof input === "string" ? input : JSON.stringify(input);
       const headers = { Authorization: `Bearer ${this.secret}`, "Content-Type": "application/json" };
       const fetcher = this.options.fetcher || fetch;
-      const signal = AbortSignal.any([this.controller.signal, AbortSignal.timeout(900_000)]);
+      const signal = AbortSignal.any([this.controller.signal, AbortSignal.timeout(900_000), ...(requestSignal ? [requestSignal] : [])]);
       // Check the full text against the model budget rather than silently truncating it.
       const tokenResponse = await fetcher(`${this.baseUrl}/tokenize`, { method: "POST", headers, signal,
         body: JSON.stringify({ content: `${instructions}\n${content}`, add_special: true }) });
@@ -178,7 +184,16 @@ export class LocalModelEngine {
       try { analysis = JSON.parse(choice.message.content); }
       catch { throw new Error("The local model returned an unreadable analysis. Try again."); }
       if (!analysis || typeof analysis !== "object" || Array.isArray(analysis)) throw new Error("The local analysis was incomplete. Try again.");
+      signal.throwIfAborted();
       return analysis as Record<string, unknown>;
+    }).catch(async (error) => {
+      if (requestSignal?.aborted) {
+        // Terminate the CPU worker too, including model loading or a server
+        // that keeps generating after its HTTP connection closes.
+        await this.stop(true);
+        requestSignal.throwIfAborted();
+      }
+      throw error;
     });
     this.requests = result.then(() => {}, () => {});
     return result.finally(() => {

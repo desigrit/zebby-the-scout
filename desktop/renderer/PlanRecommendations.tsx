@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { Plus, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, Copy, Plus, X } from "lucide-react";
 
 export default function PlanRecommendations({ kind, values, importance, busy, onChange }: {
   kind: "keywords" | "themes"; values: string[]; importance: Array<number | null>;
@@ -7,9 +7,21 @@ export default function PlanRecommendations({ kind, values, importance, busy, on
 }) {
   const root = useRef<HTMLDivElement>(null);
   const focusNewRow = useRef(false);
+  const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState("");
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const keyword = kind === "keywords";
   const noun = keyword ? "keyword" : "theme";
   const count = values.filter((value) => value.trim()).length;
+  useEffect(() => () => clearTimeout(copyTimer.current), []);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(values.filter((value) => value.trim()).join("\n"));
+      setCopied(true); setCopyError(""); clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(false), 1800);
+    } catch { setCopyError("Could not copy. Select the text and copy it."); }
+  }
 
   useEffect(() => {
     if (!focusNewRow.current) return;
@@ -19,10 +31,15 @@ export default function PlanRecommendations({ kind, values, importance, busy, on
   }, [values.length]);
 
   return <section className={`recommendations recommendations-${kind}`} aria-label={keyword ? "Core ATS keywords" : "Core resume themes"}>
-    <div className="recommendations-head"><h4>{keyword ? "Core ATS keywords" : "Core resume themes"}</h4>
-      <small>{count} {keyword ? "keywords" : "themes"}, aim for {keyword ? "6-20" : "5-6"}</small></div>
+    <div className="recommendations-head"><div><h4>{keyword ? "Core ATS keywords" : "Core resume themes"}</h4>
+      <small>{count} {keyword ? "keywords" : "themes"}</small></div>
+      <button className="icon-button recommendation-copy" type="button" onClick={() => void copy()} disabled={!count || busy}
+        aria-label={`Copy ${keyword ? "ATS keywords" : "resume themes"}`} title={copied ? "Copied" : "Copy"}>
+        {copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}</button></div>
+    <span className="visually-hidden" role="status">{copied ? "Copied" : ""}</span>
+    {copyError && <p className="form-error" role="alert">{copyError}</p>}
     <div className="recommendations-list" ref={root}>
-      {values.length === 0 && <p className="recommendations-empty">Analyze the role to find its {keyword ? "key terms" : "resume priorities"}, or add your own.</p>}
+      {values.length === 0 && <p className="recommendations-empty">Analyze to find {keyword ? "key terms" : "resume priorities"}.</p>}
       {values.map((text, index) => <div className="recommendation-row" key={index}>
         {keyword ? <input value={text} aria-label={`Core ATS keyword ${index + 1}`} placeholder="Keyword or phrase"
           maxLength={200} disabled={busy} onChange={(event) => onChange(values.map((value, i) => i === index ? event.target.value : value))} />

@@ -1,6 +1,6 @@
 {
   "name": "pm-application-tracker",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "main": "desktop-dist/main.cjs",
   "engines": {
@@ -11,9 +11,10 @@
     "build": "npm run desktop:build",
     "start": "electron .",
     "lint": "eslint .",
-    "test": "node --experimental-strip-types --test tests/job-details.test.mjs tests/public-address.test.mjs tests/desktop-store.test.mjs tests/local-analysis.test.mjs tests/application-activity.test.mjs tests/local-models.test.mjs tests/window-shell.test.mjs tests/diagnostic-log.test.mjs tests/release-updates.test.mjs",
+    "test": "node --experimental-strip-types --test tests/job-details.test.mjs tests/public-address.test.mjs tests/desktop-store.test.mjs tests/local-analysis.test.mjs tests/application-activity.test.mjs tests/local-models.test.mjs tests/window-shell.test.mjs tests/diagnostic-log.test.mjs tests/release-updates.test.mjs tests/analysis-cancellation.test.mjs",
     "test:job-details": "node --experimental-strip-types --test tests/job-details.test.mjs",
     "test:renderer": "node --experimental-strip-types scripts/qa-renderer.mjs",
+    "test:desktop:windows": "node scripts/qa-ember.mjs",
     "desktop:build": "node scripts/build-desktop.mjs",
     "desktop:dev": "npm run desktop:build && electron .",
     "desktop:prepare-model-engine": "node scripts/download-llama.mjs",

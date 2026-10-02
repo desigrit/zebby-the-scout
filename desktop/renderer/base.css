@@ -1,24 +1,28 @@
 @import "tailwindcss";
 
 :root {
-  --canvas: #f4f5f7;
+  --canvas: #f8f6f3;
   --paper: #fff;
-  --ink: #23252a;
-  --ink-soft: #616670;
-  --ink-faint: #626a77;
-  --line: #dce0e5;
-  --line-strong: #858d9a;
-  --accent: #30343c;
-  --accent-hover: #171b22;
-  --accent-wash: #e6e9ef;
-  --forest: #e9ebef;
-  --focus: #49566a;
-  --cyan: #4b5566;
-  --cyan-wash: #e9edf3;
+  --ink: #302c29;
+  --ink-soft: #71675f;
+  --ink-faint: #71675f;
+  --line: #ddd7d0;
+  --line-strong: #a49a90;
+  --accent: #a64a34;
+  --accent-hover: #8e3d2a;
+  --accent-wash: #f8e8e1;
+  --forest: #f0ece6;
+  --focus: #a64a34;
+  --cyan: #a64a34;
+  --cyan-wash: #f8e8e1;
+  --chart: #b17732;
   --field: #fff;
-  --surface-hover: #eceff3;
-  --surface-selected: #d7dce3;
-  --focus-ring: rgba(73,86,106,.18);
+  --surface-hover: #f5f2ee;
+  --surface-selected: #f8e8e1;
+  --focus-ring: rgba(166,74,52,.18);
+  --selection-bg: #f1cec0;
+  --selection-ink: #302c29;
+  --scroll-thumb: #8f8176;
   --button-ink: #fff;
 }
 
@@ -29,10 +33,10 @@ body {
   background: var(--canvas);
   color: var(--ink);
   font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1.5;
 }
-::selection { background: #d0d7e3; color: #23252a; }
+::selection { background: var(--selection-bg); color: var(--selection-ink); }
 button, input, select { font: inherit; }
 button { cursor: pointer; }
 button:disabled, select:disabled { cursor: not-allowed; opacity: .58; }
@@ -100,7 +104,7 @@ a { color: inherit; text-underline-offset: 3px; }
 .activity-bars { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); align-items: end; gap: 5px; height: 48px; }
 .activity-day { position: relative; display: flex; align-items: flex-end; justify-content: center; min-width: 0; height: 100%; padding: 0; border: 0; border-radius: 3px; background: transparent; }
 .activity-bar { display: block; width: 100%; max-width: 22px; min-height: 2px; border-radius: 3px 3px 1px 1px; background: var(--line); }
-.has-applications .activity-bar { background: var(--cyan); }
+.has-applications .activity-bar { background: var(--chart); }
 .activity-day:hover .activity-bar, .activity-day:focus-visible .activity-bar { background: var(--focus); }
 .activity-day:focus-visible { outline-width: 2px; outline-offset: 4px; }
 .activity-tooltip { position: absolute; z-index: 2; bottom: calc(100% + 9px); left: 50%; display: flex; flex-direction: column; gap: 1px; min-width: 108px; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--paper); color: var(--ink-soft); font-size: 11px; text-align: center; white-space: nowrap; opacity: 0; visibility: hidden; pointer-events: none; transform: translateX(-50%); box-shadow: 0 4px 12px rgba(20,36,24,.12); }
@@ -297,7 +301,7 @@ a { color: inherit; text-underline-offset: 3px; }
 .status-select[data-status="Heard back"] { color: #855d1e; background: #fcf0d8; }
 .status-select[data-status="Interview scheduled"] { color: #1f674d; background: #e0f3e7; }
 .status-select[data-status="Rejected"] { color: #9a4a3c; background: #fae9e5; }
-.status-select:focus { box-shadow: 0 0 0 3px var(--focus-ring); }
+.status-select:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; box-shadow: none; }
 .row-actions { display: flex; justify-content: flex-end; gap: 1px; }
 .row-actions button { position: relative; }
 .notes-indicator { position: absolute; right: 4px; top: 4px; width: 5px; height: 5px; border-radius: 50%; background: #2d8864; }

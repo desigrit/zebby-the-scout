@@ -1,115 +1,275 @@
 ---
-name: Zebby
-description: A calm personal ledger for tracking product management applications.
+name: "Zebby"
+description: "Ember, the warm native ledger for product management applications."
 colors:
-  accent: "#30343c"
-  accent-hover: "#171b22"
-  accent-wash: "#e6e9ef"
-  forest: "#e9ebef"
-  focus: "#49566a"
-  canvas: "#f4f5f7"
+  canvas: "#f8f6f3"
   paper: "#fff"
-  ink: "#23252a"
-  ink-soft: "#616670"
-  ink-faint: "#626a77"
-  line: "#dce0e5"
-  line-strong: "#858d9a"
-  cyan: "#4b5566"
-  cyan-wash: "#e9edf3"
+  ink: "#302c29"
+  ink-soft: "#71675f"
+  ink-faint: "#71675f"
+  line: "#ddd7d0"
+  line-strong: "#a49a90"
+  accent: "#a64a34"
+  accent-hover: "#8e3d2a"
+  accent-wash: "#f8e8e1"
+  forest: "#f0ece6"
+  focus: "#a64a34"
+  cyan: "#a64a34"
+  cyan-wash: "#f8e8e1"
+  chart: "#b17732"
   field: "#fff"
-  surface-hover: "#eceff3"
-  surface-selected: "#d7dce3"
-  focus-ring: "rgba(73,86,106,.18)"
+  surface-hover: "#f5f2ee"
+  surface-selected: "#f8e8e1"
+  focus-ring: "rgba(166,74,52,.18)"
+  selection-bg: "#f1cec0"
+  selection-ink: "#302c29"
+  scroll-thumb: "#8f8176"
   button-ink: "#fff"
-  selection-bg: "#d0d7e3"
-  selection-ink: "#23252a"
-  dark-accent: "#e5e8ef"
-  dark-accent-hover: "#fff"
-  dark-accent-wash: "#343943"
-  dark-forest: "#16181d"
-  dark-focus: "#c2c9d8"
-  dark-canvas: "#1d1f24"
-  dark-paper: "#272a30"
-  dark-ink: "#f0f1f4"
-  dark-ink-soft: "#b1b5bf"
-  dark-ink-faint: "#adb5c4"
-  dark-line: "#444953"
-  dark-line-strong: "#747e8d"
-  dark-cyan: "#c2c9d8"
-  dark-cyan-wash: "#323740"
-  dark-field: "#2d3038"
-  dark-surface-hover: "#30343c"
-  dark-surface-selected: "#343943"
-  dark-focus-ring: "rgba(194,201,216,.2)"
-  dark-button-ink: "#24272e"
-  dark-selection-bg: "#454f61"
-  dark-selection-ink: "#f0f1f4"
+  dark-canvas: "#24201e"
+  dark-paper: "#2d2825"
+  dark-forest: "#1e1b19"
+  dark-ink: "#f2f0ec"
+  dark-ink-soft: "#bdb8b2"
+  dark-ink-faint: "#bdb8b2"
+  dark-line: "#4f4a48"
+  dark-line-strong: "#89817a"
+  dark-accent: "#f0ac91"
+  dark-accent-hover: "#ffc5ad"
+  dark-accent-wash: "#443830"
+  dark-focus: "#f0ac91"
+  dark-cyan: "#f0ac91"
+  dark-cyan-wash: "#443830"
+  dark-chart: "#d6a66c"
+  dark-field: "#332d29"
+  dark-surface-hover: "#35302d"
+  dark-surface-selected: "#443830"
+  dark-focus-ring: "rgba(240,172,145,.2)"
+  dark-button-ink: "#24201e"
+  dark-selection-bg: "#785344"
+  dark-selection-ink: "#fff5ec"
+  dark-scroll-thumb: "#a69b92"
+  status-heard-back-ink: "#855d1e"
+  status-heard-back-bg: "#fcf0d8"
+  dark-status-heard-back-ink: "#f0d7a7"
+  dark-status-heard-back-bg: "#55472b"
+  status-interview-ink: "#1f674d"
+  status-interview-bg: "#e0f3e7"
+  dark-status-interview-ink: "#b9e3c4"
+  dark-status-interview-bg: "#2d4a38"
+  status-rejected-ink: "#9a4a3c"
+  status-rejected-bg: "#fae9e5"
+  dark-status-rejected-ink: "#f1beb3"
+  dark-status-rejected-bg: "#513832"
+  error-ink: "#9e3d22"
+  error-bg: "#fff0e9"
+  dark-error-ink: "#f5b3a6"
+  dark-error-bg: "#4c302a"
+  warning-ink: "#684d21"
+  warning-bg: "#fff7e8"
+  dark-warning-ink: "#f2d5a2"
+  dark-warning-bg: "#4b3920"
+  warning-line: "#d9b877"
+  dark-warning-line: "#8e7037"
+  danger: "#9e3d22"
+  danger-hover: "#862f19"
+  match-track: "#e2e9e1"
+  match-mid: "#b47758"
+  match-strong: "#2d8864"
+  match-low: "#c87957"
 typography:
-  display:
-    fontFamily: 'Georgia, "Times New Roman", serif'
-    fontSize: "clamp(42px, 4.4vw, 64px)"
-    fontWeight: 400
-    lineHeight: 1.08
-    letterSpacing: "-0.035em"
   headline:
-    fontFamily: '"Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif'
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", Arial, sans-serif"
+    fontSize: "36px"
+    lineHeight: 1.2
+    letterSpacing: "-0.02em"
+  title:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", Arial, sans-serif"
+    fontSize: "21px"
+    fontWeight: 650
+    lineHeight: 1.3
+    letterSpacing: "-0.02em"
+  form-title:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", Arial, sans-serif"
     fontSize: "24px"
     fontWeight: 700
     lineHeight: 1.2
     letterSpacing: "-0.025em"
+  inspector-title:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", Arial, sans-serif"
+    fontSize: "17px"
+    lineHeight: 1.35
+    letterSpacing: "-0.02em"
   body:
-    fontFamily: '"Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif'
-    fontSize: "16px"
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", Arial, sans-serif"
+    fontSize: "14px"
     fontWeight: 400
     lineHeight: 1.5
-  label:
-    fontFamily: '"Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif'
+  body-mac:
+    fontFamily: "-apple-system, BlinkMacSystemFont, \"Helvetica Neue\", sans-serif"
+    fontSize: "14px"
+    fontWeight: 400
+    lineHeight: 1.5
+  field-text:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", Arial, sans-serif"
     fontSize: "13px"
+    fontWeight: 400
+  label:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", Arial, sans-serif"
+    fontSize: "13px"
+    fontWeight: 650
+    lineHeight: 1.2
+  section-label:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", Arial, sans-serif"
+    fontSize: "14px"
     fontWeight: 700
+    lineHeight: 1.5
+  compact-body:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", Arial, sans-serif"
+    fontSize: "12px"
+    fontWeight: 400
+    lineHeight: 1.6
+  metadata:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", Arial, sans-serif"
+    fontSize: "11px"
+    fontWeight: 400
+    lineHeight: 1.5
+  rail-metadata:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", Arial, sans-serif"
+    fontSize: "10px"
+    fontWeight: 400
+    lineHeight: 1.5
   metric:
-    fontFamily: '"Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif'
-    fontSize: "28px"
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", Arial, sans-serif"
+    fontSize: "22px"
+    fontWeight: 650
+    lineHeight: 1.5
+  compact-metric:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", Arial, sans-serif"
+    fontSize: "14px"
     fontWeight: 660
-    lineHeight: 1.1
-    letterSpacing: "-0.03em"
+    lineHeight: 1.5
+    letterSpacing: "0"
 rounded:
-  compact: "6px"
+  row-control: "3px"
+  recommendation: "4px"
   badge: "5px"
+  compact: "6px"
   field: "7px"
   button: "8px"
+  location: "10px"
   panel: "12px"
   brand: "50%"
 spacing:
-  tight: "9px"
-  field-gap: "18px"
-  content: "24px"
-  panel: "36px"
+  icon-gap: "4px"
+  row-gap: "6px"
+  field-gap: "7px"
+  action-gap: "8px"
+  control-gap: "10px"
+  small: "12px"
+  compact: "14px"
+  section: "16px"
+  inspector: "18px"
+  layout: "20px"
+  document: "24px"
+  source-columns: "26px"
+  recommendation-columns: "28px"
+  settings-columns: "30px"
+  settings-inset: "48px"
 components:
   button-primary:
     backgroundColor: "{colors.accent}"
     textColor: "{colors.button-ink}"
+    typography: "{typography.label}"
     rounded: "{rounded.button}"
-    padding: "10px 17px"
+    padding: "8px 13px"
   button-primary-hover:
     backgroundColor: "{colors.accent-hover}"
     textColor: "{colors.button-ink}"
+    typography: "{typography.label}"
     rounded: "{rounded.button}"
-    padding: "10px 17px"
+    padding: "8px 13px"
+  button-primary-dark:
+    backgroundColor: "{colors.dark-accent}"
+    textColor: "{colors.dark-button-ink}"
+    typography: "{typography.label}"
+    rounded: "{rounded.button}"
+    padding: "8px 13px"
+  button-primary-dark-hover:
+    backgroundColor: "{colors.dark-accent-hover}"
+    textColor: "{colors.dark-button-ink}"
+    typography: "{typography.label}"
+    rounded: "{rounded.button}"
+    padding: "8px 13px"
   button-secondary:
     backgroundColor: "{colors.paper}"
     textColor: "{colors.ink}"
+    typography: "{typography.label}"
     rounded: "{rounded.button}"
-    padding: "10px 17px"
+    padding: "8px 13px"
+  button-secondary-dark:
+    backgroundColor: "{colors.dark-field}"
+    textColor: "{colors.dark-ink}"
+    typography: "{typography.label}"
+    rounded: "{rounded.button}"
+    padding: "8px 13px"
+  button-danger:
+    backgroundColor: "{colors.danger}"
+    textColor: "{colors.button-ink}"
+    typography: "{typography.label}"
+    rounded: "{rounded.button}"
+    padding: "8px 13px"
+  button-danger-hover:
+    backgroundColor: "{colors.danger-hover}"
+    textColor: "{colors.button-ink}"
+    typography: "{typography.label}"
+    rounded: "{rounded.button}"
+    padding: "8px 13px"
   input-field:
     backgroundColor: "{colors.field}"
     textColor: "{colors.ink}"
     rounded: "{rounded.field}"
     padding: "9px 12px"
-  panel-editor:
+  input-document:
+    backgroundColor: "{colors.field}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.field}"
+    padding: "7px 10px"
+  input-search:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.field}"
+    padding: "0 11px"
+    height: "36px"
+  panel-document:
     backgroundColor: "{colors.paper}"
     textColor: "{colors.ink}"
     rounded: "{rounded.panel}"
-    padding: "clamp(22px, 3vw, 36px)"
+    padding: "24px"
+  application-inspector:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.panel}"
+    padding: "20px 18px"
+    width: "300px"
+  application-row-selected:
+    backgroundColor: "{colors.accent-wash}"
+    textColor: "{colors.ink}"
+    padding: "14px 16px 9px"
+  recommendation-row:
+    backgroundColor: "transparent"
+    textColor: "{colors.ink}"
+    padding: "5px 0"
+  recommendation-field:
+    backgroundColor: "transparent"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.recommendation}"
+    padding: "7px 4px"
+  status-applied:
+    backgroundColor: "{colors.canvas}"
+    textColor: "{colors.ink-soft}"
+    rounded: "{rounded.compact}"
+    padding: "0 25px 0 10px"
+    height: "30px"
   navigation-sidebar:
     backgroundColor: "{colors.forest}"
     textColor: "{colors.ink}"
@@ -120,6 +280,11 @@ components:
     textColor: "{colors.dark-ink}"
     padding: "8px 13px 20px"
     width: "210px"
+  navigation-sidebar-mac:
+    backgroundColor: "{colors.forest}"
+    textColor: "{colors.ink}"
+    padding: "4px 13px 20px"
+    width: "210px"
   navigation-sidebar-collapsed:
     backgroundColor: "{colors.forest}"
     textColor: "{colors.ink}"
@@ -127,13 +292,25 @@ components:
     width: "96px"
   navigation-sidebar-brand:
     padding: "0 13px 12px"
-  navigation-sidebar-mac:
-    backgroundColor: "{colors.forest}"
-    textColor: "{colors.ink}"
-    padding: "4px 13px 20px"
-    width: "210px"
+  navigation-destination:
+    backgroundColor: "transparent"
+    textColor: "{colors.ink-soft}"
+    rounded: "{rounded.button}"
+    padding: "0 13px"
+  navigation-destination-selected:
+    backgroundColor: "{colors.accent-wash}"
+    textColor: "{colors.accent}"
+    rounded: "{rounded.button}"
+    padding: "0 13px"
   navigation-icon:
     size: "24px"
+  navigation-zebra-toggle:
+    rounded: "{rounded.brand}"
+    padding: "4px"
+    size: "54px"
+  navigation-zebra-image:
+    rounded: "{rounded.brand}"
+    size: "46px"
   window-title-region:
     backgroundColor: "{colors.canvas}"
     textColor: "{colors.ink-soft}"
@@ -142,43 +319,26 @@ components:
     backgroundColor: "{colors.dark-canvas}"
     textColor: "{colors.dark-ink-soft}"
     height: "44px"
-  navigation-zebra-toggle:
-    rounded: "{rounded.brand}"
-    padding: "4px"
-    size: "54px"
-  navigation-zebra-image:
-    rounded: "{rounded.brand}"
-    size: "46px"
-  button-primary-dark:
-    backgroundColor: "{colors.dark-accent}"
-    textColor: "{colors.dark-button-ink}"
-    rounded: "{rounded.button}"
-    padding: "10px 17px"
-  button-secondary-dark:
-    backgroundColor: "{colors.dark-field}"
-    textColor: "{colors.dark-ink}"
-    rounded: "{rounded.button}"
-    padding: "10px 17px"
-  recommendation-field:
-    backgroundColor: "{colors.field}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.field}"
-    padding: "9px 10px"
-  job-importance:
-    backgroundColor: "{colors.cyan-wash}"
-    textColor: "{colors.cyan}"
+  appearance-selected:
+    backgroundColor: "{colors.accent-wash}"
+    textColor: "{colors.accent}"
     rounded: "{rounded.badge}"
-    padding: "5px 2px"
-  job-importance-dark:
-    backgroundColor: "{colors.dark-cyan-wash}"
-    textColor: "{colors.dark-cyan}"
-    rounded: "{rounded.badge}"
-    padding: "5px 2px"
-  job-importance-unrated:
-    backgroundColor: "{colors.canvas}"
-    textColor: "{colors.ink-faint}"
-    rounded: "{rounded.badge}"
-    padding: "5px 2px"
+    padding: "0 10px"
+  status-heard-back:
+    backgroundColor: "{colors.status-heard-back-bg}"
+    textColor: "{colors.status-heard-back-ink}"
+    rounded: "{rounded.compact}"
+    height: "30px"
+  status-interview:
+    backgroundColor: "{colors.status-interview-bg}"
+    textColor: "{colors.status-interview-ink}"
+    rounded: "{rounded.compact}"
+    height: "30px"
+  status-rejected:
+    backgroundColor: "{colors.status-rejected-bg}"
+    textColor: "{colors.status-rejected-ink}"
+    rounded: "{rounded.compact}"
+    height: "30px"
 ---
 
 # Design System: Zebby
@@ -187,151 +347,126 @@ components:
 
 **Creative North Star: "The Search Ledger"**
 
-Zebby should feel like a dependable working ledger for a busy job search. Graphite uses cool neutral paper, fine rules, and clear ink to keep rows readable in light and dark appearance. Neutral actions, informational accents, focus, and selected surfaces let the application data carry the emphasis. The approved detailed sunglasses zebra supplies the circular brand mark.
+Ember is Zebby's approved warm Search Ledger. A quiet canvas, fine rules, native system type, and rust actions keep repeated application work readable in light and dark appearance. Ochre activity bars separate volume from action, while a pale selection wash connects records to the current task.
 
-The interface stays compact enough for several entries a day. The existing serif and platform sans-serif hierarchy, native controls, and left navigation remain the working grammar. The full striped zebra, cyan lenses, and yellow mane provide expression inside the icon; the surrounding workspace keeps application data and editable role priorities easy to scan.
+Flat document and ledger surfaces carry the working content. The unchanged circular sunglasses zebra and existing brief Lottie navigation supply the identity. Windows and Mac keep their native window controls, platform fonts, arrow cursor, and scrolling conventions. This is the finished implemented system, extracted from base.css, desktop.css, and window-appearance.ts for version 1.6.0.
 
 **Key Characteristics:**
 
-- Cool neutral paper surfaces on a muted Graphite canvas, with an appearance-specific sidebar.
-- The full circular zebra as the recognizable app identity.
-- Neutral Graphite actions, information, focus, and selected surfaces.
-- Strong hierarchy through typography and spacing, with light borders between data.
-- Compact native controls, a 44px native title region, and visible focus treatment.
-- A zebra button that switches between labeled and icons only navigation.
-- A table on wide screens that becomes readable record cards on narrow screens.
+- Warm neutral surfaces, rust actions and focus, and ochre application activity.
+- Flat ruled documents and compact records with quiet selection washes.
+- Native Windows and Mac fonts, controls, titlebar, and scrolling behavior.
+- The unchanged circular zebra and existing navigation animation.
+- Readable values and labels alongside status and match colors.
 
 ## Colors
 
-Graphite extends the Search Ledger with neutral actions, information, focus, and selected surfaces. Unprefixed frontmatter colors are the exact light values from `desktop/renderer/base.css`; `dark-` entries are the exact overrides from `desktop/renderer/desktop.css`. Selection entries record the corresponding text-selection rules. Existing `forest`, `cyan`, and `cyan-wash` property names remain for compatibility; they now describe the sidebar and neutral information roles.
+The palette uses warm paper, rust, and ochre with a quiet warm wash for the selected task. Frontmatter values are normative and preserve the source's CSS formats.
 
 ### Primary
 
-- **Graphite Action** (`accent`): a deep neutral action fill in light appearance and a pale silver fill in dark appearance.
-- **Graphite Action Hover** (`accent-hover`): the action hover and existing model-agreement fill.
-- **Graphite Action Wash** (`accent-wash`): restrained action-related surfaces.
-- **Button Ink** (`button-ink`): readable primary-action text in each appearance, independent of the paper color.
+- **Rust:** accent drives deliberate actions; accent-hover deepens hover. Focus and the retained cyan information alias use the same rust. Dark appearance uses lighter rust with dark button ink.
+- **Quiet selection:** accent-wash and surface-selected mark current navigation and selected records. Text selection has its own foreground/background tokens.
+
+### Secondary
+
+- **Ochre:** chart separates application activity from actions and selection. The dark counterpart maintains this role.
 
 ### Neutral
 
-- **Graphite Sidebar** (`forest`): the sidebar and its matching segment in the shared native title region.
-- **Graphite Canvas** (`canvas`): the workspace and remaining title-region background.
-- **Paper** (`paper`): panels, table, statistic band, and secondary button fill.
-- **Ink** (`ink`): main reading text and sidebar labels.
-- **Soft Ink** (`ink-soft`): secondary text, inactive navigation, and the Zebby title caption.
-- **Faint Ink** (`ink-faint`): small labels on mobile records.
-- **Fine Rule** (`line`): separators between statistics, applications, and the sidebar database footer.
-- **Strong Rule** (`line-strong`): input borders and the editor outline.
-- **Field** (`field`): editable controls.
-- **Hover Surface** (`surface-hover`): neutral feedback on rows and secondary controls.
-- **Selected Surface** (`surface-selected`): selected plans, active navigation, and zebra-toggle hover.
-- **Graphite Information** (`cyan`): job-importance percentages, activity bars, resume links, and informational actions.
-- **Graphite Information Wash** (`cyan-wash`): importance badges, resume-match summary, and selected appearance options.
-- **Graphite Focus** (`focus`, `focus-ring`): keyboard outlines, field borders, and translucent field focus rings.
-- **Text Selection** (`selection-bg`, `selection-ink`): selected text, distinct from selected-plan surfaces.
+- **Warm canvas and sidebar:** canvas and the retained forest token form the workspace and rail. The token name forest is historical; its actual shipped value is Ember's warm sidebar.
+- **Paper and field:** paper carries documents and records; field carries active entry. Dark fields remain slightly distinct from paper.
+- **Ink and rules:** ink, ink-soft, ink-faint, line, and line-strong define readable hierarchy and separators. Hover, focus-ring, and scroll-thumb preserve native interaction cues.
+- **Semantic states:** Named status, warning, error, danger, and application match tokens come from existing source rules. Applied uses neutral canvas/ink; other hiring stages keep their tints. Desktop notices are quiet text rather than a green filled banner.
 
-**The Color Roles Rule.** Use neutral Graphite for deliberate actions, information, focus, and selected surfaces. Keep semantic green notices and hiring stages, amber warnings, red errors and destructive actions, and match-strength colors in their existing roles, with readable text and values.
+**The Color Roles Rule.** Use rust for actions, focus, and selection context; use ochre for activity. Hiring stages, errors, warnings, and application match colors keep their semantic roles and readable labels.
 
 ## Typography
 
-**Display Font:** Georgia, with Times New Roman and serif fallbacks.
-
-**Body Font:** Segoe UI Variable on Windows and the system font on macOS, with Segoe UI, Helvetica Neue, Arial, and sans-serif fallbacks.
-
-**Character:** Sans-serif labels and data stay compact and easy to scan across Windows and Mac. Plan, Applications, and Settings rely on the sidebar for their page identity. Plan and Applications retain slim action toolbars; Settings starts with its section headings. Serif display type remains available for setup.
+**Windows:** Segoe UI Variable, Segoe UI, Arial, sans-serif. **Mac:** the Apple system stack, BlinkMacSystemFont, Helvetica Neue, sans-serif. The body inherits the platform stack and controls inherit it too. There is no downloaded display font.
 
 ### Hierarchy
 
-- **Display:** setup can use the `display` token; Plan, Applications, and Settings omit repeated page titles.
-- **Headline:** editor and section headings use the `headline` token; the roles heading is slightly smaller in the current page.
-- **Metric:** application totals use the `metric` token with tabular numerals for stable alignment.
-- **Body:** explanatory copy uses the `body` token. Table details are smaller to fit more records in view.
-- **Label:** field labels and key data labels use the `label` token with stronger weight.
+- **Headline:** Welcome only (36px, inherited weight, 1.2), in platform sans-serif.
+- **Title:** Plan role identity (21px, 650, 1.3). The full application form retains its form title (24px, 700, 1.2).
+- **Inspector title:** Selected role (17px, inherited weight, 1.35).
+- **Body:** Root workspace text (14px, 400, 1.5). Source textareas use field text (13px, inherited weight and leading); theme rows separately use a 1.6 line height.
+- **Label:** Compact actions and tools (13px, 650, 1.2). Section headings use section-label (14px, 700).
+- **Compact body and metadata:** Supporting content uses 12px with 1.6 line height. Metadata uses 11px; saved-plan edit summaries and unrated values reach 10px.
+- **Metric:** Plan resume match uses 22px and weight 650. Attached Applications statistics use compact-metric at 14px and weight 660. Source values use tabular numerals.
 
-**The One Serif Rule.** Reserve expressive serif type for setup headings; application data stays sans-serif.
+Mac uses the same observed hierarchy with its native stack; body-mac records that platform override. Individual control overrides stay in component snippets.
+
+**The Native Type Rule.** Use the platform sans-serif stack for the desktop workspace. The unused legacy serif page-heading rules do not define the shipped desktop hierarchy.
 
 ## Layout
 
-The desktop shell has a shared 44px native title region above Plan, Applications, and Settings. Windows navigation spans both shell rows and reaches the top of the window; Mac navigation starts below the native title region. Its sidebar segment blends into the rail. The sidebar is 210px wide when expanded and 96px wide when collapsed on both platforms. The workspace content is capped at 1440px. Applications flows from a compact add action to a shared panel containing a 30-day activity chart and five-column statistics band, then search, filters, and records. The chart uses quiet daily bars with date and count tooltips, and arrow keys move between days. The editor starts with the listing URL and its autofill action. Company, title, team, locations, applied date, and match strength follow in paired fields.
+The native shell has a 44px title region and left rail. Expanded width is 210px, 176px at window widths of 850px or less, and 72px at extreme logical widths of 650px or less. Explicitly collapsed width stays 96px. Main padding is 20px 24px 24px, with smaller insets at narrow logical widths. Windows titlebar and rail overlap; Mac's rail begins below the native title region. The launch window is 1550 by 850 device-independent pixels, capped by the display work area.
 
-When the Applications content pane is 940px or narrower, rows become two-column record cards with visible field labels and actions. This uses available pane width, including the space taken by the sidebar. At 850px window width, the expanded sidebar narrows to 176px while the collapsed sidebar stays 96px, the Plan rail moves above its editor, and the statistics band changes to three columns. At 650px, the heading, filters, and form stack; the statistics band uses two columns. Preserve these content-driven changes when adding fields.
+Applications attaches activity/statistics above filters and uses a flexible role list, an 18px gap, and 300px inspector. List and inspector scroll independently. The content-width observer switches to inline details below 940px. At logical heights of 620px or less, page scrolling compacts the overview and retains a role region at least 280px tall, with height min(480px, 70vh). The full optional form stays outside this fallback.
 
-The native launch window defaults to 1550 by 850 device-independent pixels, 300 wider than the previous 1250 width. Both dimensions are capped by the primary display work area. Core keyword and theme columns stack when the Plan editor container is 610px or narrower; their editable text, importance badge, and remove control stay together.
+Plan uses a 210px saved-plan rail, a 20px gap, and a role document. The rail narrows to 176px at a 1150px window; at 1000px or less, Saved plans toggles a compact strip up to 148px tall. The document scrolls independently and Save stays outside its scroll area. Source columns have a 26px gap; recommendation columns have a 28px gap. Sources stack when the editor container is at most 700px. Recommendations and metadata stack at 440px, where document inset changes from 24px to 18px.
 
-The common rhythm uses tight control gaps, medium field gaps, and generous panel padding. The navigation-sidebar, navigation-sidebar-mac, and navigation-sidebar-brand frontmatter tokens place the zebra and menu higher in each platform's rail. The image starts at y=12px on Windows and y=52px on Mac. The shared footer is pushed to the bottom: available updates appear in either navigation state, followed by database details only when expanded. Let separators and whitespace group information before adding new containers.
+Settings has a 1080px maximum width, 48px side insets, a 150px section-heading column and 30px gap. The heading column becomes 110px at 1000px; sections stack at 650px. Detail remains in disclosures.
+
+Spacing records reused source steps rather than a newly imposed scale. Windows reserves a stable 12px scrollbar gutter, with a 2px resting thumb widening to 8px on hover, focus, or scrolling. Mac retains system scrollers. Physical macOS behavior remains outside local native capture evidence.
 
 ## Elevation & Depth
 
-The workspace is mostly flat. Contrast between the muted canvas and paper surfaces, plus fine rules, establishes structure. The open editor alone receives a soft ambient shadow (`0 12px 35px rgba(22, 50, 38, .07)`) to make the active work area clear. Input focus uses a Graphite ring (`0 0 0 3px var(--focus-ring)`), with the appearance-specific color in the frontmatter. Keyboard outlines use `focus`.
+Documents, application lists, the inspector, and the full application form use flat paper with fine borders and tonal selection. The inherited editor shadow is explicitly removed in the desktop dashboard. A modal dialog retains its source shadow; activity tooltips retain a small transient shadow. These exceptions are in the sidecar.
 
-**The Active Editor Rule.** Apply the ambient shadow to the open editor only; resting data surfaces remain flat.
+**The Flat Work Surface Rule.** Documents, role lists, the inspector, and the full application form are flat. Reserve cast shadows for modal dialogs and transient activity tooltips.
 
 ## Shapes
 
-Corners are gently rounded: compact controls use the `compact` and `field` radii, buttons use the `button` radius, and larger surfaces use the `panel` radius. Fine borders define panels and rows. The brand mark is the approved detailed zebra in a coral circle, including the full striped head, sunglasses, cyan lenses, and yellow mane. Keep the clear circular silhouette and recognizable detail. The sidebar places the 46px mark inside a 54px circular navigation-toggle button. The native title region shows only Zebby.
-
-`public/brand-icon.png` is the shipping source for the app and installer. Its PNG metadata carries the exact image-generation prompt. `scripts/build-desktop.mjs` preserves the source text provenance when resizing it to `build/desktop-icon.png` and copying `desktop-dist/renderer/icon.png`. The former tile SVGs are retired.
+Rounded tokens capture actual source corners: quiet 12px containers, 10px database location, 8px actions, 7px fields, 6px native status controls, and smaller recommendation/action corners. Fine one-pixel rules carry structure. The unchanged zebra stays circular in a 54px toggle with a 46px image. Recommendation text is transparent at rest, rather than a white field or filled badge.
 
 ## Components
 
 ### Buttons
 
-- **Primary:** Graphite fill, appearance-specific button ink, medium weight, and a 44px minimum target height. Hover deepens the fill in light appearance and brightens it in dark appearance; pressing moves it down by 1px.
-- **Secondary:** paper fill in light appearance, field fill in dark appearance, ink text, and a strong rule border. Hover uses the neutral hover surface and clearer ink-faint border.
-- **Focus and motion:** keyboard focus uses the shared 3px outline. The 180ms color and transform transitions stop when reduced motion is requested.
-- **Desktop cursor:** buttons, links, disclosures, selects, labels, and choice controls use the native arrow; editable text fields use the caret cursor.
+Desktop actions have a 36px minimum, 8px 13px padding, button radius, and 13px type at weight 650. Primary uses accent/button-ink; secondary uses paper/ink and line borders, with a dark field override. Explicit destructive confirmations retain danger and danger-hover. Hover follows each source variant. Ordinary buttons press down 1px. Global keyboard focus uses a 3px outline with 3px offset; disabled buttons/selects use .58 opacity. The full application form retains 44px action targets.
+
+### Chips
+
+Status is a native select with readable stage text and semantic tints. Desktop overrides use 30px height, 11px type at weight 600, and a 2px focus outline with 3px offset. Location labels stay small ruled shapes. Job importance is plain aligned rust text, not a filled chip; Unrated is quieter metadata.
+
+### Cards / Containers
+
+The attached activity panel, role list, inspector, and saved-plan rail share paper, line borders, and panel corners. The Plan document has a rounded top edge and a fixed action region outside scrolling. Dividers and selection washes group the work; there is no resting card shadow.
+
+### Inputs / Fields
+
+General fields keep 9px 12px padding and their source minimum height; compact Plan and Settings inputs use 7px 10px padding and a 36px minimum. Search uses a 36px border box. Ordinary focus changes the border and adds the source ring. Job posting starts at 220px, current and suggested overviews at 150px, and the full application description at 180px; textareas resize vertically.
+
+Recommendation rows have a 48px independent importance column, 26px Remove column, 6px gap, and transparent input/textarea surfaces. Hover adds a quiet wash. Focus adds field fill, focus border, and a 2px ring. Theme fields grow with content inside their source bounds. Copy actions use current editable text.
 
 ### Navigation
 
-The shared native title region is 44px high and shows only Zebby. Windows uses native overlay controls; macOS uses native traffic lights at x=18, y=16. The Windows sidebar spans the title region with 8px top padding; the Mac sidebar starts below it with 4px top padding. Brand bottom padding is 12px. The sidebar segment uses the same `forest` fill as the rail, and the remaining title region uses `canvas`. Keep the title free of database filenames and do not add HTML window controls.
+The rail has 48px destination targets, 24px icons, 14px type at weight 600, and accent-wash/rust selection. Its 54px zebra toggle preserves action names, expanded state, keyboard activation, and local preference rollback. The database footer appears only when expanded. The 44px native title region shows only Zebby.
 
-The circular zebra is a 54px semantic button containing the unchanged 46px image. It switches the left sidebar between icons plus labels and icons only, without a sidebar wordmark. Expanded navigation is 210px wide, or 176px at the 850px window breakpoint; collapsed navigation is 96px on both platforms. Active destinations use `surface-selected`, readable ink, and the neutral `accent` icon. Hover uses `surface-hover`; the zebra button uses `surface-selected` on hover and a 2px `focus` outline with a 3px offset.
+Accepted activation keeps the existing brief offline Lottie animation without delaying navigation. Reduced motion uses the still state. Hover/selection uses .18s ease-out; ordinary buttons use .18s ease. Navigation animation remains the existing authored moment.
 
-Each destination has a 48px minimum target and a 24px icon. Accepted click or keyboard activation navigates immediately, then plays a brief offline Lottie animation: Plan redraws clipboard rows, Applications lifts the briefcase flap, and Settings moves its two sliders. Each composition runs 25 frames at 60fps (about 417ms), with a still frame at rest. Reduced motion stays still; load errors expose the static icon. Completion, document hiding, and a change to reduced motion return the player to rest; unmounting destroys the player and removes its listeners.
+### Role inspector and Plan document
 
-The toggle exposes `aria-expanded`, `aria-controls`, and Expand navigation or Collapse navigation action labels and tooltips. Enter and Space activate the semantic button. Each destination retains its accessible name and current-page state; icons only destinations have tooltips. An available-update action sits at the bottom in either state, with an icon, accessible phase label, and tooltip when collapsed. Expanded navigation adds the current database name and save-pending state beneath it. Collapsed navigation omits the database details and divider. Current file details remain available in Settings.
+Selecting an application connects it to the persistent inspector, or expands inline details in smaller layouts. Inference temporarily protects affected sources and Cancel reaches the provider before persistence; a committed or finished result cannot be acknowledged as cancelled.
 
-The navigation preference is saved on each computer. A failed save restores the previous layout and displays an error. Toggling preserves the current draft and destination. Windows has no native menu bar; macOS keeps only the native app menu. Settings starts directly with five sections: Database, Analysis, Appearance, Logs, and Updates. Section headings provide its hierarchy without a repeated page heading or introductory subheading.
-
-### Cards and containers
-
-The statistic band, application list, empty state, and editor sit on paper. The band and table use rules between items. Only the editor has a shadow.
-
-### Inputs and fields
-
-Inputs use the appearance-specific field fill, strong rule borders, and the `field` radius. The Graphite focus border and ring work with the global keyboard outline. Field labels sit above controls. The resume upload button uses a dashed green border to distinguish file selection from data entry.
-
-### Job importance
-
-Core ATS keywords use editable single-line fields; Core resume themes use editable multi-line fields. Each row reserves a separate 52px column for a read-only percentage badge and a 26px column for Remove. Badges use neutral Graphite information ink on its wash, a 5px corner radius, and tabular numerals. Unrated values use quieter canvas and ink-faint colors. Add keyword and Add theme are Graphite information text actions, and a new row receives focus. Labels, tooltips, and the nearby explanation identify the percentage as estimated importance to the job; resume match remains a separate value.
-
-### Plan analysis
-
-The primary Analyze button sits at the end of Your CV for both new and previously analyzed plans, with a quiet provider or model caption. Busy analysis replaces its icon with a spinner and uses a progress ring in the match summary. The existing refresh action remains beside a saved score. A native Why disclosure sits within the match summary, below its estimate caption, using a fine divider and keyboard focus. Its body describes the score's resume evidence and gaps; the overview wording rationale has its own place below the generated overview.
-
-### Settings links
-
-Database keeps its native Open and Create new database actions and one concise helper line. Logs uses brief automatic-error copy followed by underlined Open logs folder and Report an issue actions with external-arrow icons. These actions use Graphite information and shared keyboard focus.
-
-Updates follows Logs using the existing section grid, heading style, helper text, and bordered secondary buttons. Its heading caption shows the installed Zebby version. Check for updates sits beside the available update action; Release notes uses the same underlined external-link treatment. The shared update button changes from Update to a version into download percentage, Preparing update, Restart to update, Restarting, or Retry update. Busy phases use a spinner and disable the action. Status copy uses a live status region; check or download errors use the existing error surface and alert role. The collapsed sidebar action is a 48px square with the same phase-specific accessible name.
-
-### Application records
-
-The desktop list is a fixed-layout table with clearly separated columns. A compact company label follows the role title on the same baseline when space allows. Multiple locations use a chevron disclosure and separate labels when expanded. Match strength combines a percentage, short progress track, and refresh icon; a single progress ring replaces these while analysis runs. Green indicates stronger matches, while warmer tones indicate lower matches. Saved listing text lives in the editable Notes dialog, accessible from the row actions. Status is a native select styled as a compact tinted control, with each status retaining its own color. On narrow screens, table headers hide and each record carries its own labels and actions.
+Plan pairs Job posting and Your CV, keeps Analyze below the CV and Save outside document scrolling, and preserves editable recommendations and suggested overview. Why and the saved wording rationale remain separate explanations. Surface strategy and pinned scope live in the formal briefs.
 
 ## Do's and Don'ts
 
 ### Do:
 
-- **Do** use the sidebar to identify Plan, Applications, and Settings, keeping the workspace and its data compact.
-- **Do** keep controls legible and preserve 44px targets for mobile row actions and status changes.
-- **Do** pair match-track color with a numeric percentage, and pair status tint with readable text.
-- **Do** show visible keyboard focus and respect reduced-motion preferences.
-- **Do** keep the unchanged zebra accessible as the navigation toggle and retain native platform window controls.
+- Do use the appearance-specific Ember tokens and preserve native platform behavior.
+- Do keep the unchanged zebra accessible as the navigation toggle and retain native window controls.
+- Do pair status and match colors with readable text and numeric values.
+- Do preserve visible keyboard focus, current-page state, and reduced-motion behavior.
+- Do retain usable scroll regions at short logical heights and high scaling.
 
 ### Don't:
 
-- **Don't** add shadows to every row or metric; the editor is the elevated surface.
-- **Don't** rely on color alone to communicate match strength or status.
-- **Don't** add a sidebar wordmark, put a database filename in the title region, or draw HTML window controls.
-- **Don't** compress application records into an unreadable mobile table; use labeled record cards.
+- Don't replace the user-selected Ember world with Graphite or introduce display fonts into the desktop workspace.
+- Don't add raised cards or shadows to resting documents, role rows, metrics, or the application form.
+- Don't put a sidebar wordmark or database filename in the title region, or draw HTML window controls.
+- Don't communicate hiring status, match strength, or job importance through color alone.
+- Don't apply Windows scrollbar styling to Mac or replace the unchanged zebra artwork.

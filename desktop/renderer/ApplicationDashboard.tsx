@@ -148,6 +148,12 @@ export default function ApplicationDashboard() {
   const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
   const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(() => new Set());
   const analysisRequestsRef = useRef(new Set<string>());
+  const analysisControllers = useRef(new Map<string, { id: string; controller: AbortController }>());
+  const [cancellingIds, setCancellingIds] = useState<Set<string>>(() => new Set());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [compact, setCompact] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const layoutRef = useRef<HTMLDivElement>(null);
   const [confirmingDelete, setConfirmingDelete] = useState<Application | null>(null);
   const [viewingNotes, setViewingNotes] = useState<Application | null>(null);
   const [notesDraft, setNotesDraft] = useState("");
@@ -166,6 +172,12 @@ export default function ApplicationDashboard() {
   const appliedDateTouchedRef = useRef(false);
   const deleteDialogRef = useRef<HTMLDialogElement>(null);
   const notesDialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const requests = analysisControllers.current;
+    return () => { for (const request of requests.values()) {
+      void window.desktop?.cancelAnalysis(request.id).catch(() => undefined); request.controller.abort();
+    } };
+  }, []);
 
   useEffect(() => {
     const dialog = deleteDialogRef.current;
@@ -232,6 +244,15 @@ export default function ApplicationDashboard() {
       setLoading(false);
     }
   }, []);
+  useLayoutEffect(() => {
+    const element = layoutRef.current;
+    if (!element) return;
+    const resize = () => setCompact(element.clientWidth < 940);
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [loading, formOpen, applications.length]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadData(), 0);
@@ -274,6 +295,7 @@ export default function ApplicationDashboard() {
       return matchesStatus && matchesCompany && matchesQuery;
     });
   }, [applications, query, companyFilter, statusFilter]);
+  const selected = visibleApplications.find((item) => item.id === selectedId) || visibleApplications[0] || null;
 
   const companyCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -342,7 +364,7 @@ export default function ApplicationDashboard() {
         details.team && "team", details.locations && "locations",
       ].filter(Boolean);
       setLookupMessage(text
-        ? `Saved a copy of the listing text for offline reference.${fields.length ? ` Found ${fields.join(", ")}.` : ""}`
+        ? `Listing text added to this draft.${fields.length ? ` Found ${fields.join(", ")}.` : ""}`
         : fields.length ? `Found ${fields.join(", ")}, but no job text. Paste it below to keep a copy.`
           : "The site did not share listing details. Paste the description below to keep a copy.");
     } catch (error) {
@@ -388,6 +410,7 @@ export default function ApplicationDashboard() {
   }
 
   function openEditForm(item: Application) {
+    if (analysisRequestsRef.current.has(item.id)) return;
     lastTriggerRef.current = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
@@ -478,6 +501,7 @@ export default function ApplicationDashboard() {
         ),
       );
       setFormOpen(false);
+      setSelectedId(saved.application.id);
       lookupControllerRef.current?.abort();
       setEditingId(null);
       setNotice(editingId ? "Application updated." : "Application added.");
@@ -493,6 +517,7 @@ export default function ApplicationDashboard() {
   }
 
   async function updateStatus(item: Application, status: ApplicationStatus) {
+    if (analysisRequestsRef.current.has(item.id)) return;
     setSavingStatusId(item.id);
     setActionError("");
     try {
@@ -517,24 +542,42 @@ export default function ApplicationDashboard() {
     if (analysisRequestsRef.current.has(item.id)) return;
     analysisRequestsRef.current.add(item.id);
     setAnalyzingIds((current) => new Set(current).add(item.id));
+    const request = { id: crypto.randomUUID(), controller: new AbortController() };
+    analysisControllers.current.set(item.id, request);
     setActionError("");
     if (!automatic) setNotice("");
     try {
       const { application } = await readJson<{ application: Application }>(
-        await fetch(`/api/applications/${encodeURIComponent(item.id)}/analyze`, { method: "POST" }),
+        await fetch(`/api/applications/${encodeURIComponent(item.id)}/analyze`, {
+          method: "POST", headers: { "X-Zebby-Analysis-ID": request.id }, signal: request.controller.signal }),
       );
+      request.controller.signal.throwIfAborted();
       setApplications((current) => current.map((existing) => existing.id === item.id ? application : existing));
-      setNotice(`Match analysis saved for ${application.title || application.company || "this application"}.`);
+      setNotice("Match saved.");
     } catch (error) {
+      if (request.controller.signal.aborted) { setNotice("Analysis cancelled."); return; }
       const message = error instanceof Error ? error.message : "Match analysis could not be completed.";
       setActionError(automatic ? `Application saved, but match analysis needs attention: ${message}` : message);
     } finally {
       analysisRequestsRef.current.delete(item.id);
+      analysisControllers.current.delete(item.id);
       setAnalyzingIds((current) => { const next = new Set(current); next.delete(item.id); return next; });
+      setCancellingIds((current) => { const next = new Set(current); next.delete(item.id); return next; });
     }
   }
 
+  async function cancelMatch(item: Application) {
+    const request = analysisControllers.current.get(item.id);
+    if (!request || cancellingIds.has(item.id)) return;
+    setCancellingIds((current) => new Set(current).add(item.id));
+    try {
+      if (!window.desktop || await window.desktop.cancelAnalysis(request.id)) request.controller.abort();
+    } catch { setActionError("Could not cancel analysis. Try again."); }
+    finally { setCancellingIds((current) => { const next = new Set(current); next.delete(item.id); return next; }); }
+  }
+
   function openNotes(item: Application) {
+    if (analysisRequestsRef.current.has(item.id)) return;
     setViewingNotes(item);
     setNotesDraft(item.notes || "");
     setNotesError("");
@@ -557,6 +600,7 @@ export default function ApplicationDashboard() {
   }
 
   async function deleteApplication(item: Application) {
+    if (analysisRequestsRef.current.has(item.id)) return;
     setDeletingId(item.id);
     setActionError("");
     try {
@@ -574,11 +618,85 @@ export default function ApplicationDashboard() {
     }
   }
 
+  function matchControl(item: Application) {
+    const running = analyzingIds.has(item.id);
+    return <div className="match-control" aria-busy={running}>
+      {running ? <><MatchProgressRing />
+        <button className="match-refresh" type="button" onClick={() => void cancelMatch(item)}
+          disabled={cancellingIds.has(item.id)} title="Cancel analysis"
+          aria-label={`Cancel match analysis for ${item.title || "untitled role"} at ${item.company || "unknown company"}`}><X size={15} aria-hidden="true" /></button></>
+      : <>{item.matchStrength === null ? <span className="cell-empty">Not scored</span> :
+        <span className={"match-score " + matchTone(item.matchStrength)}>
+          <strong>{item.matchStrength}%</strong><span className="score-track" aria-hidden="true"><span style={{ width: `${item.matchStrength}%` }} /></span></span>}
+        {item.resumeId && <button className="match-refresh" type="button"
+          disabled={formOpen && editingId === item.id}
+          aria-label={`${item.matchStrength === null ? "Analyze" : "Refresh"} match for ${item.title || "untitled role"} at ${item.company || "unknown company"}`}
+          title={item.matchStrength === null ? "Analyze match" : "Refresh match"} onClick={() => void analyzeMatch(item)}><RefreshCw size={14} aria-hidden="true" /></button>}</>}
+    </div>;
+  }
+
+  function statusControl(item: Application) {
+    return <select className="status-select" data-status={item.status}
+      aria-label={`Status for ${item.title || "untitled role"} at ${item.company || "unknown company"}`}
+      value={item.status} disabled={savingStatusId === item.id || analyzingIds.has(item.id)}
+      onChange={(event) => void updateStatus(item, event.target.value as ApplicationStatus)}>
+      {APPLICATION_STATUSES.map((status) => <option key={status}>{status}</option>)}
+    </select>;
+  }
+
+  function resumeLink(item: Application) {
+    return item.resumeId ? <a className="resume-link" title={`Save a copy of ${item.resumeName}`}
+      aria-label={`Save a copy of ${item.resumeName}`} href={`/api/resumes/${encodeURIComponent(item.resumeId)}`}
+      onClick={window.desktop ? (event) => { event.preventDefault(); void window.desktop?.downloadResume(item.resumeId)
+        .catch(() => setActionError("Could not save the resume. Try again.")); } : undefined}>
+      <FileText size={16} aria-hidden="true" /><span>{item.resumeName}</span></a> : <span className="cell-empty">No resume selected</span>;
+  }
+
+  function rowActions(item: Application) {
+    return <span className="row-actions">
+      <button type="button" aria-label={`Notes for ${item.title} at ${item.company}`} title="Notes" disabled={analyzingIds.has(item.id)}
+        onClick={() => openNotes(item)}><NotebookPen size={17} aria-hidden="true" />{item.notes && <span className="notes-indicator" />}</button>
+      <button type="button" aria-label={`Edit ${item.title} at ${item.company}`} title="Edit" disabled={analyzingIds.has(item.id)}
+        onClick={() => openEditForm(item)}><Pencil size={17} aria-hidden="true" /></button>
+      <button type="button" aria-label={`Delete ${item.title} at ${item.company}`} title="Delete" disabled={analyzingIds.has(item.id)}
+        onClick={() => setConfirmingDelete(item)}><Trash2 size={17} aria-hidden="true" /></button>
+    </span>;
+  }
+
+  function inspector(item: Application) {
+    return <>
+      <div className="inspector-heading"><div><h3>{item.title || "Untitled role"}</h3><p>{item.company || "Company not set"}</p></div>
+        <button className="icon-button" type="button" aria-label={`Edit ${item.title} at ${item.company}`} title="Edit"
+          disabled={analyzingIds.has(item.id)} onClick={() => openEditForm(item)}><Pencil size={17} aria-hidden="true" /></button></div>
+      <dl className="inspector-facts">
+        <div><dt>Status</dt><dd>{statusControl(item)}</dd></div>
+        <div><dt>Applied</dt><dd>{formatDate(item.appliedDate)}</dd></div>
+        <div><dt>Match</dt><dd>{matchControl(item)}</dd></div>
+      </dl>
+      {!item.resumeId && <p className="match-help">Add a resume and job text to analyze.</p>}
+      {item.matchStrength !== null && <details className="inspector-why" open><summary>Why this score</summary>
+        <p>{item.matchNotes || "Refresh the match to add an explanation."}</p></details>}
+      {item.team && <section className="inspector-section"><h4>Team</h4><p>{item.team}</p></section>}
+      {item.locations && <section className="inspector-section"><h4>Locations</h4>
+        <div className="inspector-locations">{parseLocations(item.locations).map((place) => <span key={place}>{place}</span>)}</div></section>}
+      <section className="inspector-section"><h4>Resume</h4>{resumeLink(item)}</section>
+      <section className="inspector-section"><div className="inspector-section-head"><h4>Notes</h4>
+        <button className="icon-button" type="button" aria-label={`Notes for ${item.title} at ${item.company}`} title="Edit notes"
+          disabled={analyzingIds.has(item.id)} onClick={() => openNotes(item)}><NotebookPen size={17} aria-hidden="true" /></button></div>
+        {item.notes ? <pre className="inspector-notes">{item.notes}</pre> : <p className="cell-empty">No notes yet</p>}</section>
+      <div className="inspector-footer">{item.listingUrl && <a className="listing-link" href={item.listingUrl} target="_blank" rel="noopener noreferrer">
+        View listing <ArrowUpRight size={13} aria-hidden="true" /></a>}
+        <button className="icon-button" type="button" aria-label={`Delete ${item.title} at ${item.company}`} title="Delete"
+          disabled={analyzingIds.has(item.id)} onClick={() => setConfirmingDelete(item)}><Trash2 size={17} aria-hidden="true" /></button></div>
+    </>;
+  }
+
   return (
-    <div className="desktop-dashboard">
+    <div className={`desktop-dashboard${formOpen ? " form-open" : ""}`}>
       <main className="main-content" aria-label="Applications">
         <div className="workspace-toolbar">
-          <button ref={addButtonRef} className="button button-primary" type="button" onClick={openNewForm}>
+          <span className="workspace-context">{applications.length} saved {applications.length === 1 ? "application" : "applications"}</span>
+          <button ref={addButtonRef} className="button button-primary" type="button" data-command="new" onClick={openNewForm}>
             <Plus size={18} aria-hidden="true" />
             Add application
           </button>
@@ -607,7 +725,7 @@ export default function ApplicationDashboard() {
               </button>
             </div>
             <form onSubmit={saveApplication}>
-              <div className="form-grid">
+              <fieldset className="form-grid" disabled={saving || Boolean(editingId && analyzingIds.has(editingId))}>
                 <div className="field field-wide listing-field">
                   <label htmlFor="listing-url">Job listing link</label>
                   <div className="listing-input-row">
@@ -625,7 +743,7 @@ export default function ApplicationDashboard() {
                       {lookingUp ? "Reading..." : "Fill from link"}
                     </button>
                   </div>
-                  <small id="listing-help">A public link can fill available details and save a text copy for offline use. You can leave it blank.</small>
+                  <small id="listing-help">Reads available details and adds the job text to this draft.</small>
                   {lookupMessage && <p className="lookup-message" role="status">{lookupMessage}</p>}
                   {duplicateApplication && <div className="duplicate-warning" role="status">
                     <strong>This listing is already saved.</strong>
@@ -649,15 +767,14 @@ export default function ApplicationDashboard() {
                 <label className="field">
                   <span>Date applied</span>
                   <input type="date" value={form.appliedDate} onChange={(event) => { appliedDateTouchedRef.current = true; updateField("appliedDate", event.target.value); }} />
-                  <small>Set to today. Change it if you applied on another date.</small>
                 </label>
                 <label className="field">
                   <span>Match strength</span>
                   <span className="input-suffix">
-                    <input type="number" min="0" max="100" step="1" value={form.matchStrength} onChange={(event) => updateField("matchStrength", event.target.value)} placeholder="Score later" />
+                    <input aria-label="Match strength" type="number" min="0" max="100" step="1" value={form.matchStrength} onChange={(event) => updateField("matchStrength", event.target.value)} placeholder="Score later" />
                     <span>%</span>
                   </span>
-                  <small>With a resume selected, the app will calculate this after saving. You can also enter a score.</small>
+                  <small>Calculated after saving with a resume and job text. Or enter your own score.</small>
                 </label>
                 <label className="field">
                   <span>Status</span>
@@ -685,25 +802,25 @@ export default function ApplicationDashboard() {
                     accept=".pdf,.docx,.doc"
                     onChange={(event) => setResumeFile(event.target.files?.[0] || null)}
                   />
-                  <small>Optional. PDF, DOCX, or DOC, up to 10 MB. A new upload is saved for later use.</small>
+                  <small>PDF, DOCX, or DOC. Up to 10 MB.</small>
                 </div>
                 <label className="field field-wide">
                   <span>Job description</span>
                   <textarea className="application-description" value={form.jobDescription}
                     onChange={(event) => updateField("jobDescription", event.target.value)}
                     onPaste={(event) => pasteJobDescription(event, (value) => updateField("jobDescription", value))}
-                    placeholder="Paste the posting here if you want to analyze your resume match later. A saved Plan for the same link can supply it too."
+                    placeholder="Paste job description"
                     maxLength={80000} />
-                  <small>Used for resume match analysis with your selected provider. If a site blocks access, paste its text here to save a copy.</small>
+                  <small>Needed for analysis (80+ characters). A Plan with the same link can supply it.</small>
                 </label>
                 {editingId && applications.find((item) => item.id === editingId)?.matchNotes &&
                   <div className="field-wide match-explanation"><strong>Match analysis</strong>
                     <p>{applications.find((item) => item.id === editingId)?.matchNotes}</p></div>}
-              </div>
+              </fieldset>
               {actionError && <p className="form-error" role="alert">{actionError}</p>}
               <div className="form-actions">
                 <button className="button button-secondary" type="button" onClick={closeForm} disabled={saving}>Cancel</button>
-                <button className="button button-primary" type="submit" disabled={saving}>
+                <button className="button button-primary" type="submit" data-command="save" disabled={saving}>
                   <Check size={17} aria-hidden="true" />
                   {saving ? "Saving..." : editingId ? "Save changes" : "Save application"}
                 </button>
@@ -715,14 +832,14 @@ export default function ApplicationDashboard() {
         <section className="applications-section" aria-labelledby="applications-title">
           <div className="section-toolbar">
             <div>
-              <h2 id="applications-title">Your roles</h2>
-              <p>{loading ? "Loading applications..." : applications.length + (applications.length === 1 ? " application" : " applications")}</p>
+              <h2 id="applications-title" className="visually-hidden">Your roles</h2>
+              <p>{loading ? "Loading applications..." : `${visibleApplications.length} of ${applications.length} applications`}</p>
             </div>
             <div className="filters">
               <label className="search-field">
                 <Search size={17} aria-hidden="true" />
                 <span className="visually-hidden">Search applications</span>
-                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search roles or companies" />
+                <input data-command="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search roles or companies" />
               </label>
               <label className="filter-field">
                 <span className="visually-hidden">Filter by company</span>
@@ -764,82 +881,37 @@ export default function ApplicationDashboard() {
             <div className="state-panel"><p>No applications match your search or filter.</p></div>
           )}
           {!loadError && !loading && visibleApplications.length > 0 && (
-            <div className="table-wrap">
-              <table className="applications-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Role</th>
-                    <th scope="col">Applied</th>
-                    <th scope="col">Match</th>
-                    <th scope="col">Resume</th>
-                    <th scope="col">Status</th>
-                    <th scope="col"><span className="visually-hidden">Actions</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleApplications.map((item) => (
-                    <tr key={item.id}>
-                      <td className="role-cell">
-                        <div className="role-heading"><strong>{item.title || "Untitled role"}</strong>
-                          <span className="role-company">{item.company || "Company not set"}</span></div>
-                        {item.team && <span className="role-context">Team: {item.team}</span>}
-                        <LocationSummary value={item.locations} />
-                        {item.listingUrl && <a href={item.listingUrl} target="_blank" rel="noopener noreferrer">
-                          View listing <ArrowUpRight size={13} aria-hidden="true" />
-                        </a>}
-                      </td>
-                      <td><span className="mobile-label">Applied</span>{formatDate(item.appliedDate)}</td>
-                      <td className="match-cell" aria-busy={analyzingIds.has(item.id)}>
-                        <span className="mobile-label">Match</span>
-                        {analyzingIds.has(item.id) ? <MatchProgressRing /> : <div className="match-control">
-                          {item.matchStrength === null ? <span className="cell-empty">Not scored</span> :
-                          <span className={"match-score " + matchTone(item.matchStrength)} title={item.matchNotes || undefined}>
-                            <strong>{item.matchStrength}%</strong>
-                            <span className="score-track"><span style={{ width: item.matchStrength + "%" }} /></span>
-                          </span>}
-                          {item.resumeId && <button className="match-refresh" type="button"
-                            aria-label={`${item.matchStrength === null ? "Analyze" : "Refresh"} match for ${item.title || "untitled role"} at ${item.company || "unknown company"}`}
-                            title={item.matchStrength === null ? "Analyze match" : "Refresh match"}
-                            onClick={() => void analyzeMatch(item)}><RefreshCw size={14} aria-hidden="true" /></button>}
-                        </div>}
-                        {!item.resumeId && !analyzingIds.has(item.id) && <small className="match-help">Add a resume to analyze</small>}
-                      </td>
-                      <td>
-                        <span className="mobile-label">Resume</span>
-                        {item.resumeId ? <a className="resume-link" title={item.resumeName} href={"/api/resumes/" + encodeURIComponent(item.resumeId)}
-                          onClick={window.desktop ? (event) => {
-                            event.preventDefault();
-                            void window.desktop?.downloadResume(item.resumeId).catch((error) =>
-                              setActionError(error instanceof Error ? error.message : "Resume could not be saved."));
-                          } : undefined}>
-                          <FileText size={16} aria-hidden="true" />
-                          <span>{item.resumeName}</span>
-                        </a> : <span className="cell-empty">Not added</span>}
-                      </td>
-                      <td>
-                        <span className="mobile-label">Status</span>
-                        <select
-                          className="status-select"
-                          data-status={item.status}
-                          aria-label={"Status for " + (item.title || "untitled role") + " at " + (item.company || "unknown company")}
-                          value={item.status}
-                          disabled={savingStatusId === item.id}
-                          onChange={(event) => void updateStatus(item, event.target.value as ApplicationStatus)}
-                        >
-                          {APPLICATION_STATUSES.map((status) => <option key={status}>{status}</option>)}
-                        </select>
-                      </td>
-                      <td className="actions-cell">
-                          <span className="row-actions">
-                            <button type="button" aria-label={"Notes for " + item.title + " at " + item.company} title="Notes" onClick={() => openNotes(item)}><NotebookPen size={17} aria-hidden="true" />{item.notes && <span className="notes-indicator" />}</button>
-                            <button type="button" aria-label={"Edit " + item.title + " at " + item.company} onClick={() => openEditForm(item)}><Pencil size={17} aria-hidden="true" /></button>
-                            <button type="button" aria-label={"Delete " + item.title + " at " + item.company} onClick={() => setConfirmingDelete(item)}><Trash2 size={17} aria-hidden="true" /></button>
-                          </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className={`applications-layout ${compact ? "compact" : "wide"}`} ref={layoutRef}>
+              <div className="application-list" aria-label="Applications">
+                {visibleApplications.map((item) => <article key={item.id}
+                  className={`application-row ${selected?.id === item.id ? "selected" : ""}`}>
+                  <div className="application-row-main">
+                    <button className="application-row-select" type="button"
+                      aria-label={`View details for ${item.title || "untitled role"} at ${item.company || "unknown company"}`}
+                      aria-pressed={!compact ? selected?.id === item.id : undefined}
+                      aria-expanded={compact ? selected?.id === item.id && detailsOpen : undefined}
+                      aria-controls={compact && selected?.id === item.id && detailsOpen ? `application-details-${item.id}` : undefined}
+                      onClick={() => { setSelectedId(item.id); setDetailsOpen(selected?.id !== item.id || !detailsOpen); }}>
+                      <span className="role-heading"><strong>{item.title || "Untitled role"}</strong>
+                        <span className="role-company">{item.company || "Company not set"}</span>
+                        {compact && <ChevronDown className="role-detail-chevron" size={15} aria-hidden="true" />}</span>
+                    </button>
+                    {matchControl(item)}
+                    {statusControl(item)}
+                  </div>
+                  <div className="application-row-meta role-cell">
+                    <LocationSummary value={item.locations} />
+                    <span className="role-context">{formatDate(item.appliedDate)}</span>
+                  </div>
+                  <div className="application-row-foot">{item.listingUrl ? <a className="listing-link" href={item.listingUrl} target="_blank" rel="noopener noreferrer">
+                    View listing <ArrowUpRight size={13} aria-hidden="true" /></a> : <span />}
+                    {rowActions(item)}</div>
+                  {compact && selected?.id === item.id && detailsOpen && <div className="application-inline-details" id={`application-details-${item.id}`}>
+                    {inspector(item)}</div>}
+                </article>)}
+              </div>
+              {!compact && selected && !formOpen && <aside className="application-inspector" aria-label="Selected role details" key={selected.id}>
+                {inspector(selected)}</aside>}
             </div>
           )}
         </section>
@@ -853,7 +925,7 @@ export default function ApplicationDashboard() {
           <label className="notes-editor"><span className="visually-hidden">Notes</span>
             <textarea value={notesDraft} onChange={(event) => setNotesDraft(event.target.value)} maxLength={MAX_APPLICATION_NOTES_CHARS}
               onPaste={(event) => pasteJobDescription(event, setNotesDraft)}
-              placeholder="Add pre-screen questions, people to contact, interview details, or anything else." /></label>
+              disabled={savingNotes} placeholder="Questions, contacts, interview details..." /></label>
           {notesError && <p className="form-error" role="alert">{notesError}</p>}
           <div className="dialog-actions"><button className="button button-secondary" type="button" disabled={savingNotes} onClick={() => setViewingNotes(null)}>Cancel</button>
             <button className="button button-primary" type="button" disabled={savingNotes} onClick={() => void saveNotes()}>{savingNotes ? "Saving..." : "Save notes"}</button></div>

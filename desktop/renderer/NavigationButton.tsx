@@ -4,8 +4,9 @@ import { BriefcaseBusiness, ClipboardList, Settings2 } from "lucide-react";
 import { navigationAnimations, type NavigationKind } from "./navigation-animations";
 
 const icons = { plan: ClipboardList, applications: BriefcaseBusiness, settings: Settings2 };
-export default function NavigationButton({ kind, label, selected, collapsed, onActivate }: {
+export default function NavigationButton({ kind, label, selected, collapsed, onActivate, disabled = false }: {
   kind: NavigationKind; label: string; selected: boolean; collapsed: boolean; onActivate: () => boolean;
+  disabled?: boolean;
 }) {
   const host = useRef<HTMLSpanElement>(null), player = useRef<HTMLSpanElement>(null);
   const animation = useRef<AnimationItem | null>(null);
@@ -36,7 +37,7 @@ export default function NavigationButton({ kind, label, selected, collapsed, onA
       animation.current.goToAndPlay(0, true);
     }
   }
-  return <button type="button" className={selected ? "active" : ""} onClick={activate}
+  return <button type="button" className={selected ? "active" : ""} onClick={activate} disabled={disabled}
     aria-label={label} title={collapsed ? label : undefined} aria-current={selected ? "page" : undefined}>
     <span className="navigation-icon" data-kind={kind} ref={host} aria-hidden="true">
       <Icon className="navigation-icon-fallback" size={24} /><span className="navigation-icon-player" ref={player} />

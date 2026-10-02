@@ -21,6 +21,8 @@ import { ReleaseUpdates } from "./release-updates";
 import { SelfUpdater } from "./self-update";
 import { nativeWindowShell, windowColors, type Appearance } from "./window-appearance";
 import { DiagnosticLog } from "./diagnostic-log";
+import { randomUUID } from "node:crypto";
+import { AnalysisRequests } from "./analysis-requests";
 
 protocol.registerSchemesAsPrivileged([{
   scheme: "tracker", privileges: { standard: true, secure: true, supportFetchAPI: true },
@@ -39,6 +41,7 @@ let selfUpdater: SelfUpdater;
 let installingUpdate = false;
 let activeApiRequests = 0;
 let activeSettingsRequests = 0;
+const analysisRequests = new AnalysisRequests();
 const updates = new ReleaseUpdates({ version: app.getVersion(), platform: process.platform, arch: process.arch,
   onChange: (value) => mainWindow?.webContents.send("desktop:updates-changed", value),
   onError: (error) => logDiagnostic("Could not check for updates", error) });
@@ -168,12 +171,12 @@ async function captureListing<T extends { listingUrl?: string; snapshotText?: st
 }
 
 async function analyzeWithOpenAI(instructions: string, input: unknown, name: string,
-  schema: Record<string, unknown>, failure: string): Promise<Record<string, unknown>> {
+  schema: Record<string, unknown>, failure: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
   if (!apiKey) throw new Error("Add an OpenAI API key in Settings to run analysis.");
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    signal: AbortSignal.timeout(120_000),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000),
     body: JSON.stringify({ model: "gpt-6-sol", reasoning: { effort: "low" }, store: false,
       instructions, input: Array.isArray(input) || typeof input === "string" ? input : JSON.stringify(input),
       text: { format: { type: "json_schema", name, strict: true, schema } } }),
@@ -201,24 +204,25 @@ function selectedAnalysis() {
 }
 
 async function analyzeWithSelectedProvider(instructions: string, input: unknown, name: string,
-  schema: Record<string, unknown>, failure: string, selected: ReturnType<typeof selectedAnalysis>): Promise<Record<string, unknown>> {
+  schema: Record<string, unknown>, failure: string, selected: ReturnType<typeof selectedAnalysis>, signal: AbortSignal): Promise<Record<string, unknown>> {
+  signal.throwIfAborted();
   return runSelectedAnalysis(selected, {
     ollama: (baseUrl, model, prompt, content, format) => analyzeWithOllama({ baseUrl,
-      model, instructions: prompt, content: JSON.stringify(content), schema: format }),
-    openai: analyzeWithOpenAI,
+      model, instructions: prompt, content: JSON.stringify(content), schema: format, signal }),
+    openai: (...args) => analyzeWithOpenAI(...args, signal),
     ready: (id) => {
       acceptModelTerms(getLocalModel(id), settings.acceptedModelTerms || {});
       return modelDownloads.readyPath(id);
     },
-    local: (...args) => modelEngine.analyze(...args),
+    local: (id, prompt, content, format, maxTokens) => modelEngine.analyze(id, prompt, content, format, maxTokens, signal),
   }, instructions, input, name, schema, failure);
 }
 
-async function analyzePlan(id: string) {
+async function analyzePlan(id: string, signal: AbortSignal, commit: <T>(persist: () => Promise<T>) => Promise<T>) {
   const selected = selectedAnalysis();
   const plan = store.getPlan(id);
   if (!plan) throw new Error("Plan not found.");
-  if (!plan.currentOverview.trim()) throw new Error("Paste your current CV overview before analyzing this plan.");
+  if (!plan.currentOverview.trim()) throw new Error("Add your current resume overview to analyze this plan.");
   if (!plan.resumeId) throw new Error("Choose a resume for this plan before analyzing it.");
   const resume = store.getResume(plan.resumeId);
   if (!resume) throw new Error("The selected resume could not be found.");
@@ -238,7 +242,8 @@ async function analyzePlan(id: string) {
     ] }];
   const analysis = await analyzeWithSelectedProvider(planInstructions,
     input, "resume_plan", planSchema,
-    "The analysis was incomplete. Try again.", selected);
+    "The analysis was incomplete. Try again.", selected, signal);
+  signal.throwIfAborted();
   const keywords = parsePlanRecommendations(analysis.keywords, 6, 20, 200);
   const themes = parsePlanRecommendations(analysis.themes, 5, 6, 1000);
   const overview = typeof analysis.overview === "string" ? publicAnalysisText(analysis.overview.trim()) : "";
@@ -254,12 +259,12 @@ async function analyzePlan(id: string) {
       !explanation || typeof score !== "number" || !Number.isInteger(score) || score < 0 || score > 100) {
     throw new Error("The analysis was incomplete. Try again.");
   }
-  return store.savePlanAnalysis(id, plan.updatedAt, keywords.map((item) => item.text),
+  return commit(() => store.savePlanAnalysis(id, plan.updatedAt, keywords.map((item) => item.text),
     themes.map((item) => item.text), overview, overviewRationale, score,
-    keywords.map((item) => item.importance), themes.map((item) => item.importance), explanation);
+    keywords.map((item) => item.importance), themes.map((item) => item.importance), explanation));
 }
 
-async function analyzeApplicationMatch(id: string) {
+async function analyzeApplicationMatch(id: string, signal: AbortSignal, commit: <T>(persist: () => Promise<T>) => Promise<T>) {
   const selected = selectedAnalysis();
   const application = store.listApplications().find((item) => item.id === id);
   if (!application) throw new Error("Application not found.");
@@ -287,13 +292,14 @@ async function analyzeApplicationMatch(id: string) {
         title: application.title, jobDescription: description.slice(0, 80_000) }) },
     ] }];
   const analysis = await analyzeWithSelectedProvider(matchInstructions, input,
-    "application_match", matchSchema, "The match analysis was incomplete. Try again.", selected);
+    "application_match", matchSchema, "The match analysis was incomplete. Try again.", selected, signal);
+  signal.throwIfAborted();
   const score = analysis.score;
   const explanation = typeof analysis.explanation === "string" ? publicAnalysisText(analysis.explanation.trim()) : "";
   if (typeof score !== "number" || !Number.isInteger(score) || score < 0 || score > 100 || !explanation) {
     throw new Error("The match analysis was incomplete. Try again.");
   }
-  return store.saveMatchAnalysis(id, application.updatedAt, score, explanation, description);
+  return commit(() => store.saveMatchAnalysis(id, application.updatedAt, score, explanation, description));
 }
 
 async function handleApi(request: Request, pathname: string): Promise<Response> {
@@ -315,7 +321,8 @@ async function handleApi(request: Request, pathname: string): Promise<Response> 
       if (method === "DELETE") { await store.deleteApplication(applicationId); return new Response(null, { status: 204 }); }
     }
     const matchId = pathname.match(/^\/api\/applications\/([\da-f-]+)\/analyze$/i)?.[1];
-    if (matchId && method === "POST") return Response.json({ application: await analyzeApplicationMatch(matchId) });
+    if (matchId && method === "POST") return Response.json({ application: await analysisRequests.run(
+      request.headers.get("X-Zebby-Analysis-ID") || randomUUID(), (signal, commit) => analyzeApplicationMatch(matchId, signal, commit)) });
     const notesId = pathname.match(/^\/api\/applications\/([\da-f-]+)\/notes$/i)?.[1];
     if (notesId && method === "PATCH") {
       const input = await request.json() as { notes?: unknown };
@@ -359,9 +366,11 @@ async function handleApi(request: Request, pathname: string): Promise<Response> 
       if (method === "DELETE") { await store.deletePlan(planId); return new Response(null, { status: 204 }); }
     }
     const analysisId = pathname.match(/^\/api\/plans\/([\da-f-]+)\/analyze$/i)?.[1];
-    if (analysisId && method === "POST") return Response.json({ plan: await analyzePlan(analysisId) });
+    if (analysisId && method === "POST") return Response.json({ plan: await analysisRequests.run(
+      request.headers.get("X-Zebby-Analysis-ID") || randomUUID(), (signal, commit) => analyzePlan(analysisId, signal, commit)) });
     return jsonError("Not found.", 404);
   } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") return jsonError("Analysis cancelled.", 499);
     console.error("Desktop API request failed", pathname, error);
     logDiagnostic(`Request failed (${method} ${pathname})`, error);
     const message = error instanceof Error ? error.message : "The request could not be completed.";
@@ -401,6 +410,7 @@ function registerIpc() {
     });
   }
   handle("desktop:state", () => state());
+  handle("desktop:cancel-analysis", (_event, id: string) => analysisRequests.cancel(id));
   handle("desktop:check-updates", () => updates.check(true));
   handle("desktop:confirm-update-loaded", () => selfUpdater.cleanupInstalled(app.getVersion()));
   handle("desktop:download-update", async () => {
@@ -542,13 +552,15 @@ function updateWindowAppearance() {
 function createWindow() {
   const workArea = screen.getPrimaryDisplay().workAreaSize;
   mainWindow = new BrowserWindow({
+    show: !(process.env.PM_TRACKER_TEST_USER_DATA && process.env.PM_TRACKER_TEST_HIDE_WINDOW),
     width: Math.min(1550, workArea.width), height: Math.min(850, workArea.height),
     minWidth: Math.min(790, workArea.width), minHeight: Math.min(620, workArea.height),
     ...nativeWindowShell(process.platform, settings.appearance, nativeTheme.shouldUseDarkColors),
     title: APP_NAME, autoHideMenuBar: true,
     icon: path.join(rendererRoot, "icon.png"),
     webPreferences: { preload: path.join(appRoot, "preload.cjs"), contextIsolation: true,
-      nodeIntegration: false, sandbox: true, webSecurity: true },
+      nodeIntegration: false, sandbox: true, webSecurity: true,
+      ...(process.env.PM_TRACKER_TEST_USER_DATA && process.env.PM_TRACKER_TEST_HIDE_WINDOW ? { backgroundThrottling: false } : {}) },
   });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     openWebLink(url);
@@ -558,6 +570,15 @@ function createWindow() {
     if (!url.startsWith("tracker://app/")) {
       event.preventDefault();
       openWebLink(url);
+    }
+  });
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown" || input.alt || !(process.platform === "darwin" ? input.meta : input.control)) return;
+    const key = input.key.toLowerCase();
+    if (key === "z" || process.platform !== "darwin" && key === "y") {
+      event.preventDefault();
+      if (input.shift || key === "y") mainWindow?.webContents.redo();
+      else mainWindow?.webContents.undo();
     }
   });
   mainWindow.webContents.on("render-process-gone", (_event, details) =>
@@ -627,6 +648,7 @@ else {
         detail: "Open Settings and use Retry save before closing the app.", buttons: ["Keep app open"] });
     } else if (!shuttingDown) {
       event.preventDefault(); shuttingDown = true;
+      analysisRequests.cancelAll();
       void Promise.all([modelDownloads?.pause(), modelEngine?.shutdown(), selfUpdater?.cancel()])
         .catch((error) => logDiagnostic("Could not stop the local model", error))
         .then(() => diagnosticLog.flush())

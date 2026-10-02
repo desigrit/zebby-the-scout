@@ -115,22 +115,22 @@ test("the integrated shell retains native controls on Windows and Mac", () => {
   const windows = nativeWindowShell("win32", "light", true);
   assert.equal(windows.titleBarStyle, "hidden");
   assert.equal(windows.titleBarOverlay.height, 44);
-  assert.equal(windows.titleBarOverlay.color, "#f4f5f7");
-  assert.equal(windows.titleBarOverlay.symbolColor, "#23252a");
+  assert.equal(windows.titleBarOverlay.color, "#f8f6f3");
+  assert.equal(windows.titleBarOverlay.symbolColor, "#302c29");
   assert.equal(windows.trafficLightPosition, undefined);
   const mac = nativeWindowShell("darwin", "dark", false);
   assert.equal(mac.titleBarStyle, "hiddenInset");
   assert.equal(mac.titleBarOverlay.height, 44);
   assert.ok(mac.trafficLightPosition.x >= 12 && mac.trafficLightPosition.x + 70 < 96);
   assert.ok(mac.trafficLightPosition.y >= 12 && mac.trafficLightPosition.y + 14 <= 44);
-  assert.equal(mac.backgroundColor, "#1d1f24");
+  assert.equal(mac.backgroundColor, "#24201e");
 });
 
 test("explicit appearance overrides the OS while Auto follows it", () => {
   for (const systemDark of [true, false]) {
-    assert.equal(windowColors("light", systemDark).background, "#f4f5f7");
-    assert.equal(windowColors("dark", systemDark).background, "#1d1f24");
-    assert.equal(windowColors("auto", systemDark).background, systemDark ? "#1d1f24" : "#f4f5f7");
-    assert.equal(windowColors(undefined, systemDark).background, systemDark ? "#1d1f24" : "#f4f5f7");
+    assert.equal(windowColors("light", systemDark).background, "#f8f6f3");
+    assert.equal(windowColors("dark", systemDark).background, "#24201e");
+    assert.equal(windowColors("auto", systemDark).background, systemDark ? "#24201e" : "#f8f6f3");
+    assert.equal(windowColors(undefined, systemDark).background, systemDark ? "#24201e" : "#f8f6f3");
   }
 });

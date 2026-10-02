@@ -25,6 +25,11 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm run lint -- --quiet
       - run: npm run desktop:build
+      - name: Check native analysis cancellation and keyboard flows
+        run: npm run test:desktop:windows
+        env:
+          ZEBBY_QA_CHECKS_ONLY: "1"
+          ZEBBY_QA_OUTPUT: work/ember-native-qa
       - run: node --experimental-strip-types scripts/qa-local-engine.mjs smollm2-360m
       - run: node node_modules/playwright-core/cli.js install chromium
       - run: npm run test:renderer

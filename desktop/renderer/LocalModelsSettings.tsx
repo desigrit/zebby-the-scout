@@ -4,12 +4,12 @@ import { formatModelBytes, LOCAL_MODELS, type LocalModel, type LocalModelStatus 
 import type { DesktopState } from "../bridge";
 
 function downloadState(model: LocalModel, status: LocalModelStatus) {
-  if (status.status === "ready") return "Ready for offline analysis";
+  if (status.status === "ready") return "Ready";
   if (status.status === "verifying") return "Checking download";
   if (status.status === "paused") return "Download paused";
   if (status.status === "error") return "Download needs attention";
   if (status.status === "downloading") return `Downloading ${model.name}`;
-  return "Select a model to download it to this computer.";
+  return "Not downloaded";
 }
 
 export default function LocalModelsSettings({ state, onState }: { state: DesktopState; onState: (state: DesktopState) => void }) {
@@ -63,7 +63,7 @@ export default function LocalModelsSettings({ state, onState }: { state: Desktop
         </option>)}
       </select>
     </label>
-    <p id="local-download-help" className="settings-help">Selecting a model starts its download. LFM2.5 and Gemma ask you to accept their terms first. Installed models are reused. Analysis runs on this computer&apos;s CPU.</p>
+    <p id="local-download-help" className="settings-help">Models download when selected and run on your CPU. LFM2.5 and Gemma require agreement to their terms.</p>
     {selected && current && <div className="selected-model-detail">
       <p className="model-description">{selected.description}</p>
       <p className="model-memory">Recommended: {selected.memoryHint}. Model download: {formatModelBytes(selected.bytes)}.</p>
@@ -103,9 +103,9 @@ export default function LocalModelsSettings({ state, onState }: { state: Desktop
         </li>;
       })}</ul>
     </details>}
-    <p className="settings-help model-storage-help">Downloads stay in this computer&apos;s app data folder and are kept through updates.
-      {state.platform === "darwin" ? " Delete downloaded models here before removing the app from your Mac." : " The Windows uninstaller removes these downloads."}
-    </p>
+    <details className="analysis-sharing model-storage-help"><summary>Storage and privacy</summary>
+      <p>Your job text and resume stay on this computer. Downloads stay in Zebby&apos;s data folder through updates.
+        {state.platform === "darwin" ? " Delete models here before removing Zebby from your Mac." : " Uninstalling Zebby removes these downloads."}</p></details>
     <button className="settings-link" type="button" onClick={() => {
       void window.desktop!.openModelFolder().then((message) => { if (message) setError(message); })
         .catch(() => setError("Could not open the model folder."));

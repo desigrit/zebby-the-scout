@@ -6,8 +6,8 @@ export const TITLEBAR_HEIGHT = 44;
 export function windowColors(appearance: Appearance | undefined, systemDark: boolean) {
   const dark = appearance === "dark" || (appearance !== "light" && systemDark);
   return dark
-    ? { background: "#1d1f24", foreground: "#f0f1f4" }
-    : { background: "#f4f5f7", foreground: "#23252a" };
+    ? { background: "#24201e", foreground: "#f2f0ec" }
+    : { background: "#f8f6f3", foreground: "#302c29" };
 }
 
 export function nativeWindowShell(platform: NodeJS.Platform, appearance: Appearance | undefined, systemDark: boolean):

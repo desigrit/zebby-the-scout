@@ -27,6 +27,7 @@ export type DesktopState = {
 
 export type DesktopBridge = {
   state(): Promise<DesktopState>;
+  cancelAnalysis(id: string): Promise<boolean>;
   checkForUpdates(): Promise<UpdateState>;
   downloadUpdate(): Promise<UpdateState>;
   installUpdate(): Promise<void>;

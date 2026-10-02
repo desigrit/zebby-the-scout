@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("desktop", {
+  cancelAnalysis: (id: string) => ipcRenderer.invoke("desktop:cancel-analysis", id),
   state: () => ipcRenderer.invoke("desktop:state"),
   checkForUpdates: () => ipcRenderer.invoke("desktop:check-updates"),
   downloadUpdate: () => ipcRenderer.invoke("desktop:download-update"),

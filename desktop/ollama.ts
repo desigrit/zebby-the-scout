@@ -33,6 +33,7 @@ export async function analyzeWithOllama(input: {
   instructions: string;
   content: string;
   schema: Record<string, unknown>;
+  signal?: AbortSignal;
 }, fetcher: typeof fetch = fetch): Promise<Record<string, unknown>> {
   const model = input.model.trim();
   if (!model || model.length > 200 || /[\r\n]/.test(model)) {
@@ -42,7 +43,7 @@ export async function analyzeWithOllama(input: {
   try {
     response = await fetcher(endpoint(input.baseUrl, "/api/chat"), {
       method: "POST", headers: { "Content-Type": "application/json" },
-      signal: AbortSignal.timeout(300_000),
+      signal: input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(300_000)]) : AbortSignal.timeout(300_000),
       body: JSON.stringify({ model, stream: false, think: false,
         format: input.schema, options: { temperature: 0 },
         messages: [
@@ -51,6 +52,7 @@ export async function analyzeWithOllama(input: {
         ] }),
     });
   } catch (error) {
+    input.signal?.throwIfAborted();
     if (error instanceof Error && error.name === "TimeoutError") {
       throw new Error("Ollama did not finish within five minutes. Try a smaller model or resume.");
     }
