@@ -700,14 +700,6 @@
       "css": ".ds-upload { display: inline-flex; align-items: center; min-height: 39px; padding: 7px 11px; border: 1px dashed #96ac9f; border-radius: 7px; background: #f6faf5; color: #285c49; font: 700 13px/1.4 \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif; cursor: pointer; } .ds-upload:hover { background: #eaf4e9; } .ds-upload:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }"
     },
     {
-      "name": "Top Navigation",
-      "kind": "nav",
-      "refersTo": "navigation-topbar",
-      "description": "Existing shared header preview; the desktop uses its sidebar and circular zebra raster.",
-      "html": "<header class=\"ds-topbar\"><div class=\"ds-brand\"><!-- Circular zebra raster omitted from this self-contained preview. Shipping source: public/brand-icon.png. --><span>PM Application Tracker</span></div><span class=\"ds-account\">Private workspace</span></header>",
-      "css": ".ds-topbar { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 76px; padding: 0 clamp(22px, 4vw, 68px); background: var(--forest); color: #f8f7ef; font-family: \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif; } .ds-brand { display: inline-flex; align-items: center; gap: 13px; font-size: 17px; font-weight: 690; letter-spacing: -.025em; } .ds-account { color: #d3e1d9; font-size: 13px; } @media (max-width: 650px) { .ds-topbar { min-height: 67px; } .ds-brand { font-size: 14px; } .ds-account { display: none; } }"
-    },
-    {
       "name": "Statistic Band",
       "kind": "card",
       "description": "Ruled paper cells give application totals a stable reading rhythm.",

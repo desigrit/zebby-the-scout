@@ -100,4 +100,15 @@ For an actual CPU inference check without opening Electron, run `node --experime
 
 Gemma uses model-specific sampling and string bounds in the output grammar to reduce repetitive completions. Its complete source input and full instructions are preserved. CI retains synthetic response diagnostics if native generation fails.
 
-The package commands are `npm run desktop:package:win:x64`, `npm run desktop:package:win:arm64`, and `npm run desktop:package:mac:arm64`. Both Windows packages are built on Windows x64; the macOS package is built on Apple Silicon. Tagging a version as `vX.Y.Z` runs all three builds and publishes the `.exe` and `.dmg` files as GitHub Release assets. GitHub Actions keeps internal build artifacts as ZIP files. The earlier Azure web implementation remains in the repository but is not needed for the desktop app.
+The package commands are `npm run desktop:package:win:x64`, `npm run desktop:package:win:arm64`, and `npm run desktop:package:mac:arm64`. Both Windows packages are built on Windows x64; the macOS package is built on Apple Silicon. Tagging a version as `vX.Y.Z` runs all three builds and publishes the `.exe` and `.dmg` files as GitHub Release assets. GitHub Actions keeps internal build artifacts as ZIP files.
+
+## Repository layout
+
+- `desktop/renderer`: the React interface and styles for Plan, Applications, and Settings.
+- `desktop`: the Electron shell, SQLite storage, analysis providers, model downloads, and updates.
+- `lib`: shared application types, validation, job listing extraction, and formatting helpers.
+- `build`: installer customization, bundled licenses, and model notices.
+- `scripts` and `tests`: desktop builds and verification.
+- `docs`: the user guide, release notes, and screenshots.
+
+This repository contains the desktop app. The earlier web prototype is available in Git history. `npm run build` builds the desktop app, `npm run dev` builds and launches it, and `npm start` launches an existing build.

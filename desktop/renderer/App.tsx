@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ArrowRight, ArrowUpRight, BriefcaseBusiness, Check, FileText, FolderOpen,
   KeyRound, LoaderCircle, Monitor, Moon, Plus, RefreshCw, RotateCw, Search, Sparkles, Sun, Trash2 } from "lucide-react";
-import ApplicationDashboard from "../../app/application-dashboard";
-import LocationEditor from "../../app/location-editor";
-import MatchProgressRing from "../../app/match-progress-ring";
+import ApplicationDashboard from "./ApplicationDashboard";
+import LocationEditor from "./LocationEditor";
+import MatchProgressRing from "./MatchProgressRing";
 import { pasteJobDescription } from "../../lib/job-text-paste";
 import type { DesktopState } from "../bridge";
 import type { Plan, PlanInput } from "../store";
@@ -735,7 +735,7 @@ export default function App() {
           (!LOCAL_MODELS.find((model) => model.id === state.builtInModelId)?.license ||
             state.acceptedModelTerms?.includes(state.builtInModelId)))}
         onOpenSettings={() => navigate("settings")} onDirtyChange={setDirtyPlan} />
-      : tab === "applications" ? <ApplicationDashboard key={databaseVersion} embedded />
+      : tab === "applications" ? <ApplicationDashboard key={databaseVersion} />
       : <SettingsView state={state} onState={setState} onUpdate={() => void applyUpdate()} onCheckUpdates={checkUpdates} updateWorking={updateWorking} />}</div>
   </div>;
 }
