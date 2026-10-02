@@ -98,6 +98,11 @@ try {
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   }
   await page.addInitScript(({ initialState, licenseVersions }) => {
+    window.controlsQA = { copied: "", failCopy: false };
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: async (text) => {
+      if (window.controlsQA.failCopy) throw new Error("Synthetic clipboard failure");
+      window.controlsQA.copied = text;
+    } }, configurable: true });
     const listeners = new Set(), updateListeners = new Set();
     const snapshot = () => structuredClone(initialState);
     const update = (id, change) => { initialState.localModels = initialState.localModels.map((item) =>
@@ -280,6 +285,7 @@ try {
   assert.doesNotMatch(await page.locator(".match-result").innerText(), /Analyzing|Calculating/);
   assert.equal(await page.locator(".match-why").count(), 0);
   assert.equal(await page.getByRole("button", { name: "Analysis in progress", exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole("button", { name: "Copy keyword 1", exact: true }).isDisabled(), true);
   await completeAnalysis("/api/plans/plan-1/analyze");
   await page.locator(".match-result").getByText("86%").waitFor();
   await page.locator(".match-why summary").focus();
@@ -290,6 +296,22 @@ try {
   const themeRows = page.locator(".recommendations-themes .recommendation-row");
   assert.equal(await keywordRows.first().locator(".recommendation-importance").innerText(), "96%");
   assert.equal(await themeRows.first().locator(".recommendation-importance").innerText(), "95%");
+  assert.equal(await page.getByRole("button", { name: "Copy ATS keywords", exact: true }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Copy resume themes", exact: true }).count(), 0);
+  await page.getByRole("button", { name: "Copy keyword 1", exact: true }).click();
+  assert.equal(await page.evaluate(() => window.controlsQA.copied), "Product strategy");
+  await page.getByRole("button", { name: "Copy theme 1", exact: true }).click();
+  assert.equal(await page.evaluate(() => window.controlsQA.copied), "Lead discovery");
+  await page.getByText("Copied theme 1", { exact: true }).waitFor();
+  const copyPosition = await themeRows.first().getByRole("button", { name: "Copy theme 1", exact: true }).boundingBox();
+  const removePosition = await themeRows.first().getByRole("button", { name: "Remove theme 1", exact: true }).boundingBox();
+  assert.ok(copyPosition.x + copyPosition.width <= removePosition.x);
+  await page.evaluate(() => { window.controlsQA.failCopy = true; });
+  await page.getByRole("button", { name: "Copy theme 1", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "Could not copy. Select the text and copy it." }).waitFor();
+  await page.evaluate(() => { window.controlsQA.failCopy = false; });
+  await page.getByRole("button", { name: "Copy theme 1", exact: true }).click();
+  assert.equal(await page.getByRole("alert").filter({ hasText: "Could not copy." }).count(), 0);
   assert.equal(await page.getByText("Estimated job importance.", { exact: false }).count(), 1);
   assert.equal(await page.locator(".brand-mark").evaluate((element) => element.complete && element.naturalWidth > 0), true);
   await captureSettings("plan-windows-light.png");
@@ -331,6 +353,8 @@ try {
   assert.equal(await keywordRows.first().locator(".recommendation-importance").innerText(), "96%");
   await currentOverview.fill(originalOverview);
   await page.getByRole("textbox", { name: "Core ATS keyword 1", exact: true }).fill("Product vision");
+  await page.getByRole("button", { name: "Copy keyword 1", exact: true }).click();
+  assert.equal(await page.evaluate(() => window.controlsQA.copied), "Product vision");
   assert.equal(await keywordRows.first().locator(".recommendation-importance").innerText(), "Unrated");
   assert.equal(await keywordRows.nth(1).locator(".recommendation-importance").innerText(), "94%");
   await page.getByRole("textbox", { name: "Core ATS keyword 1", exact: true }).fill("Product strategy");
@@ -338,6 +362,7 @@ try {
   assert.equal(await page.locator(".recommendation-importance:not(.unrated)").count(), 0);
   await page.getByRole("textbox", { name: "Company", exact: true }).fill("Expedia Group");
   await page.getByRole("button", { name: "Add keyword", exact: true }).click();
+  assert.equal(await page.getByRole("button", { name: "Copy keyword 7", exact: true }).isDisabled(), true);
   await page.getByRole("textbox", { name: "Core ATS keyword 7", exact: true }).fill("SQL");
   assert.equal(await keywordRows.last().locator(".recommendation-importance").innerText(), "Unrated");
   await page.getByRole("button", { name: "Remove keyword 7", exact: true }).click();
@@ -367,6 +392,19 @@ try {
   await page.getByRole("main", { name: "Applications", exact: true }).waitFor();
   const table = page.locator(".application-list");
   await table.getByText("Expedia Group", { exact: true }).waitFor();
+  const pane = page.getByRole("complementary", { name: "Selected role details", exact: true });
+  const firstRow = table.locator(".application-row").first(), firstSelector = firstRow.locator(".application-row-select");
+  const listWidth = await table.evaluate((element) => element.clientWidth);
+  await pane.getByRole("button", { name: "Close details", exact: true }).click();
+  assert.equal(await pane.count(), 0);
+  assert.equal(await firstSelector.evaluate((element) => element === document.activeElement), true);
+  assert.ok(await table.evaluate((element) => element.clientWidth) > listWidth + 300);
+  const firstBox = await firstRow.boundingBox();
+  await firstRow.click({ position: { x: firstBox.width / 2, y: firstBox.height - 8 } });
+  await pane.waitFor();
+  assert.equal(await firstSelector.getAttribute("aria-expanded"), "true");
+  await pane.getByRole("button", { name: "Close details", exact: true }).click();
+  await firstSelector.press("Space"); await pane.waitFor();
   assert.equal(await page.getByRole("heading", { name: "Applications", exact: true }).count(), 0);
   assert.equal(await page.getByRole("button", { name: "Analyze again" }).count(), 0);
   assert.equal(await page.getByRole("button", { name: "Saved copy" }).count(), 0);
@@ -571,9 +609,31 @@ try {
   await nav.getByRole("button", { name: "Plan", exact: true }).click();
   await page.getByRole("textbox", { name: "Core ATS keyword 1", exact: true }).waitFor();
   await captureSettings("plan-mac-light.png");
+  await page.getByRole("button", { name: "Copy theme 1", exact: true }).click();
+  assert.equal(await page.evaluate(() => window.controlsQA.copied), await page.getByRole("textbox", { name: "Core resume theme 1", exact: true }).inputValue());
+  await page.locator(".analysis-section").evaluate((element) => {
+    const scroll = element.closest(".plan-document-scroll");
+    scroll.scrollTop += element.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 24;
+  });
+  await captureSettings("plan-mac-item-copy-light.png", false);
+  await nav.getByRole("button", { name: "Applications", exact: true }).click();
+  const macRow = page.locator(".application-row").first(), macSelector = macRow.locator(".application-row-select");
+  await pane.getByRole("button", { name: "Close details", exact: true }).click();
+  assert.equal(await macSelector.evaluate((element) => element === document.activeElement), true);
+  await captureSettings("applications-mac-pane-closed.png", false);
+  const macBox = await macRow.boundingBox();
+  await macRow.click({ position: { x: macBox.width / 2, y: macBox.height - 8 } });
+  await pane.waitFor();
+  await captureSettings("applications-mac-pane-open.png", false);
+  await nav.getByRole("button", { name: "Plan", exact: true }).click();
   await page.setViewportSize({ width: 790, height: 850 });
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
   await captureSettings("plan-mac-compact-dark.png");
+  await page.locator(".analysis-section").evaluate((element) => {
+    const scroll = element.closest(".plan-document-scroll");
+    scroll.scrollTop += element.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 24;
+  });
+  await captureSettings("plan-mac-item-copy-compact-dark.png", false);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   await page.evaluate(() => { window.modelQA.rejectSidebarSave = true; });
   await page.getByRole("button", { name: "Collapse navigation", exact: true }).click();

@@ -179,6 +179,7 @@ try {
   const beforePlan = JSON.stringify((await api("/api/plans")).plans[0]);
   await page.getByRole("button", { name: "Analyze", exact: true }).click(); await waitForRequest();
   assert.equal(await input.isDisabled(), true);
+  assert.equal(await page.getByRole("button", { name: "Copy keyword 1", exact: true }).isDisabled(), true);
   await page.waitForFunction(() => [...document.querySelectorAll(".sidebar-nav button")].every((button) => button.disabled));
   assert.equal(await nav.getByRole("button", { name: "Settings", exact: true }).isDisabled(), true);
   await capture("plan-analysis-running");
@@ -192,16 +193,50 @@ try {
   });
   await capture("plan-light-results");
   assert.equal(await page.locator(".analysis-grid").evaluate((e) => getComputedStyle(e).gridTemplateColumns.split(" ").length), 2);
-  await page.getByRole("button", { name: "Copy ATS keywords", exact: true }).click();
-  assert.equal(await page.evaluate(() => window.__emberCopied), keywords.join("\n"));
-  await page.getByRole("button", { name: "Copy resume themes", exact: true }).click();
-  assert.equal(await page.evaluate(() => window.__emberCopied), themes.join("\n")); checks.push("Both recommendation copy actions use current editable values (clipboard mocked)");
+  assert.equal(await page.getByRole("button", { name: "Copy ATS keywords", exact: true }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Copy resume themes", exact: true }).count(), 0);
+  await page.getByRole("button", { name: "Copy keyword 1", exact: true }).click();
+  assert.equal(await page.evaluate(() => window.__emberCopied), keywords[0]);
+  await page.getByRole("button", { name: "Copy theme 1", exact: true }).click();
+  assert.equal(await page.evaluate(() => window.__emberCopied), themes[0]); checks.push("Individual keyword/theme copy uses only the current item (clipboard mocked)");
   await theme("dark"); await capture("plan-dark-results");
   await page.locator(".plan-document-scroll").evaluate((e) => e.scrollTo(0, 0)); await capture("plan-dark-top"); await theme("light");
   await nav.getByRole("button", { name: "Applications", exact: true }).click();
   await page.locator(".application-row").first().waitFor();
   await capture("applications-light");
   const row = page.locator(".application-row").first();
+  const selector = row.locator(".application-row-select");
+  const pane = page.getByRole("complementary", { name: "Selected role details", exact: true });
+  const openWidth = await page.locator(".application-list").evaluate((element) => element.clientWidth);
+  await pane.getByRole("button", { name: "Close details", exact: true }).click();
+  assert.equal(await pane.count(), 0);
+  assert.equal(await selector.getAttribute("aria-expanded"), "false");
+  assert.equal(await selector.evaluate((element) => element === document.activeElement), true);
+  assert.ok(await page.locator(".application-list").evaluate((element) => element.clientWidth) > openWidth + 300);
+  await capture("applications-pane-closed");
+  const blankPositions = [
+    () => ({ x: 8, y: 8 }),
+    (box) => ({ x: box.width / 2, y: box.height - 8 }),
+    (box) => ({ x: box.width - 8, y: box.height / 2 }),
+  ];
+  for (const position of blankPositions) {
+    await row.click({ position: position(await row.boundingBox()) });
+    await pane.waitFor();
+    assert.equal(await selector.getAttribute("aria-expanded"), "true");
+    await pane.getByRole("button", { name: "Close details", exact: true }).click();
+  }
+  await selector.press("Enter"); await pane.waitFor();
+  await capture("applications-pane-reopened");
+  const second = page.locator(".application-row").nth(1), secondBox = await second.boundingBox();
+  await second.click({ position: { x: secondBox.width / 2, y: secondBox.height - 8 } });
+  assert.equal(await pane.getByRole("heading", { level: 3 }).innerText(), await second.locator(".role-heading strong").innerText());
+  await pane.getByRole("button", { name: "Close details", exact: true }).click();
+  await second.getByRole("button", { name: /^Notes for/ }).click();
+  await page.getByRole("dialog", { name: "Application notes" }).waitFor();
+  assert.equal(await pane.count(), 0);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await selector.click(); await pane.waitFor();
+  checks.push("Blank row regions select roles; close releases width/restores focus; same/other roles reopen; Notes stays independent");
   const appBefore = (await api("/api/applications")).applications[0];
   const refresh = row.getByRole("button", { name: /^Refresh match/ });
   await refresh.click(); await waitForRequest();
@@ -220,6 +255,13 @@ try {
     await bounds(width, 760); await capture(`applications-${width}`);
     await nav.getByRole("button", { name: "Plan", exact: true }).click();
     await capture(`plan-${width}`);
+    if (width === 790) {
+      await page.locator(".analysis-section").evaluate((element) => {
+        const scroll = element.closest(".plan-document-scroll");
+        scroll.scrollTop += element.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 24;
+      });
+      await capture("plan-790-results");
+    }
     await nav.getByRole("button", { name: "Applications", exact: true }).click();
   }
   await page.getByRole("button", { name: "Collapse navigation" }).click(); await capture("applications-790-collapsed");
@@ -287,6 +329,17 @@ try {
       checks.push("High-scaling role list stays scrollable and keyboard reachable");
     }
     await nav.getByRole("button", { name: "Plan", exact: true }).click(); await capture(`plan-zoom-${zoom}`);
+    if (zoom === 2) {
+      await page.locator(".recommendations-keywords").evaluate((element) => {
+        const scroll = element.closest(".plan-document-scroll");
+        scroll.scrollTop += element.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 24;
+      });
+      assert.equal(await page.getByRole("button", { name: "Copy keyword 1", exact: true }).evaluate((element) => {
+        const box = element.getBoundingClientRect(), scroll = element.closest(".plan-document-scroll").getBoundingClientRect();
+        return box.top >= scroll.top && box.bottom <= scroll.bottom;
+      }), true);
+      await capture("plan-zoom-2-results");
+    }
     await nav.getByRole("button", { name: "Settings", exact: true }).click();
   }
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1));

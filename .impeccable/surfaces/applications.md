@@ -34,6 +34,12 @@ FORM: The user's selected Ember Applications code concept. Preserve the attached
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
 
+## 1.6.1 action contract
+
+Blank space across an application row activates the existing native role selector, selecting the role and opening its details in the wide inspector. Listing links, location disclosures, match, status, Notes, Edit, and Delete remain independent controls above that hit area. Keyboard focus remains visible within the row.
+
+The visible X, named Close details, closes the inspector, preserves selection, gives its released width to the list, and returns focus to the selected role selector. Clicking that role or another reopens details; the focused selector also supports native keyboard activation. Compact layouts retain their inline disclosure and toggle behavior.
+
 ## Role access and form
 
 The list and 300px inspector scroll independently at normal heights, separated by an 18px gap. The role selector has keyboard focus and selected/expanded state. Match includes a percentage, short track, and refresh action; status remains a native tinted select with a visible 2px focus outline. The inspector contains status, date, score/Why, team, locations, resume, and Notes as available.
@@ -52,13 +58,15 @@ The toggle has action labels, expanded state, tooltips, and Enter or Space activ
 
 Windows scroll containers reserve a stable 12px gutter. The resting 2px thumb widens to 8px on hover, focus, or scrolling. Mac keeps native system scrollers. Physical macOS behavior has not been manually reviewed.
 
-Version 1.6.0 keeps schema 10 and the existing SQLite and legacy migration behavior. Applications, plans, Notes, resumes, scores, and previous backups remain intact. Native database dialogs await pending writes and reject switching while changes are unsaved. Cloud-file changes are detected before saving; quit and wait for sync before moving between computers. See [the guide](../../docs/guide.md).
+Version 1.6.1 keeps schema 10 and the existing SQLite and legacy migration behavior. Applications, plans, Notes, resumes, scores, and previous backups remain intact. Native database dialogs await pending writes and reject switching while changes are unsaved. Cloud-file changes are detected before saving; quit and wait for sync before moving between computers. See [the guide](../../docs/guide.md).
 
 Available updates remain at the sidebar's bottom in either navigation state. Update download and verification, restart guards, and installer behavior retain their existing contracts. App-local New, Save, Search, and native text Undo have no visible shortcut list or added zoom controls.
 
 ## Finish evidence
 
-Current captures include light (internal record: `work/ember-implementation/round-2/captures/applications-light.png`), dark (internal record: `work/ember-implementation/round-2/captures/applications-dark.png`), 200% initial view (internal record: `work/ember-implementation/round-2/captures/applications-zoom-2.png`), and 200% reached details (internal record: `work/ember-implementation/round-2/captures/applications-zoom-2-scrolled.png`). The public Applications screenshot uses the light capture and embeds its synthetic native origin.
+### 1.6.0 implementation
+
+The 1.6.0 captures include light (internal record: `work/ember-implementation/round-2/captures/applications-light.png`), dark (internal record: `work/ember-implementation/round-2/captures/applications-dark.png`), 200% initial view (internal record: `work/ember-implementation/round-2/captures/applications-zoom-2.png`), and 200% reached details (internal record: `work/ember-implementation/round-2/captures/applications-zoom-2-scrolled.png`). The public Applications screenshot for that release used the light capture and embedded its synthetic native origin.
 
 The pinned choices recorded here, from internal direction `work/ember-implementation/direction.md`, select Ember Applications and Settings and Rosewood's Plan composition in Ember colors. These are code concept references, not pixel reproduction requirements.
 
@@ -67,3 +75,13 @@ The full finish review (internal record: `work/ember-implementation/finish-revie
 Supplied final evidence reports 72 tests, lint, typecheck, build, complete headless regressions, ten native interaction checks, and 37 native captures passing. These were not rerun by the documenter. Native screenshots use synthetic applications, plans, and a dummy resume in an isolated hidden Windows Electron process. Provider outputs and clipboard are mocked; no real profile, credentials, models, or database were used. Both platform renderer simulations were checked, but physical macOS review and native installer validation remain outside this local evidence. CI handles installer gates separately.
 
 The [UX health report](../../docs/ux-health-v1.6.0.md) records the resolved short-height role access and late cancellation findings, deliberately unchanged F01/F03 behavior, and the remaining low-severity observations. No numerical score or trend is claimed. One detector pass compared against the old system; no second detector, doctor, or context run was performed.
+
+### 1.6.1 control refinement
+
+The narrow control review, recorded internally in work/row-controls/finish-review.md, returned ship with no material fixes for whole-row selection, inspector close/reopen/focus, and individual recommendation copy with their immediate regression boundaries. It does not certify the whole app or assign a fresh health score.
+
+The published Applications screenshot now uses work/row-controls/round-1/captures/applications-light.png, a 1550 by 850 native Windows Electron frame with synthetic data. Its exact source origin is embedded in docs/screenshots/applications.png; the documentation handoff verifies pixel identity with the source and reads back that origin.
+
+Supplied 1.6.1 evidence reports passing typecheck, lint, build, and complete headless renderer checks. The native hidden Windows run reports 11 interaction checks and no errors, covering three blank row regions, released list width, focus return, same/other role reopening, Enter activation, independent Notes, busy disabling, and current single-item copy. The review inspected ten valid native frames and four current Mac renderer simulation frames. The superseded high-scaling Plan frame is replaced by work/row-controls/high-scaling-recapture/captures/plan-zoom-2-results.png.
+
+Providers and clipboard are mocked, and the captures use synthetic data. These checks were not rerun by the documenter. Mac renderer simulations were captured on Windows; physical macOS font, scroller, and native-window behavior remain unverified. Installer CI on the release tag is a separate release gate. Version 1.6.1 preserves schema 10. No context, detector, or doctor was rerun for this control or documentation handoff.

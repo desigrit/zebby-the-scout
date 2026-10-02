@@ -439,7 +439,7 @@ The attached activity panel, role list, inspector, and saved-plan rail share pap
 
 General fields keep 9px 12px padding and their source minimum height; compact Plan and Settings inputs use 7px 10px padding and a 36px minimum. Search uses a 36px border box. Ordinary focus changes the border and adds the source ring. Job posting starts at 220px, current and suggested overviews at 150px, and the full application description at 180px; textareas resize vertically.
 
-Recommendation rows have a 48px independent importance column, 26px Remove column, 6px gap, and transparent input/textarea surfaces. Hover adds a quiet wash. Focus adds field fill, focus border, and a 2px ring. Theme fields grow with content inside their source bounds. Copy actions use current editable text.
+Recommendation rows have a 48px independent importance column, a 26px Copy column immediately before the 26px Remove column, a 6px gap, and transparent input/textarea surfaces. Hover adds a quiet wash. Focus adds field fill, focus border, and a 2px ring. Theme fields grow with content inside their source bounds. Each Copy action uses only its item's current editable text and is disabled for empty items or busy analysis.
 
 ### Navigation
 
@@ -449,7 +449,7 @@ Accepted activation keeps the existing brief offline Lottie animation without de
 
 ### Role inspector and Plan document
 
-Selecting an application connects it to the persistent inspector, or expands inline details in smaller layouts. Inference temporarily protects affected sources and Cancel reaches the provider before persistence; a committed or finished result cannot be acknowledged as cancelled.
+Blank space in an application row activates its native selector and opens the selected role in the persistent inspector. The visible X closes the inspector, releases its width to the list, and returns focus to the selected selector; selecting the same or another role reopens it. Individual row controls retain their own actions, and smaller layouts retain inline disclosure. Inference temporarily protects affected sources and Cancel reaches the provider before persistence; a committed or finished result cannot be acknowledged as cancelled.
 
 Plan pairs Job posting and Your CV, keeps Analyze below the CV and Save outside document scrolling, and preserves editable recommendations and suggested overview. Why and the saved wording rationale remain separate explanations. Surface strategy and pinned scope live in the formal briefs.
 

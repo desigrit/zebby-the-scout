@@ -30,6 +30,12 @@ FORM: The user's selected Rosewood Plan composition in Ember colors, from the ap
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
 
+## 1.6.1 action contract
+
+Each ATS keyword and core resume theme has its own Copy button immediately before Remove, in separate 26px action columns with 30px targets. Copy uses only that item's current text, including edits, without its importance percentage or any other list item. The two copy actions in section headers are removed. Importance, text editing, Add/Remove, and the paired keyword/theme composition retain their existing behavior.
+
+Successful copy shows a check icon for 1.8 seconds and announces the copied item through an accessible status. Empty items and items in busy analysis cannot be copied. Clipboard failure retains the text-selection recovery message and allows another attempt. Recommendation fields retain their transparent resting surface and existing hover/focus treatments.
+
 ## Shared navigation
 
 The unchanged 46px circular zebra sits in a 54px accessible navigation toggle. The title region is 44px and reads only Zebby. Windows navigation spans it with 8px top padding; the image starts at y=12px. Mac navigation starts below it with 4px top padding; the image starts at y=52px. Native Windows controls and Mac traffic lights remain native. Expanded navigation is 210px, 176px at the 850px window breakpoint, and 72px at extreme logical widths of 650px or less. Explicitly collapsed navigation remains 96px. Database details appear only when expanded; Settings retains them in both states.
@@ -43,8 +49,8 @@ Windows scroll containers reserve a stable 12px gutter. The resting 2px thumb wi
 - Analyze remains below Your CV for new and previously analyzed plans. A quiet provider/model caption and minimal missing-input or provider hints explain readiness. The saved match retains its refresh action.
 - During analysis, the current source controls and conflicting actions are temporarily disabled. Cancel reaches Ollama, OpenAI, or the CPU worker before persistence and preserves previous analysis. A committing or completed request rejects cancellation; bounded recent terminal IDs prevent a completed request from being falsely cancelled or replayed.
 - Resume match is a directional estimate using the selected resume and posting. Why is a native disclosure with the saved evidence and gaps. Legacy scores retain their values and request a refresh when no explanation exists.
-- Core ATS keywords are single-line inputs; Core resume themes are multiline fields. Rows are transparent at rest and use fine separators. Hover adds a quiet wash; focus adds the field fill and rust border/ring. Each row reserves a 48px independent importance column and a 26px Remove column.
-- Keywords and themes stay side by side where possible. Each section copies its current edited values, exposes a copied status, and retains Add/Remove. A new row receives focus. Small editor widths can stack the columns.
+- Core ATS keywords are single-line inputs; Core resume themes are multiline fields. Rows are transparent at rest and use fine separators. Hover adds a quiet wash; focus adds the field fill and rust border/ring. Each row reserves a 48px independent importance column, a 26px Copy column, and a 26px Remove column, in that order after the editable text.
+- Keywords and themes stay side by side where possible. Each item's Copy action uses its current edited text, exposes a copied status, and sits immediately before Remove. Add/Remove remain available. A new row receives focus. Small editor widths can stack the columns.
 - Importance estimates how much the job calls for each requirement, independently of resume support and overall match. Ratings range from 0 to 100, do not sum to 100, and are guidance rather than ATS or recruiter measurements.
 - Older analyses retain text with Unrated importance. Edited or added terms remain Unrated until refreshed. Job changes clear importance; CV-only changes retain unchanged job importance. Job or CV source changes clear the prior match and its explanation, and stale analysis persistence is rejected.
 - Suggested resume overview remains editable. What changed or No wording changes presents its separate saved rationale as read-only text. Analysis details expands provider and importance context on demand.
@@ -53,13 +59,15 @@ Windows scroll containers reserve a stable 12px gutter. The resting 2px thumb wi
 
 New drafts start with the selected database's last saved Current CV Overview. Saving a plan or analysis updates that default. Existing plans retain their own overview. The default travels with the shared SQLite file.
 
-Version 1.6.0 keeps schema 10, application and plan records, Notes, resumes, importance arrays, match explanations, and overview preferences. Existing older-file backup and migration behavior remains intact. There are no new weekly backups or pruning. Install version 1.4.1 or newer on both computers before sharing a schema 10 file.
+Version 1.6.1 keeps schema 10, application and plan records, Notes, resumes, importance arrays, match explanations, and overview preferences. Existing older-file backup and migration behavior remains intact. There are no new weekly backups or pruning. Install version 1.4.1 or newer on both computers before sharing a schema 10 file.
 
 Only SmolLM2 uses the compact heuristic profile. LFM2.5, Gemma, Qwen, OpenAI, and configured Ollama retain complete source inputs and full instructions with no automatic provider fallback. Provider settings, model downloads, appearance, and navigation expansion remain local to each computer. Existing Zebby artifact migration and update behavior are described in [the guide](../../docs/guide.md).
 
 ## Finish evidence
 
-Current captures include light sources (internal record: `work/ember-implementation/round-2/captures/plan-light-top.png`), light recommendations (internal record: `work/ember-implementation/round-2/captures/plan-light-results.png`), and dark recommendations (internal record: `work/ember-implementation/round-2/captures/plan-dark-results.png`). The public Plan screenshot uses the light recommendations capture and embeds its synthetic native origin.
+### 1.6.0 implementation
+
+The 1.6.0 captures include light sources (internal record: `work/ember-implementation/round-2/captures/plan-light-top.png`), light recommendations (internal record: `work/ember-implementation/round-2/captures/plan-light-results.png`), and dark recommendations (internal record: `work/ember-implementation/round-2/captures/plan-dark-results.png`). The public Plan screenshot for that release used the light recommendations capture and embedded its synthetic native origin.
 
 The pinned choices recorded here, from internal direction `work/ember-implementation/direction.md`, select Ember Applications and Settings and Rosewood's Plan composition in Ember colors. These are code concept references, not pixel reproduction requirements.
 
@@ -68,3 +76,13 @@ The full finish review (internal record: `work/ember-implementation/finish-revie
 Supplied final evidence reports 72 tests, lint, typecheck, build, complete headless regressions, ten native interaction checks, and 37 native captures passing. These were not rerun by the documenter. Native screenshots use synthetic applications, plans, and a dummy resume in an isolated hidden Windows Electron process. Provider outputs and clipboard are mocked; no real profile, credentials, models, or database were used. Both platform renderer simulations were checked, but physical macOS review and native installer validation remain outside this local evidence. CI handles installer gates separately.
 
 The [UX health report](../../docs/ux-health-v1.6.0.md) records the resolved short-height role access and late cancellation findings, deliberately unchanged F01/F03 behavior, and the remaining low-severity observations. No numerical score or trend is claimed. One detector pass compared against the old system; no second detector, doctor, or context run was performed.
+
+### 1.6.1 control refinement
+
+The narrow control review, recorded internally in work/row-controls/finish-review.md, returned ship with no material fixes for whole-row selection, inspector close/reopen/focus, and individual recommendation copy with their immediate regression boundaries. It does not certify the whole app or assign a fresh health score.
+
+The published Plan screenshot now uses work/row-controls/round-1/captures/plan-light-results.png, a 1550 by 850 native Windows Electron frame with synthetic data. Its exact source origin is embedded in docs/screenshots/plan.png; the documentation handoff verifies pixel identity with the source and reads back that origin.
+
+Supplied 1.6.1 evidence reports passing typecheck, lint, build, and complete headless renderer checks. The native hidden Windows run reports 11 interaction checks and no errors, including current single-item copy and busy disabling. Headless Windows and Mac renderer simulations additionally check edited keyword/theme text, empty-item disabling, copied feedback, clipboard failure/retry, and Copy before Remove. The review inspected ten valid native frames and four current Mac renderer simulation frames. The superseded high-scaling Plan frame is replaced by work/row-controls/high-scaling-recapture/captures/plan-zoom-2-results.png.
+
+Providers and clipboard are mocked, and the captures use synthetic data. These checks were not rerun by the documenter. Mac renderer simulations were captured on Windows; physical macOS font, scroller, and native-window behavior remain unverified. Installer CI on the release tag is a separate release gate. Version 1.6.1 preserves schema 10. No context, detector, or doctor was rerun for this control or documentation handoff.

@@ -151,6 +151,8 @@ export default function ApplicationDashboard() {
   const analysisControllers = useRef(new Map<string, { id: string; controller: AbortController }>());
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(() => new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const inspectorId = useId();
   const [compact, setCompact] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const layoutRef = useRef<HTMLDivElement>(null);
@@ -666,8 +668,14 @@ export default function ApplicationDashboard() {
   function inspector(item: Application) {
     return <>
       <div className="inspector-heading"><div><h3>{item.title || "Untitled role"}</h3><p>{item.company || "Company not set"}</p></div>
+        <div className="inspector-actions">
         <button className="icon-button" type="button" aria-label={`Edit ${item.title} at ${item.company}`} title="Edit"
-          disabled={analyzingIds.has(item.id)} onClick={() => openEditForm(item)}><Pencil size={17} aria-hidden="true" /></button></div>
+          disabled={analyzingIds.has(item.id)} onClick={() => openEditForm(item)}><Pencil size={17} aria-hidden="true" /></button>
+        <button className="icon-button" type="button" aria-label="Close details" title="Close details"
+          onClick={() => {
+            setInspectorOpen(false);
+            layoutRef.current?.querySelector<HTMLButtonElement>(".application-row.selected .application-row-select")?.focus({ preventScroll: true });
+          }}><X size={17} aria-hidden="true" /></button></div></div>
       <dl className="inspector-facts">
         <div><dt>Status</dt><dd>{statusControl(item)}</dd></div>
         <div><dt>Applied</dt><dd>{formatDate(item.appliedDate)}</dd></div>
@@ -881,17 +889,21 @@ export default function ApplicationDashboard() {
             <div className="state-panel"><p>No applications match your search or filter.</p></div>
           )}
           {!loadError && !loading && visibleApplications.length > 0 && (
-            <div className={`applications-layout ${compact ? "compact" : "wide"}`} ref={layoutRef}>
+            <div className={`applications-layout ${compact ? "compact" : "wide"} ${!inspectorOpen ? "inspector-closed" : ""}`} ref={layoutRef}>
               <div className="application-list" aria-label="Applications">
                 {visibleApplications.map((item) => <article key={item.id}
                   className={`application-row ${selected?.id === item.id ? "selected" : ""}`}>
                   <div className="application-row-main">
                     <button className="application-row-select" type="button"
                       aria-label={`View details for ${item.title || "untitled role"} at ${item.company || "unknown company"}`}
-                      aria-pressed={!compact ? selected?.id === item.id : undefined}
-                      aria-expanded={compact ? selected?.id === item.id && detailsOpen : undefined}
-                      aria-controls={compact && selected?.id === item.id && detailsOpen ? `application-details-${item.id}` : undefined}
-                      onClick={() => { setSelectedId(item.id); setDetailsOpen(selected?.id !== item.id || !detailsOpen); }}>
+                      aria-expanded={selected?.id === item.id && (compact ? detailsOpen : inspectorOpen && !formOpen)}
+                      aria-controls={selected?.id === item.id && (compact ? detailsOpen : inspectorOpen && !formOpen)
+                        ? compact ? `application-details-${item.id}` : inspectorId : undefined}
+                      onClick={() => {
+                        setSelectedId(item.id);
+                        if (compact) setDetailsOpen(selected?.id !== item.id || !detailsOpen);
+                        else setInspectorOpen(true);
+                      }}>
                       <span className="role-heading"><strong>{item.title || "Untitled role"}</strong>
                         <span className="role-company">{item.company || "Company not set"}</span>
                         {compact && <ChevronDown className="role-detail-chevron" size={15} aria-hidden="true" />}</span>
@@ -910,7 +922,7 @@ export default function ApplicationDashboard() {
                     {inspector(item)}</div>}
                 </article>)}
               </div>
-              {!compact && selected && !formOpen && <aside className="application-inspector" aria-label="Selected role details" key={selected.id}>
+              {!compact && selected && !formOpen && inspectorOpen && <aside className="application-inspector" id={inspectorId} aria-label="Selected role details" key={selected.id}>
                 {inspector(selected)}</aside>}
             </div>
           )}
