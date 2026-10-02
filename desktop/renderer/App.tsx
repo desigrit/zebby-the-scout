@@ -649,7 +649,9 @@ export default function App() {
   async function applyUpdate() {
     if (!state || updateWorking) return;
     const restart = state.updates.download.phase === "ready";
-    if (restart && document.querySelector('[role="dialog"]')) { setShellError("Finish editing the open dialog before updating."); return; }
+    if (restart && document.querySelector('[role="dialog"], .desktop-dashboard .editor')) {
+      setShellError("Finish editing the open form or dialog before updating."); return;
+    }
     if (restart && dirtyPlan && !window.confirm("Restart to update and discard unsaved changes to this plan?")) return;
     setUpdateWorking(true); setShellError("");
     try {

@@ -593,6 +593,15 @@ try {
   await page.getByRole('alert').filter({ hasText: 'Synthetic database save failure' }).waitFor();
   assert.equal(await page.evaluate(() => document.querySelector('.desktop-workspace').inert), false);
   await page.evaluate(() => { window.modelQA.failInstall = false; });
+  await nav.getByRole('button', { name: 'Applications', exact: true }).click();
+  await page.getByRole('button', { name: 'Add application', exact: true }).click();
+  await page.locator('.desktop-dashboard .editor').waitFor();
+  await page.getByRole('textbox', { name: 'Company', exact: true }).fill('Unsaved company fixture');
+  await page.locator('.desktop-sidebar').getByRole('button', { name: 'Restart to update', exact: true }).click();
+  await page.getByRole('alert').filter({ hasText: 'Finish editing the open form or dialog before updating.' }).waitFor();
+  assert.equal(await page.evaluate(() => window.modelQA.installRequests), 1);
+  assert.equal(await page.getByRole('textbox', { name: 'Company', exact: true }).inputValue(), 'Unsaved company fixture');
+  await page.getByRole('button', { name: 'Close form', exact: true }).click();
   await nav.getByRole('button', { name: 'Plan', exact: true }).click();
   await page.getByRole('textbox', { name: 'Core ATS keyword 1', exact: true }).waitFor();
   await page.getByRole('textbox', { name: 'Current CV Overview', exact: true }).fill('Unsaved update guard fixture');
