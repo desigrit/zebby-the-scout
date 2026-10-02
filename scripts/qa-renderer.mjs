@@ -10,7 +10,7 @@ import { importanceForTerms } from "../desktop/plan-importance.ts";
 // Checks the compiled renderer with synthetic data in an invisible browser.
 // It does not launch Electron, read settings, or open an application database.
 const renderer = path.resolve("desktop-dist/renderer");
-const output = path.resolve("qa-output/renderer-1.4.0");
+const output = path.resolve("qa-output/renderer-1.5.0");
 const executablePath = process.env.PM_TRACKER_BROWSER || [
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
   "C:/Program Files/Google/Chrome/Application/chrome.exe",
@@ -43,7 +43,9 @@ const state = { filePath: "example.sqlite", filename: "Applications.sqlite", dir
   appearance: "light", sidebarCollapsed: false, logsPath: "", platform: "win32",
   builtInModelId: "", acceptedModelTerms: [], localModels: LOCAL_MODELS.map(({ id }) =>
     ({ id, status: "not-installed", downloadedBytes: 0, error: "" })), modelsFolder: "example/Models",
-  localEngine: { status: "idle", modelId: "" }, totalMemory: 32e9, availableMemory: 16e9 };
+  localEngine: { status: "idle", modelId: "" }, totalMemory: 32e9, availableMemory: 16e9,
+  updates: { currentVersion: "1.5.0", checking: false, checkedAt: "", error: "", available: null,
+    download: { phase: "idle", received: 0, total: 0, error: "" } } };
 const pending = new Map();
 const requested = new Map();
 async function completeAnalysis(pathname) {
@@ -96,15 +98,36 @@ try {
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   }
   await page.addInitScript(({ initialState, licenseVersions }) => {
-    const listeners = new Set();
+    const listeners = new Set(), updateListeners = new Set();
     const snapshot = () => structuredClone(initialState);
     const update = (id, change) => { initialState.localModels = initialState.localModels.map((item) =>
       item.id === id ? { ...item, ...change } : item); for (const listener of listeners) listener(snapshot()); };
+    const updateState = (change) => {
+      initialState.updates = { ...initialState.updates, ...change };
+      for (const listener of updateListeners) listener(structuredClone(initialState.updates));
+    };
     window.modelQA = { confirmDelete: false, deleteRequests: [], selections: [], rejectSidebarSave: false,
+      updateState, installRequests: 0, failInstall: false, failCheck: false, finishDownload: null,
       logOpens: 0, failLogOpen: false, databaseRequests: [], update,
       setPlatform: (platform) => { initialState.platform = platform; } };
     window.desktop = { state: async () => initialState, onDatabaseChanged: () => () => {}, onNavigate: () => () => {},
       onLocalModelsChanged: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
+      onUpdatesChanged: (listener) => { updateListeners.add(listener); return () => updateListeners.delete(listener); },
+      confirmUpdateLoaded: async () => {},
+      checkForUpdates: async () => {
+        updateState({ checking: true }); await new Promise(resolve => setTimeout(resolve, 25));
+        updateState({ checking: false, checkedAt: new Date().toISOString(), error: window.modelQA.failCheck ? "Could not check for updates. Try again." : "" });
+        return structuredClone(initialState.updates);
+      },
+      downloadUpdate: async () => {
+        updateState({ download: { phase: "downloading", received: 40, total: 100, error: "" } });
+        await new Promise(resolve => { window.modelQA.finishDownload = resolve; });
+        return structuredClone(initialState.updates);
+      },
+      installUpdate: async () => { window.modelQA.installRequests++;
+        if (window.modelQA.failInstall) throw new Error("Synthetic database save failure. Try again.");
+        updateState({ download: { phase: "installing", received: 100, total: 100, error: "" } });
+      },
       downloadResume: async () => true,
       chooseDatabase: async (kind) => { window.modelQA.databaseRequests.push(kind); return null; },
       openLogs: async () => { if (window.modelQA.failLogOpen) throw new Error("Synthetic logs folder error"); window.modelQA.logOpens++; },
@@ -201,8 +224,32 @@ try {
   const sidebarPosition = await page.locator(".desktop-sidebar").evaluate((element) => ({
     padding: getComputedStyle(element).paddingTop,
     brandBottom: getComputedStyle(element.querySelector(".sidebar-brand")).paddingBottom,
+    zebraTop: element.querySelector(".brand-mark").getBoundingClientRect().top,
+    iconSize: element.querySelector(".navigation-icon").getBoundingClientRect().width,
+    navHeight: element.querySelector("nav button").getBoundingClientRect().height,
   }));
-  assert.deepEqual(sidebarPosition, { padding: "12px", brandBottom: "20px" });
+  assert.deepEqual(sidebarPosition, { padding: "8px", brandBottom: "12px", zebraTop: 12, iconSize: 24, navHeight: 48 });
+  await page.waitForFunction(() => [...document.querySelectorAll('.navigation-icon')].every(icon => icon.dataset.ready === "true"));
+  assert.equal(await nav.locator('.navigation-icon-player svg').count(), 3);
+  const animatedPlan = nav.locator('[data-kind="plan"]');
+  const restingIcon = await animatedPlan.locator('svg').last().innerHTML();
+  await nav.getByRole("button", { name: "Plan", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('[data-kind="plan"]').dataset.playing === "true");
+  await page.waitForTimeout(160);
+  assert.notEqual(await animatedPlan.locator('svg').last().innerHTML(), restingIcon);
+  await captureSettings("navigation-click-motion.png", false);
+  await page.waitForFunction(() => document.querySelector('[data-kind="plan"]').dataset.playing === "false");
+  assert.equal(await animatedPlan.locator('svg').last().innerHTML(), restingIcon);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await nav.getByRole("button", { name: "Plan", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  assert.equal(await animatedPlan.getAttribute("data-playing"), "false");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  for (const control of [page.locator('.sidebar-toggle'), nav.getByRole('button', { name: 'Plan', exact: true }),
+    page.locator('.match-why summary'), page.getByRole('button', { name: 'Analyze', exact: true })]) {
+    assert.equal(await control.evaluate(element => getComputedStyle(element).cursor), "default");
+  }
+  assert.equal(await page.getByRole('textbox', { name: 'Current CV Overview', exact: true }).evaluate(element => getComputedStyle(element).cursor), "text");
   await page.locator(".match-why summary").click();
   assert.match(await page.locator(".match-why").innerText(), /Refresh analysis to add an explanation/);
   assert.equal(await page.locator(".cv-section").getByRole("button", { name: "Analyze", exact: true }).count(), 1);
@@ -519,6 +566,46 @@ try {
   assert.equal(await page.getByRole("alert").filter({ hasText: "Could not save the navigation preference. Try again." }).count(), 0);
   await captureSettings("plan-mac-collapsed-dark.png");
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  assert.equal(await page.locator('.brand-mark').evaluate(element => element.getBoundingClientRect().top), 52);
+  // Updates are available in both navigation modes and Settings, without opening an installer during QA.
+  await nav.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole('button', { name: 'Check for updates', exact: true }).click();
+  await page.getByText('You have the latest version.', { exact: true }).waitFor();
+  await page.evaluate(() => window.modelQA.updateState({ available: { version: '2.0.0', size: 100, sha256: 'a'.repeat(64),
+    installerUrl: 'https://github.com/desigrit/zebby-the-scout/releases/download/v2.0.0/Zebby-2.0.0-mac-arm64.dmg',
+    releaseUrl: 'https://github.com/desigrit/zebby-the-scout/releases/tag/v2.0.0' } }));
+  await page.locator('.desktop-sidebar').getByRole('button', { name: 'Update to 2.0.0', exact: true }).waitFor();
+  assert.equal(await page.locator('.sidebar-database').count(), 0);
+  await captureSettings('updates-mac-collapsed.png');
+  await page.locator('.desktop-sidebar').getByRole('button', { name: 'Update to 2.0.0', exact: true }).click();
+  await page.getByRole('button', { name: 'Downloading 40%', exact: true }).first().waitFor();
+  assert.equal(await nav.getByRole('button', { name: 'Plan', exact: true }).isEnabled(), true);
+  await page.evaluate(() => {
+    window.modelQA.updateState({ download: { phase: 'ready', received: 100, total: 100, error: '' } });
+    window.modelQA.finishDownload();
+  });
+  await page.getByRole('button', { name: 'Restart to update', exact: true }).first().waitFor();
+  await page.getByRole('button', { name: 'Expand navigation', exact: true }).click();
+  await page.getByRole('button', { name: 'Collapse navigation', exact: true }).waitFor();
+  await captureSettings('updates-mac-ready-dark.png');
+  await page.evaluate(() => { window.modelQA.failInstall = true; });
+  await page.locator('.desktop-sidebar').getByRole('button', { name: 'Restart to update', exact: true }).click();
+  await page.getByRole('alert').filter({ hasText: 'Synthetic database save failure' }).waitFor();
+  assert.equal(await page.evaluate(() => document.querySelector('.desktop-workspace').inert), false);
+  await page.evaluate(() => { window.modelQA.failInstall = false; });
+  await nav.getByRole('button', { name: 'Plan', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Core ATS keyword 1', exact: true }).waitFor();
+  await page.getByRole('textbox', { name: 'Current CV Overview', exact: true }).fill('Unsaved update guard fixture');
+  await page.locator('.save-state.unsaved').waitFor();
+  page.once('dialog', dialog => dialog.dismiss());
+  await page.locator('.desktop-sidebar').getByRole('button', { name: 'Restart to update', exact: true }).click();
+  assert.equal(await page.evaluate(() => window.modelQA.installRequests), 1);
+  assert.equal(await page.getByRole('textbox', { name: 'Current CV Overview', exact: true }).inputValue(), 'Unsaved update guard fixture');
+  page.once('dialog', dialog => dialog.accept());
+  await page.locator('.desktop-sidebar').getByRole('button', { name: 'Restart to update', exact: true }).click();
+  await page.getByRole('button', { name: 'Restarting', exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => document.querySelector('.desktop-workspace').inert), true);
+  assert.equal(await page.evaluate(() => window.modelQA.installRequests), 2);
   assert.deepEqual(errors, []);
   console.log(`Headless renderer checks passed. No desktop app was launched. Screenshots: ${output}`);
 } finally {

@@ -277,7 +277,7 @@ test("model deletion defaults to Cancel, releases the engine on confirmation, an
 
 test("model storage is local to each OS and the Windows cleanup hook targets only catalog files", async () => {
   assert.equal(localModelFolder("C:\\Users\\Test\\AppData\\Roaming\\pm-application-tracker", "win32", "C:\\Users\\Test\\AppData\\Local"),
-    "C:\\Users\\Test\\AppData\\Local\\PM Application Tracker\\Models");
+    "C:\\Users\\Test\\AppData\\Local\\Zebby\\Models");
   assert.equal(localModelFolder("/Users/test/Library/Application Support/pm-application-tracker", "darwin"),
     path.join("/Users/test/Library/Application Support/pm-application-tracker", "Models"));
   const cleanup = await readFile(new URL("../build/model-cleanup.nsh", import.meta.url), "utf8");

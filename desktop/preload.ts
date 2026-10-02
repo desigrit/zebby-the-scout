@@ -2,6 +2,15 @@ import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("desktop", {
   state: () => ipcRenderer.invoke("desktop:state"),
+  checkForUpdates: () => ipcRenderer.invoke("desktop:check-updates"),
+  downloadUpdate: () => ipcRenderer.invoke("desktop:download-update"),
+  installUpdate: () => ipcRenderer.invoke("desktop:install-update"),
+  confirmUpdateLoaded: () => ipcRenderer.invoke("desktop:confirm-update-loaded"),
+  onUpdatesChanged: (callback: (value: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, value: unknown) => callback(value);
+    ipcRenderer.on("desktop:updates-changed", listener);
+    return () => ipcRenderer.removeListener("desktop:updates-changed", listener);
+  },
   chooseDatabase: (kind: "open" | "create") => ipcRenderer.invoke("desktop:choose-database", kind),
   retrySync: () => ipcRenderer.invoke("desktop:retry-sync"),
   setApiKey: (value: string) => ipcRenderer.invoke("desktop:set-api-key", value),

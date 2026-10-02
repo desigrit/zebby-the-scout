@@ -6,6 +6,7 @@ import path from "node:path";
 
 await buildVite({ configFile: path.resolve("vite.config.desktop.ts") });
 await mkdir("desktop-dist", { recursive: true });
+await copyFile("node_modules/lottie-web/LICENSE.md", "desktop-dist/LICENSE-lottie-web.txt");
 await buildEsbuild({
   entryPoints: ["desktop/main.ts"], outfile: "desktop-dist/main.cjs",
   bundle: true, platform: "node", target: "node24", format: "cjs",
