@@ -113,20 +113,27 @@ components:
   navigation-sidebar:
     backgroundColor: "{colors.forest}"
     textColor: "{colors.ink}"
-    padding: "12px 13px 20px"
+    padding: "8px 13px 20px"
     width: "210px"
   navigation-sidebar-dark:
     backgroundColor: "{colors.dark-forest}"
     textColor: "{colors.dark-ink}"
-    padding: "12px 13px 20px"
+    padding: "8px 13px 20px"
     width: "210px"
   navigation-sidebar-collapsed:
     backgroundColor: "{colors.forest}"
     textColor: "{colors.ink}"
-    padding: "12px 13px 20px"
+    padding: "8px 13px 20px"
     width: "96px"
   navigation-sidebar-brand:
-    padding: "2px 13px 20px"
+    padding: "0 13px 12px"
+  navigation-sidebar-mac:
+    backgroundColor: "{colors.forest}"
+    textColor: "{colors.ink}"
+    padding: "4px 13px 20px"
+    width: "210px"
+  navigation-icon:
+    size: "24px"
   window-title-region:
     backgroundColor: "{colors.canvas}"
     textColor: "{colors.ink-soft}"
@@ -245,13 +252,13 @@ Graphite extends the Search Ledger with neutral actions, information, focus, and
 
 ## Layout
 
-The desktop shell has a shared 44px native title region above Plan, Applications, and Settings. Its sidebar segment blends into the rail below. The sidebar is 210px wide when expanded and 96px wide when collapsed on both platforms; the collapsed width reserves room for native macOS traffic lights. The workspace content is capped at 1440px. Applications flows from a compact add action to a shared panel containing a 30-day activity chart and five-column statistics band, then search, filters, and records. The chart uses quiet daily bars with date and count tooltips, and arrow keys move between days. The editor starts with the listing URL and its autofill action. Company, title, team, locations, applied date, and match strength follow in paired fields.
+The desktop shell has a shared 44px native title region above Plan, Applications, and Settings. Windows navigation spans both shell rows and reaches the top of the window; Mac navigation starts below the native title region. Its sidebar segment blends into the rail. The sidebar is 210px wide when expanded and 96px wide when collapsed on both platforms. The workspace content is capped at 1440px. Applications flows from a compact add action to a shared panel containing a 30-day activity chart and five-column statistics band, then search, filters, and records. The chart uses quiet daily bars with date and count tooltips, and arrow keys move between days. The editor starts with the listing URL and its autofill action. Company, title, team, locations, applied date, and match strength follow in paired fields.
 
 When the Applications content pane is 940px or narrower, rows become two-column record cards with visible field labels and actions. This uses available pane width, including the space taken by the sidebar. At 850px window width, the expanded sidebar narrows to 176px while the collapsed sidebar stays 96px, the Plan rail moves above its editor, and the statistics band changes to three columns. At 650px, the heading, filters, and form stack; the statistics band uses two columns. Preserve these content-driven changes when adding fields.
 
 The native launch window defaults to 1550 by 850 device-independent pixels, 300 wider than the previous 1250 width. Both dimensions are capped by the primary display work area. Core keyword and theme columns stack when the Plan editor container is 610px or narrower; their editable text, importance badge, and remove control stay together.
 
-The common rhythm uses tight control gaps, medium field gaps, and generous panel padding. The navigation-sidebar and navigation-sidebar-brand frontmatter tokens place the zebra and menu higher in the shared rail. Let separators and whitespace group information before adding new containers.
+The common rhythm uses tight control gaps, medium field gaps, and generous panel padding. The navigation-sidebar, navigation-sidebar-mac, and navigation-sidebar-brand frontmatter tokens place the zebra and menu higher in each platform's rail. The image starts at y=12px on Windows and y=52px on Mac. The shared footer is pushed to the bottom: available updates appear in either navigation state, followed by database details only when expanded. Let separators and whitespace group information before adding new containers.
 
 ## Elevation & Depth
 
@@ -272,16 +279,19 @@ Corners are gently rounded: compact controls use the `compact` and `field` radii
 - **Primary:** Graphite fill, appearance-specific button ink, medium weight, and a 44px minimum target height. Hover deepens the fill in light appearance and brightens it in dark appearance; pressing moves it down by 1px.
 - **Secondary:** paper fill in light appearance, field fill in dark appearance, ink text, and a strong rule border. Hover uses the neutral hover surface and clearer ink-faint border.
 - **Focus and motion:** keyboard focus uses the shared 3px outline. The 180ms color and transform transitions stop when reduced motion is requested.
+- **Desktop cursor:** buttons, links, disclosures, selects, labels, and choice controls use the native arrow; editable text fields use the caret cursor.
 
 ### Navigation
 
-The shared native title region is 44px high and shows only Zebby. Windows uses native overlay controls; macOS uses native traffic lights at x=18, y=16. The sidebar segment uses the same `forest` fill as the rail below, and the remaining title region uses `canvas`. Keep the title free of database filenames and do not add HTML window controls.
+The shared native title region is 44px high and shows only Zebby. Windows uses native overlay controls; macOS uses native traffic lights at x=18, y=16. The Windows sidebar spans the title region with 8px top padding; the Mac sidebar starts below it with 4px top padding. Brand bottom padding is 12px. The sidebar segment uses the same `forest` fill as the rail, and the remaining title region uses `canvas`. Keep the title free of database filenames and do not add HTML window controls.
 
 The circular zebra is a 54px semantic button containing the unchanged 46px image. It switches the left sidebar between icons plus labels and icons only, without a sidebar wordmark. Expanded navigation is 210px wide, or 176px at the 850px window breakpoint; collapsed navigation is 96px on both platforms. Active destinations use `surface-selected`, readable ink, and the neutral `accent` icon. Hover uses `surface-hover`; the zebra button uses `surface-selected` on hover and a 2px `focus` outline with a 3px offset.
 
-The toggle exposes `aria-expanded`, `aria-controls`, and Expand navigation or Collapse navigation action labels and tooltips. Enter and Space activate the semantic button. Each destination retains its accessible name and current-page state; icons only destinations have tooltips. The expanded footer shows the current database name and save-pending state. Collapsed navigation omits the whole database footer, including its divider and action. Current file details remain available in Settings.
+Each destination has a 48px minimum target and a 24px icon. Accepted click or keyboard activation navigates immediately, then plays a brief offline Lottie animation: Plan redraws clipboard rows, Applications lifts the briefcase flap, and Settings moves its two sliders. Each composition runs 25 frames at 60fps (about 417ms), with a still frame at rest. Reduced motion stays still; load errors expose the static icon. Completion, document hiding, and a change to reduced motion return the player to rest; unmounting destroys the player and removes its listeners.
 
-The navigation preference is saved on each computer. A failed save restores the previous layout and displays an error. Toggling preserves the current draft and destination. Windows has no native menu bar; macOS keeps only the native app menu. Settings starts directly with four sections: Database, Analysis, Appearance, and Logs. Section headings provide its hierarchy without a repeated page heading or introductory subheading.
+The toggle exposes `aria-expanded`, `aria-controls`, and Expand navigation or Collapse navigation action labels and tooltips. Enter and Space activate the semantic button. Each destination retains its accessible name and current-page state; icons only destinations have tooltips. An available-update action sits at the bottom in either state, with an icon, accessible phase label, and tooltip when collapsed. Expanded navigation adds the current database name and save-pending state beneath it. Collapsed navigation omits the database details and divider. Current file details remain available in Settings.
+
+The navigation preference is saved on each computer. A failed save restores the previous layout and displays an error. Toggling preserves the current draft and destination. Windows has no native menu bar; macOS keeps only the native app menu. Settings starts directly with five sections: Database, Analysis, Appearance, Logs, and Updates. Section headings provide its hierarchy without a repeated page heading or introductory subheading.
 
 ### Cards and containers
 
@@ -302,6 +312,8 @@ The primary Analyze button sits at the end of Your CV for both new and previousl
 ### Settings links
 
 Database keeps its native Open and Create new database actions and one concise helper line. Logs uses brief automatic-error copy followed by underlined Open logs folder and Report an issue actions with external-arrow icons. These actions use Graphite information and shared keyboard focus.
+
+Updates follows Logs using the existing section grid, heading style, helper text, and bordered secondary buttons. Its heading caption shows the installed Zebby version. Check for updates sits beside the available update action; Release notes uses the same underlined external-link treatment. The shared update button changes from Update to a version into download percentage, Preparing update, Restart to update, Restarting, or Retry update. Busy phases use a spinner and disable the action. Status copy uses a live status region; check or download errors use the existing error surface and alert role. The collapsed sidebar action is a 48px square with the same phase-specific accessible name.
 
 ### Application records
 

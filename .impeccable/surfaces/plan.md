@@ -14,13 +14,17 @@ FIRST VIEWPORT: The 44px native title region reads only Zebby. A Graphite New pl
 
 FORM: A scoped refinement of the approved operating ledger, retaining its widths, palette, artwork, and provider paths. The existing editable requirement and independent importance badge remain the signature. Analyze is present for every plan, including previously analyzed plans, once its required inputs are ready.
 
-FINISH: The fresh v1.4.0 review returned ship across 34 supplied captures and scoped source, with no material fixes. Its persistence, fidelity, ceiling, material_fixes, and keep sections are present in [the finish review](../review/settings-plan-finish-review.md). This verdict covers source and the supplied renderer captures, recorded before the release build.
+FINISH: The fresh v1.5.0 review returned ship and manager APPROVE across the complete diff and 37 current captures, with no material fixes. Its persistence, fidelity, ceiling, material_fixes, and keep sections are recorded in [the finish review](../review/navigation-updates-finish-review.md). Native installation remains unverified until release CI.
 
 ## Shared navigation
 
-The unchanged 46px zebra sits in a 54px accessible toggle. The shared rail uses 12px top padding and 20px below the brand. Expanded navigation is 210px, or 176px at the 850px window breakpoint; collapsed navigation stays 96px on Windows and Mac. Only expanded navigation shows the current database footer. The collapsed rail contains destination icons without a database footer; current file details remain in Settings.
+The unchanged 46px zebra sits in a 54px accessible toggle. Windows navigation spans the title region with 8px top padding and image y=12px. Mac navigation starts below the 44px native region with 4px top padding and image y=52px. Brand bottom padding is 12px. Expanded navigation is 210px, or 176px at the 850px window breakpoint; collapsed navigation stays 96px on Windows and Mac. An available-update action appears at the bottom in both states, followed by database details only when expanded. Current file details remain in Settings.
 
 The native title region retains the established platform configuration and shows only Zebby. The toggle retains its expanded state, action labels, tooltips, Enter or Space activation, draft preservation, and destination preservation. Navigation preference saves locally and rolls back with an error on failure.
+
+Destinations have 48px targets and 24px icons. Accepted click or keyboard activation navigates immediately and plays the destination's offline Lottie animation for about 417ms; Plan redraws clipboard rows. Reduced motion stays still, player failure keeps the static icon, and completion, hiding, or a reduced-motion change returns it to rest. Unmounting removes players and listeners. Clickable desktop controls use the arrow cursor; text fields retain the caret cursor.
+
+Updates lives after Logs in Settings, with the installed version, manual check, available release, explicit download, progress, errors, and verified Restart to update. Restart protects open application forms, dialogs, and unsaved Plan edits, requires active analysis and settings requests to finish, saves the database, and stops the model engine. Automatic GitHub checks run on launch and focus after six hours.
 
 ## Analysis, importance, and match
 
@@ -37,30 +41,18 @@ The native title region retains the established platform configuration and shows
 
 New drafts start with the selected database's last saved Current CV Overview. Saving a plan or analysis updates that default; existing plans keep their own stored overview. The default travels with the selected SQLite file after cloud sync.
 
-Version 1.4.0 uses schema 10, adding plans.match_notes to the existing importance arrays and workspace_preferences.last_current_overview. An older selected file receives a complete original before-v10 backup before migration. Existing application, plan, resume, Notes, importance, and overview data are preserved. The v9-to-v10 step does not repeat older migrations. Prior backups remain, without recurring weekly backups or pruning. Install version 1.4.0 on both computers before sharing the upgraded file.
+Version 1.5.0 keeps schema 10 introduced in 1.4.0, with plans.match_notes, the importance arrays, and workspace_preferences.last_current_overview. This release adds no schema change. An older selected file receives a complete original before-v10 backup before migration. Existing application, plan, resume, Notes, importance, and overview data are preserved. The v9-to-v10 step does not repeat older migrations. Prior backups remain, without recurring weekly backups or pruning. Install version 1.4.1 or newer on both computers before sharing a schema 10 file.
+
+Known legacy profiles and model downloads migrate into Zebby folders while keeping encrypted settings, accepted terms, and selected external cloud database paths. Internal database pointers are rewritten; original profile records and logs remain as recovery copies. Windows models use `%LOCALAPPDATA%\Zebby\Models`; Mac models use `~/Library/Application Support/Zebby/Models`. The internal package and installer identity stay unchanged. See [the guide](../../docs/guide.md) for the complete artifact migration and update workflow.
 
 Only SmolLM2 retains the compact heuristic profile. LFM2.5, Gemma, Qwen, OpenAI, and configured Ollama receive complete inputs and full instructions, with no automatic fallback. The generated overview adapts current wording only where resume evidence supports it. Its own rationale explains wording changes or why the overview stayed unchanged.
 
 ## Finish evidence
 
-The [34-file manifest](../review/settings-plan-1.4.0/capture-manifest.txt) includes these 13 Plan and README captures:
+Current Plan evidence includes [Windows light](../review/navigation-updates-1.5.0/plan-windows-light.png), [Why dark](../review/navigation-updates-1.5.0/plan-analysis-dark.png), [Mac collapsed dark simulation](../review/navigation-updates-1.5.0/plan-mac-collapsed-dark.png), and [navigation click motion](../review/navigation-updates-1.5.0/navigation-click-motion.png). The earlier match explanation and model-path review remains recorded in [the 1.4.0 finish review](../review/settings-plan-finish-review.md).
 
-- [Windows light](../review/settings-plan-1.4.0/plan-windows-light.png)
-- [Windows dark](../review/settings-plan-1.4.0/plan-windows-dark.png)
-- [Why light](../review/settings-plan-1.4.0/plan-analysis-light.png)
-- [Why dark](../review/settings-plan-1.4.0/plan-analysis-dark.png)
-- [CV actions light](../review/settings-plan-1.4.0/plan-cv-actions-light.png)
-- [CV actions dark](../review/settings-plan-1.4.0/plan-cv-actions-dark.png)
-- [Windows compact](../review/settings-plan-1.4.0/plan-windows-compact.png)
-- [Windows narrow](../review/settings-plan-1.4.0/plan-windows-narrow.png)
-- [Mac branch light simulation](../review/settings-plan-1.4.0/plan-mac-light.png)
-- [Mac branch compact dark simulation](../review/settings-plan-1.4.0/plan-mac-compact-dark.png)
-- [Windows collapsed light](../review/settings-plan-1.4.0/plan-windows-collapsed-light.png)
-- [Mac branch collapsed dark simulation](../review/settings-plan-1.4.0/plan-mac-collapsed-dark.png)
-- [README Plan](../review/settings-plan-1.4.0/readme-plan.png)
+The [37-file manifest](../review/navigation-updates-1.5.0/capture-manifest.txt) includes the three README copies. The reviewer inspected the complete diff and every current capture, and independently passed 68 tests, typecheck, quiet lint, and diff checks. Four contact sheets summarize the same captures: [1](../review/navigation-updates-1.5.0/contact-1.png), [2](../review/navigation-updates-1.5.0/contact-2.png), [3](../review/navigation-updates-1.5.0/contact-3.png), and [4](../review/navigation-updates-1.5.0/contact-4.png). Parent validation covers immediate navigation, distinct click motion, reduced motion, update states, and canceled restarts that preserve unsaved edits.
 
-Wide Plan uses 1550 by 850, Windows compact 1050 by 900, and narrow and Mac compact 790 by 850 viewports; full-page images extend below the viewport. Why and CV images crop their respective sections. This documenter inspected CV actions light, Why dark, and Mac collapsed dark. Parent and reviewer opened and validated all 34 captures, produced headlessly in Windows Chromium with synthetic state. Mac captures exercise the Mac renderer branch on Windows.
+All captures use synthetic state and the compiled renderer in headless Chromium on Windows. Mac filenames simulate the Mac renderer branch on Windows; they do not verify macOS fonts, chrome, or installation. No visible app or browser and no real settings, database, resumes, or installed models were used for documentation. Native NSIS replacement, DMG staging/replacement/reopening/rollback, Keychain upgrade behavior, and live provider inference remain unverified locally; native installation is a release CI gate. No detector ran.
 
-Scoped source includes desktop/renderer/App.tsx, desktop/renderer/desktop.css, desktop/main.ts, desktop/bridge.ts, desktop/preload.ts, desktop/store.ts, desktop/diagnostic-log.ts, desktop/analysis-contracts.ts, desktop/basic-local-analysis.ts, package.json, and docs/guide.md. The fresh reviewer independently passed 58 tests, typecheck, lint with zero errors, and diff checks. Lint recorded three established image warnings plus one ignored exploratory-file warning. Parent supplied successful desktop build and headless renderer QA; reviewer inspected that evidence and QA source without rerunning the renderer.
-
-No detector ran for this desktop task. No app, browser, real database, resumes, settings, or installed models were opened for documentation. Native installer upgrades, actual macOS fonts and chrome, Keychain upgrade behavior, and live provider inference remain unverified. Packaged inference and release CI are assessed separately from this documentation review. The review does not certify accuracy.
+Source grounding includes desktop/renderer/App.tsx, desktop/renderer/desktop.css, desktop/renderer/NavigationButton.tsx, desktop/renderer/navigation-animations.ts, desktop/renderer/UpdateButton.tsx, desktop/release-updates.ts, desktop/self-update.ts, desktop/app-identity.ts, desktop/local-model-storage.ts, desktop/main.ts, desktop/bridge.ts, desktop/preload.ts, and the public guide and 1.5.0 release notes. The pre-existing shared web-header preview in the design sidecar remains outside this scoped refinement.
