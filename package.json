@@ -1,6 +1,6 @@
 {
   "name": "pm-application-tracker",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "private": true,
   "main": "desktop-dist/main.cjs",
   "engines": {
@@ -12,7 +12,7 @@
     "build": "next build",
     "start": "node scripts/migrate.mjs && next start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern desktop-dist --ignore-pattern desktop-packages",
-    "test": "node --experimental-strip-types --test tests/job-details.test.mjs tests/host-access.test.mjs tests/public-address.test.mjs tests/desktop-store.test.mjs tests/local-analysis.test.mjs tests/application-activity.test.mjs tests/local-models.test.mjs tests/window-shell.test.mjs tests/diagnostic-log.test.mjs",
+    "test": "node --experimental-strip-types --test tests/job-details.test.mjs tests/host-access.test.mjs tests/public-address.test.mjs tests/desktop-store.test.mjs tests/local-analysis.test.mjs tests/application-activity.test.mjs tests/local-models.test.mjs tests/window-shell.test.mjs tests/diagnostic-log.test.mjs tests/release-updates.test.mjs",
     "test:job-details": "node --experimental-strip-types --test tests/job-details.test.mjs",
     "test:renderer": "node --experimental-strip-types scripts/qa-renderer.mjs",
     "db:generate": "drizzle-kit generate",
@@ -38,6 +38,7 @@
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
     "ipaddr.js": "^2.5.0",
+    "lottie-web": "5.13.0",
     "lucide-react": "^1.31.0",
     "mammoth": "1.13.0",
     "next": "16.3.4",
@@ -105,7 +106,12 @@
     "icon": "build/desktop-icon.png",
     "asar": true,
     "beforePack": "scripts/prepare-llama.cjs",
-    "extraResources": [{ "from": "build/llama/${os}-${arch}", "to": "local-runtime" }],
+    "extraResources": [
+      {
+        "from": "build/llama/${os}-${arch}",
+        "to": "local-runtime"
+      }
+    ],
     "win": {
       "target": "nsis"
     },

@@ -12,6 +12,8 @@ I wanted to build something useful for my fellow peers: a simple place to prepar
 
 These builds are unsigned. See the [installation notes](docs/guide.md#install) if your computer asks you to approve the app.
 
+From version 1.5.0, Zebby checks for new releases. Click **Update**, keep working while it downloads, then **Restart to update**. Your database, settings, and downloaded models stay with you.
+
 ## A little scout for the whole search
 
 - **Plan a role.** Paste a listing, attach a resume, and get ATS keywords, resume themes, a match score with an explanation, and a CV overview that keeps your writing style. Keyword and theme percentages estimate importance to the job.

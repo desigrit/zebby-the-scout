@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { ArrowRight, ArrowUpRight, BriefcaseBusiness, Check, ClipboardList, FileText, FolderOpen,
-  KeyRound, LoaderCircle, Monitor, Moon, Plus, RefreshCw, RotateCw, Search, Settings2, Sparkles, Sun, Trash2 } from "lucide-react";
+import { ArrowRight, ArrowUpRight, BriefcaseBusiness, Check, FileText, FolderOpen,
+  KeyRound, LoaderCircle, Monitor, Moon, Plus, RefreshCw, RotateCw, Search, Sparkles, Sun, Trash2 } from "lucide-react";
 import ApplicationDashboard from "../../app/application-dashboard";
 import LocationEditor from "../../app/location-editor";
 import MatchProgressRing from "../../app/match-progress-ring";
@@ -10,6 +10,8 @@ import type { Plan, PlanInput } from "../store";
 import type { Resume } from "../../lib/application-types";
 import LocalModelsSettings from "./LocalModelsSettings";
 import PlanRecommendations from "./PlanRecommendations";
+import NavigationButton from "./NavigationButton";
+import UpdateButton from "./UpdateButton";
 import { LOCAL_MODELS } from "../local-model-catalog";
 import { importanceForTerms } from "../plan-importance";
 
@@ -393,7 +395,8 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, bu
   </main>;
 }
 
-function SettingsView({ state, onState }: { state: DesktopState; onState: (value: DesktopState) => void }) {
+function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking }: { state: DesktopState; onState: (value: DesktopState) => void;
+  onUpdate: () => void; onCheckUpdates: () => Promise<void>; updateWorking: boolean }) {
   const [keyInput, setKeyInput] = useState("");
   const [ollamaUrl, setOllamaUrl] = useState(state.ollamaUrl);
   const [ollamaModel, setOllamaModel] = useState(state.ollamaModel);
@@ -474,6 +477,11 @@ function SettingsView({ state, onState }: { state: DesktopState; onState: (value
     try { await window.desktop!.openLogs(); }
     catch (cause) { setError(errorText(cause)); }
     finally { setWorking(false); }
+  }
+
+  async function checkUpdates() {
+    try { await onCheckUpdates(); }
+    catch (cause) { setError(errorText(cause)); }
   }
 
   return <main className="desktop-main settings-page" aria-label="Settings">
@@ -566,6 +574,23 @@ function SettingsView({ state, onState }: { state: DesktopState; onState: (value
         </div>
       </div>
     </section>
+    <section className="settings-section" aria-labelledby="updates-settings">
+      <div className="settings-section-heading"><h2 id="updates-settings">Updates</h2><p>Zebby {state.updates.currentVersion}</p></div>
+      <div className="settings-content">
+        <div className="settings-actions">
+          <button className="button button-secondary" type="button" onClick={() => void checkUpdates()}
+            disabled={state.updates.checking || !["idle", "error"].includes(state.updates.download.phase)}>
+            {state.updates.checking && <LoaderCircle className="spin" size={16} aria-hidden="true" />} Check for updates</button>
+          <UpdateButton updates={state.updates} working={updateWorking} onClick={onUpdate} />
+        </div>
+        <p className="settings-help" role="status">{state.updates.checking ? "Checking GitHub for a new release."
+          : state.updates.available ? `Version ${state.updates.available.version} is available.`
+          : state.updates.error ? "Update check unavailable." : state.updates.checkedAt ? "You have the latest version." : "Checks GitHub when Zebby opens."}</p>
+        {state.updates.available && <a className="settings-link" href={state.updates.available.releaseUrl} target="_blank" rel="noopener noreferrer">
+          Release notes <ArrowUpRight size={15} aria-hidden="true" /></a>}
+        {(state.updates.error || state.updates.download.error) && <p className="form-error" role="alert">{state.updates.download.error || state.updates.error}</p>}
+      </div>
+    </section>
   </main>;
 }
 
@@ -598,9 +623,15 @@ export default function App() {
   const [databaseVersion, setDatabaseVersion] = useState(0);
   const [sidebarSaving, setSidebarSaving] = useState(false);
   const [shellError, setShellError] = useState("");
+  const [updateWorking, setUpdateWorking] = useState(false);
+  const loaded = state !== null;
+  useEffect(() => {
+    if (loaded) void window.desktop!.confirmUpdateLoaded().catch(() => { /* Main process records cleanup errors. */ });
+  }, [loaded]);
   const navigate = useCallback((target: Tab) => {
-    if (target !== "plan" && dirtyPlan && !window.confirm("Discard unsaved changes to this plan?")) return;
+    if (target !== "plan" && dirtyPlan && !window.confirm("Discard unsaved changes to this plan?")) return false;
     setTab(target);
+    return true;
   }, [dirtyPlan]);
 
   async function toggleSidebar() {
@@ -613,6 +644,26 @@ export default function App() {
       setState((current) => current ? { ...current, sidebarCollapsed: !collapsed } : current);
       setShellError("Could not save the navigation preference. Try again.");
     } finally { setSidebarSaving(false); }
+  }
+
+  async function applyUpdate() {
+    if (!state || updateWorking) return;
+    const restart = state.updates.download.phase === "ready";
+    if (restart && document.querySelector('[role="dialog"], .desktop-dashboard .editor')) {
+      setShellError("Finish editing the open form or dialog before updating."); return;
+    }
+    if (restart && dirtyPlan && !window.confirm("Restart to update and discard unsaved changes to this plan?")) return;
+    setUpdateWorking(true); setShellError("");
+    try {
+      if (restart) await window.desktop!.installUpdate();
+      else { const updates = await window.desktop!.downloadUpdate(); setState((current) => current ? { ...current, updates } : current); }
+    } catch (cause) { setShellError(errorText(cause)); }
+    finally { setUpdateWorking(false); }
+  }
+
+  async function checkUpdates() {
+    const updates = await window.desktop!.checkForUpdates();
+    setState((current) => current ? { ...current, updates } : current);
   }
 
   useEffect(() => {
@@ -629,7 +680,10 @@ export default function App() {
         modelsFolder: next.modelsFolder, localEngine: next.localEngine,
         totalMemory: next.totalMemory, availableMemory: next.availableMemory } : next);
     });
-    return () => { removeChanged(); removeNavigate(); removeModelsChanged(); };
+    const removeUpdatesChanged = window.desktop!.onUpdatesChanged((updates) => {
+      setState((current) => current ? { ...current, updates } : current);
+    });
+    return () => { removeChanged(); removeNavigate(); removeModelsChanged(); removeUpdatesChanged(); };
   }, [navigate]);
 
   useEffect(() => {
@@ -648,35 +702,32 @@ export default function App() {
       <div className="titlebar-sidebar" aria-hidden="true" />
       <div className="titlebar-caption">Zebby</div>
     </header>
-    <aside className="desktop-sidebar">
+    <aside className="desktop-sidebar" inert={updateWorking && state.updates.download.phase === "ready" || state.updates.download.phase === "installing"}>
       <div className="sidebar-brand"><button className="sidebar-toggle" type="button" onClick={() => void toggleSidebar()}
         disabled={sidebarSaving} aria-expanded={!state.sidebarCollapsed} aria-controls="desktop-navigation"
         aria-label={state.sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}
         title={state.sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}>
         <img className="brand-mark" src="./icon.png" alt="" /></button></div>
       <nav id="desktop-navigation" className="sidebar-nav" aria-label="Workspace">
-        <button type="button" className={tab === "plan" ? "active" : ""} onClick={() => navigate("plan")}
-          aria-label="Plan" title={state.sidebarCollapsed ? "Plan" : undefined}
-          aria-current={tab === "plan" ? "page" : undefined}><ClipboardList size={19} aria-hidden="true" /><span className="nav-label">Plan</span></button>
-        <button type="button" className={tab === "applications" ? "active" : ""} onClick={() => navigate("applications")}
-          aria-label="Applications" title={state.sidebarCollapsed ? "Applications" : undefined}
-          aria-current={tab === "applications" ? "page" : undefined}><BriefcaseBusiness size={19} aria-hidden="true" /><span className="nav-label">Applications</span></button>
-        <button type="button" className={tab === "settings" ? "active" : ""} onClick={() => navigate("settings")}
-          aria-label="Settings" title={state.sidebarCollapsed ? "Settings" : undefined}
-          aria-current={tab === "settings" ? "page" : undefined}><Settings2 size={19} aria-hidden="true" /><span className="nav-label">Settings</span></button>
+        <NavigationButton kind="plan" label="Plan" selected={tab === "plan"} collapsed={state.sidebarCollapsed} onActivate={() => navigate("plan")} />
+        <NavigationButton kind="applications" label="Applications" selected={tab === "applications"} collapsed={state.sidebarCollapsed} onActivate={() => navigate("applications")} />
+        <NavigationButton kind="settings" label="Settings" selected={tab === "settings"} collapsed={state.sidebarCollapsed} onActivate={() => navigate("settings")} />
       </nav>
-      {state.filePath && !state.sidebarCollapsed && <div className="sidebar-database" title={state.filePath}>
+      {(state.updates.available || state.filePath && !state.sidebarCollapsed) && <div className="sidebar-footer">
+        <UpdateButton updates={state.updates} collapsed={state.sidebarCollapsed} working={updateWorking} onClick={() => void applyUpdate()} />
+        {state.filePath && !state.sidebarCollapsed && <div className="sidebar-database" title={state.filePath}>
         <span>Current database</span><strong>{state.filename}</strong>
         {state.dirty && <small>Save pending</small>}
+        </div>}
       </div>}
     </aside>
-    <div className="desktop-workspace">
+    <div className="desktop-workspace" inert={updateWorking && state.updates.download.phase === "ready" || state.updates.download.phase === "installing"}>
       {shellError && <div className="workspace-warning" role="alert">{shellError}</div>}
       {state.startupError && <div className="workspace-warning" role="alert">
         <span>The previous database is unavailable. This workspace is stored locally.</span>
         <button type="button" onClick={() => navigate("settings")}>Open Settings</button>
       </div>}
-      {!state.filePath ? (tab === "settings" ? <SettingsView state={state} onState={setState} /> : <Welcome state={state} onState={setState} />)
+      {!state.filePath ? (tab === "settings" ? <SettingsView state={state} onState={setState} onUpdate={() => void applyUpdate()} onCheckUpdates={checkUpdates} updateWorking={updateWorking} /> : <Welcome state={state} onState={setState} />)
       : tab === "plan" ? <PlanView key={databaseVersion} hasApiKey={state.hasApiKey}
         analysisProvider={state.analysisProvider} ollamaModel={state.ollamaModel}
         builtInModelId={state.builtInModelId} builtInReady={Boolean(state.localModels?.some((model) =>
@@ -685,6 +736,6 @@ export default function App() {
             state.acceptedModelTerms?.includes(state.builtInModelId)))}
         onOpenSettings={() => navigate("settings")} onDirtyChange={setDirtyPlan} />
       : tab === "applications" ? <ApplicationDashboard key={databaseVersion} embedded />
-      : <SettingsView state={state} onState={setState} />}</div>
+      : <SettingsView state={state} onState={setState} onUpdate={() => void applyUpdate()} onCheckUpdates={checkUpdates} updateWorking={updateWorking} />}</div>
   </div>;
 }

@@ -1,4 +1,5 @@
 import type { LocalModelStatus } from "./local-model-catalog";
+import type { UpdateState } from "./release-updates";
 
 export type DesktopState = {
   filePath: string;
@@ -21,10 +22,16 @@ export type DesktopState = {
   sidebarCollapsed: boolean;
   logsPath: string;
   platform: string;
+  updates: UpdateState;
 };
 
 export type DesktopBridge = {
   state(): Promise<DesktopState>;
+  checkForUpdates(): Promise<UpdateState>;
+  downloadUpdate(): Promise<UpdateState>;
+  installUpdate(): Promise<void>;
+  confirmUpdateLoaded(): Promise<void>;
+  onUpdatesChanged(callback: (updates: UpdateState) => void): () => void;
   chooseDatabase(kind: "open" | "create"): Promise<DesktopState | null>;
   retrySync(): Promise<DesktopState>;
   setApiKey(value: string): Promise<DesktopState>;
