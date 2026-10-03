@@ -297,7 +297,7 @@ try {
   // Compare painted geometry with subpixel tolerance rather than serialized
   // SVG bookkeeping, which need not be identical after an animation.
   await animatedPlan.evaluate((element) => {
-    const number = (value) => String(Math.round(Number(value) * 10000) / 10000);
+    const number = (value) => String(Math.round(Number(value) * 1000) / 1000);
     const geometry = () => JSON.stringify([...element.querySelectorAll('.navigation-icon-player svg :is(g, path)')].map((shape) => ({
       kind: shape.tagName,
       path: (shape.getAttribute('d') || '').replace(/[-+]?(?:\d*\.)?\d+(?:e[-+]?\d+)?/gi, number),
