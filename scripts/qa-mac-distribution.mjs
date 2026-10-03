@@ -86,7 +86,7 @@ try {
   await run("/usr/bin/codesign", ["--verify", "--deep", "--strict", "--verbose=2", installed]);
   report.signature = (await run("/usr/bin/codesign", ["--display", "--verbose=4", installed])).stderr.trim();
   assert.match(report.signature, /Signature=adhoc/);
-  await run("/usr/bin/lipo", ["-verify_arch", "arm64", path.join(installed, "Contents/MacOS/Zebby")]);
+  await run("/usr/bin/lipo", [path.join(installed, "Contents/MacOS/Zebby"), "-verify_arch", "arm64"]);
   const plist = path.join(installed, "Contents/Info.plist");
   assert.equal((await run("/usr/libexec/PlistBuddy", ["-c", "Print :CFBundleIdentifier", plist])).stdout.trim(), pkg.build.appId);
   assert.equal((await run("/usr/libexec/PlistBuddy", ["-c", "Print :CFBundleShortVersionString", plist])).stdout.trim(), pkg.version);
