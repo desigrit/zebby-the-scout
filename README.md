@@ -22,13 +22,36 @@ From version 1.5.0, Zebby checks for new releases. Click **Update**, keep workin
 - **Pick your AI.** Use OpenAI, your own Ollama model, or download a built-in CPU model from Settings. The smallest options need no GPU. Review suggestions before using them, especially with smaller models.
 - **Take your data with you.** Applications, plans, and resumes live in a SQLite file you choose. Put it in a cloud synced folder to share it between your PCs. Quit Zebby and let syncing finish before switching computers.
 
+Screenshots use sample data from Zebby 1.6.7.
+
 ### Applications, without the spreadsheet shuffle
 
-![Zebby's Ember Applications workspace with synthetic roles and a selected role inspector](docs/screenshots/applications.png)
+![Zebby's Applications workspace with sample roles and a collapsed score explanation in the selected role inspector](docs/screenshots/applications.png)
 
 ### A plan for the next role
 
-![Zebby's Ember Plan workspace with synthetic job importance and editable resume themes](docs/screenshots/plan.png)
+![Zebby's Plan workspace with editable ATS keywords, resume themes, and a resume match score](docs/screenshots/plan.png)
+
+### Settings, your way
+
+![Zebby's Settings page with sample database details and Ollama analysis selected](docs/screenshots/settings.png)
+
+<details>
+<summary>See Zebby in dark mode</summary>
+
+#### Applications
+
+![Zebby's dark Applications workspace with sample roles and a collapsed score explanation](docs/screenshots/applications-dark.png)
+
+#### Plan
+
+![Zebby's dark Plan workspace with editable ATS keywords, resume themes, and a resume match score](docs/screenshots/plan-dark.png)
+
+#### Settings
+
+![Zebby's dark Settings page with sample database details and Ollama analysis selected](docs/screenshots/settings-dark.png)
+
+</details>
 
 Built-in analysis stays on your computer. OpenAI and configured Ollama servers receive the job and resume text needed for analysis. API keys and downloaded models stay on each computer, outside the shared database. Zebby detects changes to the shared file and keeps an original copy before upgrading its database format. A cloud drive cannot merge simultaneous SQLite edits.
 

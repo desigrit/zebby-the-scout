@@ -72,6 +72,8 @@ FORM: At ledger widths of 800px or less, the redundant Location prefix and match
 
 The list and 300px inspector scroll independently at normal heights, separated by an 18px gap. The role selector has keyboard focus and selected/expanded state. Match includes a percentage, short track, and refresh action; status remains a native tinted select with a visible 2px focus outline. The inspector contains status, date, score/Why, team, locations, resume, and Notes as available.
 
+Why this score starts collapsed in both the wide inspector and compact inline details. Mouse and native keyboard activation toggle the disclosure. Selecting another role or reopening details resets it to collapsed.
+
 At logical heights of 620px or less, the overview compacts and the workspace can scroll. The role region has a 280px minimum and height min(480px, 70vh), so high scaling cannot collapse the list. The companion 200% capture demonstrates the focused role and expanded details. The complete application form is excluded from this fallback.
 
 New Application keeps listing extraction, company, title, team, individual locations, applied date, manual score, status, saved resume or upload, and job text. Every field is optional. Date starts at today and status at Applied; the date can be cleared. Duplicate handling offers the existing record, and blank saves remain supported. Sticky form actions retain 44px targets. Notes keeps the saved listing text and editable user notes.
@@ -151,3 +153,9 @@ Supplied final evidence from [GitHub run 37146855199](https://github.com/desigri
 Mac renderer simulations under work/sidebar-and-location-polish/remote-review/qa-output/renderer-1.5.0 were captured on GitHub Windows. Physical Mac font, scroller, and native-window behavior remain unverified. Packaged installer validation is a separate release CI gate. Version 1.6.6 preserves schema 10 and provider inference. No context, detector, doctor, app, or browser was run during this documentation handoff.
 
 The public screenshot docs/screenshots/applications.png now uses the exact native Windows frame work/sidebar-and-location-polish/remote-review/work/desktop-visual-review/captures/applications-light.png. Its source path, GitHub run, and source commit are embedded in the PNG and read back. The documentation proof verifies decoded pixel identity after provenance embedding and scans both public screenshots for missing origins. Local round-1 and round-2 frames precede the form scroll fix and are superseded for this handoff.
+
+### 1.6.7 score disclosure and screenshot refresh
+
+The scoped finish review, recorded internally in work/score-disclosure-and-screenshots/finish-review.md, returned ship with no material fixes after inspecting ten valid current frames. Supplied lint, typecheck, build, and full headless renderer checks passed. The hidden native Windows manifest records 18 checks, 48 captures, and no errors. These gates were not rerun by the documenter.
+
+The [six public screenshots](../../docs/screenshots/README.md) use exact capture pixels from a UI working tree identical to commit 6dcb4fe30c8a671d7b19b5d19ab7db3484b0a39f, with embedded source origins. Data and resumes are synthetic, and providers and clipboard are mocked. Physical Mac visual review is not claimed. Version 1.6.7 preserves schema 10. No context, detector, or doctor was rerun during this documentation handoff.

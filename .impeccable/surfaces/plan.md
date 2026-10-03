@@ -55,6 +55,8 @@ Windows scroll containers reserve a stable 12px gutter. The resting 2px thumb wi
 - Older analyses retain text with Unrated importance. Edited or added terms remain Unrated until refreshed. Job changes clear importance; CV-only changes retain unchanged job importance. Job or CV source changes clear the prior match and its explanation, and stale analysis persistence is rejected.
 - Suggested resume overview remains editable. What changed or No wording changes presents its separate saved rationale as read-only text. Analysis details expands provider and importance context on demand.
 
+The overview rationale and paragraphs inside Analysis details use the full available document width. This user-requested footer exception removes only their 72ch caps.
+
 ## Overview and persistence
 
 New drafts start with the selected database's last saved Current CV Overview. Saving a plan or analysis updates that default. Existing plans retain their own overview. The default travels with the shared SQLite file.
@@ -98,3 +100,9 @@ Supplied final evidence from [GitHub run 37146855199](https://github.com/desigri
 Mac renderer simulations under work/sidebar-and-location-polish/remote-review/qa-output/renderer-1.5.0 were captured on GitHub Windows. Physical Mac font, scroller, and native-window behavior remain unverified. Packaged installer validation is a separate release CI gate. Version 1.6.6 preserves schema 10 and provider inference. No context, detector, doctor, app, or browser was run during this documentation handoff.
 
 The public screenshot docs/screenshots/plan.png now uses the exact native Windows frame work/sidebar-and-location-polish/remote-review/work/desktop-visual-review/captures/plan-light-results.png. Its source path, GitHub run, and source commit are embedded in the PNG and read back. The documentation proof verifies decoded pixel identity after provenance embedding and scans both public screenshots for missing origins. Local round-1 and round-2 frames precede the form scroll fix and are superseded for this handoff.
+
+### 1.6.7 score disclosure and screenshot refresh
+
+The scoped finish review, recorded internally in work/score-disclosure-and-screenshots/finish-review.md, returned ship with no material fixes after inspecting ten valid current frames. Supplied lint, typecheck, build, and full headless renderer checks passed. The hidden native Windows manifest records 18 checks, 48 captures, and no errors. These gates were not rerun by the documenter.
+
+The [six public screenshots](../../docs/screenshots/README.md) use exact capture pixels from a UI working tree identical to commit 6dcb4fe30c8a671d7b19b5d19ab7db3484b0a39f, with embedded source origins. Data and resumes are synthetic, and providers and clipboard are mocked. Physical Mac visual review is not claimed. Version 1.6.7 preserves schema 10. No context, detector, or doctor was rerun during this documentation handoff.
