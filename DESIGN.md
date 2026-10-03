@@ -273,22 +273,32 @@ components:
   navigation-sidebar:
     backgroundColor: "{colors.forest}"
     textColor: "{colors.ink}"
-    padding: "8px 13px 20px"
+    padding: "22px 13px 20px"
     width: "210px"
   navigation-sidebar-dark:
     backgroundColor: "{colors.dark-forest}"
     textColor: "{colors.dark-ink}"
-    padding: "8px 13px 20px"
+    padding: "22px 13px 20px"
     width: "210px"
   navigation-sidebar-mac:
     backgroundColor: "{colors.forest}"
     textColor: "{colors.ink}"
-    padding: "4px 13px 20px"
+    padding: "22px 13px 20px"
     width: "210px"
   navigation-sidebar-collapsed:
     backgroundColor: "{colors.forest}"
     textColor: "{colors.ink}"
-    padding: "8px 13px 20px"
+    padding: "21px 13px 20px"
+    width: "96px"
+  navigation-sidebar-auto-compact:
+    backgroundColor: "{colors.forest}"
+    textColor: "{colors.ink}"
+    padding: "9px 9px 20px"
+    width: "72px"
+  navigation-sidebar-collapsed-auto-compact:
+    backgroundColor: "{colors.forest}"
+    textColor: "{colors.ink}"
+    padding: "21px 9px 20px"
     width: "96px"
   navigation-sidebar-brand:
     padding: "0 13px 12px"
@@ -403,6 +413,8 @@ Mac uses the same observed hierarchy with its native stack; body-mac records tha
 
 The native shell has a 44px title region and left rail. Expanded width is 210px, 176px at window widths of 850px or less, and 72px at extreme logical widths of 650px or less. Explicitly collapsed width stays 96px. Main padding is 20px 24px 24px, with smaller insets at narrow logical widths. Windows titlebar and rail overlap; Mac's rail begins below the native title region. The launch window is 1550 by 850 device-independent pixels, capped by the display work area.
 
+The zebra image has equal top and left rail insets: 26px expanded, 25px explicitly collapsed, and 13px in the automatic compact rail. Navigation padding variants in the frontmatter preserve these positions, including the explicit collapse at extreme widths. The Mac image begins at y=70px expanded or y=69px collapsed because its rail starts below the title region. Opening an application form scrolls only the workspace to reveal it; keyboard focus does not move the outer shell.
+
 Applications attaches activity/statistics above filters and uses a flexible role list, an 18px gap, and 300px inspector. List and inspector scroll independently. The content-width observer switches to inline details below 940px. At logical heights of 620px or less, page scrolling compacts the overview and retains a role region at least 280px tall, with height min(480px, 70vh). The full optional form stays outside this fallback.
 
 Plan uses a 210px saved-plan rail, a 20px gap, and a role document. The rail narrows to 176px at a 1150px window; at 1000px or less, Saved plans toggles a compact strip up to 148px tall. The document scrolls independently and Save stays outside its scroll area. Source columns have a 26px gap; recommendation columns have a 28px gap. Sources stack when the editor container is at most 700px. Recommendations and metadata stack at 440px, where document inset changes from 24px to 18px.
@@ -439,13 +451,17 @@ The attached activity panel, role list, inspector, and saved-plan rail share pap
 
 General fields keep 9px 12px padding and their source minimum height; compact Plan and Settings inputs use 7px 10px padding and a 36px minimum. Search uses a 36px border box. Ordinary focus changes the border and adds the source ring. Job posting starts at 220px, current and suggested overviews at 150px, and the full application description at 180px; textareas resize vertically.
 
+The shared location field commits a nonblank entry with Enter, then restores visible focus to Add location. Enter opens another entry. Blank Enter keeps the input open; Escape or Cancel returns focus to Add location. Composition input does not commit. Input and restored-button focus use preventScroll to keep the current working region steady.
+
 Recommendation rows have a 48px independent importance column, a 26px Copy column immediately before the 26px Remove column, a 6px gap, and transparent input/textarea surfaces. Hover adds a quiet wash. Focus adds field fill, focus border, and a 2px ring. Theme fields grow with content inside their source bounds. Each Copy action uses only its item's current editable text and is disabled for empty items or busy analysis.
 
 ### Navigation
 
 The rail has 48px destination targets, 24px icons, 14px type at weight 600, and accent-wash/rust selection. Its 54px zebra toggle preserves action names, expanded state, keyboard activation, and local preference rollback. The database footer appears only when expanded. The 44px native title region shows only Zebby.
 
-Accepted activation keeps the existing brief offline Lottie animation without delaying navigation. Reduced motion uses the still state. Hover/selection uses .18s ease-out; ordinary buttons use .18s ease. Navigation animation remains the existing authored moment.
+Shell and title-region width, rail padding, and icon positions share a 280ms cubic-bezier(.16, 1, .3, 1) transition. Labels collapse over 100ms and expand over 180ms after a 60ms delay. Reduced motion removes these transitions.
+
+Accepted activation plays a brief offline Lottie animation without delaying navigation. Plan uses a magnifier, star, and small sprinkle; its approximately 417ms flutter returns to the same static geometry. Completion, a hidden document, or a reduced-motion change restores the still state. Player failure retains the static icon. Hover/selection uses .18s ease-out; ordinary buttons use .18s ease.
 
 ### Role inspector and Plan document
 
