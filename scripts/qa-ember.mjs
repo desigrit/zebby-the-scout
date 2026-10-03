@@ -165,6 +165,23 @@ try {
       assert.ok(region.clientHeight >= 100, `${name}: application list retains usable height`);
     }
   }
+  async function assertRowMetrics(label) {
+    const geometry = await page.locator(".application-row").evaluateAll((rows) => rows.slice(0, 4).map((row) => {
+      const metrics = row.querySelector(".application-row-metrics"), date = metrics.firstElementChild, match = metrics.lastElementChild;
+      const r = row.getBoundingClientRect(), m = metrics.getBoundingClientRect(), d = date.getBoundingClientRect(), s = match.getBoundingClientRect();
+      const locations = row.querySelector(".location-expanded:not([hidden])");
+      return { dateTag: date.tagName, matchClass: match.classList.contains("match-control"), gap: s.left - d.right,
+        lineOffset: Math.abs(d.top + d.height / 2 - s.top - s.height / 2),
+        centerOffset: Math.abs(r.left + r.width / 2 - m.left - m.width / 2), overflow: row.scrollWidth > row.clientWidth,
+        locationOverlap: locations ? locations.getBoundingClientRect().bottom > m.top + 1 : false };
+    }));
+    assert.ok(geometry.length, `${label}: rows available`);
+    for (const row of geometry) {
+      assert.equal(row.dateTag, "TIME"); assert.equal(row.matchClass, true);
+      assert.ok(row.gap >= 23 && row.lineOffset <= 1 && row.centerOffset <= 1, `${label}: date first, spaced match second, one centered line`);
+      assert.equal(row.overflow, false); assert.equal(row.locationOverlap, false);
+    }
+  }
   await bounds(1550);
   await capture("plan-light-top");
   assert.equal(await page.locator(".plan-inputs").evaluate((e) => getComputedStyle(e).gridTemplateColumns.split(" ").length), 2);
@@ -203,6 +220,7 @@ try {
   await page.locator(".plan-document-scroll").evaluate((e) => e.scrollTo(0, 0)); await capture("plan-dark-top"); await theme("light");
   await nav.getByRole("button", { name: "Applications", exact: true }).click();
   await page.locator(".application-row").first().waitFor();
+  await assertRowMetrics("Wide inspector open");
   await capture("applications-light");
   const row = page.locator(".application-row").first();
   const selector = row.locator(".application-row-select");
@@ -213,6 +231,7 @@ try {
   assert.equal(await selector.getAttribute("aria-expanded"), "false");
   assert.equal(await selector.evaluate((element) => element === document.activeElement), true);
   assert.ok(await page.locator(".application-list").evaluate((element) => element.clientWidth) > openWidth + 300);
+  await assertRowMetrics("Inspector closed");
   await capture("applications-pane-closed");
   const blankPositions = [
     () => ({ x: 8, y: 8 }),
@@ -237,11 +256,16 @@ try {
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await selector.click(); await pane.waitFor();
   checks.push("Blank row regions select roles; close releases width/restores focus; same/other roles reopen; Notes stays independent");
+  await second.getByRole("button", { name: /^Show all \d+ locations$/ }).click();
+  await assertRowMetrics("Expanded locations"); await capture("applications-locations-expanded");
+  await second.getByRole("button", { name: "Hide extra locations", exact: true }).click();
+  checks.push("Date then match share one centered line, including wide/closed and expanded-location rows");
   const appBefore = (await api("/api/applications")).applications[0];
   const refresh = row.getByRole("button", { name: /^Refresh match/ });
   await refresh.click(); await waitForRequest();
   assert.equal(await row.locator("select").isDisabled(), true);
   assert.equal(await row.getByRole("button", { name: /^Edit / }).isDisabled(), true);
+  await assertRowMetrics("Match analysis running");
   await capture("application-analysis-running");
   await row.getByRole("button", { name: /^Cancel match analysis/ }).click();
   await page.getByText("Analysis cancelled.", { exact: true }).waitFor();
@@ -252,7 +276,7 @@ try {
   assert.deepEqual(focus, { width: "2px", style: "solid" });
   await capture("applications-status-focus"); await theme("dark"); await capture("applications-dark"); await theme("light");
   for (const width of [1260, 1000, 851, 850, 790]) {
-    await bounds(width, 760); await capture(`applications-${width}`);
+    await bounds(width, 760); await assertRowMetrics(`Window ${width}`); await capture(`applications-${width}`);
     await nav.getByRole("button", { name: "Plan", exact: true }).click();
     await capture(`plan-${width}`);
     if (width === 790) {
@@ -320,6 +344,7 @@ try {
       assert.equal(await role.evaluate((e) => { const b = e.getBoundingClientRect(); return b.top >= 44 && b.bottom <= innerHeight; }), true);
       await page.keyboard.press("Enter");
       await page.locator(".application-inline-details").first().waitFor();
+      await assertRowMetrics("200 percent scaling with inline details");
       await page.evaluate(() => {
         const root = document.querySelector(".desktop-workspace"), layout = document.querySelector(".applications-layout");
         root.scrollTop += layout.getBoundingClientRect().top - root.getBoundingClientRect().top - 16;
@@ -353,6 +378,10 @@ try {
   await page.getByLabel("Date applied", { exact: true }).fill("");
   await page.keyboard.press("Control+s"); await page.getByText("Application added.", { exact: true }).waitFor();
   assert.equal((await api("/api/applications")).applications.length, 37); checks.push("New and Save shortcuts, and saving a blank optional application");
+  const blank = page.locator(".application-row").filter({ has: page.getByRole("button", { name: "View details for untitled role at unknown company", exact: true }) });
+  assert.equal(await blank.locator(".application-applied-date").getAttribute("datetime"), null);
+  assert.match(await blank.locator(".application-applied-date").innerText(), /Not set/);
+  assert.match(await blank.locator(".application-row-metrics .match-control").innerText(), /Not scored/);
   await page.keyboard.press("Control+f"); assert.equal(await page.evaluate(() => document.activeElement.dataset.command), "search");
   await page.getByRole("textbox", { name: "Search applications", exact: true }).fill("Northstar");
   assert.match(await page.locator(".section-toolbar p").innerText(), /12 of 37/); checks.push("Search and filtered counts");

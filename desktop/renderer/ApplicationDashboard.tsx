@@ -908,12 +908,16 @@ export default function ApplicationDashboard() {
                         <span className="role-company">{item.company || "Company not set"}</span>
                         {compact && <ChevronDown className="role-detail-chevron" size={15} aria-hidden="true" />}</span>
                     </button>
-                    {matchControl(item)}
                     {statusControl(item)}
                   </div>
                   <div className="application-row-meta role-cell">
                     <LocationSummary value={item.locations} />
-                    <span className="role-context">{formatDate(item.appliedDate)}</span>
+                  </div>
+                  <div className="application-row-metrics">
+                    <time className="application-applied-date" dateTime={item.appliedDate || undefined} title="Date applied">
+                      <span className="visually-hidden">Applied </span>{formatDate(item.appliedDate)}
+                    </time>
+                    {matchControl(item)}
                   </div>
                   <div className="application-row-foot">{item.listingUrl ? <a className="listing-link" href={item.listingUrl} target="_blank" rel="noopener noreferrer">
                     View listing <ArrowUpRight size={13} aria-hidden="true" /></a> : <span />}

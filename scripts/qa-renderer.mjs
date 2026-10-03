@@ -69,6 +69,21 @@ try {
   await page.clock.setFixedTime(new Date("2026-09-30T20:00:00Z"));
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  async function assertApplicationMetrics() {
+    const geometry = await page.locator(".application-row").evaluateAll((rows) => rows.slice(0, 4).map((row) => {
+      const metrics = row.querySelector(".application-row-metrics"), date = metrics.firstElementChild, match = metrics.lastElementChild;
+      const r = row.getBoundingClientRect(), m = metrics.getBoundingClientRect(), d = date.getBoundingClientRect(), s = match.getBoundingClientRect();
+      return { dateFirst: date.tagName === "TIME", matchSecond: match.classList.contains("match-control"), gap: s.left - d.right,
+        lineOffset: Math.abs(d.top + d.height / 2 - s.top - s.height / 2),
+        centerOffset: Math.abs(r.left + r.width / 2 - m.left - m.width / 2), overflow: row.scrollWidth > row.clientWidth };
+    }));
+    assert.ok(geometry.length);
+    for (const row of geometry) {
+      assert.equal(row.dateFirst && row.matchSecond, true);
+      assert.ok(row.gap >= 23 && row.lineOffset <= 1 && row.centerOffset <= 1);
+      assert.equal(row.overflow, false);
+    }
+  }
   async function captureSettings(filename, fullPage = true) {
     await page.evaluate(async () => {
       window.scrollTo({ top: 0, behavior: "instant" });
@@ -392,6 +407,7 @@ try {
   await page.getByRole("main", { name: "Applications", exact: true }).waitFor();
   const table = page.locator(".application-list");
   await table.getByText("Expedia Group", { exact: true }).waitFor();
+  await assertApplicationMetrics();
   const pane = page.getByRole("complementary", { name: "Selected role details", exact: true });
   const firstRow = table.locator(".application-row").first(), firstSelector = firstRow.locator(".application-row-select");
   const listWidth = await table.evaluate((element) => element.clientWidth);
@@ -476,6 +492,7 @@ try {
   assert.equal(await page.locator(".application-inspector").count(), 0);
   assert.equal(await table.locator(".row-actions").first().evaluate((element) => element.getBoundingClientRect().right <= innerWidth), true);
   await page.setViewportSize({ width: 780, height: 900 });
+  await assertApplicationMetrics();
   await captureSettings("applications-narrow.png", false);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
 
@@ -625,6 +642,7 @@ try {
   await macRow.click({ position: { x: macBox.width / 2, y: macBox.height - 8 } });
   await pane.waitFor();
   await captureSettings("applications-mac-pane-open.png", false);
+  await assertApplicationMetrics();
   await nav.getByRole("button", { name: "Plan", exact: true }).click();
   await page.setViewportSize({ width: 790, height: 850 });
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });

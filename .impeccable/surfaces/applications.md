@@ -40,6 +40,10 @@ Blank space across an application row activates the existing native role selecto
 
 The visible X, named Close details, closes the inspector, preserves selection, gives its released width to the list, and returns focus to the selected role selector. Clicking that role or another reopens details; the focused selector also supports native keyboard activation. Compact layouts retain their inline disclosure and toggle behavior.
 
+## 1.6.2 metrics contract
+
+Date applied comes first, then match percentage and its existing track and controls, side by side on one centered line with a 24px gap. Headings keep their full measure, and closing the inspector preserves centering. Expanded locations receive full width with metrics below when space permits; compact inline details span the row. Extreme narrow containers give the intact date/match group its own centered line.
+
 ## Role access and form
 
 The list and 300px inspector scroll independently at normal heights, separated by an 18px gap. The role selector has keyboard focus and selected/expanded state. Match includes a percentage, short track, and refresh action; status remains a native tinted select with a visible 2px focus outline. The inspector contains status, date, score/Why, team, locations, resume, and Notes as available.
@@ -58,7 +62,7 @@ The toggle has action labels, expanded state, tooltips, and Enter or Space activ
 
 Windows scroll containers reserve a stable 12px gutter. The resting 2px thumb widens to 8px on hover, focus, or scrolling. Mac keeps native system scrollers. Physical macOS behavior has not been manually reviewed.
 
-Version 1.6.1 keeps schema 10 and the existing SQLite and legacy migration behavior. Applications, plans, Notes, resumes, scores, and previous backups remain intact. Native database dialogs await pending writes and reject switching while changes are unsaved. Cloud-file changes are detected before saving; quit and wait for sync before moving between computers. See [the guide](../../docs/guide.md).
+Version 1.6.2 keeps schema 10 and the existing SQLite and legacy migration behavior. Applications, plans, Notes, resumes, scores, and previous backups remain intact. Native database dialogs await pending writes and reject switching while changes are unsaved. Cloud-file changes are detected before saving; quit and wait for sync before moving between computers. See [the guide](../../docs/guide.md).
 
 Available updates remain at the sidebar's bottom in either navigation state. Update download and verification, restart guards, and installer behavior retain their existing contracts. App-local New, Save, Search, and native text Undo have no visible shortcut list or added zoom controls.
 
@@ -80,8 +84,15 @@ The [UX health report](../../docs/ux-health-v1.6.0.md) records the resolved shor
 
 The narrow control review, recorded internally in work/row-controls/finish-review.md, returned ship with no material fixes for whole-row selection, inspector close/reopen/focus, and individual recommendation copy with their immediate regression boundaries. It does not certify the whole app or assign a fresh health score.
 
-The published Applications screenshot now uses work/row-controls/round-1/captures/applications-light.png, a 1550 by 850 native Windows Electron frame with synthetic data. Its exact source origin is embedded in docs/screenshots/applications.png; the documentation handoff verifies pixel identity with the source and reads back that origin.
+The 1.6.1 Applications screenshot used work/row-controls/round-1/captures/applications-light.png, a 1550 by 850 native Windows Electron frame with synthetic data. Its exact source origin was embedded in docs/screenshots/applications.png; that documentation handoff verified pixel identity with the source and read back the origin.
 
 Supplied 1.6.1 evidence reports passing typecheck, lint, build, and complete headless renderer checks. The native hidden Windows run reports 11 interaction checks and no errors, covering three blank row regions, released list width, focus return, same/other role reopening, Enter activation, independent Notes, busy disabling, and current single-item copy. The review inspected ten valid native frames and four current Mac renderer simulation frames. The superseded high-scaling Plan frame is replaced by work/row-controls/high-scaling-recapture/captures/plan-zoom-2-results.png.
 
 Providers and clipboard are mocked, and the captures use synthetic data. These checks were not rerun by the documenter. Mac renderer simulations were captured on Windows; physical macOS font, scroller, and native-window behavior remain unverified. Installer CI on the release tag is a separate release gate. Version 1.6.1 preserves schema 10. No context, detector, or doctor was rerun for this control or documentation handoff.
+### 1.6.2 centered metrics
+
+The scoped finish review, recorded internally in work/centered-row-metrics/finish-review.md, returned ship with no material fixes for centered date/match metrics and immediate layout/control regressions.
+
+Supplied evidence reports passing build, typecheck, lint and complete headless renderer checks, twelve native interaction checks, ten native captures and zero errors. The sole layout scan has no findings. The reviewer inspected twelve valid frames, including two Mac renderer simulations made on Windows. These checks were not rerun by the documenter. Physical Mac rendering remains outside local evidence; installer CI is a separate release gate. Version 1.6.2 preserves schema 10.
+
+The current public screenshot uses work/centered-row-metrics/round-1/captures/applications-light.png, an isolated hidden native Windows Electron capture of synthetic data from Zebby 1.6.2, 1550 by 850. Its origin is embedded in docs/screenshots/applications.png; the handoff verifies decoded pixel identity, origin readback and provenance. Providers and clipboard are mocked; no real user profile, database, resume, key or model was used.

@@ -449,6 +449,8 @@ Accepted activation keeps the existing brief offline Lottie animation without de
 
 ### Role inspector and Plan document
 
+Application rows center the applied date first and match second on one horizontal line, with a visible gap (24px). Closing the inspector preserves this alignment. Expanded locations and inline details span the row; extreme narrow containers give the intact metrics group its own centered line.
+
 Blank space in an application row activates its native selector and opens the selected role in the persistent inspector. The visible X closes the inspector, releases its width to the list, and returns focus to the selected selector; selecting the same or another role reopens it. Individual row controls retain their own actions, and smaller layouts retain inline disclosure. Inference temporarily protects affected sources and Cancel reaches the provider before persistence; a committed or finished result cannot be acknowledged as cancelled.
 
 Plan pairs Job posting and Your CV, keeps Analyze below the CV and Save outside document scrolling, and preserves editable recommendations and suggested overview. Why and the saved wording rationale remain separate explanations. Surface strategy and pinned scope live in the formal briefs.
