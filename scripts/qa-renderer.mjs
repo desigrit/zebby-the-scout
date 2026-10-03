@@ -294,31 +294,54 @@ try {
   await page.waitForFunction(() => [...document.querySelectorAll('.navigation-icon')].every(icon => icon.dataset.ready === "true"));
   assert.equal(await nav.locator('.navigation-icon-player svg').count(), 3);
   const animatedPlan = nav.locator('[data-kind="plan"]');
-  const restingIcon = await animatedPlan.locator('svg').last().innerHTML();
+  // Compare painted geometry with subpixel tolerance rather than serialized
+  // SVG bookkeeping, which need not be identical after an animation.
+  await animatedPlan.evaluate((element) => {
+    const number = (value) => String(Math.round(Number(value) * 10000) / 10000);
+    const geometry = () => JSON.stringify([...element.querySelectorAll('.navigation-icon-player svg :is(g, path)')].map((shape) => ({
+      kind: shape.tagName,
+      path: (shape.getAttribute('d') || '').replace(/[-+]?(?:\d*\.)?\d+(?:e[-+]?\d+)?/gi, number),
+      transform: (shape.getAttribute('transform') || '').replace(/[-+]?(?:\d*\.)?\d+(?:e[-+]?\d+)?/gi, number),
+      opacity: number(getComputedStyle(shape).opacity),
+      strokeWidth: number(Number.parseFloat(getComputedStyle(shape).strokeWidth)),
+    })));
+    window.__zebbyIconGeometry = geometry;
+    window.__zebbyRestGeometry = geometry();
+  });
   // Observe real SVG changes inside the browser before clicking. A fixed delay
   // between remote calls can miss this short animation on a busy CI runner.
-  await animatedPlan.evaluate((element, rest) => {
+  await animatedPlan.evaluate((element) => {
     const player = element.querySelector('.navigation-icon-player');
     const probe = { changed: false, returnedToRest: false };
     const observer = new MutationObserver(() => {
-      const html = player.querySelector('svg').innerHTML;
-      if (html !== rest) probe.changed = true;
+      const geometry = window.__zebbyIconGeometry();
+      if (geometry !== window.__zebbyRestGeometry) probe.changed = true;
       else if (probe.changed) probe.returnedToRest = true;
     });
     observer.observe(player, { childList: true, subtree: true, attributes: true });
     window.__zebbyMotionProbe = probe;
     window.__stopZebbyMotionProbe = () => observer.disconnect();
-  }, restingIcon);
+  });
   await nav.getByRole("button", { name: "Plan", exact: true }).click();
   await page.waitForFunction(() => window.__zebbyMotionProbe.changed, null, { timeout: 5000 });
   await captureSettings("navigation-click-motion.png", false);
   await page.waitForFunction(() => window.__zebbyMotionProbe.returnedToRest &&
-    document.querySelector('[data-kind="plan"]').dataset.playing === "false", null, { timeout: 5000 });
-  assert.equal(await animatedPlan.locator('svg').last().innerHTML(), restingIcon);
+    document.querySelector('[data-kind="plan"]').dataset.playing === "false", null, { timeout: 5000 }).catch(async (error) => {
+    const diagnostic = await page.evaluate(() => ({
+      probe: window.__zebbyMotionProbe,
+      playing: document.querySelector('[data-kind="plan"]').dataset.playing,
+      expected: window.__zebbyRestGeometry,
+      actual: window.__zebbyIconGeometry(),
+    }));
+    throw new Error(`Navigation icon did not return to rest: ${JSON.stringify(diagnostic)}`, { cause: error });
+  });
+  assert.equal(await page.evaluate(() => window.__zebbyIconGeometry() === window.__zebbyRestGeometry), true);
   await page.evaluate(() => {
     window.__stopZebbyMotionProbe();
     delete window.__stopZebbyMotionProbe;
     delete window.__zebbyMotionProbe;
+    delete window.__zebbyIconGeometry;
+    delete window.__zebbyRestGeometry;
   });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await nav.getByRole("button", { name: "Plan", exact: true }).focus();
