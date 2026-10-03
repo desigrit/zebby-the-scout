@@ -449,7 +449,7 @@ Accepted activation keeps the existing brief offline Lottie animation without de
 
 ### Role inspector and Plan document
 
-Application rows center the applied date first and match second on one horizontal line, with a visible gap (24px). Closing the inspector preserves this alignment. Expanded locations and inline details span the row; extreme narrow containers give the intact metrics group its own centered line.
+Application rows center the visible applied date followed by the match group in a shared footer, using their actual content width and generous separation (64px). The listing link sits at the left, and Notes, Edit and Delete align on the same horizontal line at the right. Closing the inspector preserves the pair's centering. Expanded locations stay above the footer and compact inline details below it. At extreme container widths below 440px, the listing link moves to its own line and the date/match gap reduces to 32px while metrics and actions remain alongside one another.
 
 Blank space in an application row activates its native selector and opens the selected role in the persistent inspector. The visible X closes the inspector, releases its width to the list, and returns focus to the selected selector; selecting the same or another role reopens it. Individual row controls retain their own actions, and smaller layouts retain inline disclosure. Inference temporarily protects affected sources and Cancel reaches the provider before persistence; a committed or finished result cannot be acknowledged as cancelled.
 

@@ -913,14 +913,14 @@ export default function ApplicationDashboard() {
                   <div className="application-row-meta role-cell">
                     <LocationSummary value={item.locations} />
                   </div>
-                  <div className="application-row-metrics">
-                    <time className="application-applied-date" dateTime={item.appliedDate || undefined} title="Date applied">
-                      <span className="visually-hidden">Applied </span>{formatDate(item.appliedDate)}
-                    </time>
-                    {matchControl(item)}
-                  </div>
                   <div className="application-row-foot">{item.listingUrl ? <a className="listing-link" href={item.listingUrl} target="_blank" rel="noopener noreferrer">
                     View listing <ArrowUpRight size={13} aria-hidden="true" /></a> : <span />}
+                    <div className="application-row-metrics">
+                      <time className="application-applied-date" dateTime={item.appliedDate || undefined} title="Date applied">
+                        <span className="visually-hidden">Applied </span>{formatDate(item.appliedDate)}
+                      </time>
+                      {matchControl(item)}
+                    </div>
                     {rowActions(item)}</div>
                   {compact && selected?.id === item.id && detailsOpen && <div className="application-inline-details" id={`application-details-${item.id}`}>
                     {inspector(item)}</div>}

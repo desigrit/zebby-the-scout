@@ -73,15 +73,23 @@ try {
     const geometry = await page.locator(".application-row").evaluateAll((rows) => rows.slice(0, 4).map((row) => {
       const metrics = row.querySelector(".application-row-metrics"), date = metrics.firstElementChild, match = metrics.lastElementChild;
       const r = row.getBoundingClientRect(), m = metrics.getBoundingClientRect(), d = date.getBoundingClientRect(), s = match.getBoundingClientRect();
-      return { dateFirst: date.tagName === "TIME", matchSecond: match.classList.contains("match-control"), gap: s.left - d.right,
+      const textRange = document.createRange(); textRange.selectNode(date.lastChild);
+      const dateText = textRange.getBoundingClientRect();
+      const actions = [...row.querySelectorAll(".application-row-foot > .row-actions > button")].map((button) => button.getBoundingClientRect());
+      const listing = row.querySelector(".application-row-foot > .listing-link")?.getBoundingClientRect();
+      return { dateFirst: date.tagName === "TIME", matchSecond: match.classList.contains("match-control"), gap: s.left - dateText.right,
         lineOffset: Math.abs(d.top + d.height / 2 - s.top - s.height / 2),
-        centerOffset: Math.abs(r.left + r.width / 2 - m.left - m.width / 2), overflow: row.scrollWidth > row.clientWidth };
+        centerOffset: Math.abs(r.left + r.width / 2 - (dateText.left + s.right) / 2),
+        actionCount: actions.length, actionOffset: Math.max(...actions.map((a) => Math.abs(a.top + a.height / 2 - s.top - s.height / 2))),
+        actionGap: actions[0].left - s.right, listingOverlap: listing ? listing.right > m.left : false,
+        overflow: row.scrollWidth > row.clientWidth };
     }));
     assert.ok(geometry.length);
     for (const row of geometry) {
       assert.equal(row.dateFirst && row.matchSecond, true);
-      assert.ok(row.gap >= 23 && row.lineOffset <= 1 && row.centerOffset <= 1);
-      assert.equal(row.overflow, false);
+      assert.ok(row.gap >= 63 && row.lineOffset <= 1 && row.centerOffset <= 1, `Visible date and match centered with a generous gap ${JSON.stringify(row)}`);
+      assert.equal(row.actionCount, 3); assert.ok(row.actionOffset <= 1 && row.actionGap >= 15, "Notes, Edit and Delete share the metrics line");
+      assert.equal(row.overflow, false); assert.equal(row.listingOverlap, false);
     }
   }
   async function captureSettings(filename, fullPage = true) {

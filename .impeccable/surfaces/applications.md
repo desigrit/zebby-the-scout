@@ -44,6 +44,16 @@ The visible X, named Close details, closes the inspector, preserves selection, g
 
 Date applied comes first, then match percentage and its existing track and controls, side by side on one centered line with a 24px gap. Headings keep their full measure, and closing the inspector preserves centering. Expanded locations receive full width with metrics below when space permits; compact inline details span the row. Extreme narrow containers give the intact date/match group its own centered line.
 
+The user subsequently rejected this 1.6.2 layout because the visible metrics did not appear centered, the date/match spacing was too small, and Notes, Edit and Delete did not share the line. The current 1.6.3 footer contract supersedes it.
+
+## 1.6.3 footer contract
+
+The visible applied date comes first, followed by the existing match percentage, track and controls. The pair uses its actual content width and a generous 64px gap, centered in a shared footer with equal side columns. View listing sits at the left; Notes, Edit and Delete align at the right on that same horizontal line. Role and company retain the full top-line width, and closing or reopening the inspector preserves the arrangement.
+
+Expanded locations stay above the footer and compact inline details below it. The reviewed wide, compact and 200% scaling states retain the centered pair and 64px gap. At extreme container widths below 440px, View listing moves to its own line and the date/match gap reduces to 32px while metrics and actions remain alongside one another. This fallback centers the pair within its metrics column rather than across the entire row; it is present in source but was not separately visually certified by the current capture set.
+
+This correction preserves Ember light and dark appearance, native fonts, the flat ledger, zebra identity, independent row controls, analysis behavior and schema 10.
+
 ## Role access and form
 
 The list and 300px inspector scroll independently at normal heights, separated by an 18px gap. The role selector has keyboard focus and selected/expanded state. Match includes a percentage, short track, and refresh action; status remains a native tinted select with a visible 2px focus outline. The inspector contains status, date, score/Why, team, locations, resume, and Notes as available.
@@ -62,7 +72,7 @@ The toggle has action labels, expanded state, tooltips, and Enter or Space activ
 
 Windows scroll containers reserve a stable 12px gutter. The resting 2px thumb widens to 8px on hover, focus, or scrolling. Mac keeps native system scrollers. Physical macOS behavior has not been manually reviewed.
 
-Version 1.6.2 keeps schema 10 and the existing SQLite and legacy migration behavior. Applications, plans, Notes, resumes, scores, and previous backups remain intact. Native database dialogs await pending writes and reject switching while changes are unsaved. Cloud-file changes are detected before saving; quit and wait for sync before moving between computers. See [the guide](../../docs/guide.md).
+Version 1.6.3 keeps schema 10 and the existing SQLite and legacy migration behavior. Applications, plans, Notes, resumes, scores, and previous backups remain intact. Native database dialogs await pending writes and reject switching while changes are unsaved. Cloud-file changes are detected before saving; quit and wait for sync before moving between computers. See [the guide](../../docs/guide.md).
 
 Available updates remain at the sidebar's bottom in either navigation state. Update download and verification, restart guards, and installer behavior retain their existing contracts. App-local New, Save, Search, and native text Undo have no visible shortcut list or added zoom controls.
 
@@ -95,4 +105,13 @@ The scoped finish review, recorded internally in work/centered-row-metrics/finis
 
 Supplied evidence reports passing build, typecheck, lint and complete headless renderer checks, twelve native interaction checks, ten native captures and zero errors. The sole layout scan has no findings. The reviewer inspected twelve valid frames, including two Mac renderer simulations made on Windows. These checks were not rerun by the documenter. Physical Mac rendering remains outside local evidence; installer CI is a separate release gate. Version 1.6.2 preserves schema 10.
 
-The current public screenshot uses work/centered-row-metrics/round-1/captures/applications-light.png, an isolated hidden native Windows Electron capture of synthetic data from Zebby 1.6.2, 1550 by 850. Its origin is embedded in docs/screenshots/applications.png; the handoff verifies decoded pixel identity, origin readback and provenance. Providers and clipboard are mocked; no real user profile, database, resume, key or model was used.
+The 1.6.2 public screenshot used work/centered-row-metrics/round-1/captures/applications-light.png, an isolated hidden native Windows Electron capture of synthetic data from Zebby 1.6.2, 1550 by 850. Its origin was embedded in docs/screenshots/applications.png; that handoff verified decoded pixel identity, origin readback and provenance. Providers and clipboard were mocked; no real user profile, database, resume, key or model was used.
+### 1.6.3 footer alignment
+
+The fresh independent finish review, recorded internally in work/row-metrics-alignment/finish-review.md, returned ship with no material fixes for the corrected visible date/match centering, wider spacing, shared action line and immediate layout/control regressions. It inspected twelve valid current frames after the user rejected the preceding 1.6.2 result. This review does not certify the whole app or assign a new health score.
+
+Supplied evidence reports passing build, typecheck, lint and complete headless Windows and Mac renderer checks. The hidden native Windows run records twelve checks, ten captures and zero errors; the scoped layout scan reports zero findings. Geometry checks measure visible date text and match bounds, their centering and separation, alignment of all three action buttons, listing/location clearance and horizontal overflow across pane changes, expanded locations, compact rows, busy analysis and 200% scaling. These checks were not rerun by the documenter.
+
+The current public screenshot uses work/row-metrics-alignment/round-1/captures/applications-light.png, an isolated hidden native Windows Electron capture of synthetic records from Zebby 1.6.3, 1550 by 850. Its exact source origin is embedded in docs/screenshots/applications.png; this handoff verifies decoded pixel identity, origin readback and provenance. Providers and clipboard are mocked; no real database, profile, resume, credential or model was used.
+
+The two Mac renderer simulations are current 1.6.3 frames made on Windows, despite their historical qa-output/renderer-1.5.0 directory name. Physical Mac font, scroller and native-window behavior remain outside local evidence; physical Mac and packaged installer checks are separate release CI gates. Version 1.6.3 preserves schema 10. Context, doctor and detectors were not rerun for this documentation handoff.
