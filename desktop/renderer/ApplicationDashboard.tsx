@@ -687,7 +687,7 @@ export default function ApplicationDashboard() {
         <div><dt>Match</dt><dd>{matchControl(item)}</dd></div>
       </dl>
       {!item.resumeId && <p className="match-help">Add a resume and job text to analyze.</p>}
-      {item.matchStrength !== null && <details className="inspector-why" open><summary>Why this score</summary>
+      {item.matchStrength !== null && <details className="inspector-why" key={item.id}><summary>Why this score</summary>
         <p>{item.matchNotes || "Refresh the match to add an explanation."}</p></details>}
       {item.team && <section className="inspector-section"><h4>Team</h4><p>{item.team}</p></section>}
       {item.locations && <section className="inspector-section"><h4>Locations</h4>

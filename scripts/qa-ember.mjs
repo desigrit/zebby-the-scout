@@ -259,13 +259,33 @@ try {
   });
   await capture("plan-light-results");
   assert.equal(await page.locator(".analysis-grid").evaluate((e) => getComputedStyle(e).gridTemplateColumns.split(" ").length), 2);
+  async function assertPlanExplanationWidth(label) {
+    const sharing = page.locator(".analysis-sharing");
+    if (!(await sharing.evaluate((element) => element.open))) await sharing.locator("summary").click();
+    const measurements = await page.locator(".overview-rationale p, .analysis-sharing p").evaluateAll((paragraphs) => paragraphs.map((paragraph) => ({
+      width: paragraph.getBoundingClientRect().width,
+      available: paragraph.parentElement.getBoundingClientRect().width,
+      overflow: paragraph.scrollWidth > paragraph.clientWidth,
+    })));
+    assert.equal(measurements.length, 3);
+    assert.ok(measurements.every(({ width, available, overflow }) => Math.abs(width - available) <= 1 && !overflow), `${label}: ${JSON.stringify(measurements)}`);
+    await page.locator(".plan-document-scroll").evaluate((element) => element.scrollTo(0, element.scrollHeight));
+  }
+  await assertPlanExplanationWidth("Wide Plan footer"); await capture("plan-footer-light");
+  await theme("dark"); await capture("plan-footer-dark"); await theme("light");
+  await page.locator(".analysis-sharing summary").click();
+  await page.locator(".analysis-section").evaluate((element) => {
+    const scroll = element.closest(".plan-document-scroll");
+    scroll.scrollTop += element.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 24;
+  });
+  await theme("dark"); await capture("plan-dark-results"); await theme("light");
   assert.equal(await page.getByRole("button", { name: "Copy ATS keywords", exact: true }).count(), 0);
   assert.equal(await page.getByRole("button", { name: "Copy resume themes", exact: true }).count(), 0);
   await page.getByRole("button", { name: "Copy keyword 1", exact: true }).click();
   assert.equal(await page.evaluate(() => window.__emberCopied), keywords[0]);
   await page.getByRole("button", { name: "Copy theme 1", exact: true }).click();
   assert.equal(await page.evaluate(() => window.__emberCopied), themes[0]); checks.push("Individual keyword/theme copy uses only the current item (clipboard mocked)");
-  await theme("dark"); await capture("plan-dark-results");
+  await theme("dark");
   await page.locator(".plan-document-scroll").evaluate((e) => e.scrollTo(0, 0)); await capture("plan-dark-top"); await theme("light");
   await nav.getByRole("button", { name: "Applications", exact: true }).click();
   await page.locator(".application-row").first().waitFor();
@@ -274,6 +294,10 @@ try {
   const row = page.locator(".application-row").first();
   const selector = row.locator(".application-row-select");
   const pane = page.getByRole("complementary", { name: "Selected role details", exact: true });
+  const why = pane.locator(".inspector-why");
+  assert.equal(await why.evaluate((element) => element.open), false);
+  await why.locator("summary").click(); assert.equal(await why.evaluate((element) => element.open), true);
+  await why.locator("summary").press("Enter"); assert.equal(await why.evaluate((element) => element.open), false);
   const openWidth = await page.locator(".application-list").evaluate((element) => element.clientWidth);
   await pane.getByRole("button", { name: "Close details", exact: true }).click();
   assert.equal(await pane.count(), 0);
@@ -294,10 +318,14 @@ try {
     await pane.getByRole("button", { name: "Close details", exact: true }).click();
   }
   await selector.press("Enter"); await pane.waitFor();
+  assert.equal(await why.evaluate((element) => element.open), false);
   await capture("applications-pane-reopened");
+  await why.locator("summary").click();
   const second = page.locator(".application-row").nth(1), secondBox = await second.boundingBox();
   await second.click({ position: { x: secondBox.width / 2, y: secondBox.height - 8 } });
   assert.equal(await pane.getByRole("heading", { level: 3 }).innerText(), await second.locator(".role-heading strong").innerText());
+  assert.equal(await why.evaluate((element) => element.open), false);
+  checks.push("Score explanation starts collapsed, toggles with mouse/Enter, and resets for another job or reopened pane");
   await pane.getByRole("button", { name: "Close details", exact: true }).click();
   await second.getByRole("button", { name: /^Notes for/ }).click();
   await page.getByRole("dialog", { name: "Application notes" }).waitFor();
@@ -323,7 +351,10 @@ try {
   await row.locator("select").focus(); await page.keyboard.press("Tab"); await page.keyboard.press("Shift+Tab");
   const focus = await row.locator("select").evaluate((e) => ({ width: getComputedStyle(e).outlineWidth, style: getComputedStyle(e).outlineStyle }));
   assert.deepEqual(focus, { width: "2px", style: "solid" });
-  await capture("applications-status-focus"); await theme("dark"); await capture("applications-dark"); await theme("light");
+  await capture("applications-status-focus");
+  await nav.getByRole("button", { name: "Plan", exact: true }).click();
+  await nav.getByRole("button", { name: "Applications", exact: true }).click();
+  await row.waitFor(); await theme("dark"); await capture("applications-dark"); await theme("light");
   for (const width of [1260, 1000, 851, 850, 790]) {
     await bounds(width, 760); await assertRowMetrics(`Window ${width}`); await capture(`applications-${width}`);
     await nav.getByRole("button", { name: "Plan", exact: true }).click();
@@ -334,14 +365,17 @@ try {
         scroll.scrollTop += element.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 24;
       });
       await capture("plan-790-results");
+      await assertPlanExplanationWidth("Narrow Plan footer"); await capture("plan-footer-790");
     }
     await nav.getByRole("button", { name: "Applications", exact: true }).click();
   }
+  checks.push("Plan overview rationale and analysis details use the document width without horizontal overflow at wide/narrow sizes");
   await page.getByRole("button", { name: "Collapse navigation" }).click(); await capture("applications-790-collapsed");
   await page.getByRole("button", { name: "Expand navigation" }).click();
   await selector.click();
   const inlineDetails = row.locator(".application-inline-details");
   await inlineDetails.locator(".inspector-heading").waitFor({ state: "visible" });
+  assert.equal(await inlineDetails.locator(".inspector-why").evaluate((element) => element.open), false);
   assert.equal(await inlineDetails.getByRole("heading", { level: 3 }).innerText(), await row.locator(".role-heading strong").innerText());
   assert.equal(await inlineDetails.locator(".inspector-heading p").innerText(), await row.locator(".role-company").innerText());
   assert.equal(await inlineDetails.locator(".inspector-heading h3").evaluate((element) => element.scrollWidth <= element.clientWidth && getComputedStyle(element).whiteSpace !== "nowrap"), true);

@@ -257,10 +257,10 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .recommendation-add:hover:not(:disabled) { text-decoration: underline; }
 .overview-rationale { margin: 18px 0 0; }
 .overview-rationale strong { font-size: 12px; }
-.overview-rationale p { max-width: 72ch; margin: 6px 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-soft); }
+.overview-rationale p { margin: 6px 0 0; font-size: 12px; line-height: 1.6; color: var(--ink-soft); }
 .analysis-sharing { margin-top: 14px; color: var(--ink-soft); font-size: 11px; }
 .analysis-sharing summary { width: fit-content; padding: 4px 0; }
-.analysis-sharing p { max-width: 72ch; margin: 8px 0 0; line-height: 1.6; }
+.analysis-sharing p { margin: 8px 0 0; line-height: 1.6; }
 .plan-actions { flex: none; display: flex; justify-content: flex-end; align-items: center; gap: 12px; padding: 12px 0 0; background: var(--canvas); }
 .button-delete { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; padding: 8px 0; border: 0; border-radius: 4px; background: transparent; color: var(--accent); font-size: 12px; }
 .button-delete:hover:not(:disabled) { text-decoration: underline; }
