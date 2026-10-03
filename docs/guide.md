@@ -10,7 +10,21 @@ Download the installer for your computer from the repository's [Releases](https:
 - Windows ARM64: `Zebby-*-win-arm64.exe`
 - Apple Silicon macOS: `Zebby-*-mac-arm64.dmg`
 
-These are unsigned personal builds. Windows SmartScreen or macOS Gatekeeper may ask you to confirm that you trust the app. On macOS, use System Settings > Privacy & Security to allow it after the first launch if needed.
+Windows builds are unsigned and may show a SmartScreen prompt. Mac builds use an ad-hoc signature to verify bundle integrity, but are not signed with an Apple Developer ID or notarized by Apple. macOS requires a one-time approval after download.
+
+### Mac first launch
+
+Download version 1.6.5 or newer, open the DMG and drag Zebby into Applications. Try opening it, then go to **System Settings > Privacy & Security > Open Anyway** if Zebby is listed. Confirm **Open**. [Apple's instructions](https://support.apple.com/en-us/102445) describe this approval.
+
+If Tahoe shows “Zebby is damaged” and offers no Open Anyway button, close the alert and run this in Terminal after copying the new app into Applications:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/Zebby.app"
+```
+
+Then open Zebby from Applications. This clears the download quarantine attribute only for your copy of Zebby. Use it only for the installer downloaded from [Zebby's GitHub releases](https://github.com/desigrit/zebby-the-scout/releases). Removing quarantine does not make the app Apple-notarized. No administrator password is required for a copy you own.
+
+### Database setup
 
 On first launch, the app creates a local SQLite database automatically, so you can use Plan and Applications immediately. **Create new database** in Settings creates an empty file and switches to it, leaving your existing database intact. Save a new file in a cloud synced folder to share it between computers, then use **Open database** on the second computer. To move a database that already contains your jobs, quit Zebby, move or copy the file in Explorer or Finder, then open it in Settings. Wait for your cloud drive to finish syncing before switching computers. Keep only one computer editing the file at a time.
 
@@ -26,7 +40,7 @@ Install version 1.5.0 manually once to enable in-app updates. Zebby checks GitHu
 
 Click **Update** to download the installer for your computer. You can keep working during the download. Zebby checks its exact size and SHA-256 checksum against the GitHub release before offering **Restart to update**. Click that button when you are ready. Finish any analysis, application form, or open editing dialog first. Unsaved Plan edits require confirmation, and unsynced database changes must save successfully before installation starts.
 
-Windows replaces the installed app silently and reopens it. On Mac, copy Zebby into Applications before updating. The app stages the verified new bundle beside the installed app, quits, replaces it, and reopens. The previous app is kept until the new version has loaded; an immediate reopen failure restores the previous app. Database files, preferences, API keys, and models are outside the replaced app. An offline update check or failed verification leaves Zebby usable and offers another try. These remain unsigned builds.
+Windows replaces the installed app silently and reopens it. On Mac, copy Zebby into Applications before updating. The app stages the verified new bundle beside the installed app, quits, replaces it, and reopens. The previous app is kept until the new version has loaded; an immediate reopen failure restores the previous app. Database files, preferences, API keys, and models are outside the replaced app. An offline update check or failed verification leaves Zebby usable and offers another try. Mac bundles use ad-hoc signing and still require initial approval; Apple notarization is not configured.
 
 Choose **Ollama server** under **Analyze with** in Settings to analyze with a model running on your computer or local network. Select an installed model from the **Model** dropdown, such as `qwen3.8:27b`, then save. If a model is missing, choose **Enter another model name** or use **Refresh models** after installing it or changing the server URL, usually `http://localhost:11434`. Ollama must be running when you analyze. Its server and model settings are stored on each computer, while your plans and applications remain in the shared database. No OpenAI API key is needed for Ollama. The app extracts text from PDF, DOCX, or DOC locally and sends it with the job description and CV overview to the configured Ollama server. Scanned PDFs without selectable text need a text-based resume.
 

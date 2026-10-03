@@ -2,6 +2,15 @@ name: Desktop packages
 
 on:
   workflow_dispatch:
+    inputs:
+      compare_mac_release:
+        description: Optional previous Mac release tag to inspect
+        type: string
+        required: false
+      mac_only:
+        description: Run only Mac packaging checks
+        type: boolean
+        default: false
   pull_request:
     branches: [main]
   push:
@@ -12,6 +21,7 @@ permissions:
 
 jobs:
   windows-x64:
+    if: github.event_name != 'workflow_dispatch' || !inputs.mac_only
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -58,9 +68,11 @@ jobs:
           if-no-files-found: error
 
   macos-arm64:
-    runs-on: macos-latest
+    runs-on: macos-26
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      # Only ad-hoc signing is configured; this job has no signing credentials.
+      CSC_FOR_PULL_REQUEST: "true"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -75,10 +87,21 @@ jobs:
       - run: node node_modules/playwright-core/cli.js install chromium
       - run: npm run test:renderer
       - run: npx electron-builder --mac dmg --arm64 --publish never
+      - name: Verify distributed Mac bundle and first launch on Tahoe
+        run: node scripts/qa-mac-distribution.mjs
+        env:
+          ZEBBY_MAC_COMPARE_RELEASE: ${{ inputs.compare_mac_release }}
+          GH_TOKEN: ${{ github.token }}
       - run: node --experimental-strip-types scripts/qa-self-update-mac.mjs
       - run: node scripts/qa-packaged-engine.mjs
       - run: node scripts/qa-packaged-engine.mjs lfm25-350m
       - run: node scripts/qa-packaged-engine.mjs gemma3-270m
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mac-distribution-qa
+          path: work/mac-distribution-qa/report.json
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

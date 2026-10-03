@@ -1,6 +1,6 @@
 {
   "name": "pm-application-tracker",
-  "version": "1.6.4",
+  "version": "1.6.5",
   "private": true,
   "main": "desktop-dist/main.cjs",
   "engines": {
@@ -92,7 +92,11 @@
     },
     "mac": {
       "target": "dmg",
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "notarize": false,
+      "strictVerify": true
     }
   }
 }
