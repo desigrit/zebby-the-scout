@@ -107,6 +107,34 @@ try {
     });
     await page.screenshot({ path: path.join(output, filename), fullPage });
   }
+  async function settleSidebar() {
+    await page.evaluate(async () => {
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      await Promise.all(document.getAnimations().filter((animation) =>
+        animation.effect?.getTiming().iterations !== Infinity).map((animation) => animation.finished.catch(() => undefined)));
+    });
+  }
+  async function assertLocationKeyboard(editor, label) {
+    const add = editor.getByRole("button", { name: "Add location", exact: true });
+    await add.click();
+    const input = editor.getByRole("textbox", { name: "New location", exact: true });
+    for (const location of ["Portland, OR", "Austin, TX"]) {
+      assert.equal(await input.evaluate((element) => document.activeElement === element), true, `${label}: input gets focus`);
+      await input.fill(location); await input.press("Enter");
+      assert.equal(await editor.locator(".location-chip").filter({ hasText: location }).count(), 1);
+      assert.equal(await add.evaluate((element) => document.activeElement === element), true, `${label}: focus returns to plus`);
+      assert.equal(await add.evaluate((element) => getComputedStyle(element).backgroundColor), "rgb(248, 232, 225)");
+      await page.keyboard.press("Enter");
+    }
+    await input.press("Enter");
+    assert.equal(await input.isVisible(), true, "Blank Enter stays in the input");
+    await input.press("Escape");
+    assert.equal(await add.evaluate((element) => document.activeElement === element), true);
+    await page.keyboard.press("Enter");
+    await editor.getByRole("button", { name: "Cancel adding location", exact: true }).click();
+    assert.equal(await add.evaluate((element) => document.activeElement === element), true);
+    for (const location of ["Portland, OR", "Austin, TX"]) await editor.getByRole("button", { name: `Remove ${location}`, exact: true }).click();
+  }
   async function captureAnalysis(filename, docsFilename) {
     const viewport = page.viewportSize();
     await page.setViewportSize({ ...viewport, height: 1200 });
@@ -257,11 +285,12 @@ try {
   const sidebarPosition = await page.locator(".desktop-sidebar").evaluate((element) => ({
     padding: getComputedStyle(element).paddingTop,
     brandBottom: getComputedStyle(element.querySelector(".sidebar-brand")).paddingBottom,
-    zebraTop: element.querySelector(".brand-mark").getBoundingClientRect().top,
+    zebraTop: element.querySelector(".brand-mark").getBoundingClientRect().top - element.getBoundingClientRect().top,
+    zebraLeft: element.querySelector(".brand-mark").getBoundingClientRect().left - element.getBoundingClientRect().left,
     iconSize: element.querySelector(".navigation-icon").getBoundingClientRect().width,
     navHeight: element.querySelector("nav button").getBoundingClientRect().height,
   }));
-  assert.deepEqual(sidebarPosition, { padding: "8px", brandBottom: "12px", zebraTop: 12, iconSize: 24, navHeight: 48 });
+  assert.deepEqual(sidebarPosition, { padding: "22px", brandBottom: "12px", zebraTop: 26, zebraLeft: 26, iconSize: 24, navHeight: 48 });
   await page.waitForFunction(() => [...document.querySelectorAll('.navigation-icon')].every(icon => icon.dataset.ready === "true"));
   assert.equal(await nav.locator('.navigation-icon-player svg').count(), 3);
   const animatedPlan = nav.locator('[data-kind="plan"]');
@@ -348,6 +377,7 @@ try {
   await page.getByRole("button", { name: "Collapse navigation", exact: true }).focus();
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => document.querySelector(".sidebar-toggle")?.getAttribute("aria-expanded") === "false" && !document.querySelector(".sidebar-toggle")?.disabled);
+  await settleSidebar();
   assert.equal(await nav.locator(".nav-label").first().isVisible(), false);
   assert.equal(await nav.getByRole("button", { name: "Plan", exact: true }).isVisible(), true);
   assert.equal(await page.locator(".desktop-sidebar").evaluate((element) => element.getBoundingClientRect().width), 96);
@@ -359,6 +389,7 @@ try {
   await page.getByRole("button", { name: "Expand navigation", exact: true }).focus();
   await page.keyboard.press("Space");
   await page.getByRole("button", { name: "Collapse navigation", exact: true }).waitFor();
+  await settleSidebar();
   assert.equal(await nav.locator(".nav-label").first().isVisible(), true);
   await captureAnalysis("plan-analysis-light.png", "readme-plan.png");
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
@@ -451,6 +482,7 @@ try {
   await page.getByRole("button", { name: "Hide extra locations" }).click();
   assert.equal(await expanded.isVisible(), false);
   await table.getByRole("button", { name: "Edit Senior Product Manager at Expedia Group" }).click();
+  await assertLocationKeyboard(page.locator(".editor .location-editor"), "Windows Applications");
   await page.getByLabel("Team", { exact: true }).fill("Search & Recommendations");
   await table.getByRole("button", { name: "Notes for Senior Product Manager at Expedia Group" }).click();
   const notes = page.getByRole("dialog", { name: "Application notes" }).getByRole("textbox", { name: "Notes" });
@@ -676,7 +708,17 @@ try {
   assert.equal(await page.getByRole("alert").filter({ hasText: "Could not save the navigation preference. Try again." }).count(), 0);
   await captureSettings("plan-mac-collapsed-dark.png");
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-  assert.equal(await page.locator('.brand-mark').evaluate(element => element.getBoundingClientRect().top), 52);
+  assert.equal(await page.locator('.brand-mark').evaluate(element => element.getBoundingClientRect().top), 69);
+  const macInsets = await page.locator(".desktop-sidebar").evaluate((element) => {
+    const icon = element.querySelector(".brand-mark").getBoundingClientRect(), box = element.getBoundingClientRect();
+    return { top: icon.top - box.top, left: icon.left - box.left };
+  });
+  assert.deepEqual(macInsets, { top: 25, left: 25 });
+  await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
+  await assertLocationKeyboard(page.locator(".location-editor"), "Mac Plan");
+  await page.getByRole("button", { name: "Save plan", exact: true }).click();
+  await page.locator(".save-state").filter({ hasText: "Saved" }).waitFor();
+  await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
   // Updates are available in both navigation modes and Settings, without opening an installer during QA.
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole('button', { name: 'Check for updates', exact: true }).click();

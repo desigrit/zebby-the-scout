@@ -1,9 +1,16 @@
 import { useEffect, useRef } from "react";
 import lottie, { type AnimationItem } from "lottie-web/build/player/lottie_light";
-import { BriefcaseBusiness, ClipboardList, Settings2 } from "lucide-react";
+import { BriefcaseBusiness, Settings2 } from "lucide-react";
 import { navigationAnimations, type NavigationKind } from "./navigation-animations";
 
-const icons = { plan: ClipboardList, applications: BriefcaseBusiness, settings: Settings2 };
+function SmartSearchIcon({ className, size }: { className?: string; size: number }) {
+  return <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx={8.5} cy={12.5} r={6.5} /><path d="M13.1 17.1 18 22" />
+    <path strokeWidth={1.5} d="m18.5 1.5.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8Z M21.5 9.6v2.8 M20.1 11h2.8" />
+  </svg>;
+}
+const icons = { plan: SmartSearchIcon, applications: BriefcaseBusiness, settings: Settings2 };
 export default function NavigationButton({ kind, label, selected, collapsed, onActivate, disabled = false }: {
   kind: NavigationKind; label: string; selected: boolean; collapsed: boolean; onActivate: () => boolean;
   disabled?: boolean;

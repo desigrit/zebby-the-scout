@@ -194,7 +194,11 @@ export default function ApplicationDashboard() {
 
   const revealForm = useCallback(() => {
     window.setTimeout(() => {
-      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      const form = formRef.current, workspace = form?.closest<HTMLElement>(".desktop-workspace");
+      if (form && workspace) workspace.scrollTo({
+        top: workspace.scrollTop + form.getBoundingClientRect().top - workspace.getBoundingClientRect().top - 20,
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+      });
       listingInputRef.current?.focus({ preventScroll: true });
     }, 0);
   }, []);

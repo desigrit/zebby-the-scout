@@ -120,6 +120,10 @@ try {
   async function bounds(width, height = 850) {
     await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setBounds(size), { width, height });
     await page.waitForTimeout(100);
+    await page.evaluate(async () => {
+      await Promise.all(document.getAnimations().filter((animation) =>
+        animation.effect?.getTiming().iterations !== Infinity).map((animation) => animation.finished.catch(() => undefined)));
+    });
   }
   async function theme(value) {
     if (await page.getByRole("radiogroup", { name: "Appearance" }).count()) {
@@ -201,6 +205,33 @@ try {
     }
   }
   await bounds(1550);
+  const sidebarMotion = await page.evaluate(async () => {
+    const shell = document.querySelector(".desktop-shell"), sidebar = document.querySelector(".desktop-sidebar");
+    const sample = () => ({ width: sidebar.getBoundingClientRect().width,
+      titleWidth: document.querySelector(".titlebar-sidebar").getBoundingClientRect().width,
+      iconX: sidebar.querySelector(".brand-mark").getBoundingClientRect().left,
+      labelOpacity: Number(getComputedStyle(sidebar.querySelector(".nav-label")).opacity) });
+    const frames = [sample()];
+    document.querySelector(".sidebar-toggle").click();
+    const start = performance.now();
+    while (performance.now() - start < 400) { await new Promise(requestAnimationFrame); frames.push(sample()); }
+    return { frames, collapsed: shell.classList.contains("sidebar-collapsed") };
+  });
+  assert.equal(sidebarMotion.collapsed, true);
+  assert.equal(sidebarMotion.frames[0].width, 210);
+  assert.equal(sidebarMotion.frames.at(-1).width, 96);
+  assert.ok(sidebarMotion.frames.filter((frame) => frame.width > 96 && frame.width < 210).length >= 3, "Sidebar has intermediate widths");
+  assert.ok(sidebarMotion.frames.every((frame) => Math.abs(frame.titleWidth - frame.width) < 1), "Title rail follows sidebar");
+  assert.ok(sidebarMotion.frames.some((frame) => frame.labelOpacity > 0 && frame.labelOpacity < 1), "Labels fade during collapse");
+  assert.ok(sidebarMotion.frames.slice(1).every((frame, index) => Math.abs(frame.iconX - sidebarMotion.frames[index].iconX) < 3), "Zebra stays anchored during collapse");
+  await capture("plan-sidebar-collapsed");
+  await page.getByRole("button", { name: "Expand navigation", exact: true }).click(); await bounds(1550);
+  const inset = await page.locator(".desktop-sidebar").evaluate((element) => {
+    const icon = element.querySelector(".brand-mark").getBoundingClientRect(), box = element.getBoundingClientRect();
+    return { top: icon.top - box.top, left: icon.left - box.left };
+  });
+  assert.deepEqual(inset, { top: 26, left: 26 });
+  checks.push("Equal zebra insets and a continuous sidebar transition with anchored icon and fading labels");
   await capture("plan-light-top");
   assert.equal(await page.locator(".plan-inputs").evaluate((e) => getComputedStyle(e).gridTemplateColumns.split(" ").length), 2);
   assert.equal(await page.getByRole("button", { name: "Analyze", exact: true }).evaluate((e) => e.getBoundingClientRect().bottom < innerHeight), true);
@@ -415,6 +446,36 @@ try {
   await page.keyboard.press("Control+f"); assert.equal(await page.evaluate(() => document.activeElement.dataset.command), "search");
   await page.getByRole("textbox", { name: "Search applications", exact: true }).fill("Northstar");
   assert.match(await page.locator(".section-toolbar p").innerText(), /12 of 37/); checks.push("Search and filtered counts");
+  async function locationKeyboard(label) {
+    const editor = page.locator(".location-editor"), add = editor.getByRole("button", { name: "Add location", exact: true });
+    await add.click();
+    const input = editor.getByRole("textbox", { name: "New location", exact: true });
+    for (const location of ["Portland, OR", "Austin, TX"]) {
+      assert.equal(await input.evaluate((element) => document.activeElement === element), true);
+      await input.fill(location); await input.press("Enter");
+      assert.equal(await editor.locator(".location-chip").filter({ hasText: location }).count(), 1);
+      assert.equal(await add.evaluate((element) => document.activeElement === element), true);
+      assert.equal(await add.evaluate((element) => getComputedStyle(element).backgroundColor), "rgb(248, 232, 225)");
+      assert.equal(await page.locator(".desktop-titlebar").evaluate((element) => element.getBoundingClientRect().top), 0, "Focus keeps titlebar anchored");
+      assert.equal(await page.evaluate(() => document.scrollingElement.scrollTop), 0, "Outer window does not scroll");
+      if (location === "Austin, TX") await capture(`${label}-location-next`);
+      await page.keyboard.press("Enter");
+    }
+    await input.press("Enter"); assert.equal(await input.isVisible(), true);
+    await input.press("Escape"); assert.equal(await add.evaluate((element) => document.activeElement === element), true);
+    await page.keyboard.press("Enter");
+    await editor.getByRole("button", { name: "Cancel adding location", exact: true }).click();
+    assert.equal(await add.evaluate((element) => document.activeElement === element), true);
+    checks.push(`${label}: Enter adds repeated locations and keeps plus selected; blank Enter and cancellation keep focus`);
+  }
+  await bounds(1550); await theme("light");
+  await nav.getByRole("button", { name: "Plan", exact: true }).click();
+  await locationKeyboard("plan");
+  // Only the isolated fixture draft is discarded, never the user's database.
+  page.once("dialog", (dialog) => dialog.accept());
+  await nav.getByRole("button", { name: "Applications", exact: true }).click();
+  await page.getByRole("button", { name: "Add application", exact: true }).click();
+  await locationKeyboard("application");
   assert.deepEqual(errors, []);
   await writeFile(path.join(output, "manifest.json"), JSON.stringify({ captures, checks, errors,
     inference: await app.evaluate(() => ({ aborted: globalThis.__emberQA.aborted, calls: globalThis.__emberQA.calls })),

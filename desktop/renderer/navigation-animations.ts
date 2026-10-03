@@ -1,4 +1,4 @@
-// Lucide's clipboard, briefcase, and sliders, authored as offline Lottie shapes.
+// Smart search plus Lucide's briefcase and sliders, authored as offline Lottie shapes.
 export type NavigationKind = "plan" | "applications" | "settings";
 type Point = [number, number];
 const fixed = (k: unknown) => ({ a: 0, k });
@@ -21,27 +21,33 @@ function animated(values: { t: number; value: number[] }[]) {
   return { a: 1, k: values.map(({ t, value }, index) => ({ t, s: value,
     ...(index < values.length - 1 ? { e: values[index + 1].value, i: { x: [.18], y: [1] }, o: { x: [.12], y: [0] } } : {}) })) };
 }
-function group(name: string, shapes: unknown[], position: unknown = fixed([0, 0]), trim?: unknown) {
+function group(name: string, shapes: unknown[], position: unknown = fixed([0, 0]), transform: Record<string, unknown> = {}, strokeWidth = 2) {
   return { ty: "gr", nm: name, it: [...shapes,
-    { ty: "st", c: fixed([0, 0, 0, 1]), o: fixed(100), w: fixed(2), lc: 2, lj: 2 }, ...(trim ? [trim] : []),
-    { ty: "tr", p: position, a: fixed([0, 0]), s: fixed([100, 100]), r: fixed(0), o: fixed(100), sk: fixed(0), sa: fixed(0) }] };
+    { ty: "st", c: fixed([0, 0, 0, 1]), o: fixed(100), w: fixed(strokeWidth), lc: 2, lj: 2 },
+    { ty: "tr", p: position, a: fixed([0, 0]), s: fixed([100, 100]), r: fixed(0), o: fixed(100), sk: fixed(0), sa: fixed(0), ...transform }] };
 }
 function composition(name: string, shapes: unknown[]) {
   return { v: "5.13.0", fr: 60, ip: 0, op: 25, w: 24, h: 24, nm: name, ddd: 0, assets: [],
     layers: [{ ddd: 0, ind: 1, ty: 4, nm: name, sr: 1, ip: 0, op: 25, st: 0, bm: 0,
       ks: { o: fixed(100), r: fixed(0), p: fixed([0, 0, 0]), a: fixed([0, 0, 0]), s: fixed([100, 100, 100]) }, shapes }] };
 }
-function planLine(y: number, start: number) {
-  return group(`Plan row ${y}`, [line("Row", [12, y], [16, y])], fixed([0, 0]),
-    { ty: "tm", s: fixed(0), e: animated([{ t: 0, value: [100] }, { t: start, value: [15] }, { t: start + 10, value: [100] }, { t: 24, value: [100] }]), o: fixed(0), m: 1 });
+function sparkle(name: string, shapes: unknown[], center: Point, start: number) {
+  return group(name, shapes, fixed(center), { a: fixed(center),
+    s: animated([{ t: 0, value: [100, 100] }, { t: start, value: [70, 70] },
+      { t: start + 5, value: [115, 115] }, { t: 24, value: [100, 100] }]),
+    o: animated([{ t: 0, value: [100] }, { t: start, value: [45] },
+      { t: start + 5, value: [100] }, { t: 24, value: [100] }]) }, 1.5);
 }
 const sliderMotion = (x: number) => animated([{ t: 0, value: [0, 0] }, { t: 9, value: [x, 0] }, { t: 24, value: [0, 0] }]);
 export const navigationAnimations: Record<NavigationKind, ReturnType<typeof composition>> = {
-  plan: composition("Plan", [group("Clipboard", [shape("Clip", rounded(8, 2, 8, 4, 1)),
-    shape("Paper", curve([[16, 4], [18, 4], [20, 6], [20, 20], [18, 22], [6, 22], [4, 20], [4, 6], [6, 4], [8, 4]], false,
-      [[0, 0], [0, 0], [0, -1.10457], [0, 0], [1.10457, 0], [0, 0], [0, 1.10457], [0, 0], [-1.10457, 0], [0, 0]],
-      [[0, 0], [1.10457, 0], [0, 0], [0, 1.10457], [0, 0], [-1.10457, 0], [0, 0], [0, -1.10457], [0, 0], [0, 0]])),
-    line("Bullet 1", [8, 11], [8.01, 11]), line("Bullet 2", [8, 16], [8.01, 16])]), planLine(11, 3), planLine(16, 8)]),
+  plan: composition("Plan", [group("Magnifying glass", [shape("Lens", circle(8.5, 12.5, 6.5)),
+    line("Handle", [13.1, 17.1], [18, 22])], fixed([8.5, 12.5]), { a: fixed([8.5, 12.5]),
+    r: animated([{ t: 0, value: [0] }, { t: 5, value: [-7] }, { t: 11, value: [4] },
+      { t: 17, value: [-2] }, { t: 24, value: [0] }]) }),
+    sparkle("Star", [shape("Sparkle", curve([[18.5, 1.5], [19.3, 3.7], [21.5, 4.5], [19.3, 5.3],
+      [18.5, 7.5], [17.7, 5.3], [15.5, 4.5], [17.7, 3.7]], true))], [18.5, 4.5], 4),
+    sparkle("Sprinkle", [line("Vertical", [21.5, 9.6], [21.5, 12.4]),
+      line("Horizontal", [20.1, 11], [22.9, 11])], [21.5, 11], 10)]),
   applications: composition("Applications", [group("Case", [shape("Body", rounded(2, 6, 20, 14, 2)),
     shape("Handle", curve([[8, 6], [8, 4], [10, 2], [14, 2], [16, 4], [16, 6]], false,
       [[0, 0], [0, 0], [-1.10457, 0], [0, 0], [0, -1.10457], [0, 0]],
