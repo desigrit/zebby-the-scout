@@ -44,7 +44,7 @@ The visible X, named Close details, closes the inspector, preserves selection, g
 
 Date applied comes first, then match percentage and its existing track and controls, side by side on one centered line with a 24px gap. Headings keep their full measure, and closing the inspector preserves centering. Expanded locations receive full width with metrics below when space permits; compact inline details span the row. Extreme narrow containers give the intact date/match group its own centered line.
 
-The user subsequently rejected this 1.6.2 layout because the visible metrics did not appear centered, the date/match spacing was too small, and Notes, Edit and Delete did not share the line. The current 1.6.3 footer contract supersedes it.
+The user subsequently rejected this 1.6.2 layout because the visible metrics did not appear centered, the date/match spacing was too small, and Notes, Edit and Delete did not share the line. The 1.6.3 footer contract superseded it; the current 1.6.4 row contract supersedes both layouts.
 
 ## 1.6.3 footer contract
 
@@ -53,6 +53,20 @@ The visible applied date comes first, followed by the existing match percentage,
 Expanded locations stay above the footer and compact inline details below it. The reviewed wide, compact and 200% scaling states retain the centered pair and 64px gap. At extreme container widths below 440px, View listing moves to its own line and the date/match gap reduces to 32px while metrics and actions remain alongside one another. This fallback centers the pair within its metrics column rather than across the entire row; it is present in source but was not separately visually certified by the current capture set.
 
 This correction preserves Ember light and dark appearance, native fonts, the flat ledger, zebra identity, independent row controls, analysis behavior and schema 10.
+
+The user subsequently rejected this 1.6.3 layout because location and View listing needed to share the line below title/company, date and match needed a common vertical center beside that block, and the five groups needed more balanced separation. The current 1.6.4 row contract supersedes this footer arrangement.
+
+## 1.6.4 row contract
+
+THESIS: Scan five distributed groups on one common vertical center: a two-line job details block, applied date, match, status, and Notes, Edit and Delete. Available gaps are balanced between the groups.
+
+OWN-WORLD: Preserve Ember light and dark, native platform fonts, the flat ruled ledger, quiet selection wash, circular zebra, native controls, arrow cursor and platform scrollers. This correction introduces no new palette, durable token or visual world.
+
+STORY: Read title and company on the first line, then location and View listing together beneath them. Scan date, match, status and row actions beside that block. Blank row space selects the role; each independent control keeps its existing action.
+
+FIRST VIEWPORT: Activity, totals, filters and the wide inspector keep their established order. The leading job block uses approximately 26% of the row; the other four groups take their required widths with balanced remaining gaps. At the default wide split view, the date/match separation exceeds the rejected 64px footer gap. Title and company stay on one line with native full hover text; opened compact details show the full wrapping identity.
+
+FORM: At ledger widths of 800px or less, the redundant Location prefix and match track disappear, while numeric score and analysis, refresh and Cancel controls remain. The native status select narrows from 156px to 138px. At 640px or less, View listing uses its existing external-link icon with a full accessible name and tooltip. Expanded locations and compact details span the row below the summary, preserving the common control center. Compact details begin with the full wrapping role title and company; Close returns focus to the role selector and Enter reopens it. Optional and blank records remain supported. Version 1.6.4 retains schema 10.
 
 ## Role access and form
 
@@ -72,7 +86,7 @@ The toggle has action labels, expanded state, tooltips, and Enter or Space activ
 
 Windows scroll containers reserve a stable 12px gutter. The resting 2px thumb widens to 8px on hover, focus, or scrolling. Mac keeps native system scrollers. Physical macOS behavior has not been manually reviewed.
 
-Version 1.6.3 keeps schema 10 and the existing SQLite and legacy migration behavior. Applications, plans, Notes, resumes, scores, and previous backups remain intact. Native database dialogs await pending writes and reject switching while changes are unsaved. Cloud-file changes are detected before saving; quit and wait for sync before moving between computers. See [the guide](../../docs/guide.md).
+Version 1.6.4 keeps schema 10 and the existing SQLite and legacy migration behavior. Applications, plans, Notes, resumes, scores, and previous backups remain intact. Native database dialogs await pending writes and reject switching while changes are unsaved. Cloud-file changes are detected before saving; quit and wait for sync before moving between computers. See [the guide](../../docs/guide.md).
 
 Available updates remain at the sidebar's bottom in either navigation state. Update download and verification, restart guards, and installer behavior retain their existing contracts. App-local New, Save, Search, and native text Undo have no visible shortcut list or added zoom controls.
 
@@ -112,6 +126,16 @@ The fresh independent finish review, recorded internally in work/row-metrics-ali
 
 Supplied evidence reports passing build, typecheck, lint and complete headless Windows and Mac renderer checks. The hidden native Windows run records twelve checks, ten captures and zero errors; the scoped layout scan reports zero findings. Geometry checks measure visible date text and match bounds, their centering and separation, alignment of all three action buttons, listing/location clearance and horizontal overflow across pane changes, expanded locations, compact rows, busy analysis and 200% scaling. These checks were not rerun by the documenter.
 
-The current public screenshot uses work/row-metrics-alignment/round-1/captures/applications-light.png, an isolated hidden native Windows Electron capture of synthetic records from Zebby 1.6.3, 1550 by 850. Its exact source origin is embedded in docs/screenshots/applications.png; this handoff verifies decoded pixel identity, origin readback and provenance. Providers and clipboard are mocked; no real database, profile, resume, credential or model was used.
+The 1.6.3 public screenshot used work/row-metrics-alignment/round-1/captures/applications-light.png, an isolated hidden native Windows Electron capture of synthetic records from Zebby 1.6.3, 1550 by 850. Its exact source origin was embedded in docs/screenshots/applications.png; that handoff verified decoded pixel identity, origin readback and provenance. Providers and clipboard were mocked; no real database, profile, resume, credential or model was used.
 
-The two Mac renderer simulations are current 1.6.3 frames made on Windows, despite their historical qa-output/renderer-1.5.0 directory name. Physical Mac font, scroller and native-window behavior remain outside local evidence; physical Mac and packaged installer checks are separate release CI gates. Version 1.6.3 preserves schema 10. Context, doctor and detectors were not rerun for this documentation handoff.
+The two Mac renderer simulations for that handoff were 1.6.3 frames made on Windows, despite their historical qa-output/renderer-1.5.0 directory name. Physical Mac font, scroller and native-window behavior remain outside local evidence; physical Mac and packaged installer checks are separate release CI gates. Version 1.6.3 preserves schema 10. Context, doctor and detectors were not rerun for this documentation handoff.
+
+### 1.6.4 two-line job details
+
+The scoped finish review, recorded internally in work/two-line-application-ledger/finish-review.md, found two material issues: compact details lacked visible full role/company identity, and a cascade specificity override retained the redundant Location prefix beside Multiple. The fresh finish verdict, work/two-line-application-ledger/finish-verdict.md, marks both resolved and returns ship after reopening all thirteen authoritative current frames. Its coverage is the row topology, these two fixes and immediate regressions; whole-app certification and a new health score remain outside this review.
+
+Supplied final evidence reports passing build, typecheck, lint and complete headless Windows and Mac renderer suites. The hidden native Windows run records thirteen interaction checks, eleven captures and zero errors. The final scoped layout scan reports zero findings. Geometry checks cover the common vertical centers, all four equal group gaps, location/listing below the heading, wide date/match separation greater than the rejected 64px, no horizontal overflow, full-width expanded locations and readable compact Multiple. Interaction checks cover full compact identity, Close, focus return and Enter reopening, alongside existing blank-row selection, independent controls, optional saves, cancellation and individual item copy. These gates were not rerun by the documenter.
+
+The current public screenshot uses work/two-line-application-ledger/round-2/captures/applications-light.png, the final isolated hidden native Windows Electron capture of synthetic records from Zebby 1.6.4, 1550 by 850. Its exact source origin is embedded in docs/screenshots/applications.png; this documentation handoff verifies dimensions and decoded pixel identity with the installed Node sharp library, reads back the origin and scans screenshot provenance. Both public screenshot rasters retain provenance.
+
+The two current Mac renderer simulations were generated from 1.6.4 source on Windows; qa-output/renderer-1.5.0 is their historical fixture directory. Physical Mac font, scroller and native-window behavior and packaged installer checks remain separate release CI gates. Version 1.6.4 preserves schema 10. Providers and clipboard are mocked, and no real database, profile, resume, key or model was read or changed. Context, doctor and detectors were not rerun for this documentation handoff.

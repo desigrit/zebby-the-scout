@@ -72,24 +72,29 @@ try {
   async function assertApplicationMetrics() {
     const geometry = await page.locator(".application-row").evaluateAll((rows) => rows.slice(0, 4).map((row) => {
       const metrics = row.querySelector(".application-row-metrics"), date = metrics.firstElementChild, match = metrics.lastElementChild;
-      const r = row.getBoundingClientRect(), m = metrics.getBoundingClientRect(), d = date.getBoundingClientRect(), s = match.getBoundingClientRect();
-      const textRange = document.createRange(); textRange.selectNode(date.lastChild);
-      const dateText = textRange.getBoundingClientRect();
-      const actions = [...row.querySelectorAll(".application-row-foot > .row-actions > button")].map((button) => button.getBoundingClientRect());
-      const listing = row.querySelector(".application-row-foot > .listing-link")?.getBoundingClientRect();
-      return { dateFirst: date.tagName === "TIME", matchSecond: match.classList.contains("match-control"), gap: s.left - dateText.right,
-        lineOffset: Math.abs(d.top + d.height / 2 - s.top - s.height / 2),
-        centerOffset: Math.abs(r.left + r.width / 2 - (dateText.left + s.right) / 2),
-        actionCount: actions.length, actionOffset: Math.max(...actions.map((a) => Math.abs(a.top + a.height / 2 - s.top - s.height / 2))),
-        actionGap: actions[0].left - s.right, listingOverlap: listing ? listing.right > m.left : false,
-        overflow: row.scrollWidth > row.clientWidth };
+      const summary = row.querySelector(".application-row-summary"), main = row.querySelector(".application-row-main");
+      const controls = [main, date, match, summary.querySelector(".status-select"), summary.querySelector(".row-actions")];
+      const boxes = controls.map((element) => element.getBoundingClientRect());
+      const gaps = boxes.slice(1).map((box, index) => box.left - boxes[index].right);
+      const mid = boxes[0].top + boxes[0].height / 2;
+      const buttons = [...summary.querySelectorAll(".row-actions > button")];
+      const meta = main.querySelector(".application-row-meta").getBoundingClientRect();
+      const heading = main.querySelector(".application-row-select").getBoundingClientRect();
+      const location = main.querySelector(".role-context")?.getBoundingClientRect(), listing = main.querySelector(".listing-link")?.getBoundingClientRect();
+      return { dateFirst: date.tagName === "TIME", matchSecond: match.classList.contains("match-control"), gaps,
+        lineOffset: Math.max(...[...controls, ...buttons].map((element) => { const b = element.getBoundingClientRect(); return Math.abs(b.top + b.height / 2 - mid); })),
+        actionCount: buttons.length, twoRows: heading.bottom < meta.top && heading.height < 26,
+        metadataOffset: location && listing ? Math.abs(location.top + location.height / 2 - listing.top - listing.height / 2) : 0,
+        width: summary.clientWidth, overflow: row.scrollWidth > row.clientWidth };
     }));
     assert.ok(geometry.length);
     for (const row of geometry) {
       assert.equal(row.dateFirst && row.matchSecond, true);
-      assert.ok(row.gap >= 63 && row.lineOffset <= 1 && row.centerOffset <= 1, `Visible date and match centered with a generous gap ${JSON.stringify(row)}`);
-      assert.equal(row.actionCount, 3); assert.ok(row.actionOffset <= 1 && row.actionGap >= 15, "Notes, Edit and Delete share the metrics line");
-      assert.equal(row.overflow, false); assert.equal(row.listingOverlap, false);
+      assert.ok(row.gaps.every((gap) => gap >= 7) && Math.max(...row.gaps) - Math.min(...row.gaps) <= 1, `Evenly separated groups ${JSON.stringify(row)}`);
+      if (row.width >= 850) assert.ok(row.gaps[1] > 64);
+      assert.ok(row.lineOffset <= 1, "Date, match, status and all actions vertically center on the job block");
+      assert.equal(row.actionCount, 3); assert.equal(row.twoRows, true); assert.ok(row.metadataOffset <= 1, JSON.stringify(row));
+      assert.equal(row.overflow, false);
     }
   }
   async function captureSettings(filename, fullPage = true) {

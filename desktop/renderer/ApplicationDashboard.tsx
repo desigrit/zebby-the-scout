@@ -108,23 +108,21 @@ function normalizedListingUrl(value: string): string {
   } catch { return value.trim(); }
 }
 
-function LocationSummary({ value }: { value: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const disclosureId = useId();
+function LocationSummary({ value, expanded, disclosureId, onToggle }: {
+  value: string; expanded: boolean; disclosureId: string; onToggle: () => void;
+}) {
   const places = parseLocations(value);
   if (!places.length) return null;
-  if (places.length === 1) return <span className="role-context">Location: {places[0]}</span>;
+  if (places.length === 1) return <span className="role-context" title={places[0]}>
+    <span className="location-prefix">Location: </span><span className="location-caption">{places[0]}</span></span>;
   return <span className="role-context location-summary">
-    <span>Location: Multiple</span>
+    <span className="location-prefix">Location: </span><span className="location-caption">Multiple</span>
     <button className="location-toggle" type="button" aria-expanded={expanded} aria-controls={disclosureId}
       aria-label={expanded ? "Hide extra locations" : `Show all ${places.length} locations`}
       title={expanded ? "Hide extra locations" : `Show all ${places.length} locations`}
-      onClick={() => setExpanded((current) => !current)}>
+      onClick={onToggle}>
       <ChevronDown size={14} aria-hidden="true" />
     </button>
-    <span className="location-expanded" id={disclosureId} hidden={!expanded}>
-      {places.map((place) => <span className="location-place" key={place}>{place}</span>)}
-    </span>
   </span>;
 }
 
@@ -155,6 +153,7 @@ export default function ApplicationDashboard() {
   const inspectorId = useId();
   const [compact, setCompact] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [expandedLocationIds, setExpandedLocationIds] = useState<Set<string>>(() => new Set());
   const layoutRef = useRef<HTMLDivElement>(null);
   const [confirmingDelete, setConfirmingDelete] = useState<Application | null>(null);
   const [viewingNotes, setViewingNotes] = useState<Application | null>(null);
@@ -639,6 +638,7 @@ export default function ApplicationDashboard() {
 
   function statusControl(item: Application) {
     return <select className="status-select" data-status={item.status}
+      title={item.status}
       aria-label={`Status for ${item.title || "untitled role"} at ${item.company || "unknown company"}`}
       value={item.status} disabled={savingStatusId === item.id || analyzingIds.has(item.id)}
       onChange={(event) => void updateStatus(item, event.target.value as ApplicationStatus)}>
@@ -674,6 +674,7 @@ export default function ApplicationDashboard() {
         <button className="icon-button" type="button" aria-label="Close details" title="Close details"
           onClick={() => {
             setInspectorOpen(false);
+            setDetailsOpen(false);
             layoutRef.current?.querySelector<HTMLButtonElement>(".application-row.selected .application-row-select")?.focus({ preventScroll: true });
           }}><X size={17} aria-hidden="true" /></button></div></div>
       <dl className="inspector-facts">
@@ -893,8 +894,10 @@ export default function ApplicationDashboard() {
               <div className="application-list" aria-label="Applications">
                 {visibleApplications.map((item) => <article key={item.id}
                   className={`application-row ${selected?.id === item.id ? "selected" : ""}`}>
-                  <div className="application-row-main">
+                  <div className="application-row-summary">
+                    <div className="application-row-main">
                     <button className="application-row-select" type="button"
+                      title={`${item.title || "Untitled role"} · ${item.company || "Company not set"}`}
                       aria-label={`View details for ${item.title || "untitled role"} at ${item.company || "unknown company"}`}
                       aria-expanded={selected?.id === item.id && (compact ? detailsOpen : inspectorOpen && !formOpen)}
                       aria-controls={selected?.id === item.id && (compact ? detailsOpen : inspectorOpen && !formOpen)
@@ -908,20 +911,31 @@ export default function ApplicationDashboard() {
                         <span className="role-company">{item.company || "Company not set"}</span>
                         {compact && <ChevronDown className="role-detail-chevron" size={15} aria-hidden="true" />}</span>
                     </button>
-                    {statusControl(item)}
-                  </div>
-                  <div className="application-row-meta role-cell">
-                    <LocationSummary value={item.locations} />
-                  </div>
-                  <div className="application-row-foot">{item.listingUrl ? <a className="listing-link" href={item.listingUrl} target="_blank" rel="noopener noreferrer">
-                    View listing <ArrowUpRight size={13} aria-hidden="true" /></a> : <span />}
+                    <div className="application-row-meta role-cell">
+                      <LocationSummary value={item.locations} expanded={expandedLocationIds.has(item.id)}
+                        disclosureId={`application-locations-${item.id}`} onToggle={() => setExpandedLocationIds((current) => {
+                          const next = new Set(current);
+                          if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
+                          return next;
+                        })} />
+                      {item.listingUrl && <a className="listing-link" href={item.listingUrl} target="_blank" rel="noopener noreferrer"
+                        aria-label="View listing" title="View listing">
+                        <span className="listing-label">View listing</span><ArrowUpRight size={13} aria-hidden="true" /></a>}
+                    </div>
+                    </div>
                     <div className="application-row-metrics">
                       <time className="application-applied-date" dateTime={item.appliedDate || undefined} title="Date applied">
                         <span className="visually-hidden">Applied </span>{formatDate(item.appliedDate)}
                       </time>
                       {matchControl(item)}
                     </div>
+                    {statusControl(item)}
                     {rowActions(item)}</div>
+                  {parseLocations(item.locations).length > 1 && <div className="application-row-locations role-cell"
+                    id={`application-locations-${item.id}`} hidden={!expandedLocationIds.has(item.id)}>
+                    <span className="location-expanded">{parseLocations(item.locations).map((place) =>
+                      <span className="location-place" key={place}>{place}</span>)}</span>
+                  </div>}
                   {compact && selected?.id === item.id && detailsOpen && <div className="application-inline-details" id={`application-details-${item.id}`}>
                     {inspector(item)}</div>}
                 </article>)}
