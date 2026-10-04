@@ -12,6 +12,7 @@ const eslintConfig = defineConfig([
     "build/**",
     "dist/**",
     "desktop-dist/**",
+    "credits-service/dist/**",
     "desktop-packages/**",
     "outputs/**",
     "qa-output/**",

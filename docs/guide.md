@@ -42,13 +42,13 @@ Click **Update** to download the installer for your computer. You can keep worki
 
 Windows replaces the installed app silently and reopens it. On Mac, copy Zebby into Applications before updating. The app stages the verified new bundle beside the installed app, quits, replaces it, and reopens. The previous app is kept until the new version has loaded; an immediate reopen failure restores the previous app. Database files, preferences, API keys, and models are outside the replaced app. An offline update check or failed verification leaves Zebby usable and offers another try. Mac bundles use ad-hoc signing and still require initial approval; Apple notarization is not configured.
 
-Choose **Ollama server** under **Analyze with** in Settings to analyze with a model running on your computer or local network. Select an installed model from the **Model** dropdown, such as `qwen3.8:27b`, then save. If a model is missing, choose **Enter another model name** or use **Refresh models** after installing it or changing the server URL, usually `http://localhost:11434`. Ollama must be running when you analyze. Its server and model settings are stored on each computer, while your plans and applications remain in the shared database. No OpenAI API key is needed for Ollama. The app extracts text from PDF, DOCX, or DOC locally and sends it with the job description and CV overview to the configured Ollama server. Scanned PDFs without selectable text need a text-based resume.
+Choose **Local server** under **Analyze with** in Settings to analyze with a model running on your computer or local network. Select an installed model from the **Model** dropdown, such as `qwen3.8:27b`, then save. If a model is missing, choose **Enter model name** or use **Find models** after installing it or changing the server URL, usually `http://localhost:11434`. Ollama must be running when you analyze. Its server and model settings are stored on each computer, while your plans and applications remain in the shared database. No OpenAI API key is needed for Ollama. The app extracts text from PDF, DOCX, or DOC locally and sends it with the job description and CV overview to the configured Ollama server. Scanned PDFs without selectable text need a text-based resume.
 
 Choose **OpenAI** in Settings if you want to use GPT-6 Sol. Save an API key on each computer where you use that provider. Plan analysis sends job text, your current CV overview, and the selected resume to OpenAI. Application match analysis sends job text and the selected resume. API usage may be billed to your account.
 
 ### Downloadable local models
 
-Choose **On this computer** in the **Analyze with** dropdown, then choose a **Local model**. Selecting a model starts its download, with progress, Pause, Resume, and Retry controls. LFM2.5 and Gemma first show their model terms and an **Agree and download** button. A completed download is verified and reused, including after app updates. No account, API key, Ollama installation, or GPU is required. These models run on the computer's CPU. Downloads require an internet connection; analysis works offline once a model is ready.
+Choose **Downloaded model** in the **Analyze with** dropdown, then choose a **Local model**. Selecting a model starts its download, with progress, Pause, Resume, and Retry controls. LFM2.5 and Gemma first show their model terms and an **Agree and download** button. A completed download is verified and reused, including after app updates. No account, API key, Ollama installation, or GPU is required. These models run on the computer's CPU. Downloads require an internet connection; analysis works offline once a model is ready.
 
 | Model | Download | Recommended installed RAM | Analysis |
 | --- | --- | --- | --- |
@@ -132,3 +132,16 @@ The package commands are `npm run desktop:package:win:x64`, `npm run desktop:pac
 - `docs`: the user guide, release notes, and screenshots.
 
 This repository contains the desktop app. The earlier web prototype is available in Git history. `npm run build` builds the desktop app, `npm run dev` builds and launches it, and `npm start` launches an existing build.
+
+
+## Online analysis and credits
+
+The first **Analyze** opens a setup dialog when no working method is configured. Choose a local server, download a model, use your own OpenAI or Anthropic API key, or buy Zebby credits. Existing working methods continue directly. Local models and personal keys need no Zebby account.
+
+Settings has a normal model dropdown for each API provider. OpenAI offers GPT-6 Luna, GPT-6.1 Sol, and GPT-6 Astra. Anthropic offers Claude Haiku 4.5, Sonnet 5.5, and Opus 5.5. Models are used as selected, with no automatic fallback to a weaker model. Hosted model availability depends on the API account.
+
+Paid users sign in with a remembered email code. Credit packs show illustrative Luna analysis counts; model choice comes after purchase. Before a paid analysis, choose a model and confirm the maximum credit cost. Actual reported usage is charged, and unused holds return to the wallet. Saving an application never automatically spends paid credits.
+
+The sidebar and Settings show available and used credits, with recent usage in Settings. Job and resume text go to the selected online provider, through Zebby's service for credit-funded analysis. Personal keys and paid sessions use operating system encryption when available; they stay outside the shared SQLite database.
+
+Paid checkout is unavailable until the owner connects the service. Follow the [Stripe test-mode setup guide](../credits-service/README.md) to prepare Supabase email sign-in, the ledger, provider keys, and hosting. The implementation has not taken any real payment.

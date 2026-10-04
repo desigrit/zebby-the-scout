@@ -1,8 +1,9 @@
 import { getLocalModel } from "./local-model-catalog.ts";
 import { analyzeBasicLocal } from "./basic-local-analysis.ts";
+import type { AnalysisProvider } from "../shared/online-models.ts";
 
 export type AnalysisSelection = {
-  provider: "ollama" | "openai" | "builtin";
+  provider: AnalysisProvider;
   ollamaUrl: string;
   ollamaModel: string;
   builtInModelId: string;
@@ -11,6 +12,8 @@ type Generate = (instructions: string, input: unknown, schema: Record<string, un
 type Providers = {
   ollama: (url: string, model: string, instructions: string, input: unknown, schema: Record<string, unknown>) => Promise<Record<string, unknown>>;
   openai: (instructions: string, input: unknown, name: string, schema: Record<string, unknown>, failure: string) => Promise<Record<string, unknown>>;
+  anthropic?: (instructions: string, input: unknown, name: string, schema: Record<string, unknown>, failure: string) => Promise<Record<string, unknown>>;
+  credits?: (instructions: string, input: unknown, name: string, schema: Record<string, unknown>, failure: string) => Promise<Record<string, unknown>>;
   ready: (id: string) => Promise<unknown>;
   local: (id: string, ...args: Parameters<Generate>) => ReturnType<Generate>;
 };
@@ -25,6 +28,11 @@ export async function runSelectedAnalysis(selected: AnalysisSelection, providers
     return providers.ollama(selected.ollamaUrl, selected.ollamaModel, instructions, input, schema);
   }
   if (selected.provider === "openai") return providers.openai(instructions, input, name, schema, failure);
+  if (selected.provider === "anthropic" || selected.provider === "credits") {
+    const provider = providers[selected.provider];
+    if (!provider) throw new Error("This analysis method is not configured.");
+    return provider(instructions, input, name, schema, failure);
+  }
   const model = getLocalModel(selected.builtInModelId);
   await providers.ready(model.id);
   if (model.basic) return analyzeBasicLocal(input as Record<string, unknown>, name === "resume_plan",

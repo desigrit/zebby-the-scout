@@ -1,0 +1,13 @@
+**
+!package.json
+!package-lock.json
+!credits-service/
+!credits-service/**
+credits-service/dist/
+!shared/
+!shared/**
+!desktop/
+!desktop/online-analysis.ts
+!desktop/analysis-contracts.ts
+!scripts/
+!scripts/build-credits-service.mjs

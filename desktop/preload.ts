@@ -15,7 +15,21 @@ contextBridge.exposeInMainWorld("desktop", {
   chooseDatabase: (kind: "open" | "create") => ipcRenderer.invoke("desktop:choose-database", kind),
   retrySync: () => ipcRenderer.invoke("desktop:retry-sync"),
   setApiKey: (value: string) => ipcRenderer.invoke("desktop:set-api-key", value),
-  setAnalysisProvider: (value: "ollama" | "openai" | "builtin") => ipcRenderer.invoke("desktop:set-analysis-provider", value),
+  setAnthropicKey: (value: string) => ipcRenderer.invoke("desktop:set-anthropic-key", value),
+  setOnlineModel: (provider: string, model: string) => ipcRenderer.invoke("desktop:set-online-model", provider, model),
+  sendCreditCode: (email: string) => ipcRenderer.invoke("desktop:send-credit-code", email),
+  verifyCreditCode: (email: string, code: string) => ipcRenderer.invoke("desktop:verify-credit-code", email, code),
+  signOutCredits: () => ipcRenderer.invoke("desktop:sign-out-credits"),
+  refreshCredits: () => ipcRenderer.invoke("desktop:refresh-credits"),
+  startCreditCheckout: (pack: string) => ipcRenderer.invoke("desktop:start-credit-checkout", pack),
+  creditCheckoutStatus: (id: string) => ipcRenderer.invoke("desktop:credit-checkout-status", id),
+  quoteCreditAnalysis: (source: unknown) => ipcRenderer.invoke("desktop:quote-credit-analysis", source),
+  onCreditsChanged: (callback: (state: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state);
+    ipcRenderer.on("desktop:credits-changed", listener);
+    return () => ipcRenderer.removeListener("desktop:credits-changed", listener);
+  },
+  setAnalysisProvider: (value: string) => ipcRenderer.invoke("desktop:set-analysis-provider", value),
   setOllamaConfig: (value: { url: string; model: string }) => ipcRenderer.invoke("desktop:set-ollama-config", value),
   listOllamaModels: (url: string) => ipcRenderer.invoke("desktop:list-ollama-models", url),
   selectLocalModel: (id: string) => ipcRenderer.invoke("desktop:select-local-model", id),

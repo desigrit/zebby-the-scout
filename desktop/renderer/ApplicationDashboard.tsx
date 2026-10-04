@@ -26,6 +26,7 @@ import type { JobDetails } from "../../lib/job-details";
 import { parseLocations } from "../../lib/locations";
 import { pasteJobDescription } from "../../lib/job-text-paste";
 import LocationEditor from "./LocationEditor";
+import { useAnalysisFlow } from "./AnalysisFlow";
 import { applicationActivity } from "../../lib/application-activity";
 import ApplicationActivity from "./ApplicationActivity";
 import MatchProgressRing from "./MatchProgressRing";
@@ -127,6 +128,7 @@ function LocationSummary({ value, expanded, disclosureId, onToggle }: {
 }
 
 export default function ApplicationDashboard() {
+  const analysisFlow = useAnalysisFlow();
   const [applications, setApplications] = useState<Application[]>([]);
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [loading, setLoading] = useState(true);
@@ -544,17 +546,22 @@ export default function ApplicationDashboard() {
   }
 
   async function analyzeMatch(item: Application, automatic = false) {
+    if (automatic && !analysisFlow.canAutoAnalyze()) return;
     if (analysisRequestsRef.current.has(item.id)) return;
     analysisRequestsRef.current.add(item.id);
-    setAnalyzingIds((current) => new Set(current).add(item.id));
     const request = { id: crypto.randomUUID(), controller: new AbortController() };
     analysisControllers.current.set(item.id, request);
     setActionError("");
     if (!automatic) setNotice("");
     try {
+      const authorization = automatic ? {} : await analysisFlow.prepare({ kind: "match", id: item.id });
+      if (!authorization) return;
+      request.controller.signal.throwIfAborted();
+      setAnalyzingIds((current) => new Set(current).add(item.id));
       const { application } = await readJson<{ application: Application }>(
         await fetch(`/api/applications/${encodeURIComponent(item.id)}/analyze`, {
-          method: "POST", headers: { "X-Zebby-Analysis-ID": request.id }, signal: request.controller.signal }),
+          method: "POST", headers: { "X-Zebby-Analysis-ID": request.id,
+            ...(authorization.quoteId ? { "X-Zebby-Credit-Quote": authorization.quoteId } : {}) }, signal: request.controller.signal }),
       );
       request.controller.signal.throwIfAborted();
       setApplications((current) => current.map((existing) => existing.id === item.id ? application : existing));

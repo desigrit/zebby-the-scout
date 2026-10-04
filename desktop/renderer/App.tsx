@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ArrowRight, ArrowUpRight, Check, FileText, FolderOpen,
-  KeyRound, LoaderCircle, Monitor, Moon, Plus, RefreshCw, RotateCw, Search, Sparkles, Sun, Trash2 } from "lucide-react";
+  LoaderCircle, Monitor, Moon, Plus, RefreshCw, RotateCw, Search, Sparkles, Sun, Trash2 } from "lucide-react";
 import ApplicationDashboard from "./ApplicationDashboard";
 import LocationEditor from "./LocationEditor";
 import { pasteJobDescription } from "../../lib/job-text-paste";
 import type { DesktopState } from "../bridge";
 import type { Plan, PlanInput } from "../store";
 import type { Resume } from "../../lib/application-types";
-import LocalModelsSettings from "./LocalModelsSettings";
+import { AnalysisSettings } from "./AnalysisSettings";
+import { AnalysisFlowProvider, CreditsSettings, SidebarCredits, useAnalysisFlow } from "./AnalysisFlow";
+import { onlineModel } from "../../shared/online-models";
 import PlanRecommendations from "./PlanRecommendations";
 import NavigationButton from "./NavigationButton";
 import UpdateButton from "./UpdateButton";
@@ -45,10 +47,10 @@ function formatUpdated(value: string) {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(value));
 }
 
-function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, builtInReady, onOpenSettings, onDirtyChange, onAnalysisChange }: {
+function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady, onDirtyChange, onAnalysisChange }: {
   analysisProvider: DesktopState["analysisProvider"]; ollamaModel: string;
   builtInModelId: string; builtInReady: boolean;
-  hasApiKey: boolean; onOpenSettings: () => void; onDirtyChange: (dirty: boolean) => void;
+  onDirtyChange: (dirty: boolean) => void;
   onAnalysisChange: (busy: boolean) => void;
 }) {
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -64,6 +66,7 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, bu
   const [reading, setReading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const analysisFlow = useAnalysisFlow();
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const builtInModel = LOCAL_MODELS.find((model) => model.id === builtInModelId);
@@ -230,19 +233,19 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, bu
 
   async function analyze() {
     if (busy || !canAnalyze || analysisRequest.current) return;
-    if (analysisProvider === "openai" && !hasApiKey || analysisProvider === "ollama" && !ollamaModel ||
-        analysisProvider === "builtin" && !builtInReady) {
-      onOpenSettings(); return;
-    }
-    setAnalyzing(true); setError(""); setNotice("");
+    setError(""); setNotice("");
     const request = { id: crypto.randomUUID(), controller: new AbortController() };
     analysisRequest.current = request;
     try {
       const saved = dirty || !selectedId ? await save() : selectedPlan;
       request.controller.signal.throwIfAborted();
       if (!saved) throw new Error("Save this plan before analyzing it.");
+      const authorization = await analysisFlow.prepare({ kind: "plan", id: saved.id });
+      if (!authorization) return;
+      request.controller.signal.throwIfAborted();
+      setAnalyzing(true);
       const { plan } = await readJson<{ plan: Plan }>(await fetch(`/api/plans/${saved.id}/analyze`, {
-        method: "POST", headers: { "X-Zebby-Analysis-ID": request.id }, signal: request.controller.signal }));
+        method: "POST", headers: { "X-Zebby-Analysis-ID": request.id, ...(authorization.quoteId ? { "X-Zebby-Credit-Quote": authorization.quoteId } : {}) }, signal: request.controller.signal }));
       request.controller.signal.throwIfAborted();
       setPlans((current) => [plan, ...current.filter((item) => item.id !== plan.id)]
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
@@ -375,14 +378,9 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, bu
             {analyzing && <button className="button button-secondary" type="button" onClick={() => void cancelAnalysis()}
               disabled={cancelling}>Cancel</button>}
             <small>{analysisProvider === "ollama" ? (ollamaModel || "Ollama") : analysisProvider === "builtin"
-              ? (builtInModel?.name || "Local model") : "GPT-6 Sol"}</small>
+              ? (builtInModel?.name || "Local model") : onlineModel(analysisProvider === "credits" ? analysisFlow.state.credits.model
+                : analysisProvider === "anthropic" ? analysisFlow.state.anthropicModel : analysisFlow.state.openaiModel).name}</small>
           </div>
-          {analysisProvider === "openai" && !hasApiKey && <p className="analysis-hint"><KeyRound size={16} aria-hidden="true" />
-            Add an API key in <button type="button" onClick={onOpenSettings}>Settings</button>.</p>}
-          {analysisProvider === "ollama" && !ollamaModel && <p className="analysis-hint"><KeyRound size={16} aria-hidden="true" />
-            Choose a model in <button type="button" onClick={onOpenSettings}>Settings</button>.</p>}
-          {analysisProvider === "builtin" && !builtInReady && <p className="analysis-hint"><FolderOpen size={16} aria-hidden="true" />
-            Download a model in <button type="button" onClick={onOpenSettings}>Settings</button>.</p>}
           {analysisProvider === "builtin" && builtInReady && builtInModel?.basic && <p className="analysis-hint">
             Compact mode uses basic keyword coverage and limited overview suggestions.</p>}
           {!canAnalyze && <p className="analysis-requirements">Add {missing.join(", ")} to analyze.</p>}
@@ -421,7 +419,8 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, bu
             ? `Your posting, overview, and resume stay on this computer. Analysis uses ${builtInModel?.name || "the selected local model"}.`
             : analysisProvider === "ollama"
             ? `Job text, your overview, and extracted resume text are sent to ${ollamaModel || "your selected model"} on your Ollama server.`
-            : "Job text, your overview, and the selected resume are sent to OpenAI. API usage may be billed to your account."}</p>
+            : analysisProvider === "credits" ? "Job text, your overview, and resume text are sent to Zebby and your selected online provider. You confirm credit use before analysis."
+            : `Job text, your overview, and ${analysisProvider === "openai" ? "the selected resume" : "resume text"} are sent to ${analysisProvider === "openai" ? "OpenAI" : "Anthropic"}. Usage is billed to your API account.`}</p>
             <p>Importance reflects job priorities, not resume coverage or a measured ATS score.</p></details>
         </fieldset>
         </div>
@@ -440,63 +439,16 @@ function PlanView({ analysisProvider, ollamaModel, hasApiKey, builtInModelId, bu
 
 function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking }: { state: DesktopState; onState: (value: DesktopState) => void;
   onUpdate: () => void; onCheckUpdates: () => Promise<void>; updateWorking: boolean }) {
-  const [keyInput, setKeyInput] = useState("");
-  const [ollamaUrl, setOllamaUrl] = useState(state.ollamaUrl);
-  const [ollamaModel, setOllamaModel] = useState(state.ollamaModel);
-  const [installedModels, setInstalledModels] = useState<string[]>([]);
-  const [findingModels, setFindingModels] = useState(false);
+  const { openCredits } = useAnalysisFlow();
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-
-  useEffect(() => {
-    if (state.analysisProvider !== "ollama" || ollamaUrl !== state.ollamaUrl) return;
-    let active = true;
-    void window.desktop!.listOllamaModels(state.ollamaUrl)
-      .then((models) => { if (active) setInstalledModels(models); })
-      .catch(() => { if (active) setInstalledModels([]); });
-    return () => { active = false; };
-  }, [state.analysisProvider, state.ollamaUrl, ollamaUrl]);
-
-  async function changeProvider(value: DesktopState["analysisProvider"]) {
-    setWorking(true); setError(""); setNotice("");
-    try { onState(await window.desktop!.setAnalysisProvider(value)); }
-    catch (cause) { setError(errorText(cause)); }
-    finally { setWorking(false); }
-  }
-
-  async function findModels() {
-    setFindingModels(true); setError(""); setNotice("");
-    try {
-      const models = await window.desktop!.listOllamaModels(ollamaUrl);
-      setInstalledModels(models);
-      if (!models.length) setNotice("Ollama is running, but no models are installed.");
-      else setNotice(`${models.length} ${models.length === 1 ? "model" : "models"} found.`);
-    } catch (cause) { setInstalledModels([]); setError(errorText(cause)); }
-    finally { setFindingModels(false); }
-  }
-
-  async function saveOllama() {
-    setWorking(true); setError(""); setNotice("");
-    try { onState(await window.desktop!.setOllamaConfig({ url: ollamaUrl, model: ollamaModel }));
-      setNotice("Ollama settings saved."); }
-    catch (cause) { setError(errorText(cause)); }
-    finally { setWorking(false); }
-  }
 
   async function choose(kind: "open" | "create") {
     setWorking(true); setError(""); setNotice("");
     try { const result = await window.desktop!.chooseDatabase(kind);
       if (result) { onState(result); setNotice(kind === "create" ? "New database created." : "Database opened."); }
     } catch (cause) { setError(errorText(cause)); }
-    finally { setWorking(false); }
-  }
-
-  async function saveKey(value: string) {
-    setWorking(true); setError(""); setNotice("");
-    try { onState(await window.desktop!.setApiKey(value)); setKeyInput("");
-      setNotice(value ? state.canSaveApiKey ? "API key saved." : "API key set for this session." : "API key removed."); }
-    catch (cause) { setError(errorText(cause)); }
     finally { setWorking(false); }
   }
 
@@ -548,50 +500,9 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking 
     </section>
     <section className="settings-section" aria-labelledby="ai-settings">
       <div className="settings-section-heading"><h2 id="ai-settings">Analysis</h2></div>
-      <div className="settings-content">
-        <label className="field provider-field"><span>Analyze with</span>
-          <select value={state.analysisProvider} disabled={working}
-            onChange={(event) => void changeProvider(event.target.value as DesktopState["analysisProvider"])}>
-            <option value="builtin">On this computer</option>
-            <option value="ollama">Ollama server</option>
-            <option value="openai">OpenAI</option>
-          </select></label>
-        {state.analysisProvider === "ollama" ? <>
-          <label className="field"><span>Server URL</span><input type="url" value={ollamaUrl}
-            onChange={(event) => { setOllamaUrl(event.target.value); setInstalledModels([]); }}
-            placeholder="http://localhost:11434" spellCheck={false} /></label>
-          <div className="ollama-model-row"><label className="field"><span>Model</span>
-            <select aria-label="Model" value={installedModels.includes(ollamaModel) ? ollamaModel : "custom"}
-              onChange={(event) => setOllamaModel(event.target.value === "custom" ? "" : event.target.value)}>
-              {installedModels.map((model) => <option key={model} value={model}>{model}</option>)}
-              <option value="custom">Enter another model name</option>
-            </select></label>
-            <button className="icon-button model-refresh" type="button" onClick={() => void findModels()} disabled={working || findingModels}
-              aria-label="Refresh models" title="Refresh models">
-              <RotateCw className={findingModels ? "spin" : undefined} size={17} aria-hidden="true" /></button></div>
-          {!installedModels.includes(ollamaModel) && <label className="field custom-model-field"><span>Model name</span>
-            <input value={ollamaModel} onChange={(event) => setOllamaModel(event.target.value)}
-              placeholder="qwen3:8b" spellCheck={false} /></label>}
-          <div className="settings-actions"><button className="button button-primary" type="button" data-command="save"
-            onClick={() => void saveOllama()} disabled={working || findingModels || !ollamaModel.trim()}>
-            <Check size={17} aria-hidden="true" /> Save</button></div>
-          <details className="analysis-sharing"><summary>Data sent to this server</summary>
-            <p>Job text, your resume overview, and extracted resume text are sent to your selected Ollama server.</p></details>
-        </> : state.analysisProvider === "builtin" ? <LocalModelsSettings state={state} onState={onState} /> : <>
-        <p className={`key-status ${state.hasApiKey ? "key-ready" : ""}`}>{state.hasApiKey ? state.canSaveApiKey ? "API key saved" : "API key set for this session" : "Add an API key to analyze"}</p>
-        <label className="field key-field"><span>{state.hasApiKey ? "Replace API key" : "API key"}</span>
-          <input type="password" value={keyInput} onChange={(event) => setKeyInput(event.target.value)}
-            placeholder="sk-..." autoComplete="off" spellCheck={false} /></label>
-        {!state.canSaveApiKey && <p className="settings-help">Secure storage is unavailable. The key lasts until you quit Zebby.</p>}
-        <div className="settings-actions"><button className="button button-primary" type="button" data-command="save" disabled={working || !keyInput.trim()}
-          onClick={() => void saveKey(keyInput)}><Check size={17} aria-hidden="true" /> {state.canSaveApiKey ? "Save API key" : "Use for this session"}</button>
-          {state.hasApiKey && <button className="button button-secondary" type="button" disabled={working}
-            onClick={() => void saveKey("")}>Remove key</button>}</div>
-        <details className="analysis-sharing"><summary>Data sent to OpenAI</summary>
-          <p>The key stays on this computer. Job text, your overview, and the selected resume are sent to OpenAI. GPT-6 Sol API usage may incur charges.</p></details>
-        </>}
-      </div>
+      <div className="settings-content"><AnalysisSettings state={state} onState={onState} openCredits={openCredits} /></div>
     </section>
+    <CreditsSettings />
     <section className="settings-section" aria-labelledby="appearance-settings">
       <div className="settings-section-heading"><h2 id="appearance-settings">Appearance</h2></div>
       <div className="settings-content"><div className="appearance-options" role="radiogroup" aria-label="Appearance">
@@ -724,10 +635,13 @@ export default function App() {
         modelsFolder: next.modelsFolder, localEngine: next.localEngine,
         totalMemory: next.totalMemory, availableMemory: next.availableMemory } : next);
     });
+    const removeCreditsChanged = window.desktop!.onCreditsChanged((next) => {
+      setState((current) => current ? { ...current, credits: next.credits } : next);
+    });
     const removeUpdatesChanged = window.desktop!.onUpdatesChanged((updates) => {
       setState((current) => current ? { ...current, updates } : current);
     });
-    return () => { removeChanged(); removeNavigate(); removeModelsChanged(); removeUpdatesChanged(); };
+    return () => { removeChanged(); removeNavigate(); removeModelsChanged(); removeUpdatesChanged(); removeCreditsChanged(); };
   }, [navigate]);
 
   useEffect(() => {
@@ -741,7 +655,7 @@ export default function App() {
   }, [appearance]);
 
   if (!state) return <div className="desktop-loading"><LoaderCircle className="spin" size={24} /> Opening workspace...</div>;
-  return <div className={`desktop-shell ${state.platform === "darwin" ? "platform-mac" : "platform-windows"}${state.sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+  return <AnalysisFlowProvider state={state} onState={setState}><div className={`desktop-shell ${state.platform === "darwin" ? "platform-mac" : "platform-windows"}${state.sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
     <header className="desktop-titlebar" aria-label="Window title bar">
       <div className="titlebar-sidebar" aria-hidden="true" />
       <div className="titlebar-caption">Zebby</div>
@@ -757,7 +671,8 @@ export default function App() {
         <NavigationButton kind="applications" label="Applications" selected={tab === "applications"} collapsed={state.sidebarCollapsed} onActivate={() => navigate("applications")} disabled={analysisRunning} />
         <NavigationButton kind="settings" label="Settings" selected={tab === "settings"} collapsed={state.sidebarCollapsed} onActivate={() => navigate("settings")} disabled={analysisRunning} />
       </nav>
-      {(state.updates.available || state.filePath && !state.sidebarCollapsed) && <div className="sidebar-footer">
+      {(state.updates.available || state.credits.signedIn || state.filePath && !state.sidebarCollapsed) && <div className="sidebar-footer">
+        <SidebarCredits />
         <UpdateButton updates={state.updates} collapsed={state.sidebarCollapsed} working={updateWorking} onClick={() => void applyUpdate()} />
         {state.filePath && !state.sidebarCollapsed && <div className="sidebar-database" title={state.filePath}>
         <span>Current database</span><strong>{state.filename}</strong>
@@ -772,14 +687,14 @@ export default function App() {
         <button type="button" onClick={() => navigate("settings")}>Open Settings</button>
       </div>}
       {!state.filePath ? (tab === "settings" ? <SettingsView state={state} onState={setState} onUpdate={() => void applyUpdate()} onCheckUpdates={checkUpdates} updateWorking={updateWorking} /> : <Welcome state={state} onState={setState} />)
-      : tab === "plan" ? <PlanView key={databaseVersion} hasApiKey={state.hasApiKey}
+      : tab === "plan" ? <PlanView key={databaseVersion}
         analysisProvider={state.analysisProvider} ollamaModel={state.ollamaModel}
         builtInModelId={state.builtInModelId} builtInReady={Boolean(state.localModels?.some((model) =>
           model.id === state.builtInModelId && model.status === "ready") &&
           (!LOCAL_MODELS.find((model) => model.id === state.builtInModelId)?.license ||
             state.acceptedModelTerms?.includes(state.builtInModelId)))}
-        onOpenSettings={() => navigate("settings")} onDirtyChange={setDirtyPlan} onAnalysisChange={setAnalysisRunning} />
+        onDirtyChange={setDirtyPlan} onAnalysisChange={setAnalysisRunning} />
       : tab === "applications" ? <ApplicationDashboard key={databaseVersion} />
       : <SettingsView state={state} onState={setState} onUpdate={() => void applyUpdate()} onCheckUpdates={checkUpdates} updateWorking={updateWorking} />}</div>
-  </div>;
+  </div></AnalysisFlowProvider>;
 }

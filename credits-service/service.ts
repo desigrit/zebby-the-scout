@@ -1,0 +1,179 @@
+import { createHash, randomUUID } from "node:crypto";
+import type { ServiceConfig } from "./config.ts";
+import { CREDIT_PACKS, ONLINE_MODELS, PRICE_VERSION, NANODOLLARS_PER_CREDIT, creditPack, onlineModel,
+  maximumCost, usageCost } from "../shared/online-models.ts";
+import { planInstructions, planSchema, matchInstructions, matchSchema } from "../desktop/analysis-contracts.ts";
+import { onlineAnalysis } from "../desktop/online-analysis.ts";
+import { validateInput, validateResult } from "./validation.ts";
+import { stripeRequest, verifyStripeEvent } from "./stripe.ts";
+import { z } from "zod";
+
+const uuid = z.string().uuid();
+const kindSchema = z.enum(["plan", "match"]);
+type PurchaseRow = { id: string; user_id: string; pack: string; cents: number; session_id: string | null; paid: boolean };
+type QuoteRow = { id: string; kind: "plan" | "match"; model: string; price_version: string };
+type RunRow = { status: "reserved" | "completed" | "failed"; fresh?: boolean; result?: Record<string, unknown> | null;
+  id: string; quote_id: string; model: string; kind: "plan" | "match"; cost: number };
+const stripeCheckout = z.object({ id: z.string().regex(/^cs_[a-zA-Z0-9_]+$/), url: z.string().url() });
+const paidSession = z.object({ id: z.string(), payment_status: z.string(), currency: z.string(), amount_subtotal: z.number().int(),
+  client_reference_id: uuid, payment_intent: z.string().startsWith("pi_"), metadata: z.object({ user_id: uuid, purchase_id: uuid, pack: z.string() }) });
+export class ServiceError extends Error { status: number; constructor(message: string, status = 400) { super(message); this.status = status; } }
+export type Dependencies = { fetcher?: typeof fetch; now?: () => number };
+export function createService(config: ServiceConfig, dependencies: Dependencies = {}) {
+  const send = dependencies.fetcher || fetch, now = dependencies.now || Date.now;
+  const limits = new Map<string, { count: number; until: number }>();
+  function rateLimit(key: string, maximum: number, duration = 60000) {
+    if (limits.size > 10000) for (const [id, value] of limits) if (value.until < now()) limits.delete(id);
+    if (limits.size > 20000) throw new ServiceError("Please try again shortly.", 429);
+    const previous = limits.get(key);
+    const value = !previous || previous.until <= now() ? { count: 0, until: now() + duration } : previous;
+    value.count++; limits.set(key, value);
+    if (value.count > maximum) throw new ServiceError("Please try again shortly.", 429);
+  }
+  async function supabase<T = unknown>(path: string, options: RequestInit = {}, token = config.supabaseKey): Promise<T> {
+    const response = await send(config.supabaseUrl + path, { ...options, headers: { apikey: config.supabaseKey,
+      Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...options.headers },
+      signal: AbortSignal.timeout(15000) });
+    if (!response.ok) throw new ServiceError(path.startsWith("/auth/") ? "Sign-in could not be completed. Check the code or try again." : "The credit service could not complete this request.", path.startsWith("/auth/") ? 401 : 503);
+    if (response.status === 204) return null as T;
+    return response.json() as Promise<T>;
+  }
+  async function rpc<T = unknown>(name: string, value: unknown) { return supabase<T>(`/rest/v1/rpc/zebby_${name}`, { method: "POST", body: JSON.stringify(value) }); }
+  async function rows<T>(table: string, query: string) { return supabase<T[]>(`/rest/v1/zebby_${table}?${query}`); }
+  async function insert<T>(table: string, value: unknown) { return supabase<T[]>(`/rest/v1/zebby_${table}`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify(value) }); }
+  async function user(token: string) {
+    if (!token || token.length > 8192) throw new ServiceError("Sign in to use credits.", 401);
+    const account = await supabase<{ id: string; email: string; email_confirmed_at: string }>("/auth/v1/user", {}, token);
+    if (!uuid.safeParse(account.id).success || !account.email || !account.email_confirmed_at) throw new ServiceError("Verify your email to use credits.", 401);
+    return { id: account.id as string, email: account.email as string };
+  }
+  const digest = (value: string) => createHash("sha256").update(value).digest("hex");
+  const providerKey = (model: string) => onlineModel(model).provider === "openai" ? config.openaiKey : config.anthropicKey;
+  function configuredModel(id: string) { const model = onlineModel(id); if (!providerKey(id)) throw new ServiceError("This online provider is not available yet.", 503); return model; }
+  async function webhook(raw: Buffer, signature: string) {
+    let event: { id: string; livemode: boolean; type: string; data: { object?: unknown } };
+    try { event = z.object({ id: z.string(), livemode: z.boolean(), type: z.string(), data: z.object({ object: z.unknown() }) })
+      .parse(verifyStripeEvent(raw, signature, config.stripeWebhookSecret, now())); }
+    catch { throw new ServiceError("Invalid webhook signature.", 400); }
+    if (event.livemode !== config.live) throw new ServiceError("Webhook mode does not match the service.");
+    if (["checkout.session.completed", "checkout.session.async_payment_succeeded"].includes(event.type)) {
+      if (z.object({ payment_status: z.string() }).parse(event.data.object).payment_status !== "paid") return { received: true };
+      const object = paidSession.parse(event.data.object);
+      if (object.payment_status !== "paid") return { received: true };
+      const id = uuid.parse(object.metadata?.purchase_id);
+      const [purchase] = await rows<PurchaseRow>("purchases", `id=eq.${id}&select=*`);
+      if (!purchase || object.currency !== "usd" || object.amount_subtotal !== purchase.cents || object.client_reference_id !== purchase.user_id
+        || object.metadata.user_id !== purchase.user_id || object.metadata.pack !== purchase.pack || object.id !== purchase.session_id) throw new ServiceError("Payment does not match the purchase.");
+      await rpc("payment", { p_event: event.id, p_purchase: id, p_session: object.id,
+        p_payment: z.string().startsWith("pi_").parse(object.payment_intent), p_cents: object.amount_subtotal });
+    } else if (event.type === "charge.refunded") {
+      const object = z.object({ payment_intent: z.string().startsWith("pi_"), amount_refunded: z.number().int().nonnegative(), disputed: z.boolean() }).parse(event.data.object);
+      await rpc("reverse", { p_event: event.id, p_payment: z.string().startsWith("pi_").parse(object.payment_intent),
+        p_refunded: z.number().int().nonnegative().parse(object.amount_refunded), p_disputed: Boolean(object.disputed) });
+    } else if (["charge.dispute.created", "charge.dispute.closed"].includes(event.type)) {
+      const object = z.object({ charge: z.string().startsWith("ch_"), status: z.string() }).parse(event.data.object);
+      const charge = z.object({ payment_intent: z.string().startsWith("pi_"), amount_refunded: z.number().int().nonnegative() })
+        .parse(await stripeRequest(config.stripeKey, `charges/${encodeURIComponent(object.charge)}`, undefined, undefined, send));
+      await rpc("reverse", { p_event: event.id, p_payment: z.string().startsWith("pi_").parse(charge.payment_intent),
+        p_refunded: charge.amount_refunded, p_disputed: event.type === "charge.dispute.created" || object.status !== "won" });
+    }
+    return { received: true };
+  }
+  async function handle(method: string, path: string, body: unknown, token: string, signal: AbortSignal, ip = "unknown") {
+    rateLimit("ip:" + ip, 120);
+    if (method === "GET" && path === "/health") return { ok: true, mode: config.live ? "live" : "test" };
+    if (method === "GET" && path === "/v1/catalog") return { packs: CREDIT_PACKS, models: ONLINE_MODELS,
+      priceVersion: PRICE_VERSION, mode: config.live ? "live" : "test" };
+    if (method === "POST" && path === "/v1/auth/send-code") {
+      const { email } = z.object({ email: z.string().trim().email().max(254) }).strict().parse(body);
+      rateLimit("email:" + digest(email.toLowerCase()), 3, 15 * 60000);
+      rateLimit("otp-ip:" + ip, 10, 15 * 60000);
+      await supabase("/auth/v1/otp", { method: "POST", body: JSON.stringify({ email: email.toLowerCase(), create_user: true }) });
+      return { sent: true };
+    }
+    if (method === "POST" && path === "/v1/auth/verify") {
+      const value = z.object({ email: z.string().trim().email().max(254), code: z.string().regex(/^\d{6,8}$/) }).strict().parse(body);
+      rateLimit("verify:" + digest(value.email.toLowerCase()), 8, 15 * 60000);
+      return supabase("/auth/v1/verify", { method: "POST", body: JSON.stringify({ email: value.email.toLowerCase(), token: value.code, type: "email" }) });
+    }
+    if (method === "POST" && path === "/v1/auth/refresh") {
+      const value = z.object({ refreshToken: z.string().min(1).max(8192) }).strict().parse(body);
+      return supabase("/auth/v1/token?grant_type=refresh_token", { method: "POST", body: JSON.stringify({ refresh_token: value.refreshToken }) });
+    }
+    const account = await user(token);
+    rateLimit("user:" + account.id, 60);
+    if (method === "POST" && path === "/v1/auth/logout") { await supabase("/auth/v1/logout?scope=local", { method: "POST" }, token); return { signedOut: true }; }
+    if (method === "GET" && path === "/v1/wallet") return rpc("wallet", { p_user: account.id });
+    if (method === "GET" && /^\/v1\/analyses\/[\da-f-]{36}$/i.test(path)) {
+      const id = uuid.parse(path.split("/").at(-1));
+      const [run] = await rows<RunRow>("runs", `id=eq.${id}&user_id=eq.${account.id}&select=*`);
+      if (!run) throw new ServiceError("Analysis not found.", 404);
+      return { status: run.status, result: run.result, model: run.model, kind: run.kind, cost: run.cost,
+        quoteId: run.quote_id, wallet: await rpc("wallet", { p_user: account.id }) };
+    }
+    if (method === "POST" && path === "/v1/checkout") {
+      const value = z.object({ pack: z.string(), requestId: uuid }).strict().parse(body), pack = creditPack(value.pack);
+      rateLimit("checkout:" + account.id, 10, 15 * 60000);
+      let [purchase] = await rows<PurchaseRow>("purchases", `id=eq.${value.requestId}&select=*`);
+      if (purchase && (purchase.user_id !== account.id || purchase.pack !== pack.id)) throw new ServiceError("This checkout request cannot be reused.");
+      if (!purchase) [purchase] = await insert<PurchaseRow>("purchases", { id: value.requestId, user_id: account.id, pack: pack.id,
+        cents: pack.dollars * 100, amount: pack.credits * NANODOLLARS_PER_CREDIT });
+      const fields = new URLSearchParams({ mode: "payment", customer_email: account.email, client_reference_id: account.id,
+        success_url: config.publicUrl + "/checkout/return?session_id={CHECKOUT_SESSION_ID}", cancel_url: config.publicUrl + "/checkout/cancel",
+        "metadata[purchase_id]": purchase.id, "metadata[user_id]": account.id, "metadata[pack]": pack.id,
+        "payment_intent_data[metadata][purchase_id]": purchase.id, "payment_intent_data[metadata][user_id]": account.id,
+        "line_items[0][quantity]": "1", "line_items[0][price_data][currency]": "usd",
+        "line_items[0][price_data][unit_amount]": String(pack.dollars * 100),
+        "line_items[0][price_data][product_data][name]": `Zebby, ${pack.credits.toLocaleString("en-US")} credits` });
+      const session = stripeCheckout.parse(await stripeRequest(config.stripeKey, "checkout/sessions", fields, purchase.id, send));
+      await supabase(`/rest/v1/zebby_purchases?id=eq.${purchase.id}`, { method: "PATCH", body: JSON.stringify({ session_id: session.id }) });
+      return { id: session.id, url: session.url, mode: config.live ? "live" : "test" };
+    }
+    if (method === "GET" && /^\/v1\/checkout\/cs_[a-zA-Z0-9_]+$/.test(path)) {
+      const id = path.split("/").at(-1)!;
+      const [purchase] = await rows<Pick<PurchaseRow, "paid">>("purchases", `session_id=eq.${id}&user_id=eq.${account.id}&select=paid`);
+      if (!purchase) throw new ServiceError("Checkout not found.", 404);
+      // A redirect or client success message never awards credits.
+      if (purchase.paid) return { status: "paid", wallet: await rpc("wallet", { p_user: account.id }) };
+      const session = z.object({ status: z.string() }).parse(await stripeRequest(config.stripeKey, `checkout/sessions/${id}`, undefined, undefined, send));
+      return { status: session.status === "expired" ? "expired" : "pending" };
+    }
+    if (method === "POST" && path === "/v1/quotes") {
+      const value = z.object({ model: z.string(), kind: kindSchema, input: z.unknown() }).strict().parse(body);
+      const model = configuredModel(value.model), input = validateInput(value.input, value.kind);
+      const instructions = value.kind === "plan" ? planInstructions : matchInstructions;
+      const maximum = maximumCost(model, Buffer.byteLength(JSON.stringify(input)), Buffer.byteLength(instructions), value.kind);
+      const quote = { id: randomUUID(), user_id: account.id, model: model.id, kind: value.kind,
+        content_hash: digest(JSON.stringify(input)), maximum, price_version: PRICE_VERSION, expires_at: new Date(now() + 5 * 60000).toISOString() };
+      await insert("quotes", quote);
+      return { id: quote.id, model: quote.model, maximum, expiresAt: quote.expires_at };
+    }
+    if (method === "POST" && path === "/v1/analysis") {
+      const value = z.object({ quoteId: uuid, requestId: uuid, input: z.unknown() }).strict().parse(body);
+      const [quote] = await rows<QuoteRow>("quotes", `id=eq.${value.quoteId}&user_id=eq.${account.id}&select=*`);
+      if (!quote || quote.price_version !== PRICE_VERSION) throw new ServiceError("Request a fresh analysis quote.");
+      const kind = kindSchema.parse(quote.kind), model = configuredModel(quote.model), input = validateInput(value.input, kind);
+      const run = await rpc<RunRow>("reserve", { p_user: account.id, p_id: value.requestId, p_quote: quote.id, p_hash: digest(JSON.stringify(input)) });
+      if (!run.fresh) {
+        if (run.status === "completed" && run.result) return { result: run.result, wallet: await rpc("wallet", { p_user: account.id }) };
+        throw new ServiceError(run.status === "reserved" ? "This analysis is already running." : "This analysis has ended. Request a new quote.", 409);
+      }
+      try {
+        signal.throwIfAborted();
+        const response = await onlineAnalysis({ model: model.id, key: providerKey(model.id), kind,
+          instructions: kind === "plan" ? planInstructions : matchInstructions, schema: kind === "plan" ? planSchema : matchSchema,
+          name: kind === "plan" ? "resume_plan" : "resume_match", input, signal, fetcher: send });
+        signal.throwIfAborted();
+        const result = validateResult(response.result, kind), cost = usageCost(model, response.usage);
+        const settled = await rpc<RunRow>("finish", { p_user: account.id, p_id: value.requestId, p_cost: cost, p_result: result, p_success: true });
+        if (settled.status !== "completed") throw new ServiceError("This analysis expired. Your reserved credits were released.");
+        return { result, wallet: await rpc("wallet", { p_user: account.id }) };
+      } catch (error) {
+        await rpc("finish", { p_user: account.id, p_id: value.requestId, p_cost: 0, p_result: null, p_success: false }).catch(() => undefined);
+        throw error;
+      }
+    }
+    throw new ServiceError("Request not found.", 404);
+  }
+  return { handle, webhook, cleanup: () => rpc("cleanup", {}) };
+}

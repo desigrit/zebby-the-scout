@@ -63,7 +63,7 @@ New drafts start with the selected database's last saved Current CV Overview. Sa
 
 Version 1.6.1 keeps schema 10, application and plan records, Notes, resumes, importance arrays, match explanations, and overview preferences. Existing older-file backup and migration behavior remains intact. There are no new weekly backups or pruning. Install version 1.4.1 or newer on both computers before sharing a schema 10 file.
 
-Only SmolLM2 uses the compact heuristic profile. LFM2.5, Gemma, Qwen, OpenAI, and configured Ollama retain complete source inputs and full instructions with no automatic provider fallback. Provider settings, model downloads, appearance, and navigation expansion remain local to each computer. Existing Zebby artifact migration and update behavior are described in [the guide](../../docs/guide.md).
+Only SmolLM2 uses the compact heuristic profile. LFM2.5, Gemma, Qwen, OpenAI, Anthropic, Zebby credits, and configured Ollama retain complete source inputs and full instructions with no automatic provider fallback. Provider settings, model downloads, appearance, and navigation expansion remain local to each computer. Existing Zebby artifact migration and update behavior are described in [the guide](../../docs/guide.md).
 
 ## Finish evidence
 
@@ -106,3 +106,11 @@ The public screenshot docs/screenshots/plan.png now uses the exact native Window
 The scoped finish review, recorded internally in work/score-disclosure-and-screenshots/finish-review.md, returned ship with no material fixes after inspecting ten valid current frames. Supplied lint, typecheck, build, and full headless renderer checks passed. The hidden native Windows manifest records 18 checks, 48 captures, and no errors. These gates were not rerun by the documenter.
 
 The [six public screenshots](../../docs/screenshots/README.md) use exact capture pixels from a UI working tree identical to commit 6dcb4fe30c8a671d7b19b5d19ab7db3484b0a39f, with embedded source origins. Data and resumes are synthetic, and providers and clipboard are mocked. Physical Mac visual review is not claimed. Version 1.6.7 preserves schema 10. No context, detector, or doctor was rerun during this documentation handoff.
+
+### 2026-10-04 analysis methods and credits
+
+Analyze remains below Your CV, and Save stays outside document scrolling. Initial method setup offers Local server, Download a model, OpenAI API key, Anthropic API key, and Buy credits through the shared native modal. A ready local or personal-key method can proceed directly. Paid analysis always opens its maximum quote, or recovery of the already paid result with No additional credits. Changing the paid model requests a fresh quote; an expired quote is refreshed before analysis can begin.
+
+The flow returns to the saved Plan analysis without changing its source fields, editable recommendations, separate Why and wording rationale, cancellation, or stale-result protection. No fallback substitutes a different provider. Full local model inputs, including Qwen, retain their existing path.
+
+See [Analysis and credits](analysis-credits.md) for the approved flow and finish evidence. The supplied final run passed 91 Node tests, with lint, TypeScript, and both builds passing. The independent source and test review cleared paid recovery, partial refund duplication, and stale account wallet responses. No current Plan screenshot or native interaction run was made. Earlier capture claims remain historical; hosted paid integration and current visual rendering are unverified.

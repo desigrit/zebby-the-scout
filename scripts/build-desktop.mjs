@@ -11,7 +11,8 @@ await buildEsbuild({
   entryPoints: ["desktop/main.ts"], outfile: "desktop-dist/main.cjs",
   bundle: true, platform: "node", target: "node24", format: "cjs",
   external: ["electron", "node:*"],
-  define: { "process.env.NODE_ENV": '"production"' },
+  define: { "process.env.NODE_ENV": '"production"',
+    "process.env.ZEBBY_CREDITS_SERVICE_URL": JSON.stringify(process.env.ZEBBY_CREDITS_SERVICE_URL || "") },
 });
 await buildEsbuild({
   entryPoints: ["desktop/preload.ts"], outfile: "desktop-dist/preload.cjs",

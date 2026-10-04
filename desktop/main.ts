@@ -21,8 +21,11 @@ import { ReleaseUpdates } from "./release-updates";
 import { SelfUpdater } from "./self-update";
 import { nativeWindowShell, windowColors, type Appearance } from "./window-appearance";
 import { DiagnosticLog } from "./diagnostic-log";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { AnalysisRequests } from "./analysis-requests";
+import { CreditsClient } from "./credits-client";
+import { onlineAnalysis } from "./online-analysis";
+import { onlineModel, type AnalysisProvider, type AnalysisSource } from "../shared/online-models";
 
 protocol.registerSchemesAsPrivileged([{
   scheme: "tracker", privileges: { standard: true, secure: true, supportFetchAPI: true },
@@ -33,6 +36,9 @@ const rendererRoot = path.join(appRoot, "renderer");
 let mainWindow: BrowserWindow | null = null;
 let store: DesktopStore;
 let apiKey = "";
+let anthropicKey = "";
+let creditsClient: CreditsClient;
+const paidQuotes = new Map<string, { source: AnalysisSource; model: string; hash: string; expires: number; recovery?: boolean }>();
 let startupError = "";
 let modelDownloads: LocalModelDownloads;
 let modelEngine: LocalModelEngine;
@@ -45,11 +51,11 @@ const analysisRequests = new AnalysisRequests();
 const updates = new ReleaseUpdates({ version: app.getVersion(), platform: process.platform, arch: process.arch,
   onChange: (value) => mainWindow?.webContents.send("desktop:updates-changed", value),
   onError: (error) => logDiagnostic("Could not check for updates", error) });
-type AnalysisProvider = "ollama" | "openai" | "builtin";
 let settings: { databasePath?: string; encryptedApiKey?: string; appearance?: Appearance; sidebarCollapsed?: boolean;
   analysisProvider?: AnalysisProvider; ollamaUrl?: string; ollamaModel?: string; builtInModelId?: string;
+  encryptedAnthropicKey?: string; encryptedCreditSession?: string; openaiModel?: string; anthropicModel?: string; creditModel?: string;
   acceptedModelTerms?: AcceptedModelTerms } = {};
-const diagnosticLog = new DiagnosticLog(() => logsPath(), () => [apiKey]);
+const diagnosticLog = new DiagnosticLog(() => logsPath(), () => [apiKey, anthropicKey, ...(creditsClient?.secrets() || [])]);
 
 function settingsPath() { return path.join(app.getPath("userData"), "settings.json"); }
 function logsPath() { return path.join(app.getPath("userData"), "Logs"); }
@@ -59,8 +65,11 @@ function logDiagnostic(message: string, error?: unknown) {
 }
 
 async function saveSettings() {
-  await writeFile(settingsPath(), JSON.stringify(settings, null, 2), "utf8");
+  const snapshot = JSON.stringify(settings, null, 2);
+  settingsWrites = settingsWrites.catch(() => undefined).then(() => writeFile(settingsPath(), snapshot, "utf8"));
+  await settingsWrites;
 }
+let settingsWrites: Promise<unknown> = Promise.resolve();
 
 async function loadSettings() {
   try { settings = JSON.parse(await readFile(settingsPath(), "utf8")); }
@@ -69,7 +78,7 @@ async function loadSettings() {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") logDiagnostic("Could not read local settings", error);
   }
   if (!["auto", "dark", "light"].includes(settings.appearance || "auto")) settings.appearance = "auto";
-  if (!["ollama", "openai", "builtin"].includes(settings.analysisProvider || "")) {
+  if (!["ollama", "openai", "builtin", "anthropic", "credits"].includes(settings.analysisProvider || "")) {
     settings.analysisProvider = settings.encryptedApiKey ? "openai" : "ollama";
   }
   settings.ollamaUrl ||= DEFAULT_OLLAMA_URL;
@@ -83,6 +92,24 @@ async function loadSettings() {
   if (settings.encryptedApiKey && safeStorage.isEncryptionAvailable()) {
     try { apiKey = safeStorage.decryptString(Buffer.from(settings.encryptedApiKey, "base64")); }
     catch (error) { apiKey = ""; logDiagnostic("Could not read the saved API key", error); }
+  }
+  for (const [field, fallback, provider] of [["openaiModel", "gpt-6.1-sol", "openai"],
+    ["anthropicModel", "claude-sonnet-5-5", "anthropic"], ["creditModel", "gpt-6-luna", "credits"]] as const) {
+    try { if (provider !== "credits" && onlineModel(settings[field] || fallback).provider !== provider) throw new Error(); onlineModel(settings[field] || fallback); }
+    catch { settings[field] = fallback; }
+  }
+  if (settings.encryptedAnthropicKey && safeStorage.isEncryptionAvailable()) {
+    try { anthropicKey = safeStorage.decryptString(Buffer.from(settings.encryptedAnthropicKey, "base64")); }
+    catch (error) { logDiagnostic("Could not read the saved Anthropic key", error); }
+  }
+  creditsClient = new CreditsClient(process.env.ZEBBY_CREDITS_SERVICE_URL || "", {
+    save: async (value) => { if (value && safeStorage.isEncryptionAvailable()) settings.encryptedCreditSession = safeStorage.encryptString(value).toString("base64");
+      else delete settings.encryptedCreditSession; await saveSettings(); },
+    onChange: () => mainWindow?.webContents.send("desktop:credits-changed", state()),
+  });
+  if (settings.encryptedCreditSession && safeStorage.isEncryptionAvailable()) {
+    try { creditsClient.restore(safeStorage.decryptString(Buffer.from(settings.encryptedCreditSession, "base64"))); }
+    catch (error) { logDiagnostic("Could not restore credit sign-in", error); }
   }
   if (settings.databasePath) {
     try { await store.open(settings.databasePath); }
@@ -104,7 +131,9 @@ async function loadSettings() {
 
 function state() {
   return {
-    ...store.status, startupError, hasApiKey: Boolean(apiKey),
+    ...store.status, startupError, hasApiKey: Boolean(apiKey), hasAnthropicKey: Boolean(anthropicKey),
+    openaiModel: settings.openaiModel || "gpt-6.1-sol", anthropicModel: settings.anthropicModel || "claude-sonnet-5-5",
+    credits: creditsClient.state(settings.creditModel || "gpt-6-luna"),
     analysisProvider: settings.analysisProvider || "ollama",
     ollamaUrl: settings.ollamaUrl || DEFAULT_OLLAMA_URL,
     ollamaModel: settings.ollamaModel || "",
@@ -171,31 +200,9 @@ async function captureListing<T extends { listingUrl?: string; snapshotText?: st
 }
 
 async function analyzeWithOpenAI(instructions: string, input: unknown, name: string,
-  schema: Record<string, unknown>, failure: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
-  if (!apiKey) throw new Error("Add an OpenAI API key in Settings to run analysis.");
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(120_000)]) : AbortSignal.timeout(120_000),
-    body: JSON.stringify({ model: "gpt-6-sol", reasoning: { effort: "low" }, store: false,
-      instructions, input: Array.isArray(input) || typeof input === "string" ? input : JSON.stringify(input),
-      text: { format: { type: "json_schema", name, strict: true, schema } } }),
-  });
-  const payload = await response.json() as Record<string, unknown>;
-  if (!response.ok) {
-    const detail = payload.error && typeof payload.error === "object"
-      ? String((payload.error as Record<string, unknown>).message || "") : "";
-    throw new Error(detail || `OpenAI returned ${response.status}. Check your API key and billing settings.`);
-  }
-  const output = Array.isArray(payload.output) ? payload.output : [];
-  const content = output.flatMap((item) => item && typeof item === "object" && Array.isArray((item as Record<string, unknown>).content)
-    ? (item as { content: unknown[] }).content : []);
-  const outputText = content.filter((item) => item && typeof item === "object" &&
-    (item as Record<string, unknown>).type === "output_text")
-    .map((item) => String((item as Record<string, unknown>).text || "")).join("");
-  if (!outputText) throw new Error(failure);
-  try { return JSON.parse(outputText) as Record<string, unknown>; }
-  catch { throw new Error(failure); }
+  schema: Record<string, unknown>, _failure: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  return (await onlineAnalysis({ model: settings.openaiModel || "gpt-6.1-sol", key: apiKey, instructions,
+    input, name, schema, kind: name === "resume_plan" ? "plan" : "match", signal })).result;
 }
 
 function selectedAnalysis() {
@@ -203,13 +210,55 @@ function selectedAnalysis() {
     ollamaModel: settings.ollamaModel || "", builtInModelId: settings.builtInModelId || "" };
 }
 
+function analysisHash(input: unknown) { return createHash("sha256").update(JSON.stringify(input)).digest("hex"); }
+async function quoteAnalysis(source: AnalysisSource) {
+  if (!source || !["plan", "match"].includes(source.kind) || typeof source.id !== "string" || !/^[\da-f-]{36}$/i.test(source.id)) throw new Error("Choose a saved job to analyze.");
+  let input: Record<string, unknown>;
+  if (source.kind === "plan") {
+    const plan = store.getPlan(source.id), resume = plan?.resumeId && store.getResume(plan.resumeId);
+    if (!plan || !resume) throw new Error("Save the plan with a resume before analyzing it.");
+    const description = [plan.description.trim(), plan.snapshotText.trim()].find((item) => item.length >= 100) || "";
+    if (!description || !plan.currentOverview.trim()) throw new Error("Add the job description and your current resume overview.");
+    input = { url: plan.listingUrl, company: plan.company, title: plan.title, team: plan.team, locations: plan.locations,
+      jobDescription: description, currentCvOverview: plan.currentOverview, resumeText: await extractResumeText(resume.resume.filename, resume.data) };
+  } else {
+    const item = store.listApplications().find((value) => value.id === source.id), resume = item?.resumeId && store.getResume(item.resumeId);
+    if (!item || !resume) throw new Error("Add a resume before analyzing the match.");
+    const related = item.listingUrl ? store.findPlanByListingUrl(item.listingUrl) : undefined;
+    const description = [item.jobDescription.trim(), item.snapshotText.trim(), related?.description.trim() || "", related?.snapshotText.trim() || ""]
+      .find((value) => value.length >= 80);
+    if (!description) throw new Error("Add the job description before analyzing the match.");
+    input = { resumeText: await extractResumeText(resume.resume.filename, resume.data), company: item.company,
+      title: item.title, jobDescription: description.slice(0, 80000) };
+  }
+  for (const [id, quote] of paidQuotes) if (quote.expires < Date.now()) paidQuotes.delete(id);
+  if (paidQuotes.size >= 20) paidQuotes.delete(paidQuotes.keys().next().value!);
+  const recovery = await creditsClient.recoveryQuote(source, input);
+  if (recovery) { paidQuotes.set(recovery.id, { source, model: recovery.model, hash: analysisHash(input), expires: Date.parse(recovery.expiresAt), recovery: true }); return recovery; }
+  const quote = await creditsClient.quote(source.kind, input, settings.creditModel || "gpt-6-luna");
+  paidQuotes.set(quote.id, { source, model: quote.model, hash: analysisHash(input), expires: Date.parse(quote.expiresAt) });
+  return quote;
+}
+
 async function analyzeWithSelectedProvider(instructions: string, input: unknown, name: string,
-  schema: Record<string, unknown>, failure: string, selected: ReturnType<typeof selectedAnalysis>, signal: AbortSignal): Promise<Record<string, unknown>> {
+  schema: Record<string, unknown>, failure: string, selected: ReturnType<typeof selectedAnalysis>, signal: AbortSignal,
+  paid?: { quoteId: string; source: AnalysisSource }): Promise<Record<string, unknown>> {
   signal.throwIfAborted();
   return runSelectedAnalysis(selected, {
     ollama: (baseUrl, model, prompt, content, format) => analyzeWithOllama({ baseUrl,
       model, instructions: prompt, content: JSON.stringify(content), schema: format, signal }),
     openai: (...args) => analyzeWithOpenAI(...args, signal),
+    anthropic: async (prompt, content, formatName, format) => (await onlineAnalysis({ model: settings.anthropicModel || "claude-sonnet-5-5",
+      key: anthropicKey, instructions: prompt, input: content, name: formatName, schema: format,
+      kind: formatName === "resume_plan" ? "plan" : "match", signal })).result,
+    credits: async () => {
+      const quote = paid && paidQuotes.get(paid.quoteId);
+      if (!paid || !quote || quote.source.id !== paid.source.id || quote.source.kind !== paid.source.kind || quote.expires < Date.now()
+        || !quote.recovery && quote.model !== (settings.creditModel || "gpt-6-luna") || quote.hash !== analysisHash(input)) {
+        throw new Error("Confirm a fresh credit quote before analyzing this job.");
+      }
+      return creditsClient.analyze(paid.quoteId, input, signal, paid.source, quote.model);
+    },
     ready: (id) => {
       acceptModelTerms(getLocalModel(id), settings.acceptedModelTerms || {});
       return modelDownloads.readyPath(id);
@@ -218,7 +267,7 @@ async function analyzeWithSelectedProvider(instructions: string, input: unknown,
   }, instructions, input, name, schema, failure);
 }
 
-async function analyzePlan(id: string, signal: AbortSignal, commit: <T>(persist: () => Promise<T>) => Promise<T>) {
+async function analyzePlan(id: string, signal: AbortSignal, commit: <T>(persist: () => Promise<T>) => Promise<T>, quoteId = "") {
   const selected = selectedAnalysis();
   const plan = store.getPlan(id);
   if (!plan) throw new Error("Plan not found.");
@@ -242,7 +291,7 @@ async function analyzePlan(id: string, signal: AbortSignal, commit: <T>(persist:
     ] }];
   const analysis = await analyzeWithSelectedProvider(planInstructions,
     input, "resume_plan", planSchema,
-    "The analysis was incomplete. Try again.", selected, signal);
+    "The analysis was incomplete. Try again.", selected, signal, { quoteId, source: { kind: "plan", id } });
   signal.throwIfAborted();
   const keywords = parsePlanRecommendations(analysis.keywords, 6, 20, 200);
   const themes = parsePlanRecommendations(analysis.themes, 5, 6, 1000);
@@ -259,12 +308,14 @@ async function analyzePlan(id: string, signal: AbortSignal, commit: <T>(persist:
       !explanation || typeof score !== "number" || !Number.isInteger(score) || score < 0 || score > 100) {
     throw new Error("The analysis was incomplete. Try again.");
   }
-  return commit(() => store.savePlanAnalysis(id, plan.updatedAt, keywords.map((item) => item.text),
+  const saved = await commit(() => store.savePlanAnalysis(id, plan.updatedAt, keywords.map((item) => item.text),
     themes.map((item) => item.text), overview, overviewRationale, score,
     keywords.map((item) => item.importance), themes.map((item) => item.importance), explanation));
+  if (selected.provider === "credits") { await creditsClient.acknowledge(quoteId).catch((error) => logDiagnostic("Could not clear completed credit recovery", error)); paidQuotes.delete(quoteId); }
+  return saved;
 }
 
-async function analyzeApplicationMatch(id: string, signal: AbortSignal, commit: <T>(persist: () => Promise<T>) => Promise<T>) {
+async function analyzeApplicationMatch(id: string, signal: AbortSignal, commit: <T>(persist: () => Promise<T>) => Promise<T>, quoteId = "") {
   const selected = selectedAnalysis();
   const application = store.listApplications().find((item) => item.id === id);
   if (!application) throw new Error("Application not found.");
@@ -292,14 +343,16 @@ async function analyzeApplicationMatch(id: string, signal: AbortSignal, commit: 
         title: application.title, jobDescription: description.slice(0, 80_000) }) },
     ] }];
   const analysis = await analyzeWithSelectedProvider(matchInstructions, input,
-    "application_match", matchSchema, "The match analysis was incomplete. Try again.", selected, signal);
+    "application_match", matchSchema, "The match analysis was incomplete. Try again.", selected, signal, { quoteId, source: { kind: "match", id } });
   signal.throwIfAborted();
   const score = analysis.score;
   const explanation = typeof analysis.explanation === "string" ? publicAnalysisText(analysis.explanation.trim()) : "";
   if (typeof score !== "number" || !Number.isInteger(score) || score < 0 || score > 100 || !explanation) {
     throw new Error("The match analysis was incomplete. Try again.");
   }
-  return commit(() => store.saveMatchAnalysis(id, application.updatedAt, score, explanation, description));
+  const saved = await commit(() => store.saveMatchAnalysis(id, application.updatedAt, score, explanation, description));
+  if (selected.provider === "credits") { await creditsClient.acknowledge(quoteId).catch((error) => logDiagnostic("Could not clear completed credit recovery", error)); paidQuotes.delete(quoteId); }
+  return saved;
 }
 
 async function handleApi(request: Request, pathname: string): Promise<Response> {
@@ -322,7 +375,8 @@ async function handleApi(request: Request, pathname: string): Promise<Response> 
     }
     const matchId = pathname.match(/^\/api\/applications\/([\da-f-]+)\/analyze$/i)?.[1];
     if (matchId && method === "POST") return Response.json({ application: await analysisRequests.run(
-      request.headers.get("X-Zebby-Analysis-ID") || randomUUID(), (signal, commit) => analyzeApplicationMatch(matchId, signal, commit)) });
+      request.headers.get("X-Zebby-Analysis-ID") || randomUUID(), (signal, commit) => analyzeApplicationMatch(matchId, signal, commit,
+        request.headers.get("X-Zebby-Credit-Quote") || "")) });
     const notesId = pathname.match(/^\/api\/applications\/([\da-f-]+)\/notes$/i)?.[1];
     if (notesId && method === "PATCH") {
       const input = await request.json() as { notes?: unknown };
@@ -367,7 +421,8 @@ async function handleApi(request: Request, pathname: string): Promise<Response> 
     }
     const analysisId = pathname.match(/^\/api\/plans\/([\da-f-]+)\/analyze$/i)?.[1];
     if (analysisId && method === "POST") return Response.json({ plan: await analysisRequests.run(
-      request.headers.get("X-Zebby-Analysis-ID") || randomUUID(), (signal, commit) => analyzePlan(analysisId, signal, commit)) });
+      request.headers.get("X-Zebby-Analysis-ID") || randomUUID(), (signal, commit) => analyzePlan(analysisId, signal, commit,
+        request.headers.get("X-Zebby-Credit-Quote") || "")) });
     return jsonError("Not found.", 404);
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") return jsonError("Analysis cancelled.", 499);
@@ -410,6 +465,29 @@ function registerIpc() {
     });
   }
   handle("desktop:state", () => state());
+  handle("desktop:send-credit-code", (_event, email: string) => creditsClient.sendCode(email));
+  handle("desktop:verify-credit-code", async (_event, email: string, code: string) => { await creditsClient.verify(email, code); return state(); });
+  handle("desktop:sign-out-credits", async () => { paidQuotes.clear(); await creditsClient.signOut(); return state(); });
+  handle("desktop:refresh-credits", async () => { await creditsClient.refreshWallet(); return state(); });
+  handle("desktop:start-credit-checkout", async (_event, pack: string) => {
+    const checkout = await creditsClient.checkout(pack); await shell.openExternal(checkout.url);
+    return { id: checkout.id, mode: checkout.mode };
+  });
+  handle("desktop:credit-checkout-status", (_event, id: string) => creditsClient.checkoutStatus(id));
+  handle("desktop:quote-credit-analysis", (_event, source: AnalysisSource) => quoteAnalysis(source));
+  handle("desktop:set-online-model", async (_event, provider: string, model: string) => {
+    const selected = onlineModel(model);
+    if (!["openai", "anthropic", "credits"].includes(provider) || provider !== "credits" && selected.provider !== provider) throw new Error("Choose a model for this provider.");
+    settings[provider === "credits" ? "creditModel" : provider === "openai" ? "openaiModel" : "anthropicModel"] = model;
+    paidQuotes.clear(); await saveSettings(); return state();
+  });
+  handle("desktop:set-anthropic-key", async (_event, value: string) => {
+    if (typeof value !== "string" || value.length > 500) throw new Error("Enter an Anthropic API key.");
+    anthropicKey = value.trim();
+    if (anthropicKey && safeStorage.isEncryptionAvailable()) settings.encryptedAnthropicKey = safeStorage.encryptString(anthropicKey).toString("base64");
+    else delete settings.encryptedAnthropicKey;
+    await saveSettings(); return state();
+  });
   handle("desktop:cancel-analysis", (_event, id: string) => analysisRequests.cancel(id));
   handle("desktop:check-updates", () => updates.check(true));
   handle("desktop:confirm-update-loaded", () => selfUpdater.cleanupInstalled(app.getVersion()));
@@ -469,7 +547,7 @@ function registerIpc() {
     return state();
   });
   handle("desktop:set-analysis-provider", async (_event, value: AnalysisProvider) => {
-    if (value !== "ollama" && value !== "openai" && value !== "builtin") throw new Error("Choose an analysis provider.");
+    if (!["ollama", "openai", "builtin", "anthropic", "credits"].includes(value)) throw new Error("Choose an analysis provider.");
     settings.analysisProvider = value;
     await saveSettings();
     return state();

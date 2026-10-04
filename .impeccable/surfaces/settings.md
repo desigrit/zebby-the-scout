@@ -2,13 +2,13 @@
 
 ## Surface strategy
 
-TASK: Choose analysis, manage the current database and local models, select appearance, find troubleshooting actions, and update Zebby.
+TASK: Choose analysis, manage paid credits, the current database, and local models, select appearance, find troubleshooting actions, and update Zebby.
 
 FREQUENCY: Occasional setup and maintenance, with simple return visits to change a provider or open a file.
 
-INFORMATION: Current database, provider-specific controls, model readiness/terms/download, appearance, logs and issues, installed version and update state. Sharing and storage details are available on demand.
+INFORMATION: Current database, provider-specific controls, model readiness/terms/download, credit account and wallet, appearance, logs and issues, installed version and update state. Local storage details are available on demand.
 
-STATES: No/open/dirty database; saved or session-only key; selected provider/model; terms agreement; download progress/pause/retry/Ready; system/light/dark appearance; update check/download/verified restart/error.
+STATES: No/open/dirty database; saved or session-only key; selected provider/model; terms agreement; download progress/pause/retry/Ready; signed-in or unavailable credits; current or saved wallet; system/light/dark appearance; update check/download/verified restart/error.
 
 SUCCESS: The user can see the active source, solve a missing prerequisite, and reach a native control without interpreting a setup guide.
 
@@ -22,9 +22,9 @@ THESIS: Short section rows align each maintenance task with its native controls 
 
 OWN-WORLD: Ember warm neutrals, rust actions, fine separators, platform fonts, native dropdowns, and the unchanged shared zebra and titlebar. Selection remains quiet in both appearances.
 
-STORY: Open a database or create a blank file, choose Analyze with and solve its prerequisites, pick appearance, open logs/issues, and explicitly download or restart an update.
+STORY: Open a database or create a blank file, choose Analyze with and solve its prerequisites, manage credits when selected, pick appearance, open logs/issues, and explicitly download or restart an update.
 
-FIRST VIEWPORT: Start with Database and Current file, Open database, Create new database, and one sync helper line. Analysis follows with Analyze with. Appearance, Logs, and Updates retain their order. There is no repeated page heading. Narrow layouts put headings above controls.
+FIRST VIEWPORT: Start with Database and Current file, Open database, Create new database, and one sync helper line. Analysis follows with Analyze with, then Credits, Appearance, Logs, and Updates. There is no repeated page heading. Narrow layouts put headings above controls.
 
 FORM: The user's selected Ember Settings code concept, with aligned native controls and concise labels. The selected local model's terms/progress-to-Ready flow remains inline.
 
@@ -40,9 +40,9 @@ Logs are always on for errors, local to each computer, separate from the databas
 
 ## Analysis controls
 
-Analyze with is a native dropdown: On this computer, Ollama server, or OpenAI. Only the chosen provider's controls appear. Missing prerequisites use short local hints. Source and provider behavior remain unchanged.
+Analyze with is a native dropdown: Local server, Downloaded model, OpenAI API key, Anthropic API key, or Zebby credits. Only the chosen method's controls appear. Missing prerequisites use short local hints. Local and personal-key methods do not require a Zebby account.
 
-Ollama retains Server URL, installed Model selection, refresh, custom model name, and Save. OpenAI retains local secure key saving or session-only behavior when secure storage is unavailable. Sharing details expand under Data sent to this server or Data sent to OpenAI. The built-in provider retains its model dropdown, required terms, inline download progress, Pause/Resume/Retry, per-model Delete with native confirmation, and expandable storage/library detail.
+Ollama retains Server URL, installed Model selection, refresh, custom model name, and Save. OpenAI and Anthropic each expose their provider's model dropdown and secure local key saving, replacement, and removal. Keys last for the session when secure storage is unavailable. The selected provider's helper identifies where source content goes and whose API account is billed. The built-in provider retains its model dropdown, required terms, inline download progress, Pause/Resume/Retry, per-model Delete with native confirmation, and expandable storage/library detail.
 
 Appearance uses System, Light, and Dark. System follows the operating system. These appearance, provider, accepted terms, models, and navigation preferences remain on each computer; applications, plans, resumes, and the last saved overview stay in the chosen database.
 
@@ -75,7 +75,7 @@ Full-model inference, installed Ollama models, selected databases, and local mod
 | Qwen3 4B | 2.50 GB | Complete input and full analysis instructions |
 | Qwen3 8B | 5.03 GB | Complete input and full analysis instructions |
 
-OpenAI and configured Ollama retain their full paths. Job importance remains independent of resume coverage and match. Match explanations describe evidence and gaps; overview rationale remains separate. This contract describes behavior, not a certification of inference quality.
+OpenAI, Anthropic, Zebby credits, and configured Ollama retain their full selected-provider paths. Job importance remains independent of resume coverage and match. Match explanations describe evidence and gaps; overview rationale remains separate. This contract describes behavior, not a certification of inference quality.
 
 ## Finish evidence
 
@@ -88,3 +88,11 @@ The full finish review (internal record: `work/ember-implementation/finish-revie
 Supplied final evidence reports 72 tests, lint, typecheck, build, complete headless regressions, ten native interaction checks, and 37 native captures passing. These were not rerun by the documenter. Native screenshots use synthetic applications, plans, and a dummy resume in an isolated hidden Windows Electron process. Provider outputs and clipboard are mocked; no real profile, credentials, models, or database were used. Both platform renderer simulations were checked, but physical macOS review and native installer validation remain outside this local evidence. CI handles installer gates separately.
 
 The [UX health report](../../docs/ux-health-v1.6.0.md) records the resolved short-height role access and late cancellation findings, deliberately unchanged F01/F03 behavior, and the remaining low-severity observations. No numerical score or trend is claimed. One detector pass compared against the old system; no second detector, doctor, or context run was performed.
+
+### 2026-10-04 analysis methods and credits
+
+Settings now places Credits after Analysis and before Appearance. The section shows Available, Used, the signed-in email, reserved credits when present, and collapsed Recent usage. Refresh balance and Sign out are explicit actions. The native paid model dropdown appears after credits have been purchased; the pricing scene has no model dropdown. Buy credits opens the shared pack and email-code flow. Secure storage remembers the paid session on each computer; otherwise the user needs another email code when Zebby reopens.
+
+The signed-in sidebar wallet exposes used and available amounts. Explicitly collapsed navigation presents an accessible icon button and wallet popover. Stale balance labels distinguish saved amounts after a refresh failure. Local model terms, download controls, Qwen inference, database selection, appearance, and existing update behavior are retained.
+
+The [Analysis and credits contract](analysis-credits.md) records the full flow, packs, source evidence, and verification scope. Supplied final checks passed 91 Node tests, lint, TypeScript, and both desktop and service builds. An independent source and test review cleared all three scored fixes. No current native or browser capture was made; the historical captures above apply to their original releases. Hosted account, email, Stripe, provider, and native visual behavior remain unverified. The empty service URL leaves paid checkout unavailable.

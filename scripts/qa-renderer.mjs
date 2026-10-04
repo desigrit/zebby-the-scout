@@ -39,6 +39,8 @@ let plan = { id: "plan-1", listingUrl: "https://example.org/jobs/pm", company: "
 let plans = [plan];
 let lastCurrentOverview = plan.currentOverview;
 const state = { filePath: "example.sqlite", filename: "Applications.sqlite", dirty: false, startupError: "", hasApiKey: false,
+  hasAnthropicKey: false, openaiModel: "gpt-6.1-sol", anthropicModel: "claude-sonnet-5-5",
+  credits: { available: false, signedIn: false, email: "", wallet: null, stale: true, error: "", model: "gpt-6-luna" },
   analysisProvider: "ollama", ollamaUrl: "http://localhost:11434", ollamaModel: "qwen3.8:27b", canSaveApiKey: true,
   appearance: "light", sidebarCollapsed: false, logsPath: "", platform: "win32",
   builtInModelId: "", acceptedModelTerms: [], localModels: LOCAL_MODELS.map(({ id }) =>
@@ -174,6 +176,7 @@ try {
     window.desktop = { state: async () => initialState, onDatabaseChanged: () => () => {}, onNavigate: () => () => {},
       onLocalModelsChanged: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
       onUpdatesChanged: (listener) => { updateListeners.add(listener); return () => updateListeners.delete(listener); },
+      onCreditsChanged: () => () => {},
       confirmUpdateLoaded: async () => {},
       checkForUpdates: async () => {
         updateState({ checking: true }); await new Promise(resolve => setTimeout(resolve, 25));

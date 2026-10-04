@@ -1,5 +1,6 @@
 import type { LocalModelStatus } from "./local-model-catalog";
 import type { UpdateState } from "./release-updates";
+import type { AnalysisProvider, AnalysisSource, CreditQuote, CreditsState } from "../shared/online-models";
 
 export type DesktopState = {
   filePath: string;
@@ -7,7 +8,11 @@ export type DesktopState = {
   dirty: boolean;
   startupError: string;
   hasApiKey: boolean;
-  analysisProvider: "ollama" | "openai" | "builtin";
+  analysisProvider: AnalysisProvider;
+  hasAnthropicKey: boolean;
+  openaiModel: string;
+  anthropicModel: string;
+  credits: CreditsState;
   ollamaUrl: string;
   ollamaModel: string;
   builtInModelId: string;
@@ -36,6 +41,16 @@ export type DesktopBridge = {
   chooseDatabase(kind: "open" | "create"): Promise<DesktopState | null>;
   retrySync(): Promise<DesktopState>;
   setApiKey(value: string): Promise<DesktopState>;
+  setAnthropicKey(value: string): Promise<DesktopState>;
+  setOnlineModel(provider: "openai" | "anthropic" | "credits", model: string): Promise<DesktopState>;
+  sendCreditCode(email: string): Promise<void>;
+  verifyCreditCode(email: string, code: string): Promise<DesktopState>;
+  signOutCredits(): Promise<DesktopState>;
+  refreshCredits(): Promise<DesktopState>;
+  startCreditCheckout(pack: string): Promise<{ id: string; mode: "test" | "live" }>;
+  creditCheckoutStatus(id: string): Promise<"paid" | "pending" | "expired">;
+  quoteCreditAnalysis(source: AnalysisSource): Promise<CreditQuote>;
+  onCreditsChanged(callback: (state: DesktopState) => void): () => void;
   setAnalysisProvider(value: DesktopState["analysisProvider"]): Promise<DesktopState>;
   setOllamaConfig(value: { url: string; model: string }): Promise<DesktopState>;
   listOllamaModels(url: string): Promise<string[]>;

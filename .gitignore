@@ -34,6 +34,7 @@ yarn-error.log*
 
 # Local configuration
 .env*
+credits-service/dist/
 
 # Desktop builds
 /dist/

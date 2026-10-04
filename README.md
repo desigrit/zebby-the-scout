@@ -53,8 +53,8 @@ Screenshots use sample data from Zebby 1.6.7.
 
 </details>
 
-Built-in analysis stays on your computer. OpenAI and configured Ollama servers receive the job and resume text needed for analysis. API keys and downloaded models stay on each computer, outside the shared database. Zebby detects changes to the shared file and keeps an original copy before upgrading its database format. A cloud drive cannot merge simultaneous SQLite edits.
+Built-in analysis stays on your computer. Choose an Ollama server, your own OpenAI or Anthropic key, or Zebby credits for online analysis. An account is only needed for credits. Paid checkout requires a configured service and is not active in unconfigured builds. API keys and downloaded models stay on each computer, outside the shared database. Zebby detects changes to the shared file and keeps an original copy before upgrading its database format. A cloud drive cannot merge simultaneous SQLite edits.
 
 ## Peek under the stripes
 
-Built with Electron, React, TypeScript, SQLite, and a small native inference engine. For setup, model terms, and build instructions, see the [full guide](docs/guide.md). Ideas and bug reports are welcome in [Issues](https://github.com/desigrit/zebby-the-scout/issues).
+Built with Electron, React, TypeScript, SQLite, and a small native inference engine. For setup, model terms, and build instructions, see the [full guide](docs/guide.md). To connect paid analysis in Stripe test mode, see the [credits service setup](credits-service/README.md). Ideas and bug reports are welcome in [Issues](https://github.com/desigrit/zebby-the-scout/issues).

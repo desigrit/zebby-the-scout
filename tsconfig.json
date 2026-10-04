@@ -25,6 +25,8 @@
   "include": [
     "desktop/**/*.ts",
     "desktop/**/*.tsx",
+    "shared/**/*.ts",
+    "credits-service/**/*.ts",
     "lib/**/*.ts",
     "types/**/*.d.ts",
     "vite.config.desktop.ts"

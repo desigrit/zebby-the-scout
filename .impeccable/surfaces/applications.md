@@ -159,3 +159,11 @@ The public screenshot docs/screenshots/applications.png now uses the exact nativ
 The scoped finish review, recorded internally in work/score-disclosure-and-screenshots/finish-review.md, returned ship with no material fixes after inspecting ten valid current frames. Supplied lint, typecheck, build, and full headless renderer checks passed. The hidden native Windows manifest records 18 checks, 48 captures, and no errors. These gates were not rerun by the documenter.
 
 The [six public screenshots](../../docs/screenshots/README.md) use exact capture pixels from a UI working tree identical to commit 6dcb4fe30c8a671d7b19b5d19ab7db3484b0a39f, with embedded source origins. Data and resumes are synthetic, and providers and clipboard are mocked. Physical Mac visual review is not claimed. Version 1.6.7 preserves schema 10. No context, detector, or doctor was rerun during this documentation handoff.
+
+### 2026-10-04 explicit paid resume match
+
+Save preserves the complete application form and every optional field. With Zebby credits selected, saving an application never silently launches paid match analysis. The user starts the existing Analyze match or Refresh match action, reviews its maximum credit quote, then confirms analysis. A completed paid result can instead be recovered without additional credits, including at zero or negative balance. Ready local and personal-key methods retain their existing automatic match behavior after Save.
+
+The shared method setup, paid wallet, and purchase sequence are recorded in [Analysis and credits](analysis-credits.md). Match results continue to use the existing row, inspector, or compact details and separate score explanation. Cancel and previous-result preservation retain their existing provider contract.
+
+Supplied final verification passed 91 Node tests, lint, TypeScript, and both desktop and service builds. The independent source and test review cleared the three scored paid-flow fixes. No current Application screenshot or native interaction check was made. The historical captures above remain evidence only for their stated releases. Current visual rendering and real hosted payment behavior remain unverified; paid checkout is unavailable until the service is configured.

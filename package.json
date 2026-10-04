@@ -11,11 +11,14 @@
     "build": "npm run desktop:build",
     "start": "electron .",
     "lint": "eslint .",
-    "test": "node --experimental-strip-types --test tests/job-details.test.mjs tests/public-address.test.mjs tests/desktop-store.test.mjs tests/local-analysis.test.mjs tests/application-activity.test.mjs tests/local-models.test.mjs tests/window-shell.test.mjs tests/diagnostic-log.test.mjs tests/release-updates.test.mjs tests/analysis-cancellation.test.mjs",
+    "test": "node --experimental-strip-types --test tests/job-details.test.mjs tests/public-address.test.mjs tests/desktop-store.test.mjs tests/local-analysis.test.mjs tests/application-activity.test.mjs tests/local-models.test.mjs tests/window-shell.test.mjs tests/diagnostic-log.test.mjs tests/release-updates.test.mjs tests/analysis-cancellation.test.mjs tests/paid-analysis.test.mjs",
     "test:job-details": "node --experimental-strip-types --test tests/job-details.test.mjs",
+    "test:credits": "node --experimental-strip-types --test tests/paid-analysis.test.mjs",
     "test:renderer": "node --experimental-strip-types scripts/qa-renderer.mjs",
     "test:desktop:windows": "node scripts/qa-ember.mjs",
     "desktop:build": "node scripts/build-desktop.mjs",
+    "credits:build": "node scripts/build-credits-service.mjs",
+    "credits:start": "node credits-service/dist/server.mjs",
     "desktop:dev": "npm run desktop:build && electron .",
     "desktop:prepare-model-engine": "node scripts/download-llama.mjs",
     "desktop:package:win:x64": "npm run desktop:build && electron-builder --win nsis --x64 --publish never -c electron-builder.local.cjs",
@@ -36,6 +39,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@electron-internal/extract-zip": "^1.0.5",
     "@electron/get": "^5.1.0",
     "@tailwindcss/postcss": "4.2.1",

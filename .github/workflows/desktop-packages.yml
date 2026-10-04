@@ -23,6 +23,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Public endpoint only. Payment, auth, and model keys belong on the service host.
+  ZEBBY_CREDITS_SERVICE_URL: ${{ vars.ZEBBY_CREDITS_SERVICE_URL }}
+
 jobs:
   desktop-visual-review:
     if: github.event_name == 'workflow_dispatch' && inputs.review_only
