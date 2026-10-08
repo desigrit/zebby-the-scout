@@ -49,6 +49,7 @@ jobs:
         if: always()
         with:
           name: desktop-visual-review
+          retention-days: 1
           path: |
             work/desktop-visual-review/manifest.json
             work/desktop-visual-review/failure.json
@@ -88,11 +89,13 @@ jobs:
         if: failure()
         with:
           name: local-engine-qa-windows
+          retention-days: 1
           path: work/local-engine-qa/*-response.json
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: zebby-windows-x64
+          retention-days: 1
           path: desktop-packages/*-win-x64.exe
           if-no-files-found: error
       - run: node scripts/download-electron-arm64.mjs
@@ -100,6 +103,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: zebby-windows-arm64
+          retention-days: 1
           path: desktop-packages/*-win-arm64.exe
           if-no-files-found: error
 
@@ -137,17 +141,20 @@ jobs:
         if: always()
         with:
           name: mac-distribution-qa
+          retention-days: 1
           path: work/mac-distribution-qa/report.json
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: local-engine-qa-macos
+          retention-days: 1
           path: work/local-engine-qa/*-response.json
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: zebby-macos-arm64
+          retention-days: 1
           path: desktop-packages/*-mac-arm64.dmg
           if-no-files-found: error
 
@@ -157,6 +164,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
     steps:
       - uses: actions/checkout@v4
       - name: Check release version
@@ -176,3 +184,7 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" release-files/*.exe release-files/*.dmg --title "Zebby $GITHUB_REF_NAME" --generate-notes --target "$GITHUB_SHA"
           fi
+      - name: Keep only the latest temporary build artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/prune-build-artifacts.mjs --apply
