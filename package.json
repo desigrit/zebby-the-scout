@@ -11,7 +11,7 @@
     "build": "npm run desktop:build",
     "start": "electron .",
     "lint": "eslint .",
-    "test": "node --experimental-strip-types --test tests/job-details.test.mjs tests/public-address.test.mjs tests/desktop-store.test.mjs tests/local-analysis.test.mjs tests/application-activity.test.mjs tests/local-models.test.mjs tests/window-shell.test.mjs tests/diagnostic-log.test.mjs tests/release-updates.test.mjs tests/analysis-cancellation.test.mjs tests/paid-analysis.test.mjs",
+    "test": "node --experimental-strip-types --test tests/job-details.test.mjs tests/public-address.test.mjs tests/desktop-store.test.mjs tests/local-analysis.test.mjs tests/application-activity.test.mjs tests/local-models.test.mjs tests/window-shell.test.mjs tests/diagnostic-log.test.mjs tests/release-updates.test.mjs tests/analysis-cancellation.test.mjs tests/paid-analysis.test.mjs tests/build-artifact-retention.test.mjs",
     "test:job-details": "node --experimental-strip-types --test tests/job-details.test.mjs",
     "test:credits": "node --experimental-strip-types --test tests/paid-analysis.test.mjs",
     "test:renderer": "node --experimental-strip-types scripts/qa-renderer.mjs",
