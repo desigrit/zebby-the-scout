@@ -6,6 +6,85 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { build } from "esbuild";
+import { escapeText } from "entities";
+
+test("saved escaped listings display cleanly without rewriting archived data or resetting scores", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "zebby-job-encoding-test-"));
+  const file = path.join(root, "applications.sqlite");
+  const listing = "<h2>Responsibilities</h2><ul><li>Build SDKs &amp; REST APIs</li><li>Lead discovery</li></ul><p>Work with René in 東京.</p>";
+  const encoded = escapeText(listing);
+  const readable = "Responsibilities\n\n• Build SDKs & REST APIs\n• Lead discovery\n\nWork with René in 東京.";
+  const personalNotes = "  Recruiter: René 👋\n    Ask about SDKs.\n\n\nJob listing\n";
+  let store;
+  try {
+    const bundle = path.join(root, "store.mjs");
+    await build({ entryPoints: [path.resolve("desktop/store.ts")], outfile: bundle,
+      bundle: true, platform: "node", format: "esm", target: "node22" });
+    const { DesktopStore } = await import(pathToFileURL(bundle).href);
+    store = new DesktopStore(path.join(root, "profile"));
+    await store.create(file);
+    const application = await store.saveApplication({ company: "Example", listingUrl: "https://example.org/job",
+      jobDescription: encoded, snapshotText: encoded, snapshotSource: "page", notes: readable });
+    assert.equal(application.jobDescription, readable);
+    assert.equal(application.snapshotText, readable);
+    assert.equal(application.notes, readable, "Equivalent encoded and readable copies must not duplicate the listing in Notes.");
+    const analyzedApplication = await store.saveMatchAnalysis(application.id, application.updatedAt, 68, "Relevant platform experience.", encoded);
+    const plan = await store.savePlan({ listingUrl: "https://example.org/job", company: "Example", title: "Product Manager",
+      team: "", locations: "", description: encoded, snapshotText: encoded, snapshotSource: "page",
+      keywords: ["SDKs"], themes: ["Developer experience"], overview: "", currentOverview: "I build useful developer tools." });
+    assert.equal(plan.description, readable);
+    assert.equal(plan.snapshotText, readable);
+    const analyzedPlan = await store.savePlanAnalysis(plan.id, plan.updatedAt, ["SDKs"], ["Developer experience"],
+      "I build SDKs and useful developer tools.", "Emphasized SDKs for this role.", 71, [90], [85], "Developer tooling is relevant.");
+    store.close();
+
+    // Simulate a record created before this fix, using only this test's database.
+    const legacy = new DatabaseSync(file);
+    legacy.prepare("UPDATE applications SET job_description = ?, snapshot_text = ?, notes = ? WHERE id = ?")
+      .run(encoded, encoded, personalNotes + encoded, application.id);
+    legacy.prepare("UPDATE plans SET description = ?, snapshot_text = ? WHERE id = ?").run(encoded, encoded, plan.id);
+    legacy.close();
+    const beforeRead = await readFile(file);
+    await store.open(file);
+    const reopenedApplication = store.listApplications()[0];
+    const reopenedPlan = store.getPlan(plan.id);
+    assert.equal(reopenedApplication.jobDescription, readable);
+    assert.equal(reopenedApplication.notes, personalNotes + readable);
+    assert.equal(reopenedApplication.snapshotText, readable);
+    assert.equal(reopenedApplication.matchStrength, 68);
+    assert.equal(reopenedApplication.updatedAt, analyzedApplication.updatedAt);
+    assert.equal(reopenedPlan.description, readable);
+    assert.equal(reopenedPlan.snapshotText, readable);
+    assert.equal(reopenedPlan.matchStrength, 71);
+    assert.equal(reopenedPlan.updatedAt, analyzedPlan.updatedAt);
+    assert.deepEqual(await readFile(file), beforeRead, "Displaying clean text must not migrate or rewrite the source database.");
+
+    const edited = await store.saveApplication({ ...reopenedApplication, title: "Senior Product Manager" }, application.id);
+    assert.equal(edited.matchStrength, 68, "Decoding the same description must not invalidate its existing analysis.");
+    assert.equal(edited.matchNotes, analyzedApplication.matchNotes);
+    assert.equal(edited.notes, personalNotes + readable);
+    assert.equal(edited.snapshotCapturedAt, application.snapshotCapturedAt);
+    const editedPlan = await store.savePlan({ ...reopenedPlan, overview: "Edited overview." }, plan.id);
+    assert.equal(editedPlan.matchStrength, 71);
+    assert.equal(editedPlan.matchNotes, analyzedPlan.matchNotes);
+    assert.deepEqual(editedPlan.keywordImportance, [90]);
+    store.close();
+    const archive = new DatabaseSync(file, { readOnly: true });
+    assert.equal(archive.prepare("SELECT snapshot_text FROM applications WHERE id = ?").get(application.id).snapshot_text, encoded);
+    assert.equal(archive.prepare("SELECT snapshot_text FROM plans WHERE id = ?").get(plan.id).snapshot_text, encoded);
+    assert.equal(archive.prepare("SELECT notes FROM applications WHERE id = ?").get(application.id).notes, personalNotes + encoded,
+      "Editing an application must preserve separately saved notes and the original archive.");
+    archive.close();
+
+    await store.open(file);
+    const savedNotes = await store.saveApplicationNotes(application.id, "Contact: René 👋\n\n" + encoded);
+    assert.equal(savedNotes.notes, "Contact: René 👋\n\n" + readable);
+  } finally {
+    store?.close();
+    if (!path.resolve(root).startsWith(path.resolve(tmpdir()) + path.sep)) throw new Error("Unexpected test directory");
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("desktop SQLite file stores applications, resumes, and plans across reopen", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "pm-tracker-desktop-test-"));
