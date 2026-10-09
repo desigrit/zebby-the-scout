@@ -1,6 +1,6 @@
 {
   "name": "pm-application-tracker",
-  "version": "1.6.7",
+  "version": "1.6.8",
   "private": true,
   "main": "desktop-dist/main.cjs",
   "engines": {
@@ -11,8 +11,8 @@
     "build": "npm run desktop:build",
     "start": "electron .",
     "lint": "eslint .",
-    "test": "node --experimental-strip-types --test tests/job-details.test.mjs tests/public-address.test.mjs tests/desktop-store.test.mjs tests/local-analysis.test.mjs tests/application-activity.test.mjs tests/local-models.test.mjs tests/window-shell.test.mjs tests/diagnostic-log.test.mjs tests/release-updates.test.mjs tests/analysis-cancellation.test.mjs tests/build-artifact-retention.test.mjs",
-    "test:job-details": "node --experimental-strip-types --test tests/job-details.test.mjs",
+    "test": "node --experimental-strip-types --test tests/job-details.test.mjs tests/job-text.test.mjs tests/public-address.test.mjs tests/desktop-store.test.mjs tests/local-analysis.test.mjs tests/application-activity.test.mjs tests/local-models.test.mjs tests/window-shell.test.mjs tests/diagnostic-log.test.mjs tests/release-updates.test.mjs tests/analysis-cancellation.test.mjs tests/build-artifact-retention.test.mjs",
+    "test:job-details": "node --experimental-strip-types --test tests/job-details.test.mjs tests/job-text.test.mjs",
     "test:renderer": "node --experimental-strip-types scripts/qa-renderer.mjs",
     "test:desktop:windows": "node scripts/qa-ember.mjs",
     "desktop:build": "node scripts/build-desktop.mjs",
@@ -24,6 +24,8 @@
   },
   "dependencies": {
     "cheerio": "^1.2.0",
+    "entities": "7.0.1",
+    "htmlparser2": "10.1.0",
     "ipaddr.js": "^2.5.0",
     "lottie-web": "5.13.0",
     "lucide-react": "^1.31.0",

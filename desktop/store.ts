@@ -7,6 +7,7 @@ import { z } from "zod";
 import { applicationInputSchema } from "../lib/application-validation";
 import { MAX_APPLICATION_NOTES_CHARS } from "../lib/application-types";
 import type { Application, ApplicationInput, Resume } from "../lib/application-types";
+import { normalizeJobText } from "../lib/job-text";
 import { importanceForTerms } from "./plan-importance";
 
 export type Plan = {
@@ -59,7 +60,7 @@ const planInputSchema = z.object({
 type Row = Record<string, unknown>;
 
 function notesWithListing(notes: string, listing: string) {
-  if (!listing.trim() || notes.includes(listing)) return notes;
+  if (!listing.trim() || normalizeJobText(notes).includes(normalizeJobText(listing))) return notes;
   const combined = notes.trim() ? `${notes}\n\nJob listing\n${listing}` : listing;
   if (combined.length > MAX_APPLICATION_NOTES_CHARS) {
     throw new Error("These notes are too long to include another listing. Shorten the notes before saving.");
@@ -76,9 +77,9 @@ function snapshotValues(input: { listingUrl: string; snapshotText?: string; snap
       String(previous.snapshot_source || "saved")];
   }
   const supplied = input.snapshotText?.trim() || "";
-  const text = previous && !sameListing && supplied === String(previous.snapshot_text || "")
+  const text = previous && !sameListing && supplied === normalizeJobText(String(previous.snapshot_text || ""))
     ? "" : supplied;
-  const fallback = previous && !sameListing && description === String(previous.job_description || previous.description || "")
+  const fallback = previous && !sameListing && description === normalizeJobText(String(previous.job_description || previous.description || ""))
     ? "" : description;
   const captured = text || fallback;
   const source = text ? input.snapshotSource || "page" : captured ? "manual" : "";
@@ -89,9 +90,9 @@ function mapApplication(row: Row): Application {
   return {
     id: String(row.id), company: String(row.company), title: String(row.title),
     team: String(row.team || ""), locations: String(row.locations || ""),
-    listingUrl: String(row.listing_url), jobDescription: String(row.job_description || ""),
-    notes: String(row.notes || ""),
-    snapshotText: String(row.snapshot_text || ""),
+    listingUrl: String(row.listing_url), jobDescription: normalizeJobText(String(row.job_description || "")),
+    notes: normalizeJobText(String(row.notes || "")),
+    snapshotText: normalizeJobText(String(row.snapshot_text || "")),
     snapshotCapturedAt: String(row.snapshot_captured_at || ""),
     snapshotSource: String(row.snapshot_source || "") as Application["snapshotSource"],
     appliedDate: String(row.applied_date),
@@ -118,8 +119,8 @@ function mapPlan(row: Row): Plan {
     id: String(row.id), listingUrl: String(row.listing_url),
     company: String(row.company || ""), title: String(row.title || ""),
     team: String(row.team || ""), locations: String(row.locations || ""),
-    description: String(row.description || ""),
-    snapshotText: String(row.snapshot_text || ""),
+    description: normalizeJobText(String(row.description || "")),
+    snapshotText: normalizeJobText(String(row.snapshot_text || "")),
     snapshotCapturedAt: String(row.snapshot_captured_at || ""),
     snapshotSource: String(row.snapshot_source || "") as Plan["snapshotSource"],
     currentOverview: String(row.current_overview || ""),
@@ -434,7 +435,9 @@ export class DesktopStore {
   async saveApplication(value: unknown, id?: string): Promise<Application> {
     const parsed = applicationInputSchema.safeParse(value);
     if (!parsed.success) throw new Error("Check the application fields and try again.");
-    const item: ApplicationInput = { ...parsed.data, team: parsed.data.team || "", locations: parsed.data.locations || "" };
+    const item: ApplicationInput = { ...parsed.data, team: parsed.data.team || "", locations: parsed.data.locations || "",
+      jobDescription: normalizeJobText(parsed.data.jobDescription), snapshotText: normalizeJobText(parsed.data.snapshotText),
+      notes: normalizeJobText(parsed.data.notes) };
     const resultId = id || randomUUID();
     await this.mutate((db) => {
       if (item.resumeId && !db.prepare("SELECT id FROM resumes WHERE id = ?").get(item.resumeId)) throw new Error("The selected resume could not be found.");
@@ -449,7 +452,7 @@ export class DesktopStore {
           ? notesWithListing(currentNotes, snapshot[0]) : currentNotes;
         const sameSource = String(previous.resume_id || "") === item.resumeId &&
           String(previous.listing_url) === item.listingUrl &&
-          String(previous.job_description || "") === item.jobDescription;
+          normalizeJobText(String(previous.job_description || "")) === item.jobDescription;
         const sameScore = (previous.match_strength === null ? null : Number(previous.match_strength)) === item.matchStrength;
         const preserveAnalysis = sameSource && sameScore;
         const score = !sameSource && previous.match_analyzed_at && sameScore ? null : item.matchStrength;
@@ -480,7 +483,7 @@ export class DesktopStore {
     if (typeof notes !== "string" || notes.length > MAX_APPLICATION_NOTES_CHARS) throw new Error("Notes must be 200,000 characters or less.");
     await this.mutate((db) => {
       const result = db.prepare("UPDATE applications SET notes = ?, updated_at = ? WHERE id = ?")
-        .run(notes, new Date().toISOString(), id);
+        .run(normalizeJobText(notes), new Date().toISOString(), id);
       if (!result.changes) throw new Error("Application not found.");
     });
     return this.findApplication(id)!;
@@ -497,6 +500,7 @@ export class DesktopStore {
     if (!Number.isInteger(score) || score < 0 || score > 100 || !notes.trim()) {
       throw new Error("The match analysis was incomplete. Try again.");
     }
+    jobDescription = normalizeJobText(jobDescription);
     await this.mutate((db) => {
       const previous = db.prepare("SELECT notes, snapshot_text FROM applications WHERE id = ?").get(id) as Row | undefined;
       if (!previous) throw new Error("Application not found.");
@@ -557,7 +561,8 @@ export class DesktopStore {
   async savePlan(input: PlanInput, id?: string): Promise<Plan> {
     const parsed = planInputSchema.safeParse(input);
     if (!parsed.success) throw new Error("Check the plan fields and enter a public HTTPS job listing link.");
-    const item = parsed.data;
+    const item = { ...parsed.data, description: normalizeJobText(parsed.data.description),
+      snapshotText: normalizeJobText(parsed.data.snapshotText) };
     const resultId = id || randomUUID();
     await this.mutate((db) => {
       if (item.resumeId && !db.prepare("SELECT id FROM resumes WHERE id = ?").get(item.resumeId)) {
@@ -575,7 +580,7 @@ export class DesktopStore {
         const sameJob = String(previous.listing_url) === item.listingUrl &&
           String(previous.company) === item.company && String(previous.title) === item.title &&
           String(previous.team) === item.team && String(previous.locations) === item.locations &&
-          String(previous.description) === item.description;
+          normalizeJobText(String(previous.description)) === item.description;
         const sameSource = sameJob &&
           String(previous.current_overview || "") === item.currentOverview &&
           String(previous.resume_id || "") === item.resumeId;

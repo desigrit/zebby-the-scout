@@ -1,27 +1,40 @@
 import type { ClipboardEvent } from "react";
+import { normalizeJobText } from "./job-text.ts";
 
-function textFromHtml(html: string): string {
-  const document = new DOMParser().parseFromString(html, "text/html");
-  document.querySelectorAll("script, style, nav, footer, header").forEach((node) => node.remove());
-  document.querySelectorAll("li").forEach((node) => node.prepend("• "));
-  document.querySelectorAll("br").forEach((node) => node.replaceWith("\n"));
-  document.querySelectorAll("h1, h2, h3, h4, h5, h6, p, li, ul, ol, section, article, div").forEach((node) =>
-    node.append(node.matches("li, div") ? "\n" : "\n\n"));
-  return (document.body.textContent || "").replace(/\r/g, "").split("\n")
-    .map((line) => line.replace(/[\t ]+/g, " ").trim()).join("\n")
-    .replace(/\n{3,}/g, "\n\n").trim();
+function comparableText(text: string): string {
+  return text.replace(/^[\t ]*(?:[•\u2023\u25e6\u2043\u2219\u25aa\u25cf]|[-*]|\d+[.)])\s+/gm, "").replace(/\s+/g, "");
+}
+
+const listMarker = /^[\t ]*(?:[•\u2023\u25e6\u2043\u2219\u25aa\u25cf]|[-*]|\d+[.)])\s+/m;
+
+export function jobDescriptionFromClipboard(plain: string, html: string): string {
+  const text = normalizeJobText(plain);
+  if (!html) return text;
+  const formatted = normalizeJobText(html, true);
+  if (!plain) return formatted;
+  // Add list formatting only if the HTML contains the same content as plain text.
+  // A truncated HTML clipboard must never discard part of a clean text paste.
+  return listMarker.test(formatted) && !listMarker.test(text) && comparableText(formatted) === comparableText(text)
+    ? formatted : text;
+}
+
+export function replaceJobTextSelection(value: string, start: number, end: number, text: string, maxLength: number) {
+  const available = maxLength > 0 ? Math.max(0, maxLength - (value.length - (end - start))) : text.length;
+  let inserted = text.slice(0, available);
+  if (/[\ud800-\udbff]$/.test(inserted)) inserted = inserted.slice(0, -1);
+  return { value: value.slice(0, start) + inserted + value.slice(end), caret: start + inserted.length };
 }
 
 export function pasteJobDescription(event: ClipboardEvent<HTMLTextAreaElement>, onChange: (value: string) => void) {
-  const html = event.clipboardData.getData("text/html");
-  if (!html) return;
-  const formatted = textFromHtml(html);
   const plain = event.clipboardData.getData("text/plain");
-  const htmlHasList = /<li[\s>]/i.test(html);
-  if (!formatted || formatted.length < Math.max(40, plain.trim().length * 0.7) ||
-      (!htmlHasList && plain.trim().length >= formatted.length * 0.8)) return;
+  const html = event.clipboardData.getData("text/html");
+  const formatted = jobDescriptionFromClipboard(plain, html);
+  if (formatted === plain) return;
   event.preventDefault();
   const area = event.currentTarget;
-  const next = area.value.slice(0, area.selectionStart) + formatted + area.value.slice(area.selectionEnd);
-  onChange(next.slice(0, area.maxLength > 0 ? area.maxLength : undefined));
+  const next = replaceJobTextSelection(area.value, area.selectionStart, area.selectionEnd, formatted, area.maxLength);
+  onChange(next.value);
+  requestAnimationFrame(() => {
+    if (area.isConnected && area.value === next.value) area.setSelectionRange(next.caret, next.caret);
+  });
 }

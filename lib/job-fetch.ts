@@ -2,6 +2,7 @@ import { lookup } from "node:dns/promises";
 import { load } from "cheerio";
 import { Agent, fetch as safeFetch } from "undici";
 import { isPublicAddress } from "./public-address.ts";
+import { normalizeJobText } from "./job-text.ts";
 import {
   companyFromBoardName,
   detailsFromAshby,
@@ -125,18 +126,7 @@ function platformFor(url: URL): Platform | null {
 }
 
 export function formattedJobText(html: string): string {
-  if (!/<[a-z][\s\S]*>/i.test(html)) return html.replace(/\r/g, "").trim().slice(0, MAX_DESCRIPTION_CHARS);
-  const $ = load(html);
-  $("script, style, nav, header, footer, aside, form, iframe, noscript").remove();
-  const content = $("body").first();
-  content.find("li").each((_index, element) => { $(element).prepend("• "); });
-  content.find("br").replaceWith("\n");
-  content.find("h1, h2, h3, h4, h5, h6, p, li, ul, ol, section, article, div").each((_index, element) => {
-    $(element).append($(element).is("li, div") ? "\n" : "\n\n");
-  });
-  return content.text().replace(/\r/g, "").split("\n")
-    .map((line) => line.replace(/[\t ]+/g, " ").trim())
-    .join("\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, MAX_DESCRIPTION_CHARS);
+  return normalizeJobText(html).replace(/\r\n?/g, "\n").trim().slice(0, MAX_DESCRIPTION_CHARS);
 }
 
 export function descriptionFromHtml(html: string): string {

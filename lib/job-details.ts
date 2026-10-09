@@ -1,4 +1,5 @@
 import { load } from "cheerio";
+import { decodeJobEntities, normalizeJobText } from "./job-text.ts";
 
 export type JobDetails = {
   company: string;
@@ -17,22 +18,9 @@ function record(value: unknown): Data {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Data : {};
 }
 
-function decodeEntities(value: string) {
-  return value.replace(/&(#(?:x[\da-f]+|\d+)|amp|lt|gt|quot|apos|nbsp);/gi, (entity, name: string) => {
-    if (name.startsWith("#")) {
-      const hex = name[1]?.toLowerCase() === "x";
-      const codePoint = Number.parseInt(name.slice(hex ? 2 : 1), hex ? 16 : 10);
-      return Number.isInteger(codePoint) && codePoint > 0 && codePoint <= 0x10ffff
-        ? String.fromCodePoint(codePoint)
-        : entity;
-    }
-    return ({ amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " } as Record<string, string>)[name.toLowerCase()] || entity;
-  });
-}
-
 function text(value: unknown, max = 500): string {
   return typeof value === "string"
-    ? decodeEntities(value).replace(/\s+/g, " ").trim().slice(0, max)
+    ? decodeJobEntities(value).replace(/\s+/g, " ").trim().slice(0, max)
     : "";
 }
 
@@ -54,14 +42,9 @@ function joinedLocations(values: unknown[]): string {
 
 export function detailsFromDescription(value: unknown): Pick<JobDetails, "team" | "locations"> {
   if (typeof value !== "string") return { team: "", locations: "" };
-  const lines = decodeEntities(value.slice(0, 200_000))
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
-    .replace(/<br\b[^>]*\/?\s*>/gi, "\n")
-    .replace(/<\/(?:p|div|li|h[1-6]|section|tr|td)>/gi, "\n")
-    .replace(/<[^>]*>/g, " ")
+  const lines = normalizeJobText(value.slice(0, 200_000))
     .split(/\r?\n/)
-    .map((line) => line.replace(/\s+/g, " ").trim());
+    .map((line) => line.replace(/\s+/g, " ").trim().replace(/^•\s+/, ""));
   let team = "";
   let locations = "";
   for (const line of lines) {
@@ -214,7 +197,7 @@ export function detailsFromAshby(value: unknown, listingUrl: URL): JobDetails {
 }
 
 export function companyFromBoardName(name: string) {
-  return decodeEntities(name.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim()).slice(0, 120);
+  return decodeJobEntities(name.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim()).slice(0, 120);
 }
 
 export async function detailsFromHtml(html: string): Promise<JobDetails> {
