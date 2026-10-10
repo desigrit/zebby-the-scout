@@ -97,7 +97,12 @@ test("service configuration defaults to test mode and rejects accidental live ke
   const env = { SUPABASE_URL: config.supabaseUrl, SUPABASE_SERVICE_ROLE_KEY: config.supabaseKey, ZEBBY_PUBLIC_SERVICE_URL: config.publicUrl,
     STRIPE_SECRET_KEY: "sk_test_fixture", STRIPE_WEBHOOK_SECRET: config.stripeWebhookSecret };
   assert.equal(serviceConfig(env).live, false);
+  assert.equal(serviceConfig({ ...env, STRIPE_SECRET_KEY: "rk_test_fixture" }).live, false);
   assert.throws(() => serviceConfig({ ...env, STRIPE_SECRET_KEY: "sk_live_fixture" }));
+  assert.throws(() => serviceConfig({ ...env, STRIPE_SECRET_KEY: "rk_live_fixture" }));
+  const liveEnv = { ...env, ZEBBY_ALLOW_LIVE_PAYMENTS: "true" };
+  for (const prefix of ["sk_live_", "rk_live_"]) assert.equal(serviceConfig({ ...liveEnv, STRIPE_SECRET_KEY: prefix + "fixture" }).live, true);
+  for (const prefix of ["sk_test_", "rk_test_", "pk_live_", "pk_test_"]) assert.throws(() => serviceConfig({ ...liveEnv, STRIPE_SECRET_KEY: prefix + "fixture" }));
   assert.throws(() => serviceConfig({ ...env, ZEBBY_PUBLIC_SERVICE_URL: "http://credits.example" }));
 });
 test("Anthropic uses structured Messages output and charges reported cache and output usage", async () => {
