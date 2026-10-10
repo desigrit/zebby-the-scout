@@ -55,7 +55,7 @@ Checkout uses guest payments and collects the buyer's email and payment details 
 For Render:
 
 1. Open the [Render dashboard](https://dashboard.render.com/) and choose **New → Web Service**.
-2. Connect `desigrit/zebby-the-scout`, using the branch containing this implementation.
+2. Connect `desigrit/zebby-the-scout` and select the `main` branch.
 3. Choose **Docker** as the language, leave **Root Directory** empty, and set **Dockerfile Path** to `credits-service/Dockerfile`.
 4. Leave the Docker command empty. The Dockerfile supplies the start command. Set the health check path to `/health`.
 5. Add the environment variables listed in [environment.example](environment.example). Use an HTTPS origin without a path for `ZEBBY_PUBLIC_SERVICE_URL`.

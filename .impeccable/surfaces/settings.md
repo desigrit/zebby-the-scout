@@ -6,9 +6,9 @@ TASK: Choose analysis, manage paid credits, the current database, and local mode
 
 FREQUENCY: Occasional setup and maintenance, with simple return visits to change a provider or open a file.
 
-INFORMATION: Current database, provider-specific controls, model readiness/terms/download, credit account and wallet, appearance, logs and issues, installed version and update state. Local storage details are available on demand.
+INFORMATION: Current database, provider-specific controls, model readiness/terms/download, guest credit wallet, recovery code, pairing and connected computers, appearance, logs and issues, installed version and update state. Local storage details are available on demand.
 
-STATES: No/open/dirty database; saved or session-only key; selected provider/model; terms agreement; download progress/pause/retry/Ready; signed-in or unavailable credits; current or saved wallet; system/light/dark appearance; update check/download/verified restart/error.
+STATES: No/open/dirty database; saved or session-only key; selected provider/model; terms agreement; download progress/pause/retry/Ready; credits unavailable/unconnected/pending/connected; current or saved wallet; recovery export/cancel/replacement; restore/connect editor and errors; pairing active/expired/used/cancelled; device removal; system/light/dark appearance; update check/download/verified restart/error.
 
 SUCCESS: The user can see the active source, solve a missing prerequisite, and reach a native control without interpreting a setup guide.
 
@@ -40,9 +40,11 @@ Logs are always on for errors, local to each computer, separate from the databas
 
 ## Analysis controls
 
-Credits uses aligned recovery and computer rows below the balance and model. Save recovery code exports through a native file picker. Restore credits and Connect this computer open focused inline forms with Cancel and Escape. Pairing shows a copyable code, expiry, regeneration and explicit cancellation. Connected computers and advanced recovery options stay collapsed. Disconnect, recovery-code replacement and funded-wallet switching use native confirmation with Cancel as default. Checkout has no signup or sign-in screen. This is an extension of the incumbent Ember system.
+Credits shows Available, Used, reserved credits when present, and a native model dropdown after purchase. Aligned recovery and computer rows follow the balance and model. Save recovery code exports through a native file picker. Restore credits and Connect this computer open focused inline forms with Enter to submit and Cancel or Escape to clear the code and restore opener focus. Pairing shows a copyable ten-minute single-use code, expiry, regeneration and explicit cancellation. Connected computers, Recovery options, and Recent usage stay collapsed. Disconnect, recovery-code replacement and funded-wallet switching use native confirmation with Cancel as default. The current computer cannot disconnect itself. Checkout has no signup or sign-in screen; there is no account label or Sign out action. This is an extension of the incumbent Ember system.
 
-Analyze with is a native dropdown: Local server, Downloaded model, OpenAI API key, Anthropic API key, or Zebby credits. Only the chosen method's controls appear. Missing prerequisites use short local hints. Local and personal-key methods do not require a Zebby account.
+An interrupted wallet connection shows pending status and an enabled Refresh balance action even before it completes. Automatic mount/focus recovery and the manual action retry the retained original operation and normalized code. Conflicting new input cannot silently report success for the earlier wallet. Failures preserve the credential and any saved balance, with nearby error feedback. Guest credentials and pending original connection codes stay in OS-encrypted private settings outside the selected application SQLite database and logs; server records store hashes.
+
+Analyze with is a native dropdown: Local server, Downloaded model, OpenAI API key, Anthropic API key, or Zebby credits. Only the chosen method's controls appear. Missing prerequisites use short local hints. Every method works without a Zebby signup or sign-in screen.
 
 Ollama retains Server URL, installed Model selection, refresh, custom model name, and Save. OpenAI and Anthropic each expose their provider's model dropdown and secure local key saving, replacement, and removal. Keys last for the session when secure storage is unavailable. The selected provider's helper identifies where source content goes and whose API account is billed. The built-in provider retains its model dropdown, required terms, inline download progress, Pause/Resume/Retry, per-model Delete with native confirmation, and expandable storage/library detail.
 
@@ -79,7 +81,9 @@ Full-model inference, installed Ollama models, selected databases, and local mod
 
 OpenAI, Anthropic, Zebby credits, and configured Ollama retain their full selected-provider paths. Job importance remains independent of resume coverage and match. Match explanations describe evidence and gaps; overview rationale remains separate. This contract describes behavior, not a certification of inference quality.
 
-## Finish evidence
+## Historical finish evidence, Ember and version 1.6.0
+
+These records describe earlier releases. Current guest-wallet evidence is recorded below.
 
 Provider and appearance captures are indexed in capture evidence (internal record: `work/ember-implementation/capture-evidence.json`). They cover the three provider setups, both themes, scaled/narrow windows, and native focus. Public screenshot refresh changes only Applications and Plan; zebra assets are unchanged.
 
@@ -91,10 +95,24 @@ Supplied final evidence reports 72 tests, lint, typecheck, build, complete headl
 
 The [UX health report](../../docs/ux-health-v1.6.0.md) records the resolved short-height role access and late cancellation findings, deliberately unchanged F01/F03 behavior, and the remaining low-severity observations. No numerical score or trend is claimed. One detector pass compared against the old system; no second detector, doctor, or context run was performed.
 
-### 2026-10-04 analysis methods and credits
+### Historical analysis methods and credits, 2026-10-04
 
-Settings now places Credits after Analysis and before Appearance. The section shows Available, Used, the signed-in email, reserved credits when present, and collapsed Recent usage. Refresh balance and Sign out are explicit actions. The native paid model dropdown appears after credits have been purchased; the pricing scene has no model dropdown. Buy credits opens the shared pack and email-code flow. Secure storage remembers the paid session on each computer; otherwise the user needs another email code when Zebby reopens.
+The earlier account-based integration placed Credits after Analysis and before Appearance. It showed Available, Used, the signed-in email, reserved credits when present, and collapsed Recent usage. Refresh balance and Sign out were explicit actions. The native paid model dropdown appeared after purchase; pricing had no model dropdown. Buy credits opened the shared pack and email-code flow. Secure storage remembered the paid session on each computer; without it, that release required another email code after reopening. This account UI is historical and has been replaced by the guest-wallet controls above.
 
-The signed-in sidebar wallet exposes used and available amounts. Explicitly collapsed navigation presents an accessible icon button and wallet popover. Stale balance labels distinguish saved amounts after a refresh failure. Local model terms, download controls, Qwen inference, database selection, appearance, and existing update behavior are retained.
+That release's signed-in sidebar wallet exposed used and available amounts. Explicitly collapsed navigation presented an accessible icon button and wallet popover. Stale balance labels distinguished saved amounts after a refresh failure. Local model terms, download controls, Qwen inference, database selection, appearance, and update behavior were retained.
 
-The [Analysis and credits contract](analysis-credits.md) records the full flow, packs, source evidence, and verification scope. Supplied final checks passed 91 Node tests, lint, TypeScript, and both desktop and service builds. An independent source and test review cleared all three scored fixes. No current native or browser capture was made; the historical captures above apply to their original releases. Hosted account, email, Stripe, provider, and native visual behavior remain unverified. The empty service URL leaves paid checkout unavailable.
+The earlier supplied checks passed 91 Node tests, lint, TypeScript, and both desktop and service builds. An independent source and test review cleared its three scored fixes. No new native or browser capture was made for that pass. Hosted account, email, Stripe, provider, and native visual behavior were unverified by those records.
+
+## Guest-wallet handoff, 2026-10-10
+
+Finished application source checked at d0c34b49c73a50040549098f501889950058a807: CreditsSettings.tsx, AnalysisFlow.tsx, desktop.css, desktop/credits-client.ts, and sampled desktop/main.ts. Service schema and wallet-access.ts, environment.example, the owner setup README, and docs/guide.md were also checked. The wallet extension uses the incumbent palette, inherited platform fonts, compact native controls, fine Settings rules, and an accent-wash pairing panel. DESIGN.md and .impeccable/design.json were compared and preserved; no new global palette, typography, shape, or motion rule is established. Existing sidecar sample drift for recommendation Copy and application row composition was reported and preserved.
+
+The [initial remote CI](https://github.com/desigrit/zebby-the-scout/actions/runs/38035846232) passed at 669cb06. The [final remote CI](https://github.com/desigrit/zebby-the-scout/actions/runs/38036798621) passed at d0c34b4, including all 152 Node tests, TypeScript, lint, the desktop build, isolated native Windows flows, and renderer checks. Supplied local evidence includes 53 scoped credit tests and a service build at 669cb06; service source was unchanged for the d0c34b4 correction. The independent review in work/guest-wallet-finish-review.md found two issues. Its verdict in work/guest-wallet-finish-verdict.md scored both Resolved and returned disposition: ship for those two corrections only. Independent wallet-client verification passed all 16 subtests. These checks were not rerun by the documenter.
+
+Eight current captures are under work/guest-wallet-review-final/qa-output/renderer-1.5.0/credits-*.png. They cover method choice, packs, a quote, Settings wallet/pairing, and pending error/manual retry at Windows 1550x850 light and Mac CSS 790x850 dark. The independent reviewer found all eight valid. They use a synthetic wallet, a mock native bridge, platform CSS/theme overrides, and fixture version labels. They support the scoped renderer review; they do not establish live payments, physical Mac framing, or real OS secure-storage behavior.
+
+The owner guide now requires Supabase PostgreSQL, Stripe test keys and signed webhooks, a Node 22 or Docker HTTPS host, and owner OpenAI/Anthropic keys. Supabase email or anonymous Auth setup and SMTP are unnecessary. Only the public ZEBBY_CREDITS_SERVICE_URL is compiled into desktop builds; trusted proxy hops require a verified fixed chain. No service or real financial/provider credentials were configured, the paid URL remains empty, and checkout is disabled. The schema rerun test preserved existing wallet balances, and the extension changes neither the application SQLite schema nor ledger identity.
+
+No local app, Electron, browser, Playwright, or desktop control was used in this handoff, and no personal profile, database, or resume was accessed. Hosted concurrency, live Stripe/webhook/provider behavior, container startup, and guest-wallet behavior on physical Mac hardware remain unverified. The [Analysis and credits contract](analysis-credits.md) carries the full current flow and historical verification context.
+
+Zebby [2.1.0](https://github.com/desigrit/zebby-the-scout/releases/tag/v2.1.0) is published from d0c34b4. The [release workflow](https://github.com/desigrit/zebby-the-scout/actions/runs/38037269117) passed its Windows x64 and macOS ARM64 jobs and published direct Windows x64, Windows ARM64, and Apple Silicon installers. All three assets have uploaded state and GitHub SHA-256 digests; their download URLs returned HTTP 200. Mac distribution launch, packaged local-model, and self-update checks passed on the GitHub runner. Windows ARM64 packaging passed without a physical ARM64 execution claim. The service Docker dependency correction is on main, the branch specified in the owner guide; it does not change these desktop installers.

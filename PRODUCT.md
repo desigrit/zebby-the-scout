@@ -74,21 +74,23 @@ The shared native title region shows only Zebby. Remove the sidebar wordmark. Th
 - Preserve data between sessions and devices.
 - Make the cloud sync sequence clear before switching computers.
 
-## Analysis and credits, 2026-10-04
+## Analysis and credits, 2026-10-10
 
-The approved Quick choice A flow extends Ember. Initial analysis setup opens a native modal with four method tiles in two columns and a full-width Buy credits tile. Selecting a local server, downloaded model, or personal API key opens focused setup. Selecting Buy credits opens pack selection before email sign-in and external checkout. The pricing scene has no model dropdown; the user chooses a model after payment is confirmed. Existing Plan and Application editors and every optional application field remain available.
+The approved Quick choice A flow extends Ember. Initial analysis setup opens a native modal with four method tiles in two columns and a full-width Buy credits tile. Selecting a local server, downloaded model, or personal API key opens focused setup. Selecting Buy credits opens pack selection and guest checkout in the external browser, with no Zebby signup or sign-in step. The pricing scene has no model dropdown; the user chooses a model after payment is confirmed and can save a recovery code. Existing Plan and Application editors and every optional application field remain available.
 
 | Price in USD | Credits | Illustrative analyses using GPT-6 Luna |
 | --- | ---: | ---: |
-| $5 | 500 | 100 |
-| $20 | 3,000 | 600 |
-| $50 | 8,000 | 1,600 |
-| $100 | 16,000 | 3,200 |
+| $5 | 500 | 90 |
+| $20 | 3,000 | 540 |
+| $50 | 8,000 | 1,450 |
+| $100 | 16,000 | 2,900 |
 
-These counts assume 20,000 input and 6,000 output tokens per analysis. They are illustrative, not measured averages or guarantees. Model choice and source length change usage. The paid model dropdown offers GPT-6 Luna, GPT-6.1 Sol, GPT-6 Astra, Claude Haiku 4.5, Claude Sonnet 5.5, and Claude Opus 5.5, as defined in the current source catalog.
+These counts assume 20,000 input and 6,000 output tokens per analysis, with all input charged as cache writes and counts rounded down to the nearest ten. They are illustrative, not measured averages or guarantees. Cache hits, model choice, and source length change usage. The paid model dropdown offers GPT-6 Luna, GPT-6.1 Sol, GPT-6 Astra, Claude Haiku 4.5, Claude Sonnet 5.5, and Claude Opus 5.5, as defined in the current source catalog.
 
 Before a new paid Plan or resume match analysis runs, show its maximum credit use, the available balance, and the selected provider receiving job, resume, and overview content. Reserve the approved maximum, settle actual model usage, and return unused reserved credits. Failures and cancellations release their reservations. A previously completed paid result can be recovered without another charge, including when the current balance is zero or negative. Application Save never silently starts paid match analysis; the user starts Analyze match or Refresh match explicitly.
 
-The signed-in wallet shows available credits and total used credits in Settings and the sidebar. Available means the balance after running-analysis reservations. Collapsed navigation opens a compact wallet popover. Saved balances are labeled when refresh fails. An email account owns the service balance across computers; local applications, plans, resumes, and database selection retain their existing storage and editing behavior.
+The connected guest wallet shows available credits and total used credits in Settings; the sidebar shows them after a purchase. Available means the balance after running-analysis reservations. Collapsed navigation opens a compact wallet popover. Saved balances are labeled when refresh fails. The service owns one balance shared by explicitly connected computers. Settings provides recovery-code export and restoration, ten-minute single-use pairing, connected-computer removal, and recovery-code replacement. Native confirmations default to Cancel for disconnection, code replacement, and switching a funded computer to another wallet. There is no account label or Sign out action.
 
-The service and Stripe test-mode setup are prepared, but no payment account or hosted endpoint is connected. The desktop service URL defaults to empty, and paid checkout honestly reports that it is unavailable. Test checkout identifies that no real payment is taken. Owner setup is documented in [the credits service guide](credits-service/README.md). The feature contract and dated verification limits are recorded in [Analysis and credits](.impeccable/surfaces/analysis-credits.md).
+Guest device credentials and pending original connection codes stay in the OS-encrypted private profile, outside the selected application SQLite database and logs. Server storage keeps hashes of device, recovery, and pairing credentials. An interrupted connection retries its original operation and normalized code; conflicting new input cannot silently connect to the earlier wallet. Settings exposes pending status and Refresh balance even before connection completes. Existing valid paid sessions retain their ledger identity during migration. This extension adds no local database schema change or ledger reset.
+
+The service and Stripe test-mode setup are prepared, but no payment account or hosted endpoint is connected. The desktop service URL defaults to empty, and paid checkout honestly reports that it is unavailable. Test checkout identifies that no real payment is taken. Owner setup requires Supabase PostgreSQL, Stripe test keys and signed webhooks, a Node 22 or Docker HTTPS host, and the owner's OpenAI and Anthropic API keys. Supabase email or anonymous Auth setup and SMTP are not required. Only the public ZEBBY_CREDITS_SERVICE_URL is compiled into desktop builds. Owner setup is documented in [the credits service guide](credits-service/README.md). The feature contract and dated verification limits are recorded in [Analysis and credits](.impeccable/surfaces/analysis-credits.md).
