@@ -16,11 +16,16 @@ export function providerReady(state: DesktopState, provider = state.analysisProv
   return Boolean(state.localModels.some((item) => item.id === state.builtInModelId && item.status === "ready" &&
     (!LOCAL_MODELS.find((model) => model.id === item.id)?.license || state.acceptedModelTerms.includes(item.id))));
 }
-export function AnalysisSettings({ state, onState, provider: suppliedProvider, openCredits }: {
-  state: DesktopState; onState: ChangeAnalysisState; provider?: AnalysisProvider; openCredits: () => void }) {
+export function AnalysisSettings({ state, onState, provider: suppliedProvider, openCredits, onPendingChange }: {
+  state: DesktopState; onState: ChangeAnalysisState; provider?: AnalysisProvider; openCredits: () => void;
+  onPendingChange?: (pending: boolean) => void }) {
   const provider = suppliedProvider || state.analysisProvider;
   const [url, setUrl] = useState(state.ollamaUrl), [model, setModel] = useState(state.ollamaModel), [models, setModels] = useState<string[]>([]);
   const [working, setWorking] = useState(false), [finding, setFinding] = useState(false), [error, setError] = useState(""), [notice, setNotice] = useState("");
+  const [keyPending, setKeyPending] = useState(false);
+  const serverModelChanged = url.trim() !== state.ollamaUrl || model.trim() !== state.ollamaModel;
+  useEffect(() => { onPendingChange?.(working || keyPending || provider === "ollama" && serverModelChanged); }, [working, keyPending, provider, serverModelChanged, onPendingChange]);
+  useEffect(() => () => onPendingChange?.(false), [onPendingChange]);
   useEffect(() => {
     if (provider !== "ollama") return;
     let active = true;
@@ -39,7 +44,6 @@ export function AnalysisSettings({ state, onState, provider: suppliedProvider, o
   }
   const keyed = provider === "openai" || provider === "anthropic";
   const onlineId = provider === "credits" ? state.credits.model : provider === "openai" ? state.openaiModel : state.anthropicModel;
-  const serverModelChanged = url.trim() !== state.ollamaUrl || model.trim() !== state.ollamaModel;
   return <div className={`analysis-configuration${suppliedProvider ? " analysis-configuration-focused" : ""}`}>
     <div className="analysis-primary-fields">
       {!suppliedProvider && <label className="field provider-field"><span>Analyze with</span><select value={provider} disabled={working}
@@ -72,7 +76,7 @@ export function AnalysisSettings({ state, onState, provider: suppliedProvider, o
         state={state} onState={onState} provider={provider} model={provider === "builtin" ? state.builtInModelId : provider === "ollama" ? state.ollamaModel : onlineId}
         disabled={working || provider === "ollama" && serverModelChanged} onBusy={setWorking} />
     </div>
-    {keyed && <ApiKeyField key={provider} state={state} onState={onState} provider={provider} disabled={working} onBusy={setWorking} />}
+    {keyed && <ApiKeyField key={provider} state={state} onState={onState} provider={provider} disabled={working} onBusy={setWorking} onPendingChange={setKeyPending} />}
     {provider === "builtin" && <LocalModelsSettings state={state} onState={onState} hideSelector />}
     {provider === "credits" && <div className="settings-actions"><SettingsAction variant="primary" icon={CreditCard} onClick={openCredits}
       disabled={working || !state.canSaveApiKey}>Buy credits</SettingsAction></div>}

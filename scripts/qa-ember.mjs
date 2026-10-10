@@ -394,7 +394,8 @@ try {
   await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption("openai");
   await capture("settings-openai-setup");
   await page.getByRole("textbox", { name: "API key", exact: true }).fill("sk-zebby-fixture");
-  await page.getByRole("button", { name: "Save key", exact: true }).click();
+  await page.getByRole("textbox", { name: "API key", exact: true }).press("Enter");
+  await page.getByRole("button", { name: "Change key", exact: true }).waitFor();
   await nav.getByRole("button", { name: "Plan", exact: true }).click();
   const beforeOpenai = JSON.stringify((await api("/api/plans")).plans[0]);
   await page.getByRole("button", { name: "Analyze", exact: true }).click(); await waitForRequest();

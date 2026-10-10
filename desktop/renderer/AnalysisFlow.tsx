@@ -31,6 +31,7 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
   const [checkout, setCheckout] = useState<{ id: string; mode: "test" | "live" } | null>(null);
   const [checkoutExpired, setCheckoutExpired] = useState(false);
   const [hasPending, setHasPending] = useState(false);
+  const [setupPending, setSetupPending] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null), opener = useRef<HTMLElement | null>(null);
   const pending = useRef<{ source: AnalysisSource; resolve: (value: Authorization | null) => void } | null>(null);
   const dialogOpen = scene !== null;
@@ -137,7 +138,7 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
               <item.icon size={24} aria-hidden="true" /><span><strong>{item.title}</strong><small>{item.description}</small></span>
               {method === item.id && <Check size={17} className="method-check" aria-hidden="true" />}</label>)}
           </fieldset><p className="settings-help">No signup needed for any method.</p></>}
-        {scene === "setup" && <AnalysisSettings state={state} onState={updateState} provider={method} openCredits={() => show("buy")} />}
+        {scene === "setup" && <AnalysisSettings state={state} onState={updateState} provider={method} openCredits={() => show("buy")} onPendingChange={setSetupPending} />}
         {scene === "buy" && <>
           <p className="analysis-intro">Online analysis without an API key or signup. Choose your model after purchasing credits.</p>
           <fieldset className="credit-packs"><legend className="visually-hidden">Credit pack</legend>
@@ -187,7 +188,7 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
       <footer className="analysis-dialog-footer">
         <button className="button button-secondary" type="button" disabled={working} onClick={() => close()}>{scene === "checkout" ? "Close" : "Cancel"}</button>
         {scene === "choose" && <button className="button button-primary" type="button" onClick={() => show(method === "credits" ? "buy" : "setup")}>Continue<ChevronRight size={17} /></button>}
-        {scene === "setup" && <button className="button button-primary" type="button" disabled={working || !providerReady(state, method)} onClick={() => void finishSetup()}>{hasPending ? "Continue to analysis" : "Done"}</button>}
+        {scene === "setup" && <button className="button button-primary" type="button" disabled={working || setupPending || !providerReady(state, method)} onClick={() => void finishSetup()}>{hasPending ? "Continue to analysis" : "Done"}</button>}
         {scene === "buy" && <button className="button button-primary" type="button" disabled={working || !state.canSaveApiKey} onClick={() => void purchase()}>
           {working ? <LoaderCircle size={16} className="spin" /> : <ExternalLink size={16} />}Continue, ${CREDIT_PACKS.find((item) => item.id === pack)?.dollars}</button>}
         {scene === "ready" && <button className="button button-primary" type="button" disabled={working} onClick={() => void action(async () => {

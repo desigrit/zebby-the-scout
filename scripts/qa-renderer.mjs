@@ -12,6 +12,7 @@ import { importanceForTerms } from "../desktop/plan-importance.ts";
 const renderer = path.resolve("desktop-dist/renderer");
 const output = path.resolve("qa-output/renderer-1.5.0");
 const captureImages = process.env.ZEBBY_QA_CHECKS_ONLY !== "1";
+const captureNames = (process.env.ZEBBY_QA_CAPTURE_NAMES || "").split(",").filter(Boolean);
 const { version: appVersion } = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 const executablePath = process.env.PM_TRACKER_BROWSER || [
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
@@ -119,7 +120,7 @@ try {
       assert.ok(Math.abs(bounds.x + bounds.width / 2 - bounds.viewportWidth / 2) <= 1, "Analysis dialogs center horizontally");
       assert.ok(Math.abs(bounds.y + bounds.height / 2 - bounds.viewportHeight / 2) <= 1, "Analysis dialogs center vertically");
     }
-    if (captureImages) await page.screenshot({ path: path.join(output, filename), fullPage });
+    if (captureImages || captureNames.includes(filename)) await page.screenshot({ path: path.join(output, filename), fullPage });
   }
   async function assertFullTextRows(paragraphs) {
     const rows = await paragraphs.evaluateAll((elements) => elements.map((element) => {
@@ -243,7 +244,7 @@ try {
       resumeMode: "none", failedResumes: 0, warmups: 0, warmupMode: "ready", finishWarmup: null };
     window.modelQA = { confirmDelete: false, deleteRequests: [], selections: [], rejectSidebarSave: false,
       updateState, installRequests: 0, failInstall: false, failCheck: false, finishDownload: null,
-      logOpens: 0, failLogOpen: false, failKeySave: false, thinkingSelections: [], databaseRequests: [], update,
+      logOpens: 0, failLogOpen: false, failKeySave: false, keySaveAttempts: 0, thinkingSelections: [], databaseRequests: [], update,
       setPlatform: (platform) => { initialState.platform = platform; } };
     window.desktop = { state: async () => initialState, onDatabaseChanged: () => () => {}, onNavigate: () => () => {},
       onLocalModelsChanged: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
@@ -328,10 +329,12 @@ try {
       setAnalysisProvider: async (provider) => { initialState.analysisProvider = provider; return snapshot(); },
       setOllamaConfig: async ({ url, model }) => { initialState.ollamaUrl = url; initialState.ollamaModel = model; return snapshot(); },
       setApiKey: async (key) => {
+        window.modelQA.keySaveAttempts++;
         if (window.modelQA.failKeySave) throw new Error("Synthetic key save failure. Try again.");
         initialState.hasApiKey = Boolean(key); initialState.apiKeyHint = key ? "sk-••••••••" + key.slice(-4) : ""; return snapshot();
       },
       setAnthropicKey: async (key) => {
+        window.modelQA.keySaveAttempts++;
         if (window.modelQA.failKeySave) throw new Error("Synthetic key save failure. Try again.");
         initialState.hasAnthropicKey = Boolean(key); initialState.anthropicKeyHint = key ? "sk-ant-••••••••" + key.slice(-4) : ""; return snapshot();
       },
@@ -802,11 +805,14 @@ try {
   await provider.selectOption("openai");
   await page.getByRole("textbox", { name: "API key", exact: true }).waitFor();
   await page.getByRole('textbox', { name: 'API key', exact: true }).fill('sk-fixture-only');
-  await page.getByRole('button', { name: 'Save key', exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: 'Save key', exact: true }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: 'Save', exact: true }).count(), 0);
+  await page.getByRole('textbox', { name: 'API key', exact: true }).press('Enter');
   await page.getByRole('button', { name: 'Remove key', exact: true }).waitFor();
   await assertSettingsActions();
   assert.equal(await page.getByRole('textbox', { name: 'API key', exact: true }).count(), 0);
   assert.equal(await page.getByLabel('Saved API key', { exact: true }).innerText(), 'sk-••••••••only');
+  assert.equal(await page.evaluate(() => window.modelQA.keySaveAttempts), 1);
   const analysisModel = page.getByRole('combobox', { name: 'Model', exact: true });
   const thinking = page.getByRole('combobox', { name: 'Thinking level', exact: true });
   assert.deepEqual(await analysisModel.locator('option').evaluateAll(options => options.map(option => option.value)),
@@ -827,22 +833,38 @@ try {
   assert.equal(await newKey.evaluate(element => element === document.activeElement), true);
   await newKey.fill('sk-abandoned-fixture'); await newKey.press('Escape');
   assert.equal(await newKey.count(), 0); assert.equal(await changeKey.evaluate(element => element === document.activeElement), true);
+  await changeKey.click(); await newKey.fill('sk-cancelled-STOP');
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  assert.equal(await newKey.count(), 0);
+  assert.equal(await page.evaluate(() => window.modelQA.keySaveAttempts), 1);
   await changeKey.click(); await newKey.fill('sk-replacement-fixture');
   await page.evaluate(() => { window.modelQA.failKeySave = true; });
-  await page.getByRole('button', { name: 'Save key', exact: true }).click();
+  await newKey.press('Enter');
   await page.getByRole('alert').getByText('Synthetic key save failure. Try again.', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('alert').getByText('Press Enter to retry.', { exact: true }).isVisible(), true);
   assert.equal(await newKey.inputValue(), 'sk-replacement-fixture');
   assert.equal(await page.evaluate(() => window.desktop.state().then(state => state.apiKeyHint)), 'sk-••••••••only');
   await captureSettings('analysis-key-error-windows-light.png', false);
   await page.evaluate(() => { window.modelQA.failKeySave = false; });
-  await page.getByRole('button', { name: 'Save key', exact: true }).click();
+  await newKey.press('Enter');
   await changeKey.waitFor(); await page.waitForFunction(() => document.activeElement?.textContent.includes('Change key'));
   assert.equal(await page.getByLabel('Saved API key', { exact: true }).innerText(), 'sk-••••••••ture');
   await page.setViewportSize({ width: 790, height: 850 });
   await page.evaluate(() => { document.documentElement.dataset.platform = 'darwin'; document.documentElement.dataset.theme = 'dark'; });
   await captureSettings('analysis-key-saved-mac-dark-narrow.png', false);
   await changeKey.click(); await captureSettings('analysis-key-change-mac-dark-narrow.png', false);
+  await newKey.fill('sk-cancelled-STOP');
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  assert.equal(await page.getByLabel('Saved API key', { exact: true }).innerText(), 'sk-••••••••ture');
+  await changeKey.click(); await newKey.fill('sk-autosave-ENDS');
+  await newKey.press('Tab');
+  assert.equal(await page.getByRole('button', { name: 'Cancel', exact: true }).evaluate(element => element === document.activeElement), true);
+  assert.equal(await page.evaluate(() => window.modelQA.keySaveAttempts), 3);
+  await page.keyboard.press('Tab');
+  await page.getByLabel('Saved API key', { exact: true }).waitFor();
+  assert.equal(await page.getByLabel('Saved API key', { exact: true }).innerText(), 'sk-••••••••ENDS');
+  assert.equal(await page.evaluate(() => window.modelQA.keySaveAttempts), 4);
+  assert.equal(await page.getByRole('button', { name: 'Undo', exact: true }).count(), 0);
   await page.setViewportSize({ width: 1550, height: 850 });
   await page.evaluate(() => { document.documentElement.dataset.platform = 'win32'; document.documentElement.dataset.theme = 'light'; });
   await page.getByRole('button', { name: 'Remove key', exact: true }).click();
@@ -850,7 +872,7 @@ try {
   assert.equal(await page.getByRole('textbox', { name: 'API key', exact: true }).evaluate(element => element === document.activeElement), true);
   await provider.selectOption('anthropic');
   await page.getByRole('textbox', { name: 'API key', exact: true }).fill('sk-ant-fixture-only');
-  await page.getByRole('button', { name: 'Save key', exact: true }).click();
+  await page.getByRole('textbox', { name: 'API key', exact: true }).press('Tab');
   await page.getByRole('button', { name: 'Remove key', exact: true }).waitFor();
   await assertSettingsActions();
   await analysisModel.selectOption('claude-haiku-4-5-20251001');
@@ -1045,6 +1067,37 @@ try {
   await analyze.click();
   await analysisDialog.getByRole("heading", { name: "How would you like to analyze?", exact: true }).waitFor();
   assert.equal(await analysisDialog.getByRole("radio").count(), 5);
+  // Setup must not analyze with an old key while its replacement is unsaved or failed.
+  await analysisDialog.getByRole("radio", { name: /^OpenAI API key/ }).check();
+  await analysisDialog.getByRole("button", { name: "Continue", exact: true }).click();
+  const setupContinue = analysisDialog.getByRole("button", { name: "Continue to analysis", exact: true });
+  const setupKey = analysisDialog.getByRole("textbox", { name: "API key", exact: true });
+  await setupKey.fill("sk-setup-fixture-only"); await setupKey.press("Enter");
+  await analysisDialog.getByRole("button", { name: "Change key", exact: true }).waitFor();
+  await page.waitForFunction(() => [...document.querySelectorAll('dialog[open] button, [role="dialog"] button')]
+    .some(element => element.textContent.trim() === "Continue to analysis" && !element.disabled));
+  assert.equal(await setupContinue.isEnabled(), true);
+  await analysisDialog.getByRole("button", { name: "Change key", exact: true }).click();
+  const setupReplacement = analysisDialog.getByRole("textbox", { name: "New API key", exact: true });
+  await setupReplacement.fill("sk-unsaved-replacement");
+  await page.waitForFunction(() => [...document.querySelectorAll('dialog[open] button, [role="dialog"] button')]
+    .some(element => element.textContent.trim() === "Continue to analysis" && element.disabled));
+  assert.equal(await setupContinue.isEnabled(), false);
+  await page.evaluate(() => { window.modelQA.failKeySave = true; });
+  await setupReplacement.press("Enter");
+  await analysisDialog.getByRole("alert").getByText("Synthetic key save failure. Try again.", { exact: true }).waitFor();
+  assert.equal(await setupContinue.isEnabled(), false);
+  await analysisDialog.locator(".api-key-editor").getByRole("button", { name: "Cancel", exact: true }).click();
+  await analysisDialog.getByRole("button", { name: "Change key", exact: true }).waitFor();
+  await page.waitForFunction(() => [...document.querySelectorAll('dialog[open] button, [role="dialog"] button')]
+    .some(element => element.textContent.trim() === "Continue to analysis" && !element.disabled));
+  assert.equal(await setupContinue.isEnabled(), true);
+  await page.evaluate(() => { window.modelQA.failKeySave = false; });
+  await analysisDialog.getByRole("button", { name: "Remove key", exact: true }).click();
+  await setupKey.waitFor();
+  await analysisDialog.getByRole("button", { name: "Close", exact: true }).click();
+  await analysisDialog.waitFor({ state: "hidden" }); await analyze.click();
+  await analysisDialog.getByRole("heading", { name: "How would you like to analyze?", exact: true }).waitFor();
   for (const name of ["Local server", "Download a model", "OpenAI API key", "Anthropic API key", "Buy credits"]) {
     assert.equal(await analysisDialog.getByRole("radio", { name: new RegExp(name) }).count(), 1);
   }
@@ -1250,7 +1303,7 @@ try {
   assert.equal(await page.evaluate(() => document.querySelector('.desktop-workspace').inert), true);
   assert.equal(await page.evaluate(() => window.modelQA.installRequests), 2);
   assert.deepEqual(errors, []);
-  console.log(`Headless renderer checks passed. No desktop app was launched. ${captureImages ? `Screenshots: ${output}` : "No new screenshots were captured."}`);
+  console.log(`Headless renderer checks passed. No desktop app was launched. ${captureImages || captureNames.length ? `Screenshots: ${output}` : "No new screenshots were captured."}`);
 } finally {
   for (const resolve of pending.values()) resolve();
   await browser?.close();
