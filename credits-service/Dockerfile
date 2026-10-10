@@ -11,6 +11,7 @@ FROM node:22-slim
 WORKDIR /app
 ENV NODE_ENV=production PORT=8080
 COPY --from=build /app/node_modules/zod ./node_modules/zod
+COPY --from=build /app/node_modules/ipaddr.js ./node_modules/ipaddr.js
 COPY --from=build /app/credits-service/dist/server.mjs ./server.mjs
 USER node
 EXPOSE 8080
