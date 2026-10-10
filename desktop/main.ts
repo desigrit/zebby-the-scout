@@ -4,7 +4,7 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fetchJobPosting } from "../lib/job-fetch";
 import type { ApplicationInput } from "../lib/application-types";
-import { analyzeWithOllama, DEFAULT_OLLAMA_URL, listOllamaModels, normalizeOllamaUrl } from "./ollama";
+import { analyzeWithOllama, DEFAULT_OLLAMA_URL, listOllamaModels, normalizeOllamaUrl, ollamaThinkingCapability } from "./ollama";
 import { extractResumeText } from "./resume-text";
 import { DesktopStore, type PlanInput } from "./store";
 import { getLocalModel, LOCAL_MODELS } from "./local-model-catalog";
@@ -25,7 +25,8 @@ import { randomUUID, createHash } from "node:crypto";
 import { AnalysisRequests } from "./analysis-requests";
 import { CreditsClient } from "./credits-client";
 import { onlineAnalysis } from "./online-analysis";
-import { onlineModel, type AnalysisProvider, type AnalysisSource } from "../shared/online-models";
+import { creditModel, DEFAULT_CREDIT_MODEL, onlineModel, validateOnlineThinking, type AnalysisProvider, type AnalysisSource } from "../shared/online-models";
+import { maskedApiKey, onlineThinkingCapability, selectedThinking, thinkingKey, type ThinkingPreferences } from "../shared/thinking";
 import { writeProfileSettings } from "./settings-persistence";
 
 protocol.registerSchemesAsPrivileged([{
@@ -39,7 +40,7 @@ let store: DesktopStore;
 let apiKey = "";
 let anthropicKey = "";
 let creditsClient: CreditsClient;
-const paidQuotes = new Map<string, { source: AnalysisSource; model: string; hash: string; expires: number; recovery?: boolean }>();
+const paidQuotes = new Map<string, { source: AnalysisSource; model: string; thinkingLevel?: string; hash: string; expires: number; recovery?: boolean }>();
 let startupError = "";
 let modelDownloads: LocalModelDownloads;
 let modelEngine: LocalModelEngine;
@@ -55,6 +56,7 @@ const updates = new ReleaseUpdates({ version: app.getVersion(), platform: proces
 let settings: { databasePath?: string; encryptedApiKey?: string; appearance?: Appearance; sidebarCollapsed?: boolean;
   analysisProvider?: AnalysisProvider; ollamaUrl?: string; ollamaModel?: string; builtInModelId?: string;
   encryptedAnthropicKey?: string; encryptedCreditSession?: string; openaiModel?: string; anthropicModel?: string; creditModel?: string;
+  thinkingLevels?: ThinkingPreferences;
   acceptedModelTerms?: AcceptedModelTerms } = {};
 let unreadableProfile = false;
 const diagnosticLog = new DiagnosticLog(() => logsPath(), () => [apiKey, anthropicKey, ...(creditsClient?.secrets() || [])]);
@@ -71,11 +73,21 @@ function logEvent(message: string, error?: unknown) {
 }
 
 async function saveSettings() {
-  const snapshot = JSON.stringify(settings, null, 2);
-  settingsWrites = settingsWrites.catch(() => undefined).then(() => writeProfileSettings(settingsPath(), snapshot));
+  settingsWrites = settingsWrites.catch(() => undefined).then(() => writeProfileSettings(settingsPath(), JSON.stringify(settings, null, 2)));
   await settingsWrites;
 }
 let settingsWrites: Promise<unknown> = Promise.resolve();
+async function persistAnalysisSettings(change: Partial<typeof settings> | (() => Partial<typeof settings>)) {
+  settingsWrites = settingsWrites.catch(() => undefined).then(async () => {
+    const patch = typeof change === "function" ? change() : change;
+    await writeProfileSettings(settingsPath(), JSON.stringify({ ...settings, ...patch }, null, 2));
+    Object.assign(settings, patch);
+  });
+  await settingsWrites;
+}
+function thinkingLevel(provider: "openai" | "anthropic" | "credits", model: string) {
+  return selectedThinking(settings.thinkingLevels, thinkingKey(provider, model), onlineThinkingCapability(model));
+}
 
 async function loadSettings() {
   try { settings = JSON.parse(await readFile(settingsPath(), "utf8")); }
@@ -100,8 +112,9 @@ async function loadSettings() {
     catch (error) { apiKey = ""; logDiagnostic("Could not read the saved API key", error); }
   }
   for (const [field, fallback, provider] of [["openaiModel", "gpt-6.1-sol", "openai"],
-    ["anthropicModel", "claude-sonnet-5-5", "anthropic"], ["creditModel", "gpt-6-luna", "credits"]] as const) {
-    try { if (provider !== "credits" && onlineModel(settings[field] || fallback).provider !== provider) throw new Error(); onlineModel(settings[field] || fallback); }
+    ["anthropicModel", "claude-sonnet-5-5", "anthropic"], ["creditModel", DEFAULT_CREDIT_MODEL, "credits"]] as const) {
+    try { if (provider !== "credits" && onlineModel(settings[field] || fallback).provider !== provider) throw new Error();
+      if (provider === "credits") creditModel(settings[field] || fallback); else onlineModel(settings[field] || fallback); }
     catch { settings[field] = fallback; }
   }
   if (settings.encryptedAnthropicKey && safeStorage.isEncryptionAvailable()) {
@@ -148,8 +161,10 @@ async function loadSettings() {
 function state() {
   return {
     ...store.status, startupError, hasApiKey: Boolean(apiKey), hasAnthropicKey: Boolean(anthropicKey),
+    apiKeyHint: maskedApiKey(apiKey, "openai"), anthropicKeyHint: maskedApiKey(anthropicKey, "anthropic"),
+    thinkingLevels: settings.thinkingLevels || {},
     openaiModel: settings.openaiModel || "gpt-6.1-sol", anthropicModel: settings.anthropicModel || "claude-sonnet-5-5",
-    credits: creditsClient.state(settings.creditModel || "gpt-6-luna"),
+    credits: creditsClient.state(settings.creditModel || DEFAULT_CREDIT_MODEL),
     analysisProvider: settings.analysisProvider || "ollama",
     ollamaUrl: settings.ollamaUrl || DEFAULT_OLLAMA_URL,
     ollamaModel: settings.ollamaModel || "",
@@ -216,15 +231,15 @@ async function captureListing<T extends { listingUrl?: string; snapshotText?: st
   return input;
 }
 
-async function analyzeWithOpenAI(instructions: string, input: unknown, name: string,
-  schema: Record<string, unknown>, _failure: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
-  return (await onlineAnalysis({ model: settings.openaiModel || "gpt-6.1-sol", key: apiKey, instructions,
-    input, name, schema, kind: name === "resume_plan" ? "plan" : "match", signal })).result;
-}
-
 function selectedAnalysis() {
+  const provider = settings.analysisProvider || "ollama";
+  const model = provider === "openai" ? settings.openaiModel || "gpt-6.1-sol" : provider === "anthropic" ? settings.anthropicModel || "claude-sonnet-5-5"
+    : provider === "credits" ? settings.creditModel || DEFAULT_CREDIT_MODEL : provider === "builtin" ? settings.builtInModelId || "" : settings.ollamaModel || "";
   return { provider: settings.analysisProvider || "ollama", ollamaUrl: settings.ollamaUrl || DEFAULT_OLLAMA_URL,
-    ollamaModel: settings.ollamaModel || "", builtInModelId: settings.builtInModelId || "" };
+    ollamaModel: settings.ollamaModel || "", builtInModelId: settings.builtInModelId || "", model, apiKey: provider === "anthropic" ? anthropicKey : apiKey,
+    thinkingLevels: { ...settings.thinkingLevels },
+    thinkingLevel: ["openai", "anthropic", "credits"].includes(provider) ? thinkingLevel(provider as "openai" | "anthropic" | "credits", model)
+      : settings.thinkingLevels?.[thinkingKey(provider, model, settings.ollamaUrl || DEFAULT_OLLAMA_URL)] || "off" };
 }
 
 function analysisHash(input: unknown) { return createHash("sha256").update(JSON.stringify(input)).digest("hex"); }
@@ -252,8 +267,9 @@ async function quoteAnalysis(source: AnalysisSource) {
   if (paidQuotes.size >= 20) paidQuotes.delete(paidQuotes.keys().next().value!);
   const recovery = await creditsClient.recoveryQuote(source, input);
   if (recovery) { paidQuotes.set(recovery.id, { source, model: recovery.model, hash: analysisHash(input), expires: Date.parse(recovery.expiresAt), recovery: true }); return recovery; }
-  const quote = await creditsClient.quote(source.kind, input, settings.creditModel || "gpt-6-luna");
-  paidQuotes.set(quote.id, { source, model: quote.model, hash: analysisHash(input), expires: Date.parse(quote.expiresAt) });
+  const model = settings.creditModel || DEFAULT_CREDIT_MODEL, level = thinkingLevel("credits", model);
+  const quote = await creditsClient.quote(source.kind, input, model, level);
+  paidQuotes.set(quote.id, { source, model: quote.model, thinkingLevel: level, hash: analysisHash(input), expires: Date.parse(quote.expiresAt) });
   return quote;
 }
 
@@ -261,20 +277,23 @@ async function analyzeWithSelectedProvider(instructions: string, input: unknown,
   schema: Record<string, unknown>, failure: string, selected: ReturnType<typeof selectedAnalysis>, signal: AbortSignal,
   paid?: { quoteId: string; source: AnalysisSource }): Promise<Record<string, unknown>> {
   signal.throwIfAborted();
-  const model = selected.provider === "builtin" ? selected.builtInModelId : selected.provider === "ollama" ? selected.ollamaModel
-    : selected.provider === "openai" ? settings.openaiModel : selected.provider === "anthropic" ? settings.anthropicModel : settings.creditModel;
-  logEvent(`Analysis provider selected (${name}, ${selected.provider}, ${model || "default"})`);
+  logEvent(`Analysis provider selected (${name}, ${selected.provider}, ${selected.model || "default"}, thinking ${selected.thinkingLevel})`);
   return runSelectedAnalysis(selected, {
-    ollama: (baseUrl, model, prompt, content, format) => analyzeWithOllama({ baseUrl,
-      model, instructions: prompt, content: JSON.stringify(content), schema: format, signal }),
-    openai: (...args) => analyzeWithOpenAI(...args, signal),
-    anthropic: async (prompt, content, formatName, format) => (await onlineAnalysis({ model: settings.anthropicModel || "claude-sonnet-5-5",
-      key: anthropicKey, instructions: prompt, input: content, name: formatName, schema: format,
-      kind: formatName === "resume_plan" ? "plan" : "match", signal })).result,
+    ollama: async (baseUrl, model, prompt, content, format) => {
+      const capability = await ollamaThinkingCapability(baseUrl, model, fetch, signal).catch(() => null);
+      signal?.throwIfAborted();
+      const level = capability ? selectedThinking(selected.thinkingLevels, thinkingKey("ollama", model, baseUrl), capability) : selected.thinkingLevel;
+      return analyzeWithOllama({ baseUrl, model, instructions: prompt, content: JSON.stringify(content), schema: format, thinkingLevel: level, signal });
+    },
+    openai: async (prompt, content, formatName, format) => (await onlineAnalysis({ model: selected.model, key: selected.apiKey, instructions: prompt,
+      input: content, name: formatName, schema: format, kind: formatName === "resume_plan" ? "plan" : "match", thinkingLevel: selected.thinkingLevel, signal })).result,
+    anthropic: async (prompt, content, formatName, format) => (await onlineAnalysis({ model: selected.model,
+      key: selected.apiKey, instructions: prompt, input: content, name: formatName, schema: format,
+      kind: formatName === "resume_plan" ? "plan" : "match", thinkingLevel: selected.thinkingLevel, signal })).result,
     credits: async () => {
       const quote = paid && paidQuotes.get(paid.quoteId);
       if (!paid || !quote || quote.source.id !== paid.source.id || quote.source.kind !== paid.source.kind || quote.expires < Date.now()
-        || !quote.recovery && quote.model !== (settings.creditModel || "gpt-6-luna") || quote.hash !== analysisHash(input)) {
+        || !quote.recovery && (quote.model !== selected.model || quote.thinkingLevel !== selected.thinkingLevel) || quote.hash !== analysisHash(input)) {
         throw new Error("Confirm a fresh credit quote before analyzing this job.");
       }
       return creditsClient.analyze(paid.quoteId, input, signal, paid.source, quote.model);
@@ -283,7 +302,7 @@ async function analyzeWithSelectedProvider(instructions: string, input: unknown,
       acceptModelTerms(getLocalModel(id), settings.acceptedModelTerms || {});
       return modelDownloads.readyPath(id);
     },
-    local: (id, prompt, content, format, maxTokens) => modelEngine.analyze(id, prompt, content, format, maxTokens, signal),
+    local: (id, prompt, content, format, maxTokens) => modelEngine.analyze(id, prompt, content, format, maxTokens, signal, selected.thinkingLevel),
   }, instructions, input, name, schema, failure);
 }
 
@@ -490,7 +509,7 @@ function registerIpc() {
       const started = Date.now();
       const trace = !["desktop:state", "desktop:refresh-credits", "desktop:credit-checkout-status"].includes(channel);
       const changing = !["desktop:state", "desktop:check-updates", "desktop:download-update", "desktop:install-update",
-        "desktop:list-ollama-models", "desktop:open-logs", "desktop:open-model-folder", "desktop:download-resume",
+        "desktop:list-ollama-models", "desktop:ollama-thinking-capability", "desktop:open-logs", "desktop:open-model-folder", "desktop:download-resume",
         "desktop:warm-credits-service"].includes(channel);
       if (installingUpdate && changing) throw new Error("Zebby is restarting to install an update.");
       if (changing) activeSettingsRequests++;
@@ -566,15 +585,34 @@ function registerIpc() {
   handle("desktop:set-online-model", async (_event, provider: string, model: string) => {
     const selected = onlineModel(model);
     if (!["openai", "anthropic", "credits"].includes(provider) || provider !== "credits" && selected.provider !== provider) throw new Error("Choose a model for this provider.");
-    settings[provider === "credits" ? "creditModel" : provider === "openai" ? "openaiModel" : "anthropicModel"] = model;
-    paidQuotes.clear(); await saveSettings(); return state();
+    if (provider === "credits") creditModel(model);
+    await persistAnalysisSettings({ [provider === "credits" ? "creditModel" : provider === "openai" ? "openaiModel" : "anthropicModel"]: model });
+    paidQuotes.clear(); return state();
+  });
+  handle("desktop:set-thinking-level", async (_event, value: { provider: AnalysisProvider; model: string; level: string }) => {
+    if (!value || !["openai", "anthropic", "credits", "ollama", "builtin"].includes(value.provider) || typeof value.level !== "string" || value.level.length > 80
+      || typeof value.model !== "string" || !value.model || value.model.length > 200) throw new Error("Choose a model and thinking level.");
+    const { provider, model, level } = value;
+    if (["openai", "anthropic", "credits"].includes(provider)) {
+      const chosen = provider === "credits" ? creditModel(model) : onlineModel(model);
+      if (provider !== "credits" && chosen.provider !== provider) throw new Error("Choose a model for this provider.");
+      validateOnlineThinking(chosen, level);
+    } else if (provider === "builtin") {
+      const chosen = getLocalModel(model);
+      if (!["off", "on"].includes(level) || level === "on" && !chosen.supportsThinking) throw new Error("This downloaded model does not support that thinking level.");
+    } else {
+      const capability = await ollamaThinkingCapability(settings.ollamaUrl || DEFAULT_OLLAMA_URL, model);
+      if (!capability.options.some((item) => item.value === level)) throw new Error("Choose a thinking level supported by this model.");
+    }
+    const preferenceKey = thinkingKey(provider, model, settings.ollamaUrl || DEFAULT_OLLAMA_URL);
+    await persistAnalysisSettings(() => ({ thinkingLevels: { ...settings.thinkingLevels, [preferenceKey]: level } }));
+    paidQuotes.clear(); return state();
   });
   handle("desktop:set-anthropic-key", async (_event, value: string) => {
     if (typeof value !== "string" || value.length > 500) throw new Error("Enter an Anthropic API key.");
-    anthropicKey = value.trim();
-    if (anthropicKey && safeStorage.isEncryptionAvailable()) settings.encryptedAnthropicKey = safeStorage.encryptString(anthropicKey).toString("base64");
-    else delete settings.encryptedAnthropicKey;
-    await saveSettings(); return state();
+    const next = value.trim();
+    await persistAnalysisSettings({ encryptedAnthropicKey: next && safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(next).toString("base64") : undefined });
+    anthropicKey = next; return state();
   });
   handle("desktop:cancel-analysis", (_event, id: string) => {
     const accepted = analysisRequests.cancel(id);
@@ -632,16 +670,14 @@ function registerIpc() {
   });
   handle("desktop:set-api-key", async (_event, value: string) => {
     if (typeof value !== "string" || value.length > 500) throw new Error("The API key is invalid.");
-    apiKey = value.trim();
-    settings.encryptedApiKey = apiKey && safeStorage.isEncryptionAvailable()
-      ? safeStorage.encryptString(apiKey).toString("base64") : undefined;
-    await saveSettings();
+    const next = value.trim();
+    await persistAnalysisSettings({ encryptedApiKey: next && safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(next).toString("base64") : undefined });
+    apiKey = next;
     return state();
   });
   handle("desktop:set-analysis-provider", async (_event, value: AnalysisProvider) => {
     if (!["ollama", "openai", "builtin", "anthropic", "credits"].includes(value)) throw new Error("Choose an analysis provider.");
-    settings.analysisProvider = value;
-    await saveSettings();
+    await persistAnalysisSettings({ analysisProvider: value });
     return state();
   });
   handle("desktop:set-ollama-config", async (_event, value: { url?: string; model?: string }) => {
@@ -649,14 +685,16 @@ function registerIpc() {
         value.model.length > 200 || /[\r\n]/.test(value.model)) {
       throw new Error("Enter an Ollama server URL and model.");
     }
-    settings.ollamaUrl = normalizeOllamaUrl(value.url);
-    settings.ollamaModel = value.model.trim();
-    await saveSettings();
+    await persistAnalysisSettings({ ollamaUrl: normalizeOllamaUrl(value.url), ollamaModel: value.model.trim() });
     return state();
   });
   handle("desktop:list-ollama-models", async (_event, url: string) => {
     if (typeof url !== "string" || url.length > 500) throw new Error("Enter an Ollama server URL.");
     return listOllamaModels(url);
+  });
+  handle("desktop:ollama-thinking-capability", (_event, url: string, model: string) => {
+    if (typeof url !== "string" || url.length > 500 || typeof model !== "string") throw new Error("Choose a server and model.");
+    return ollamaThinkingCapability(url, model);
   });
   handle("desktop:select-local-model", async (_event, id: string) => {
     const model = getLocalModel(id);

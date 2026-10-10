@@ -67,6 +67,14 @@ try {
   assert.ok(plan.overview && plan.overviewRationale && plan.explanation);
   assert.ok(Number.isInteger(plan.score) && plan.score >= 0 && plan.score <= 100);
   assert.ok(Number.isInteger(match.score) && match.score >= 0 && match.score <= 100 && match.explanation);
+  if (process.argv.includes("--thinking")) {
+    assert.equal(model.supportsThinking, true, "The thinking check requires a supported model.");
+    console.log(`${model.name}: checking thinking-enabled structured output`);
+    const thoughtMatch = await engine.analyze(id, "Compare the resume evidence with the role. Return a score from 0 to 100 and one short explanation. Do not claim experience absent from the resume.",
+      { jobDescription, resumeText }, matchSchema, 800, undefined, "on");
+    assert.ok(Number.isInteger(thoughtMatch.score) && thoughtMatch.score >= 0 && thoughtMatch.score <= 100 && thoughtMatch.explanation);
+    assert.ok(events.some((event) => event.message.includes("first token")), "Thinking generation must report progress.");
+  }
   const engineUrl = engine.baseUrl;
   const unauthorized = await fetch(`${engineUrl}/v1/chat/completions`, { method: "POST",
     headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: [{ role: "user", content: "Hello" }] }) });

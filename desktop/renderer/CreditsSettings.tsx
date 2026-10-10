@@ -3,7 +3,6 @@ import { Check, Copy, KeyRound, Link2, LoaderCircle, Monitor, RefreshCw, ShieldC
 import { formatCredits, onlineModel } from "../../shared/online-models";
 import { creditUsage } from "../../shared/credit-usage";
 import type { WalletPairing } from "../../shared/wallet-access";
-import { OnlineModelSelect } from "./AnalysisSettings";
 import SettingsAction from "./SettingsAction";
 import { useAnalysisFlow } from "./AnalysisFlow";
 
@@ -101,7 +100,6 @@ export function CreditsSettings() {
         </div>
         {credits.stale && <p className="settings-help">Saved balance. Refresh to update.</p>}
         {!!wallet.reserved && <p className="settings-help">{formatCredits(wallet.reserved)} credits reserved for running analysis.</p>}
-        <OnlineModelSelect state={state} onState={updateState} provider="credits" disabled={working} />
       </> : credits.signedIn && !wallet ? <div className="credit-wallet-loading">
         {!credits.stale && !credits.error ? <span role="status"><LoaderCircle size={16} className="spin" aria-hidden="true" />Loading credits</span>
           : <p className="settings-help">Could not load your credits.</p>}

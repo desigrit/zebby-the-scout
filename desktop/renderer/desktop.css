@@ -288,7 +288,6 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .settings-content > .field, .local-model-field { display: flex; margin-bottom: 14px; }
 .settings-content .field > span:first-child { font-size: 12px; font-weight: 500; }
 .settings-content .field :is(input, select) { min-height: 36px; padding: 7px 10px; border-color: var(--line); }
-.settings-content .provider-field, .settings-content .key-field { max-width: 520px; }
 .ollama-model-row { display: flex; align-items: flex-end; gap: 8px; }
 .ollama-model-row .field { flex: 1; margin-bottom: 0; }
 .model-refresh { height: 36px; flex: none; }
@@ -367,10 +366,45 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .analysis-method:has(input:focus-visible), .credit-pack:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 3px; }
 .analysis-method .method-check { position: absolute; right: 14px; }
 .analysis-method-paid { grid-column: 1 / -1; min-height: 86px; }
-.analysis-configuration { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 16px; }
-.analysis-configuration > * { grid-column: 1 / -1; }
-.analysis-configuration .field { margin: 0; }
+.analysis-configuration { display: grid; align-items: start; gap: 20px; min-width: 0; }
+.analysis-configuration .field, .online-model-controls .field { margin: 0; grid-column: auto; }
 .analysis-configuration .settings-actions { margin-top: 0; }
+.analysis-primary-fields, .analysis-secondary-fields { display: grid; grid-template-columns: minmax(190px, .85fr) minmax(0, 1.55fr); gap: 18px; align-items: start; }
+.analysis-primary-fields > *, .analysis-secondary-fields > * { min-width: 0; }
+.analysis-secondary-fields > .analysis-thinking-control { grid-column: 2; }
+.analysis-secondary-server > .analysis-server-model { grid-column: 2; }
+.analysis-secondary-server > .analysis-thinking-control { grid-column: 1; grid-row: 1; }
+.analysis-thinking-control { max-width: 230px; }
+.analysis-thinking-row { display: flex; align-items: flex-end; gap: 8px; }
+.analysis-thinking-row .field { flex: 1; min-width: 0; }
+.analysis-configuration .field :is(input, select), .online-model-controls .field select { width: 100%; min-width: 0; height: 36px; padding: 7px 10px; }
+.analysis-server-model { display: grid; gap: 12px; }
+.analysis-configuration-focused .analysis-primary-fields { grid-template-columns: minmax(0, 1fr); }
+.analysis-configuration-focused .analysis-secondary-fields { grid-template-columns: minmax(0, 1fr); }
+.analysis-configuration-focused .analysis-secondary-fields > * { grid-column: 1; grid-row: auto; }
+.analysis-configuration-focused .analysis-secondary-server { grid-template-columns: minmax(0, 1.5fr) minmax(160px, .7fr); }
+.analysis-configuration-focused .analysis-secondary-server > .analysis-thinking-control { grid-column: 2; grid-row: 1; }
+.analysis-key-control { min-width: 0; padding-top: 2px; }
+.saved-api-key { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.saved-key-value { display: grid; gap: 8px; flex: 1 1 240px; min-width: 160px; }
+.saved-key-value > span { font-size: 12px; font-weight: 500; }
+.saved-key-value output { display: flex; align-items: center; min-height: 36px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); font-size: 13px; font-variant-numeric: tabular-nums; }
+.saved-key-actions, .key-editor-actions { display: flex; flex: none; align-items: center; gap: 8px; }
+.settings-action-slim.button { min-width: 0; min-height: 36px; padding: 7px 10px; white-space: nowrap; }
+.api-key-editor { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.api-key-editor .field { flex: 1 1 240px; min-width: 160px; }
+.analysis-configuration .analysis-privacy { margin: -6px 0 0; }
+.online-model-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, 230px); gap: 18px; align-items: start; }
+.online-model-controls .field { margin: 0; }
+@media (max-width: 820px) {
+  .analysis-primary-fields, .analysis-secondary-fields { grid-template-columns: minmax(170px, .8fr) minmax(0, 1.2fr); gap: 14px; }
+  .saved-api-key, .api-key-editor { gap: 10px; }
+}
+@media (max-width: 580px) {
+  .analysis-primary-fields, .analysis-secondary-fields, .analysis-configuration-focused .analysis-secondary-server, .online-model-controls { grid-template-columns: minmax(0, 1fr); }
+  .analysis-secondary-fields > *, .analysis-configuration-focused .analysis-secondary-server > * { grid-column: 1 !important; grid-row: auto !important; }
+  .analysis-thinking-control { max-width: none; }
+}
 .analysis-dialog .local-model-fields { margin: 0; }
 .credit-packs { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .credit-pack { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 18px 16px; border: 1px solid var(--line); border-radius: 8px; min-width: 0; }

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { createHmac, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
-import { CREDIT_PACKS, NANODOLLARS_PER_CREDIT, onlineModel, usageCost, maximumCost, quoteNeedsCredits } from "../shared/online-models.ts";
+import { CREDIT_PACKS, CREDIT_ESTIMATE, CREDIT_MODELS, NANODOLLARS_PER_CREDIT, onlineModel, usageCost, maximumCost, outputLimit, quoteNeedsCredits } from "../shared/online-models.ts";
 import { onlineAnalysis } from "../desktop/online-analysis.ts";
 import { CreditsClient } from "../desktop/credits-client.ts";
 import { createService } from "../credits-service/service.ts";
@@ -41,12 +41,14 @@ function signature(event, secret = config.stripeWebhookSecret, timestamp = Math.
   const raw = Buffer.from(JSON.stringify(event));
   return { raw, signature: `t=${timestamp},v1=${createHmac("sha256", secret).update(timestamp + ".").update(raw).digest("hex")}` };
 }
-test("credit pack counts and illustrative Luna costs are consistent", () => {
-  const example = usageCost(onlineModel("gpt-6-luna"), { input: 0, cached: 0, cacheWrite: 20000, output: 6000 });
-  assert.equal(example / NANODOLLARS_PER_CREDIT, 5.5);
+test("credit pack counts use Sol High with explicitly estimated thinking tokens", () => {
+  const example = usageCost(onlineModel(CREDIT_ESTIMATE.model), { input: 0, cached: 0, cacheWrite: CREDIT_ESTIMATE.input, output: CREDIT_ESTIMATE.output });
+  assert.equal(example / NANODOLLARS_PER_CREDIT, 130);
+  assert.deepEqual(CREDIT_PACKS.map((pack) => pack.analyses), [3, 23, 61, 123]);
+  assert.deepEqual(CREDIT_MODELS.map((model) => model.id), ["gpt-6.1-sol", "gpt-6-astra"]);
   for (const pack of CREDIT_PACKS) {
     assert.ok(pack.analyses * example <= pack.credits * NANODOLLARS_PER_CREDIT);
-    assert.ok(pack.credits * NANODOLLARS_PER_CREDIT - pack.analyses * example < 10 * example);
+    assert.ok(pack.credits * NANODOLLARS_PER_CREDIT - pack.analyses * example < example);
   }
   assert.equal(usageCost(onlineModel("gpt-6-astra"), { input: 20000, cached: 0, output: 6000 }) / NANODOLLARS_PER_CREDIT, 500);
   assert.equal(usageCost(onlineModel("gpt-6-luna"), { input: 100, cached: 50, output: 10 }), 10500);
@@ -177,7 +179,7 @@ test("PostgreSQL ledger and service integration", async (t) => {
     const keys = Object.keys(data), placeholders = keys.map((key, i) => `${key} => $${i + 1}`).join(",");
     const { rows } = await db.query(`select public.zebby_${name}(${placeholders}) as result`, Object.values(data)); return rows[0].result;
   }
-  let providerCalls = 0, failProvider = false, abortProvider = false, providerResult = plan;
+  let providerCalls = 0, failProvider = false, abortProvider = false, providerResult = plan, lastProviderRequest;
   const fetcher = async (target, options = {}) => {
     const url = new URL(target);
     if (url.hostname === "database.example") {
@@ -211,7 +213,7 @@ test("PostgreSQL ledger and service integration", async (t) => {
       return Response.json({ status: "open" });
     }
     assert.equal(url.hostname, "api.openai.com"); providerCalls++;
-    const request = JSON.parse(options.body); assert.equal(request.model, "gpt-6-luna"); assert.equal(request.store, false);
+    const request = JSON.parse(options.body); lastProviderRequest = request; assert.equal(request.model, "gpt-6.1-sol"); assert.equal(request.store, false);
     if (abortProvider) { await new Promise((_, reject) => { options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }); }); }
     if (failProvider) return Response.json({ error: { message: "private resume content" } }, { status: 500 });
     return Response.json({ status: "completed", output: [{ content: [{ type: "output_text", text: JSON.stringify(providerResult) }] }],
@@ -220,7 +222,7 @@ test("PostgreSQL ledger and service integration", async (t) => {
   const service = createService(config, { fetcher }), controller = new AbortController();
   const handle = (method, path, value, token = "owner", signal = controller.signal) => service.handle(method, path, value, token, signal);
   const wallet = () => rpc("wallet", { p_user: userId });
-  const newQuote = () => handle("POST", "/v1/quotes", { model: "gpt-6-luna", kind: "plan", input });
+  const newQuote = (thinkingLevel = "low") => handle("POST", "/v1/quotes", { model: "gpt-6.1-sol", thinkingLevel, kind: "plan", input });
   const analyze = (quoteId, requestId = randomUUID(), value = input, token = "owner", signal = controller.signal) =>
     handle("POST", "/v1/analysis", { quoteId, requestId, input: value }, token, signal);
   try {
@@ -239,13 +241,29 @@ test("PostgreSQL ledger and service integration", async (t) => {
       assert.equal((await handle("GET", "/v1/checkout/cs_test_fixture")).status, "paid");
       await assert.rejects(handle("GET", "/v1/checkout/cs_test_fixture", undefined, "other"), /not found/);
     });
+    await t.test("paid quotes bind thinking and reject unsupported models or request overrides", async () => {
+      const high = await newQuote("high"), low = await newQuote(), calls = providerCalls;
+      assert.equal(high.thinkingLevel, "high"); assert.ok(high.maximum > low.maximum);
+      const stored = (await db.query("select thinking_level from zebby_quotes where id=$1", [high.id])).rows[0];
+      assert.equal(stored.thinking_level, "high");
+      assert.deepEqual((await handle("GET", "/v1/catalog")).models.map((model) => model.id), ["gpt-6.1-sol", "gpt-6-astra"]);
+      for (const model of ["gpt-6-luna", "claude-sonnet-5-5"]) await assert.rejects(handle("POST", "/v1/quotes", { model, kind: "plan", input }));
+      await assert.rejects(newQuote("off"));
+      await assert.rejects(handle("POST", "/v1/analysis", { quoteId: high.id, requestId: randomUUID(), input, thinkingLevel: "max" }));
+      assert.equal(providerCalls, calls); assert.equal((await wallet()).reserved, 0);
+      // Apply the additive migration twice to an existing quote without losing it.
+      const migration = await readFile(new URL("../credits-service/migrations/20261010_analysis_thinking.sql", import.meta.url), "utf8");
+      await db.exec(migration); await db.exec(migration);
+      assert.equal((await db.query("select thinking_level from zebby_quotes where id=$1", [high.id])).rows[0].thinking_level, "high");
+    });
     await t.test("quotes bind ownership and content, and duplicate analysis charges once", async () => {
       const quote = await newQuote(), id = randomUUID();
       await assert.rejects(analyze(quote.id, id, input, "other"), /fresh/);
       await assert.rejects(analyze(quote.id, id, { ...input, resumeText: input.resumeText + "invented" }));
-      const response = await analyze(quote.id, id); assert.equal(response.result.score, 68); assert.equal(response.wallet.used, 5 * NANODOLLARS_PER_CREDIT);
+      const response = await analyze(quote.id, id); assert.equal(response.result.score, 68); assert.equal(response.wallet.used, 100 * NANODOLLARS_PER_CREDIT);
+      assert.equal(lastProviderRequest.reasoning.effort, "low"); assert.equal(lastProviderRequest.max_output_tokens, outputLimit("plan", "low"));
       assert.equal(response.wallet.reserved, 0); const calls = providerCalls;
-      await analyze(quote.id, id); assert.equal(providerCalls, calls); assert.equal((await wallet()).used, 5 * NANODOLLARS_PER_CREDIT);
+      await analyze(quote.id, id); assert.equal(providerCalls, calls); assert.equal((await wallet()).used, 100 * NANODOLLARS_PER_CREDIT);
       await assert.rejects(analyze(quote.id));
     });
     await t.test("lost paid replies recover with the same request, including after a restart before local save", async () => {
@@ -263,14 +281,14 @@ test("PostgreSQL ledger and service integration", async (t) => {
       const client = new CreditsClient(config.publicUrl, options);
       client.restore(JSON.stringify({ url: config.publicUrl, session: { access: "owner", refresh: "fixture", expires: Date.now() + 3600000, email: "peer@example.com", id: userId } }));
       assert.equal((await client.analyze(quote.id, input, new AbortController().signal, source)).score, 68);
-      assert.equal(providerCalls, calls + 1); assert.equal((await wallet()).used, before + 5 * NANODOLLARS_PER_CREDIT);
+      assert.equal(providerCalls, calls + 1); assert.equal((await wallet()).used, before + 100 * NANODOLLARS_PER_CREDIT);
       const originalId = JSON.parse(stored).pending[0].requestId;
       const restarted = new CreditsClient(config.publicUrl, options); restarted.restore(stored);
       const recovery = await restarted.recoveryQuote(source, input); assert.equal(recovery.recovery, true); assert.equal(recovery.maximum, 0);
       assert.equal((await restarted.analyze(quote.id, input, new AbortController().signal, source)).score, 68);
       assert.equal(JSON.parse(stored).pending[0].requestId, originalId); assert.equal(providerCalls, calls + 1);
       await restarted.acknowledge(quote.id); assert.equal(JSON.parse(stored).pending.length, 0);
-      assert.equal((await wallet()).used, before + 5 * NANODOLLARS_PER_CREDIT);
+      assert.equal((await wallet()).used, before + 100 * NANODOLLARS_PER_CREDIT);
     });
     await t.test("malformed model output and provider failures refund the hold", async () => {
       const previous = await wallet(); failProvider = true;

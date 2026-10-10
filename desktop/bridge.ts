@@ -2,6 +2,7 @@ import type { LocalModelStatus } from "./local-model-catalog";
 import type { UpdateState } from "./release-updates";
 import type { AnalysisProvider, AnalysisSource, CreditQuote, CreditsState } from "../shared/online-models";
 import type { WalletPairing } from "../shared/wallet-access";
+import type { ThinkingCapability, ThinkingPreferences } from "../shared/thinking";
 
 export type DesktopState = {
   filePath: string;
@@ -9,6 +10,9 @@ export type DesktopState = {
   dirty: boolean;
   startupError: string;
   hasApiKey: boolean;
+  apiKeyHint: string;
+  anthropicKeyHint: string;
+  thinkingLevels: ThinkingPreferences;
   analysisProvider: AnalysisProvider;
   hasAnthropicKey: boolean;
   openaiModel: string;
@@ -44,6 +48,7 @@ export type DesktopBridge = {
   setApiKey(value: string): Promise<DesktopState>;
   setAnthropicKey(value: string): Promise<DesktopState>;
   setOnlineModel(provider: "openai" | "anthropic" | "credits", model: string): Promise<DesktopState>;
+  setThinkingLevel(value: { provider: AnalysisProvider; model: string; level: string }): Promise<DesktopState>;
   refreshCredits(): Promise<DesktopState>;
   refreshCreditAccess(): Promise<DesktopState>;
   saveCreditRecoveryCode(rotate?: boolean): Promise<{ saved: boolean; state: DesktopState }>;
@@ -59,6 +64,7 @@ export type DesktopBridge = {
   setAnalysisProvider(value: DesktopState["analysisProvider"]): Promise<DesktopState>;
   setOllamaConfig(value: { url: string; model: string }): Promise<DesktopState>;
   listOllamaModels(url: string): Promise<string[]>;
+  ollamaThinkingCapability(url: string, model: string): Promise<ThinkingCapability>;
   selectLocalModel(id: string): Promise<DesktopState>;
   pauseModelDownload(): Promise<DesktopState>;
   resumeModelDownload(id: string, termsVersion?: string): Promise<DesktopState>;

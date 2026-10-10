@@ -3,6 +3,24 @@ import { useState } from "react";
 import { formatModelBytes, LOCAL_MODELS, type LocalModel, type LocalModelStatus } from "../local-model-catalog";
 import type { DesktopState } from "../bridge";
 import SettingsAction from "./SettingsAction";
+import type { ChangeAnalysisState } from "./ThinkingSettings";
+
+export function LocalModelSelect({ state, onState, disabled = false, onBusy }: { state: DesktopState; onState: ChangeAnalysisState;
+  disabled?: boolean; onBusy?: (busy: boolean) => void }) {
+  const [working, setWorking] = useState(false), [error, setError] = useState("");
+  return <div className="analysis-model-control"><label className="field local-model-field"><span>Local model</span>
+    <select value={state.builtInModelId || ""} disabled={disabled || working} aria-describedby="local-download-help"
+      onChange={async (event) => { if (!event.target.value) return; setWorking(true); onBusy?.(true); setError("");
+        try { await onState(await window.desktop!.selectLocalModel(event.target.value)); }
+        catch (cause) { setError(cause instanceof Error ? cause.message : "Could not select the model. Try again."); }
+        finally { setWorking(false); onBusy?.(false); } }}>
+      <option value="" disabled>Choose a model to download</option>
+      {[...LOCAL_MODELS].sort((a, b) => b.released.localeCompare(a.released)).map((model) => <option value={model.id} key={model.id}>
+        {model.name} ({model.tier}, {formatModelBytes(model.bytes)})
+        {state.localModels.some((status) => status.id === model.id && status.status === "ready") ? ", installed" : ""}
+      </option>)}
+    </select></label>{error && <p className="form-error" role="alert">{error}</p>}</div>;
+}
 
 function downloadState(model: LocalModel, status: LocalModelStatus) {
   if (status.status === "ready") return "Ready";
@@ -13,7 +31,8 @@ function downloadState(model: LocalModel, status: LocalModelStatus) {
   return "Not downloaded";
 }
 
-export default function LocalModelsSettings({ state, onState }: { state: DesktopState; onState: (state: DesktopState) => void }) {
+export default function LocalModelsSettings({ state, onState, hideSelector = false }: {
+  state: DesktopState; onState: ChangeAnalysisState; hideSelector?: boolean }) {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   const selected = LOCAL_MODELS.find((model) => model.id === state.builtInModelId);
@@ -27,7 +46,7 @@ export default function LocalModelsSettings({ state, onState }: { state: Desktop
 
   async function run(action: () => Promise<DesktopState>) {
     setWorking(true); setError("");
-    try { onState(await action()); }
+    try { await onState(await action()); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "The model action failed. Try again."); }
     finally { setWorking(false); }
   }
@@ -52,16 +71,7 @@ export default function LocalModelsSettings({ state, onState }: { state: Desktop
   }
 
   return <div className="local-model-settings">
-    <label className="field local-model-field"><span>Local model</span>
-      <select value={state.builtInModelId || ""} disabled={working} aria-describedby="local-download-help"
-        onChange={(event) => { if (event.target.value) void run(() => window.desktop!.selectLocalModel(event.target.value)); }}>
-        <option value="" disabled>Choose a model to download</option>
-        {LOCAL_MODELS.map((model) => <option value={model.id} key={model.id}>
-          {model.name} ({model.tier}, {formatModelBytes(model.bytes)})
-          {statuses.some((status) => status.id === model.id && status.status === "ready") ? ", installed" : ""}
-        </option>)}
-      </select>
-    </label>
+    {!hideSelector && <LocalModelSelect state={state} onState={onState} disabled={working} />}
     <p id="local-download-help" className="settings-help">Models download when selected and run on your CPU. LFM2.5 and Gemma require agreement to their terms.</p>
     {selected && current && <div className="selected-model-detail">
       <p className="model-description">{selected.description}</p>

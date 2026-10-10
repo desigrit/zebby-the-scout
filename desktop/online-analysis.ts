@@ -1,4 +1,4 @@
-import { onlineModel, outputLimit, type AnalysisKind, type TokenUsage } from "../shared/online-models.ts";
+import { onlineModel, outputLimit, validateOnlineThinking, type AnalysisKind, type TokenUsage } from "../shared/online-models.ts";
 type Content = { type: string; text?: string };
 type ProviderPayload = { status?: string; stop_reason?: string; output?: { content?: Content[] }[]; content?: Content[];
   usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
@@ -6,23 +6,28 @@ type ProviderPayload = { status?: string; stop_reason?: string; output?: { conte
     cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number } } };
 
 export async function onlineAnalysis(options: { model: string; key: string; instructions: string; input: unknown;
-  name: string; schema: Record<string, unknown>; kind: AnalysisKind; signal?: AbortSignal; fetcher?: typeof fetch }) {
+  name: string; schema: Record<string, unknown>; kind: AnalysisKind; thinkingLevel?: string; signal?: AbortSignal; fetcher?: typeof fetch }) {
   const model = onlineModel(options.model);
+  const thinkingLevel = validateOnlineThinking(model, options.thinkingLevel);
   if (!options.key) throw new Error(`Add a ${model.provider === "openai" ? "OpenAI" : "Anthropic"} API key in Settings.`);
   const send = options.fetcher || fetch;
-  const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(180000)]) : AbortSignal.timeout(180000);
+  const deadline = ["high", "xhigh", "max"].includes(thinkingLevel) ? 480000 : 180000;
+  const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(deadline)]) : AbortSignal.timeout(deadline);
   const isOpenAI = model.provider === "openai";
+  const haiku = model.id === "claude-haiku-4-5-20251001";
   const response = await send(isOpenAI ? "https://api.openai.com/v1/responses" : "https://api.anthropic.com/v1/messages", {
     method: "POST", signal, headers: isOpenAI ? { "Content-Type": "application/json", Authorization: `Bearer ${options.key}` }
       : { "Content-Type": "application/json", "x-api-key": options.key, "anthropic-version": "2023-06-01" },
     body: JSON.stringify(isOpenAI ? {
-      model: model.id, reasoning: { effort: "low" }, store: false, max_output_tokens: outputLimit(options.kind),
+      model: model.id, reasoning: { effort: thinkingLevel === "off" ? "none" : thinkingLevel }, store: false,
+      max_output_tokens: outputLimit(options.kind, thinkingLevel),
       instructions: options.instructions, input: Array.isArray(options.input) ? options.input : JSON.stringify(options.input),
       text: { format: { type: "json_schema", name: options.name, strict: true, schema: options.schema } },
     } : {
-      model: model.id, max_tokens: outputLimit(options.kind), system: options.instructions,
+      model: model.id, max_tokens: outputLimit(options.kind, thinkingLevel), system: options.instructions,
       messages: [{ role: "user", content: JSON.stringify(options.input) }],
-      output_config: { format: { type: "json_schema", schema: options.schema } },
+      thinking: haiku ? thinkingLevel === "on" ? { type: "enabled", budget_tokens: 4096 } : { type: "disabled" } : { type: "adaptive" },
+      output_config: { ...(!haiku ? { effort: thinkingLevel } : {}), format: { type: "json_schema", schema: options.schema } },
     }),
   });
   const payload = await response.json() as ProviderPayload;

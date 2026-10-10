@@ -52,7 +52,7 @@ test("Ollama settings normalize URLs and list installed models", async () => {
     return Response.json({ models: [{ name: "qwen3:8b" }, { name: "qwen3.8:27b" }] });
   });
   assert.equal(requested, "http://localhost:11434/api/tags");
-  assert.deepEqual(models, ["qwen3:8b", "qwen3.8:27b"]);
+  assert.deepEqual(models, ["qwen3.8:27b", "qwen3:8b"]);
 });
 
 test("Ollama analysis requests structured JSON without streaming", async () => {

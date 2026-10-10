@@ -1,8 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, Check, ChevronRight, Coins, Download, ExternalLink, KeyRound, LoaderCircle, RefreshCw, Server, X } from "lucide-react";
 import type { DesktopState } from "../bridge";
-import { CREDIT_PACKS, formatCredits, onlineModel, quoteNeedsCredits, type AnalysisProvider, type AnalysisSource, type CreditQuote } from "../../shared/online-models";
-import { AnalysisSettings, OnlineModelSelect, providerReady } from "./AnalysisSettings";
+import { CREDIT_PACKS, CREDIT_ESTIMATE_DESCRIPTION, formatCredits, onlineModel, quoteNeedsCredits, type AnalysisProvider, type AnalysisSource, type CreditQuote } from "../../shared/online-models";
+import { AnalysisSettings, providerReady } from "./AnalysisSettings";
+import { OnlineModelControls } from "./ThinkingSettings";
+import { thinkingLabel } from "../../shared/thinking";
 type Authorization = { quoteId?: string };
 type Flow = { prepare: (source: AnalysisSource) => Promise<Authorization | null>; canAutoAnalyze: () => boolean;
   openCredits: () => void; state: DesktopState; updateState: (state: DesktopState) => void };
@@ -143,10 +145,10 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
               <input type="radio" name="credit-pack" value={item.id} checked={pack === item.id} onChange={() => setPack(item.id)} />
               <span className="credit-pack-badge">{item.id === "regular" ? "Suggested start" : ""}</span>
               <strong className="credit-pack-price">${item.dollars}</strong><span className="credit-pack-count">{item.credits.toLocaleString()} credits</span>
-              <small>About {item.analyses.toLocaleString()} analyses using GPT-6 Luna</small>
+              <small title={CREDIT_ESTIMATE_DESCRIPTION}>About {item.analyses.toLocaleString()} analyses using GPT-6.1 Sol at High</small>
               <span className="credit-pack-selection">{pack === item.id ? <><Check size={16} />Selected</> : "Select"}</span>
             </label>)}
-          </fieldset><p className="settings-help">Prices in USD. Estimates use 20,000 input and 6,000 output tokens, including cache writes. Usage varies by job and model. You confirm the maximum before each analysis.</p>
+          </fieldset><p className="settings-help">Prices in USD. {CREDIT_ESTIMATE_DESCRIPTION}</p>
           {state.credits.signedIn && <p className="credit-account">Credits will be added to your connected wallet.</p>}
           {!state.credits.signedIn && <p className="settings-help">Already have credits? Restore or connect this computer in Settings.</p>}
           {!state.canSaveApiKey && <p className="form-error">Secure storage is unavailable. Restore access to Windows secure storage or Mac Keychain to buy credits.</p>}
@@ -160,7 +162,7 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
         </div>}
         {scene === "ready" && <>
           <div className="credit-ready"><Check size={26} /><strong>{formatCredits(remaining)} credits available</strong></div>
-          <OnlineModelSelect state={state} onState={updateState} provider="credits" />
+          <OnlineModelControls state={state} onState={updateState} provider="credits" disabled={working} onBusy={setWorking} />
           <p className="settings-help">You can change the model any time in Settings.</p>
           {!state.credits.recoverySaved && <div className="credit-recovery-prompt"><span><strong>Keep your credits if you reinstall</strong><small>Save a recovery code. You can also do this in Settings.</small></span>
             <button className="button button-secondary" type="button" disabled={working} onClick={() => void action(async () => {
@@ -171,10 +173,10 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
         </>}
         {scene === "quote" && <>
           {quote?.recovery ? <div className="credit-ready"><Check size={22} /><strong>{quote.pending ? "Your previous analysis is still running" : "Your previous result is ready"}</strong></div>
-            : quote && <OnlineModelSelect state={state} onState={(next) => { updateState(next); void requestQuote(); }} provider="credits" disabled={working} />}
+            : quote && <OnlineModelControls state={state} onState={async (next) => { updateState(next); await requestQuote(); }} provider="credits" disabled={working} onBusy={setWorking} />}
           {working && <p className="credit-quote-loading" role="status"><LoaderCircle size={20} className="spin" />Preparing your estimate</p>}
           {quote && <div className="credit-quote-summary"><span>{quote.recovery ? onlineModel(quote.model).name : "Maximum for this analysis"}</span><strong>{quote.recovery ? "No additional credits" : `${formatCredits(quote.maximum)} credits`}</strong>
-            <small>{formatCredits(remaining)} available</small><p>Only actual model usage is charged. Unused reserved credits return to your balance.</p></div>}
+            <small>{formatCredits(remaining)} available{quote.thinkingLevel ? ` · ${thinkingLabel(quote.thinkingLevel)} thinking` : ""}</small><p>Only actual model usage is charged. Unused reserved credits return to your balance.</p></div>}
           <p className="settings-help">Job text, resume text, and your overview go to Zebby and {onlineModel(state.credits.model).provider === "openai" ? "OpenAI" : "Anthropic"}.</p>
           {quote && quoteNeedsCredits(quote, remaining) && <p className="form-error">Add credits to cover this analysis.</p>}
           {error && <button className="button button-secondary" type="button" disabled={working} onClick={() => {

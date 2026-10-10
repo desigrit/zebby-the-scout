@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { needsServiceWakeup, waitForCreditsService } from "./credits-service-ready.ts";
-import { onlineModel, type AnalysisSource, type CreditQuote, type CreditsState, type Wallet, type AnalysisKind } from "../shared/online-models.ts";
+import { creditModel, DEFAULT_CREDIT_MODEL, EFFORT_LEVELS, validateOnlineThinking, type AnalysisSource, type CreditQuote, type CreditsState, type Wallet, type AnalysisKind } from "../shared/online-models.ts";
 import { deviceNameSchema, deviceTokenSchema, guestSessionSchema, pairingCodeSchema, pairingSchema, recoveryCodeSchema,
   walletAccessSchema, type WalletAccess, type WalletPairing } from "../shared/wallet-access.ts";
 const integer = z.number().int().safe();
@@ -156,7 +156,7 @@ export class CreditsClient {
       const response = await fetcher(this.url + path, { method: body === undefined ? "GET" : "POST",
         headers: { "Content-Type": "application/json", ...((authenticated || deviceToken) ? { Authorization: `Bearer ${deviceToken || this.session!.access}` } : {}) },
         body: body === undefined ? undefined : JSON.stringify(body),
-        signal: AbortSignal.any([activeSignal, AbortSignal.timeout(path === "/v1/analysis" ? 210000 : 20000)]) });
+        signal: AbortSignal.any([activeSignal, AbortSignal.timeout(path === "/v1/analysis" ? 510000 : 20000)]) });
       let result: unknown;
       try { result = await response.json(); } catch { throw new Error("The credit service returned an unreadable response."); }
       this.checkGeneration(generation);
@@ -366,10 +366,12 @@ export class CreditsClient {
     if (result.status === "paid") { this.wallet = walletSchema.parse(result.wallet); this.stale = false; this.error = ""; await this.persist(); this.options.onChange(); }
     return result.status;
   }
-  async quote(kind: AnalysisKind, input: unknown, model: string): Promise<CreditQuote> {
-    onlineModel(model);
-    return z.object({ id: z.string().uuid(), model: z.string(), maximum: integer.positive(), expiresAt: z.string() })
-      .parse(await this.request("/v1/quotes", { kind, input, model }));
+  async quote(kind: AnalysisKind, input: unknown, model: string, thinkingLevel?: string): Promise<CreditQuote> {
+    const level = validateOnlineThinking(creditModel(model), thinkingLevel);
+    const quote = z.object({ id: z.string().uuid(), model: z.string(), thinkingLevel: z.enum(EFFORT_LEVELS), maximum: integer.positive(), expiresAt: z.string() })
+      .parse(await this.request("/v1/quotes", { kind, input, model, thinkingLevel: level }));
+    if (quote.model !== model || quote.thinkingLevel !== level) throw new Error("The service returned a different model or thinking level. Request a fresh quote.");
+    return quote;
   }
   private async inspect(run: PendingRun) {
     const generation = this.generation;
@@ -391,7 +393,7 @@ export class CreditsClient {
     } catch (error) { if (error instanceof HttpError && error.status === 404) { await this.acknowledge(run.quoteId); return null; } throw error; }
   }
   async acknowledge(quoteId: string) { this.pending.delete(quoteId); await this.persist(); }
-  async analyze(quoteId: string, input: unknown, signal: AbortSignal, source?: AnalysisSource, model = "gpt-6-luna") {
+  async analyze(quoteId: string, input: unknown, signal: AbortSignal, source?: AnalysisSource, model = DEFAULT_CREDIT_MODEL) {
     z.string().uuid().parse(quoteId);
     const generation = this.generation, hash = hashInput(input);
     let run = this.pending.get(quoteId);

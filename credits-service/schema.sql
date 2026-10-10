@@ -13,8 +13,12 @@ create table if not exists public.zebby_purchases (
 create table if not exists public.zebby_quotes (
   id uuid primary key, user_id uuid not null, model text not null, kind text not null check(kind in ('plan','match')),
   content_hash text not null, maximum bigint not null check(maximum > 0), price_version text not null,
+  thinking_level text not null default 'low' check(thinking_level in ('low','medium','high','xhigh','max')),
   expires_at timestamptz not null, claimed_by uuid, created_at timestamptz not null default now()
 );
+-- Upgrade existing deployments without changing wallet balances or stored results.
+alter table public.zebby_quotes add column if not exists thinking_level text not null default 'low'
+  check(thinking_level in ('low','medium','high','xhigh','max'));
 create table if not exists public.zebby_runs (
   id uuid primary key, user_id uuid not null, quote_id uuid not null references public.zebby_quotes(id),
   model text not null, kind text not null, maximum bigint not null, cost bigint not null default 0,

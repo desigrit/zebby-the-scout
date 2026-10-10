@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { ServiceConfig } from "./config.ts";
-import { CREDIT_PACKS, ONLINE_MODELS, PRICE_VERSION, NANODOLLARS_PER_CREDIT, creditPack, onlineModel,
-  maximumCost, usageCost } from "../shared/online-models.ts";
+import { CREDIT_PACKS, CREDIT_MODELS, EFFORT_LEVELS, PRICE_VERSION, NANODOLLARS_PER_CREDIT, creditPack, creditModel, onlineModel,
+  maximumCost, usageCost, validateOnlineThinking } from "../shared/online-models.ts";
 import { planInstructions, planSchema, matchInstructions, matchSchema } from "../desktop/analysis-contracts.ts";
 import { onlineAnalysis } from "../desktop/online-analysis.ts";
 import { validateInput, validateResult } from "./validation.ts";
@@ -13,7 +13,7 @@ import { z } from "zod";
 const uuid = z.string().uuid();
 const kindSchema = z.enum(["plan", "match"]);
 type PurchaseRow = { id: string; user_id: string; pack: string; cents: number; session_id: string | null; paid: boolean };
-type QuoteRow = { id: string; kind: "plan" | "match"; model: string; price_version: string };
+type QuoteRow = { id: string; kind: "plan" | "match"; model: string; thinking_level: string; price_version: string };
 type RunRow = { status: "reserved" | "completed" | "failed"; fresh?: boolean; result?: Record<string, unknown> | null;
   id: string; quote_id: string; model: string; kind: "plan" | "match"; cost: number };
 const stripeCheckout = z.object({ id: z.string().regex(/^cs_[a-zA-Z0-9_]+$/), url: z.string().url() });
@@ -53,7 +53,7 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
   }
   const digest = (value: string) => createHash("sha256").update(value).digest("hex");
   const providerKey = (model: string) => onlineModel(model).provider === "openai" ? config.openaiKey : config.anthropicKey;
-  function configuredModel(id: string) { const model = onlineModel(id); if (!providerKey(id)) throw new ServiceError("This online provider is not available yet.", 503); return model; }
+  function configuredModel(id: string) { const model = creditModel(id); if (!providerKey(id)) throw new ServiceError("This online provider is not available yet.", 503); return model; }
   async function webhook(raw: Buffer, signature: string) {
     let event: { id: string; livemode: boolean; type: string; data: { object?: unknown } };
     try { event = z.object({ id: z.string(), livemode: z.boolean(), type: z.string(), data: z.object({ object: z.unknown() }) })
@@ -86,7 +86,7 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
   async function handle(method: string, path: string, body: unknown, token: string, signal: AbortSignal, ip = "unknown") {
     rateLimit("ip:" + ip, 120);
     if (method === "GET" && path === "/health") return { ok: true, mode: config.live ? "live" : "test" };
-    if (method === "GET" && path === "/v1/catalog") return { packs: CREDIT_PACKS, models: ONLINE_MODELS,
+    if (method === "GET" && path === "/v1/catalog") return { packs: CREDIT_PACKS, models: CREDIT_MODELS,
       priceVersion: PRICE_VERSION, mode: config.live ? "live" : "test" };
     if (method === "POST" && path === "/v1/auth/refresh") {
       const value = z.object({ refreshToken: z.string().min(1).max(8192) }).strict().parse(body);
@@ -135,20 +135,22 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
       return { status: session.status === "expired" ? "expired" : "pending" };
     }
     if (method === "POST" && path === "/v1/quotes") {
-      const value = z.object({ model: z.string(), kind: kindSchema, input: z.unknown() }).strict().parse(body);
+      const value = z.object({ model: z.string(), kind: kindSchema, thinkingLevel: z.enum(EFFORT_LEVELS).default("high"), input: z.unknown() }).strict().parse(body);
       const model = configuredModel(value.model), input = validateInput(value.input, value.kind);
+      const thinkingLevel = validateOnlineThinking(model, value.thinkingLevel);
       const instructions = value.kind === "plan" ? planInstructions : matchInstructions;
-      const maximum = maximumCost(model, Buffer.byteLength(JSON.stringify(input)), Buffer.byteLength(instructions), value.kind);
-      const quote = { id: randomUUID(), user_id: account.id, model: model.id, kind: value.kind,
+      const maximum = maximumCost(model, Buffer.byteLength(JSON.stringify(input)), Buffer.byteLength(instructions), value.kind, thinkingLevel);
+      const quote = { id: randomUUID(), user_id: account.id, model: model.id, kind: value.kind, thinking_level: thinkingLevel,
         content_hash: digest(JSON.stringify(input)), maximum, price_version: PRICE_VERSION, expires_at: new Date(now() + 5 * 60000).toISOString() };
       await insert("quotes", quote);
-      return { id: quote.id, model: quote.model, maximum, expiresAt: quote.expires_at };
+      return { id: quote.id, model: quote.model, thinkingLevel, maximum, expiresAt: quote.expires_at };
     }
     if (method === "POST" && path === "/v1/analysis") {
       const value = z.object({ quoteId: uuid, requestId: uuid, input: z.unknown() }).strict().parse(body);
       const [quote] = await rows<QuoteRow>("quotes", `id=eq.${value.quoteId}&user_id=eq.${account.id}&select=*`);
       if (!quote || quote.price_version !== PRICE_VERSION) throw new ServiceError("Request a fresh analysis quote.");
       const kind = kindSchema.parse(quote.kind), model = configuredModel(quote.model), input = validateInput(value.input, kind);
+      const thinkingLevel = validateOnlineThinking(model, quote.thinking_level);
       const run = await rpc<RunRow>("reserve", { p_user: account.id, p_id: value.requestId, p_quote: quote.id, p_hash: digest(JSON.stringify(input)) });
       if (!run.fresh) {
         if (run.status === "completed" && run.result) return { result: run.result, wallet: await rpc("wallet", { p_user: account.id }) };
@@ -158,7 +160,7 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
         signal.throwIfAborted();
         const response = await onlineAnalysis({ model: model.id, key: providerKey(model.id), kind,
           instructions: kind === "plan" ? planInstructions : matchInstructions, schema: kind === "plan" ? planSchema : matchSchema,
-          name: kind === "plan" ? "resume_plan" : "resume_match", input, signal, fetcher: send });
+          name: kind === "plan" ? "resume_plan" : "resume_match", input, thinkingLevel, signal, fetcher: send });
         signal.throwIfAborted();
         const result = validateResult(response.result, kind), cost = usageCost(model, response.usage);
         const settled = await rpc<RunRow>("finish", { p_user: account.id, p_id: value.requestId, p_cost: cost, p_result: result, p_success: true });

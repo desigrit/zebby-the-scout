@@ -136,7 +136,7 @@ export class LocalModelEngine {
       "--model", modelFile, "--host", "127.0.0.1", "--port", String(port),
       "--ctx-size", String(model.context), "--parallel", "1", "--threads", String(threads),
       "--threads-batch", String(threads), "--gpu-layers", "0", "--no-kv-offload", "--no-op-offload", "--prio", "-1",
-      "--no-webui", "--no-agent", "--log-disable", "--no-context-shift", "--jinja", "--reasoning", "off"], {
+      "--no-webui", "--no-agent", "--log-disable", "--no-context-shift", "--jinja", "--reasoning", "auto"], {
       cwd: path.dirname(executable), windowsHide: true, stdio: ["pipe", "ignore", "ignore"],
       env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", LLAMA_API_KEY: this.secret },
     });
@@ -167,7 +167,12 @@ export class LocalModelEngine {
     throw new Error("The local model took too long to load. Close other apps or choose a smaller model.");
   }
 
-  analyze(id: string, instructions: string, input: unknown, schema: Record<string, unknown>, maxTokens = 1800, requestSignal?: AbortSignal): Promise<Record<string, unknown>> {
+  analyze(id: string, instructions: string, input: unknown, schema: Record<string, unknown>, maxTokens = 1800, requestSignal?: AbortSignal, thinkingLevel = "off"): Promise<Record<string, unknown>> {
+    if (!["off", "on"].includes(thinkingLevel) || thinkingLevel === "on" && !getLocalModel(id).supportsThinking) {
+      return Promise.reject(new Error("This downloaded model does not support that thinking level."));
+    }
+    const thinking = thinkingLevel === "on";
+    if (thinking) maxTokens += 4096;
     if (this.shuttingDown) return Promise.reject(new Error("The app is closing."));
     this.pending++; clearTimeout(this.idleTimer);
     const result = this.requests.then(async () => {
@@ -199,9 +204,10 @@ export class LocalModelEngine {
       try {
         const response = await fetcher(`${this.baseUrl}/v1/chat/completions`, { method: "POST", headers, signal: generationSignal,
           body: JSON.stringify({ messages: localModelMessages(id, instructions, content),
-            stream: true, temperature: 0, ...getLocalModel(id).sampling, seed: 0, max_tokens: maxTokens,
+            stream: true, temperature: 0, ...getLocalModel(id).sampling,
+            ...(thinking ? { temperature: 0.6, top_k: 20, top_p: 0.95, min_p: 0 } : {}), seed: 0, max_tokens: maxTokens,
             response_format: { type: "json_object", schema: localModelResponseSchema(id, schema, input) },
-            chat_template_kwargs: { enable_thinking: false } }) });
+            chat_template_kwargs: { enable_thinking: thinking } }) });
         const payload = await readLocalCompletion(response, generationSignal, () => {
           watchdog.progress();
           if (!responded) { responded = true; this.diagnostic(`Local model first token (${id}, ${Date.now() - started} ms)`); }

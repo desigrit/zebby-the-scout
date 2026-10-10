@@ -81,6 +81,7 @@ try {
       const target = String(url);
       if (target.startsWith("https://api.github.com/")) return Response.json([]);
       if (target.endsWith("/api/tags")) return Response.json({ models: [{ name: "qwen3.8:27b" }, { name: "qwen3:8b" }] });
+      if (target.endsWith("/api/show")) return Response.json({ thinking: { values: [false, true], default: false } });
       const openai = target === "https://api.openai.com/v1/responses";
       if (target.endsWith("/api/chat") || openai) {
         const body = JSON.parse(options.body), qa = globalThis.__emberQA;

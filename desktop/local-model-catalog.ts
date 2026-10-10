@@ -21,6 +21,8 @@ export type LocalModel = {
   minimumFreeMemory: number;
   memoryHint: string;
   basic: boolean;
+  supportsThinking?: boolean;
+  released: string;
   supportsSystemRole?: boolean;
   sampling?: { temperature: number; top_k: number; top_p: number; min_p: number; repeat_penalty: number };
   license?: LocalModelLicense;
@@ -31,7 +33,7 @@ const GiB = 1024 ** 3;
 // Pin both revisions and file hashes. The renderer cannot supply download URLs or paths.
 export const LOCAL_MODELS: readonly LocalModel[] = [
   {
-    id: "smollm2-360m", name: "SmolLM2 360M", tier: "Compact", basic: true,
+    id: "smollm2-360m", name: "SmolLM2 360M", tier: "Compact", basic: true, released: "2024-11",
     description: "Basic keyword coverage and short overview suggestions. Less detailed assessment.",
     bytes: 270590880, filename: "SmolLM2-360M-Instruct-Q4_K_M.gguf",
     sha256: "2fa3f013dcdd7b99f9b237717fa0b12d75bbb89984cc1274be1471a465bac9c2",
@@ -40,7 +42,7 @@ export const LOCAL_MODELS: readonly LocalModel[] = [
     context: 8192, minimumFreeMemory: 1.5 * GiB, memoryHint: "4 GB RAM or more",
   },
   {
-    id: "lfm25-350m", name: "LFM2.5 350M", tier: "Small", basic: false,
+    id: "lfm25-350m", name: "LFM2.5 350M", tier: "Small", basic: false, released: "2026-03-31",
     description: "A small instruction model for extraction, role analysis, and resume suggestions. Quality varies with the task.",
     bytes: 229312224, filename: "LFM2.5-350M-Q4_K_M.gguf",
     sha256: "7e6f72643caafc9a68256686638c4d7916f2cec76d1df478d4c3ddcd95a6aed4",
@@ -55,7 +57,7 @@ export const LOCAL_MODELS: readonly LocalModel[] = [
     },
   },
   {
-    id: "gemma3-270m", name: "Gemma 3 270M", tier: "Small", basic: false, supportsSystemRole: false,
+    id: "gemma3-270m", name: "Gemma 3 270M", tier: "Small", basic: false, supportsSystemRole: false, released: "2025-08-14",
     sampling: { temperature: 1, top_k: 64, top_p: 0.95, min_p: 0, repeat_penalty: 1.1 },
     description: "A small instruction model for role analysis and short overview edits. Quality varies with the task.",
     bytes: 241410624, filename: "gemma-3-270m-it-qat-Q4_0.gguf",
@@ -73,7 +75,7 @@ export const LOCAL_MODELS: readonly LocalModel[] = [
     },
   },
   {
-    id: "qwen3-06b", name: "Qwen3 0.6B", tier: "Small", basic: false,
+    id: "qwen3-06b", name: "Qwen3 0.6B", tier: "Small", basic: false, supportsThinking: true, released: "2025-04-29",
     description: "A small general model for role analysis and resume suggestions. Quality varies with the task.",
     bytes: 639446688, filename: "Qwen3-0.6B-Q8_0.gguf",
     sha256: "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031",
@@ -82,7 +84,7 @@ export const LOCAL_MODELS: readonly LocalModel[] = [
     context: 16384, minimumFreeMemory: 2 * GiB, memoryHint: "8 GB RAM or more",
   },
   {
-    id: "qwen3-4b", name: "Qwen3 4B", tier: "Medium", basic: false,
+    id: "qwen3-4b", name: "Qwen3 4B", tier: "Medium", basic: false, supportsThinking: true, released: "2025-04-29",
     description: "More capacity for detailed role assessment and overview edits. Slower on CPU.",
     bytes: 2497280256, filename: "Qwen3-4B-Q4_K_M.gguf",
     sha256: "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
@@ -91,7 +93,7 @@ export const LOCAL_MODELS: readonly LocalModel[] = [
     context: 32768, minimumFreeMemory: 6 * GiB, memoryHint: "16 GB RAM or more",
   },
   {
-    id: "qwen3-8b", name: "Qwen3 8B", tier: "Larger", basic: false,
+    id: "qwen3-8b", name: "Qwen3 8B", tier: "Larger", basic: false, supportsThinking: true, released: "2025-04-29",
     description: "The largest built-in option for detailed analysis. Allow more time on CPU.",
     bytes: 5027783488, filename: "Qwen3-8B-Q4_K_M.gguf",
     sha256: "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",

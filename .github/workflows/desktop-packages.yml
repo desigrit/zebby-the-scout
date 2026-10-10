@@ -82,6 +82,8 @@ jobs:
           ZEBBY_QA_CHECKS_ONLY: "1"
           ZEBBY_QA_OUTPUT: work/ember-native-qa
       - run: node --experimental-strip-types scripts/qa-local-engine.mjs smollm2-360m
+      - name: Check Qwen thinking mode on CPU
+        run: node --experimental-strip-types scripts/qa-local-engine.mjs qwen3-06b --thinking
       - run: node node_modules/playwright-core/cli.js install chromium
       - run: npm run test:renderer
       - name: Save credits flow review captures
@@ -138,6 +140,8 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm run desktop:build
       - run: node --experimental-strip-types scripts/qa-local-engine.mjs smollm2-360m
+      - name: Check Qwen thinking mode on CPU
+        run: node --experimental-strip-types scripts/qa-local-engine.mjs qwen3-06b --thinking
       - run: node node_modules/playwright-core/cli.js install chromium
       - run: npm run test:renderer
       - name: Save credits flow review captures

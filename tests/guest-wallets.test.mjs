@@ -157,13 +157,13 @@ test("guest credit wallets preserve ownership, payments and recovery", async (t)
       assert.equal(paired.walletId, wallet.walletId);
       assert.deepEqual(await f.request("", "/v1/wallet/connect", { deviceToken: third, name: "Second Windows computer", code: pairing.code }), paired);
       await assert.rejects(f.request("", "/v1/wallet/connect", { deviceToken: token(), name: "Unlinked", code: pairing.code }), (error) => error.status === 400);
-      const quote = await f.request(third, "/v1/quotes", { kind: "match", model: "gpt-6-luna", input });
+      const quote = await f.request(third, "/v1/quotes", { kind: "match", model: "gpt-6.1-sol", input });
       const run = { quoteId: quote.id, requestId: randomUUID(), input };
       assert.equal((await f.request(third, "/v1/analysis", run)).result.score, 68);
       await f.request(another, "/v1/analysis", run);
       assert.equal(f.state.providerCalls, 1);
       const a = await f.request(owner, "/v1/wallet"), b = await f.request(another, "/v1/wallet");
-      assert.equal(a.balance, b.balance); assert.equal(a.used, 1000000);
+      assert.equal(a.balance, b.balance); assert.equal(a.used, 20000000);
     });
     await t.test("expired, cancelled and replaced pairing codes cannot connect computers", async () => {
       let pairing = await f.request(owner, "/v1/wallet/pairing", {});

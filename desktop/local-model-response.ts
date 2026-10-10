@@ -45,7 +45,7 @@ export async function readLocalCompletion(response: Response, signal: AbortSigna
     if (!data) return;
     if (data === "[DONE]") { done = true; return; }
     let payload: { error?: { message?: string }; choices?: Array<{
-      finish_reason?: string | null; delta?: { content?: string } }> };
+      finish_reason?: string | null; delta?: { content?: string; reasoning_content?: string; reasoning?: string } }> };
     try { payload = JSON.parse(data); }
     catch { throw new Error("The local model returned an unreadable analysis. Try again."); }
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
@@ -58,6 +58,8 @@ export async function readLocalCompletion(response: Response, signal: AbortSigna
       if (content.length > 128_000) throw new Error("The local analysis was too long. Try again.");
       progress();
     }
+    // Thinking is progress, but is neither persisted nor parsed as the final answer.
+    if (choice?.delta?.reasoning_content?.length || choice?.delta?.reasoning?.length) progress();
     if (choice?.finish_reason) finishReason = choice.finish_reason;
   }
   try {

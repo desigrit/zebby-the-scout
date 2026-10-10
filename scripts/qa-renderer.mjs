@@ -40,8 +40,8 @@ let plan = { id: "plan-1", listingUrl: "https://example.org/jobs/pm", company: "
 let plans = [plan];
 let lastCurrentOverview = plan.currentOverview;
 const state = { filePath: "example.sqlite", filename: "Applications.sqlite", dirty: false, startupError: "", hasApiKey: false,
-  hasAnthropicKey: false, openaiModel: "gpt-6.1-sol", anthropicModel: "claude-sonnet-5-5",
-  credits: { available: false, signedIn: false, email: "", wallet: null, stale: true, error: "", model: "gpt-6-luna",
+  hasAnthropicKey: false, apiKeyHint: "", anthropicKeyHint: "", thinkingLevels: {}, openaiModel: "gpt-6.1-sol", anthropicModel: "claude-sonnet-5-5",
+  credits: { available: false, signedIn: false, email: "", wallet: null, stale: true, error: "", model: "gpt-6.1-sol",
     access: null, recoverySaved: false, pendingConnection: false },
   analysisProvider: "ollama", ollamaUrl: "http://localhost:11434", ollamaModel: "qwen3.8:27b", canSaveApiKey: true,
   appearance: "light", sidebarCollapsed: false, logsPath: "", platform: "win32",
@@ -149,6 +149,12 @@ try {
       assert.equal(action.radius, '8px'); assert.equal(action.gap, '8px');
       if (action.iconWidth !== undefined) { assert.equal(action.iconWidth, 16); assert.equal(action.iconHeight, 16); }
     }
+    const grid = await page.locator('.settings-page .analysis-primary-fields').evaluate(element => {
+      const children = [...element.children].map(child => child.getBoundingClientRect());
+      return { width: element.clientWidth, offset: Math.abs(children[0].top - children[1].top), overflow: element.scrollWidth > element.clientWidth };
+    });
+    assert.equal(grid.overflow, false, 'Analysis controls fit the available width');
+    if (grid.width >= 500) assert.ok(grid.offset <= 1, 'Provider and model or server align on the same row');
   }
   async function assertActivityTooltipBounds() {
     const bounds = await page.locator('.activity-bars').boundingBox();
@@ -236,7 +242,7 @@ try {
       resumeMode: "none", failedResumes: 0, warmups: 0, warmupMode: "ready", finishWarmup: null };
     window.modelQA = { confirmDelete: false, deleteRequests: [], selections: [], rejectSidebarSave: false,
       updateState, installRequests: 0, failInstall: false, failCheck: false, finishDownload: null,
-      logOpens: 0, failLogOpen: false, databaseRequests: [], update,
+      logOpens: 0, failLogOpen: false, failKeySave: false, thinkingSelections: [], databaseRequests: [], update,
       setPlatform: (platform) => { initialState.platform = platform; } };
     window.desktop = { state: async () => initialState, onDatabaseChanged: () => () => {}, onNavigate: () => () => {},
       onLocalModelsChanged: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
@@ -284,7 +290,13 @@ try {
         return window.creditQA.payment;
       },
       quoteCreditAnalysis: async () => window.creditQA.quote || { id: "quote-fixture", model: initialState.credits.model,
-        maximum: 20000000, expiresAt: "2026-09-30T20:05:00Z" },
+        thinkingLevel: initialState.thinkingLevels[JSON.stringify(["credits", initialState.credits.model])] || "high",
+        maximum: 20000000, expiresAt: new Date(Date.now() + 300000).toISOString() },
+      setThinkingLevel: async ({ provider, model, level }) => {
+        const key = JSON.stringify(provider === "ollama" ? [provider, initialState.ollamaUrl, model] : [provider, model]);
+        initialState.thinkingLevels[key] = level; window.modelQA.thinkingSelections.push({ provider, model, level }); return snapshot();
+      },
+      ollamaThinkingCapability: async () => ({ options: [{ value: "off", label: "Off" }, { value: "on", label: "On" }], defaultValue: "off", known: true }),
       setOnlineModel: async (provider, model) => {
         window.creditQA.models.push({ provider, model });
         if (provider === "credits") updateCredits({ model });
@@ -313,8 +325,14 @@ try {
       listOllamaModels: async () => ["qwen3.8:27b", "qwen3:8b"],
       setAnalysisProvider: async (provider) => { initialState.analysisProvider = provider; return snapshot(); },
       setOllamaConfig: async ({ url, model }) => { initialState.ollamaUrl = url; initialState.ollamaModel = model; return snapshot(); },
-      setApiKey: async (key) => { initialState.hasApiKey = Boolean(key); return snapshot(); },
-      setAnthropicKey: async (key) => { initialState.hasAnthropicKey = Boolean(key); return snapshot(); },
+      setApiKey: async (key) => {
+        if (window.modelQA.failKeySave) throw new Error("Synthetic key save failure. Try again.");
+        initialState.hasApiKey = Boolean(key); initialState.apiKeyHint = key ? "sk-••••••••" + key.slice(-4) : ""; return snapshot();
+      },
+      setAnthropicKey: async (key) => {
+        if (window.modelQA.failKeySave) throw new Error("Synthetic key save failure. Try again.");
+        initialState.hasAnthropicKey = Boolean(key); initialState.anthropicKeyHint = key ? "sk-ant-••••••••" + key.slice(-4) : ""; return snapshot();
+      },
       setAppearance: async (appearance) => { initialState.appearance = appearance; return snapshot(); },
       setSidebarCollapsed: async (collapsed) => {
         if (window.modelQA.rejectSidebarSave) throw new Error("Synthetic settings save error");
@@ -747,8 +765,10 @@ try {
   assert.equal(await page.getByRole("alert").count(), 0);
   await page.getByRole("combobox", { name: "Model", exact: true }).getByRole("option", { name: "qwen3.8:27b", exact: true }).waitFor({ state: "attached" });
   await assertSettingsActions();
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await page.getByText('Server settings saved.', { exact: true }).waitFor();
+  await page.getByRole('combobox', { name: 'Model', exact: true }).selectOption('qwen3:8b');
+  await page.getByRole('combobox', { name: 'Model', exact: true }).selectOption('qwen3.8:27b');
+  assert.equal(await page.evaluate(() => window.desktop.state().then(state => state.ollamaModel)), 'qwen3.8:27b');
+  await page.getByRole('combobox', { name: 'Thinking level', exact: true }).selectOption('on');
   await captureSettings('settings-actions-server-windows-light.png', false);
   await provider.selectOption("builtin");
   const localModel = page.getByRole("combobox", { name: "Local model", exact: true });
@@ -783,14 +803,53 @@ try {
   await page.getByRole('button', { name: 'Save key', exact: true }).click();
   await page.getByRole('button', { name: 'Remove key', exact: true }).waitFor();
   await assertSettingsActions();
+  assert.equal(await page.getByRole('textbox', { name: 'API key', exact: true }).count(), 0);
+  assert.equal(await page.getByLabel('Saved API key', { exact: true }).innerText(), 'sk-••••••••only');
+  const analysisModel = page.getByRole('combobox', { name: 'Model', exact: true });
+  const thinking = page.getByRole('combobox', { name: 'Thinking level', exact: true });
+  assert.deepEqual(await analysisModel.locator('option').evaluateAll(options => options.map(option => option.value)),
+    ['gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-astra']);
+  await thinking.selectOption('max'); await analysisModel.selectOption('gpt-6-luna');
+  assert.equal(await thinking.inputValue(), 'high'); await thinking.selectOption('off');
+  await analysisModel.selectOption('gpt-6.1-sol'); assert.equal(await thinking.inputValue(), 'max');
+  await thinking.selectOption('high');
   await captureSettings('settings-actions-key-windows-light.png', false);
+  const changeKey = page.getByRole('button', { name: 'Change key', exact: true });
+  await changeKey.click();
+  const newKey = page.getByRole('textbox', { name: 'New API key', exact: true });
+  assert.equal(await newKey.evaluate(element => element === document.activeElement), true);
+  await newKey.fill('sk-abandoned-fixture'); await newKey.press('Escape');
+  assert.equal(await newKey.count(), 0); assert.equal(await changeKey.evaluate(element => element === document.activeElement), true);
+  await changeKey.click(); await newKey.fill('sk-replacement-fixture');
+  await page.evaluate(() => { window.modelQA.failKeySave = true; });
+  await page.getByRole('button', { name: 'Save key', exact: true }).click();
+  await page.getByRole('alert').getByText('Synthetic key save failure. Try again.', { exact: true }).waitFor();
+  assert.equal(await newKey.inputValue(), 'sk-replacement-fixture');
+  assert.equal(await page.evaluate(() => window.desktop.state().then(state => state.apiKeyHint)), 'sk-••••••••only');
+  await captureSettings('analysis-key-error-windows-light.png', false);
+  await page.evaluate(() => { window.modelQA.failKeySave = false; });
+  await page.getByRole('button', { name: 'Save key', exact: true }).click();
+  await changeKey.waitFor(); await page.waitForFunction(() => document.activeElement?.textContent.includes('Change key'));
+  assert.equal(await page.getByLabel('Saved API key', { exact: true }).innerText(), 'sk-••••••••ture');
+  await page.setViewportSize({ width: 790, height: 850 });
+  await page.evaluate(() => { document.documentElement.dataset.platform = 'darwin'; document.documentElement.dataset.theme = 'dark'; });
+  await captureSettings('analysis-key-saved-mac-dark-narrow.png', false);
+  await changeKey.click(); await captureSettings('analysis-key-change-mac-dark-narrow.png', false);
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.setViewportSize({ width: 1550, height: 850 });
+  await page.evaluate(() => { document.documentElement.dataset.platform = 'win32'; document.documentElement.dataset.theme = 'light'; });
   await page.getByRole('button', { name: 'Remove key', exact: true }).click();
   await page.getByRole('button', { name: 'Remove key', exact: true }).waitFor({ state: 'detached' });
+  assert.equal(await page.getByRole('textbox', { name: 'API key', exact: true }).evaluate(element => element === document.activeElement), true);
   await provider.selectOption('anthropic');
   await page.getByRole('textbox', { name: 'API key', exact: true }).fill('sk-ant-fixture-only');
   await page.getByRole('button', { name: 'Save key', exact: true }).click();
   await page.getByRole('button', { name: 'Remove key', exact: true }).waitFor();
   await assertSettingsActions();
+  await analysisModel.selectOption('claude-haiku-4-5-20251001');
+  assert.deepEqual(await thinking.locator('option').evaluateAll(options => options.map(option => option.value)), ['off', 'on']);
+  await thinking.selectOption('on'); await analysisModel.selectOption('claude-sonnet-5-5');
+  await captureSettings('analysis-anthropic-windows-light.png', false);
   await page.getByRole('button', { name: 'Remove key', exact: true }).click();
   await page.getByRole('button', { name: 'Remove key', exact: true }).waitFor({ state: 'detached' });
   await provider.selectOption("ollama");
@@ -1022,8 +1081,9 @@ try {
   await analysisDialog.getByRole("button", { name: "Check payment", exact: true }).click();
   await analysisDialog.getByRole("heading", { name: "Your credits are ready", exact: true }).waitFor();
   const paidModel = analysisDialog.getByRole("combobox", { name: "Model", exact: true });
-  assert.equal(await paidModel.locator("option").count(), 6);
-  await paidModel.selectOption("claude-sonnet-5-5");
+  assert.equal(await paidModel.locator("option").count(), 2);
+  await paidModel.selectOption("gpt-6-astra");
+  await analysisDialog.getByRole("combobox", { name: "Thinking level", exact: true }).selectOption("high");
   await page.evaluate(() => { window.creditQA.cancelRecovery = true; });
   await analysisDialog.getByRole("button", { name: "Save recovery code", exact: true }).click();
   assert.equal(await analysisDialog.getByRole("button", { name: "Save recovery code", exact: true }).isVisible(), true);
@@ -1033,7 +1093,7 @@ try {
   await analysisDialog.getByRole("button", { name: "Continue to analysis", exact: true }).click();
   await analysisDialog.getByText("Maximum for this analysis", { exact: true }).waitFor();
   assert.match(await analysisDialog.innerText(), /20 credits/);
-  assert.match(await analysisDialog.innerText(), /Zebby and Anthropic/);
+  assert.match(await analysisDialog.innerText(), /Zebby and OpenAI/);
   await captureSettings("credits-quote-mac-dark-narrow.png", false);
   await analysisDialog.getByRole("button", { name: "Cancel", exact: true }).click();
   const sidebarWallet = page.locator(".sidebar-credits").getByRole("button", { name: "500 credits available, 0 used", exact: true });
@@ -1041,8 +1101,10 @@ try {
   await page.getByRole("button", { name: "Close credits", exact: true }).click();
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
   const creditsSettings = page.getByRole("region", { name: "Credits", exact: true });
-  await creditsSettings.getByRole("combobox", { name: "Model", exact: true }).waitFor();
-  assert.equal(await creditsSettings.getByRole("combobox", { name: "Model", exact: true }).inputValue(), "claude-sonnet-5-5");
+  const paidSettingsModel = settingsPage.getByRole("combobox", { name: "Model", exact: true });
+  await paidSettingsModel.waitFor();
+  assert.equal(await paidSettingsModel.inputValue(), "gpt-6-astra");
+  assert.equal(await creditsSettings.getByRole("combobox", { name: "Model", exact: true }).count(), 0);
   assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).count(), 1);
   assert.equal(await creditsSettings.getByRole("button", { name: "Buy credits", exact: true }).count(), 0);
   assert.equal(await creditsSettings.getByRole("button", { name: "Sign out", exact: true }).count(), 0);
@@ -1095,8 +1157,8 @@ try {
   await page.evaluate(() => { window.modelQA.setPlatform("darwin"); document.documentElement.dataset.platform = "darwin"; document.documentElement.dataset.theme = "dark"; });
   await settingsPage.evaluate(element => { element.scrollTop = 0; });
   await captureSettings("credits-funded-mac-dark-narrow.png", false);
-  await creditsSettings.getByRole("combobox", { name: "Model", exact: true }).selectOption("gpt-6-luna");
-  await creditsSettings.getByRole("combobox", { name: "Model", exact: true }).selectOption("claude-sonnet-5-5");
+  await paidSettingsModel.selectOption("gpt-6.1-sol");
+  await paidSettingsModel.selectOption("gpt-6-astra");
   await page.setViewportSize({ width: 1550, height: 850 });
   await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32"; document.documentElement.dataset.theme = "light"; });
   await creditsSettings.getByRole("button", { name: "Learn more", exact: true }).click();
@@ -1123,7 +1185,7 @@ try {
   await creditsSettings.getByRole("button", { name: "Refresh balance", exact: true }).click();
   await page.waitForFunction(() => !document.querySelector(".credit-settings-content")?.textContent.includes("Refresh to finish"));
   assert.equal(await creditsSettings.getByRole("alert").count(), 0);
-  await creditsSettings.getByRole("combobox", { name: "Model", exact: true }).waitFor();
+  await paidSettingsModel.waitFor();
   assert.deepEqual(await page.evaluate(() => window.creditQA.checkouts), ["starter"]);
   await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption("ollama");
   await page.setViewportSize({ width: 1550, height: 850 });

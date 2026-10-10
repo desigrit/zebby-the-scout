@@ -1,6 +1,6 @@
 # Zebby credits service
 
-The desktop purchase flow is implemented. Zebby 2.1.5 connects to the service at `https://zebby-credits.onrender.com`, with Stripe live payments and server-side OpenAI and Anthropic credentials configured. Custom builds need `ZEBBY_CREDITS_SERVICE_URL` compiled into the desktop main process. Secure storage is required for wallet access.
+The desktop purchase flow is implemented. Zebby 2.2.0 connects to the service at `https://zebby-credits.onrender.com`, with Stripe live payments and server-side provider credentials configured. Zebby credits offers GPT-6.1 Sol and GPT-6 Astra. Personal OpenAI and Anthropic API keys remain available as separate desktop methods. Custom builds need `ZEBBY_CREDITS_SERVICE_URL` compiled into the desktop main process. Secure storage is required for wallet access.
 
 The hosted checks verified service health, guest wallet access, an unpaid live Checkout session, and webhook signature handling. The unpaid session was expired, and no credits were granted. All three OpenAI models completed a synthetic structured response; all three offered Claude models were listed by the Anthropic API. A completed customer payment, receipt delivery, and funded Claude inference remain separate checks.
 
@@ -11,6 +11,8 @@ Every analysis method works without a Zebby signup or sign-in screen. The first 
 You still need Stripe, Supabase PostgreSQL, an HTTPS service host, and your provider API keys. **Supabase email sign-in, email templates, anonymous Auth sign-ins, and an SMTP sender are no longer needed.** The credits service manages guest wallet access directly.
 
 If you already ran an earlier schema, run the complete updated [schema.sql](schema.sql) again. It adds device, recovery, and pairing tables without clearing wallets, purchases, usage, or application databases. Deploy the new service and build the matching desktop release. Existing encrypted email-based sessions can migrate to a guest device credential while keeping the same ledger identity and balance.
+
+For the 2.2.0 update, run [20261010_analysis_thinking.sql](migrations/20261010_analysis_thinking.sql) in Supabase SQL Editor **before deploying the service**. It adds only the quote's thinking-level column and is safe to run again. Wallets, balances, purchases, saved results and application databases are preserved. The existing hosted project was migrated on October 10, 2026; no new environment variables or Stripe changes are required for this update.
 
 ## What you need
 
@@ -106,18 +108,22 @@ The checked-in Node tests use an isolated PostgreSQL engine and mocked network r
 
 ## Packs and estimates
 
-| Price | Credits | About this many analyses using GPT-6 Luna |
+| Price | Credits | About this many analyses using GPT-6.1 Sol at High |
 | --- | ---: | ---: |
-| $5 | 500 | 90 |
-| $20 | 3,000 | 540 |
-| $50 | 8,000 | 1,450 |
-| $100 | 16,000 | 2,900 |
+| $5 | 500 | 3 |
+| $20 | 3,000 | 23 |
+| $50 | 8,000 | 61 |
+| $100 | 16,000 | 123 |
 
 One credit represents $0.001 of underlying provider usage. Fractional credits are retained internally as integer nanodollars. Per-analysis quotes reserve a conservative maximum from the submitted text and output limit, including OpenAI cache writes and long-context rates. Settlement charges actual reported input, cached input, cache writes, and output usage, including billed reasoning tokens; unused holds return to the wallet. Cancelled, failed, and invalid analyses release their holds. Provider costs incurred on those failures are absorbed by Zebby.
 
 If a reply is lost after settlement, Zebby retains the original request ID and can recover the result without another charge. Recovery metadata, without resume or job text, is saved in encrypted local settings when secure storage is available. Main clears it only after the result is saved to SQLite. A pending result can be recovered after restarting on that computer within the server's 24-hour result retention window. Changing wallets rejects obsolete replies and prevents an older wallet's reply from replacing the current one.
 
-Counts assume 20,000 input tokens and 6,000 output tokens, with all input charged as cache writes. This costs 5.5 credits with Luna at the rates checked on October 9, 2026. Counts are rounded down to the nearest ten analyses. They are illustrative, not measured average counts or guarantees. Cache hits, different job lengths, and model choice change usage. The catalog is in [online-models.ts](../shared/online-models.ts). Sources: [OpenAI Luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [OpenAI Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [OpenAI Astra](https://developers.openai.com/api/docs/models/gpt-6-astra), [OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching), and [Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing).
+Counts assume GPT-6.1 Sol at High with 20,000 input tokens and 8,000 output tokens including thinking, with all input charged as cache writes. This example costs 130 credits at the published rates checked on October 10, 2026. Counts are rounded down to whole analyses. They are illustrative, not measured average counts or guarantees. High does not imply a fixed token count. Cache hits, different job lengths, reasoning effort and model choice change usage. The catalog is in [online-models.ts](../shared/online-models.ts). Sources: [OpenAI Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [OpenAI Astra](https://developers.openai.com/api/docs/models/gpt-6-astra), [OpenAI reasoning](https://developers.openai.com/api/docs/guides/reasoning), and [OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching).
+
+Thinking levels are Low, Medium, High, Extra high and Maximum, with High selected by default. Quotes bind both model and thinking level; changing either requires a new quote. Output limits include reasoning and final answer tokens: Low allows 6,000 for Plan or 3,000 for match; Medium 16,000; High 24,000; Extra high 40,000; Maximum 64,000. These are maximum allowances, not expected usage. High and above allow eight minutes for the provider response, with cancellation available. The quote shown before analysis uses the full configured output limit; settlement charges actual usage.
+
+OpenAI's complimentary data-sharing allowance applies automatically to eligible usage in the sharing-enabled project that owns a personal API key. It does not increase the user's Zebby credit balance or alter paid deductions. Eligible traffic on the owner's server key can reduce provider overhead. Before inviting other users, choose sharing settings appropriate for their resume and job content. [OpenAI's data-sharing terms](https://help.openai.com/en/articles/10306912-sharing-feedback-evaluation-and-fine-tuning-data-and-api-inputs-and-outputs-with-openai) list the eligible model groups and limits.
 
 | Price | Maximum provider budget | Stripe assumption | Operating reserve assumption | Retained under these assumptions |
 | --- | ---: | ---: | ---: | ---: |
