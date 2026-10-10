@@ -26,7 +26,7 @@ WORLD: The approved Ember Search Ledger replaces Graphite in both themes. Hiring
 
 STORY: Add a role, review imported details, save, filter the ledger, select a record, and change status or inspect evidence and Notes.
 
-FIRST VIEWPORT: The native title region reads Zebby. Add application sits at the toolbar's right. Daily status stacks, their named legend and compact totals share a paper panel above search and native filters. A dense role list sits beside a persistent inspector when its content width is at least 940px. Smaller layouts expand details inline.
+FIRST VIEWPORT: The native title region reads Zebby. Add application sits at the toolbar's right. Daily status stacks and compact totals share a paper panel above search and native filters; status names and counts appear on hover or keyboard focus. A dense role list sits beside a persistent inspector when its content width is at least 940px. Smaller layouts expand details inline.
 
 SIGNATURE INTERACTION: Selecting a role gives its details a stable place beside the list; compact layouts use a disclosure in the selected row. The full listing-first New Application form stays in the workspace.
 
@@ -38,7 +38,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
 The chart covers 30 consecutive applied dates ending today. Each bar's height represents that day's total applications; its proportional segments represent their current Applied, Heard back, Interview scheduled and Rejected statuses. Changing a status updates the original applied day's stack and preserves its total and height. Records without an applied date remain outside the chart.
 
-Applied uses muted neutral fill, Heard back uses the incumbent ochre chart color, interviews use green and rejections use muted red, with appearance-specific fills. These are local chart roles within Ember. A wrapping four-status legend names every color. Hover or keyboard focus shows the date and total; populated days also show exact counts for all four statuses. Accessible day names include the date, total and every nonzero status count, so the breakdown is available without color.
+Applied uses muted neutral fill, Heard back uses the incumbent ochre chart color, interviews use green and rejections use muted red, with appearance-specific fills. These are local chart roles within Ember. Hover or keyboard focus shows the date and total; populated days also show the status names and exact counts for all four statuses. Accessible day names include the date, total and every nonzero status count, so the breakdown is available without color. The chart has no visible legend.
 
 One day is in the Tab sequence. Left and Right move focus between days; Home and End focus the first and last day. Escape dismisses the tooltip, and a new hover or focus restores it. Tooltips are clamped to the chart's horizontal bounds before paint and repositioned when data or chart width changes. The chart stays attached above totals and filters in wide, narrow and scaled layouts.
 
@@ -174,10 +174,16 @@ Save preserves the complete application form and every optional field. With Zebb
 
 The shared method setup, paid wallet, and purchase sequence are recorded in [Analysis and credits](analysis-credits.md). Match results continue to use the existing row, inspector, or compact details and separate score explanation. Cancel and previous-result preservation retain their existing provider contract.
 
-Supplied final verification passed 91 Node tests, lint, TypeScript, and both desktop and service builds. The independent source and test review cleared the three scored paid-flow fixes. No current Application screenshot or native interaction check was made. The historical captures above remain evidence only for their stated releases. Current visual rendering and real hosted payment behavior remain unverified; paid checkout is unavailable until the service is configured.
+Supplied final verification passed 91 Node tests, lint, TypeScript, and both desktop and service builds. The independent source and test review cleared the three scored paid-flow fixes. No Application screenshot or native interaction check was made for that handoff. The historical captures above remain evidence only for their stated releases. Visual rendering and real hosted payment behavior were unverified by that evidence.
 
 ### Current-status activity, 2026-10-10
 
 ApplicationActivity.tsx, lib/application-activity.ts and both stylesheets at source 4b16d25ea255a854374d0314ac0c287b21b73a15 were compared with baseline 8b66b23 and the incumbent system. The independent review in work/settings-activity-finish-review.md returned ship for the shared Settings controls and status chart after inspecting all 12 required captures. Its six Applications frames cover wide and narrow layouts, 200% scaling and reached inline details, the right-edge status tooltip, and the Mac renderer inspector. The existing rows, inspector, optional form, inference and schema 10 are preserved.
 
 The supplied [final CI](https://github.com/desigrit/zebby-the-scout/actions/runs/38042851497) passed 154 Node tests and the build, type, lint, native Windows and renderer gates. These were not rerun by the documenter. The [Settings handoff](settings.md#settings-controls-and-activity-handoff-2026-10-10) records synthetic capture provenance, published 2.1.1 installers and the remaining physical-device and hosted-payment limits. DESIGN.md and its sidecar remain preserved, including their pre-existing sample drift.
+
+### Credits and chart streamline, 2026-10-10
+
+The request supersedes the earlier visible-legend promise. Source e78362edf08acaa4a64dac2dc0df424c302888b3 removes the legend while preserving daily stacks, original applied-date attribution, totals, accessible day names, hover/focus status counts and keyboard navigation. The full scoped review in work/credits-streamline-finish-review.md returned disposition: ship with no material fixes after opening all 13 required captures. Supplied [CI 38046698808](https://github.com/desigrit/zebby-the-scout/actions/runs/38046698808) passed 157 Node tests, typecheck, lint, production build, full renderer flows and 18 native Windows checks; the documenter did not rerun them.
+
+The [Settings handoff](settings.md#credits-and-chart-streamline-handoff-2026-10-10) records the separate native Windows evidence, synthetic renderer previews with mixed platform overrides, packaging status and remaining hosted-service and physical-device limits. The ledger, inspector, optional form, inference, schema 10 and incumbent system are preserved.

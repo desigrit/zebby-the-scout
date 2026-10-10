@@ -8,9 +8,9 @@ TASK: Choose a usable analysis method, complete focused setup, or purchase credi
 
 FREQUENCY: Method setup is occasional. Analysis and wallet feedback recur across Plans and resume matches.
 
-INFORMATION: Five methods, selected method prerequisites, four packs, guest checkout, model choice after purchase, maximum quote or free result recovery, available and used credits, recovery-code export and restoration, computer pairing, and connected devices.
+INFORMATION: Five methods, selected method prerequisites, four packs, guest checkout, model choice after purchase, maximum quote or free result recovery, available/used/total credits and percentage remaining, and restoration/connection links. Learn more explains recovery and pairing and contains wallet management and recent usage.
 
-STATES: Method choice; local or key setup; service unavailable; pack selected; external checkout waiting/expired/test; purchase confirmed; recovery-save/cancel/replacement; pairing active/expired/used/cancelled; restore/connect editor and errors; quote loading/expired/insufficient balance; result recovery; wallet current or saved; analysis busy/cancelled/failed/completed.
+STATES: Method choice; local or key setup; pack selected; checkout connection error; external checkout waiting/expired/test; purchase confirmed; credits empty/loading/funded; About credits open/closed; recovery-save/cancel/replacement; pairing active/expired/used/cancelled; restore/connect editor and errors; quote loading/expired/insufficient balance; result recovery; wallet current or saved; analysis busy/cancelled/failed/completed.
 
 SUCCESS: The user reaches the selected provider, understands the maximum paid credit use before starting, and can recover an already paid result without a second charge.
 
@@ -20,19 +20,21 @@ CONSTRAINTS: Keep every Plan and Application editing field, local and Qwen infer
 
 MODE: Operate, ordinary extension of Ember.
 
-THESIS: Make the local choice direct and paid convenience straightforward.
+THESIS: Keep method choice direct, with one purchase action for the selected credits method and a compact wallet summary; reveal recovery and pairing detail through Learn more.
 
 OWN-WORLD: Incumbent Ember warm neutral canvas, restrained terracotta actions, quiet selection washes, the unchanged zebra, native platform typography, native dropdowns and modal behavior, and arrow cursor for controls.
 
 STORY: Choose a method, finish focused setup, complete guest checkout in an external browser, choose a model after purchase, save a recovery code, pair another computer when needed, review a maximum quote or recover the paid result for free, then receive wallet feedback.
 
-FIRST VIEWPORT: A native modal shows four method tiles in two columns and a full-width Buy credits tile. The dialog body scrolls independently with persistent header and footer actions. Narrow windows adapt the choice grid.
+FIRST VIEWPORT: Initial setup retains a native modal with four method tiles in two columns and a full-width Buy credits tile. Settings shows Buy credits under Analysis only when Zebby credits is selected. Empty Credits has concise no-credit text, Restore credits | Connect this computer and Learn more; funded Credits has a slim usage summary and model dropdown. Dialog bodies scroll independently, and narrow windows adapt the choice grid.
 
 FORM: The approved Quick choice A concept translated into Ember and the incumbent Plan and Application editors. The separate prototype is a direction reference, not current product verification.
 
 ## Methods and purchase
 
 Initial setup offers Local server (Ollama), Download a model, OpenAI API key, Anthropic API key, and Buy credits. Focused setup reuses the Settings controls. Personal-key model choices are limited to that provider. Native radio inputs retain method and pack selection, visible focus, and readable selection feedback. The modal restores the opener's focus on close; reduced motion removes its entrance animation.
+
+In Settings, one Buy credits action appears under Analysis only when Analyze with is Zebby credits. It opens the same purchase flow for new purchases and top-ups. The sidebar's purchase action also requires Zebby credits to be selected.
 
 The pricing scene shows four USD packs: $5 for 500 credits, $20 for 3,000, $50 for 8,000, and $100 for 16,000. Its illustrative GPT-6 Luna counts are 90, 540, 1,450, and 2,900 analyses, assuming 20,000 input and 6,000 output tokens each, including cache-write charges. The assumption is visible. Counts vary with cache hits, job length, and model choice. There is no model dropdown in pricing.
 
@@ -46,7 +48,11 @@ Every new paid Plan or match analysis shows Maximum for this analysis, available
 
 A lost paid reply retains its request identity so the original result can be recovered without another charge. The scene shows No additional credits and either Check again for pending work or Recover result when ready. Recovery remains available with zero or negative balance. Main clears recovery metadata only after local persistence. The server retention window is 24 hours; encrypted local settings retain restart recovery metadata when secure storage is available.
 
-The wallet shows available balance after reservations and total used credits. Settings includes reserved usage, model selection after purchase, Refresh balance, recovery-code export, restoration, ten-minute single-use pairing, and collapsed Connected computers, Recovery options, and Recent usage. There is no account label or Sign out action. Native confirmations default to Cancel for code replacement, funded-wallet switching, and disconnection. Switching a funded computer requires a saved recovery code for its current wallet. The current computer cannot disconnect itself. Restoring and connecting use focused inline forms, with Enter to submit, Escape/Cancel to clear the code, and focus restored to the opener. The sidebar mirrors available and used amounts after a purchase. Failed refreshes retain labeled saved balances. Replies from a former wallet cannot replace the current wallet.
+Empty Credits shows "No credits found. Buy a pack or restore your existing credits." The row below contains Restore credits | Connect this computer and Learn more. A funded wallet shows exact available credits, used credits out of the total, percentage remaining, a slim 6px track for remaining credits, an icon-only Refresh balance action and a native model dropdown. Available credits subtract reservations and display at least zero; reservations do not count as used credits. This shows cumulative usage of purchased credits, with no weekly reset or artificial expiry. Failed refreshes retain labeled saved balances.
+
+Learn more opens the native About credits dialog, at most 480px wide, explaining restoration and single-use ten-minute pairing. Funded wallets expose Save recovery code, Replace recovery code, Connect another computer, Connected computers and Recent usage inside this dialog. The recovery export is also offered after purchase. Pairing supports copying, expiry, regeneration and explicit cancellation; cancelling re-enables the restore/connect links. Native confirmations default to Cancel for code replacement, switching a funded wallet and disconnection. Switching a funded computer requires a saved recovery code for its current wallet. The current computer cannot disconnect itself.
+
+Restore credits and Connect this computer retain focused inline forms, with Enter to submit, Escape/Cancel to clear the code and focus restored to the opener. The help dialog restores its opener's focus on close. The sidebar mirrors available and used amounts after a purchase. Collapsed navigation or a different selected method opens a compact balance popover; Buy credits is offered only while Zebby credits is selected. There is no account label or Sign out action. Replies from a former wallet cannot replace the current wallet.
 
 Wallet credentials and pending original connection codes stay in the OS-encrypted private profile, separate from the selected application SQLite database and redacted from logs. A pending attempt is bound to its original operation and normalized code hash before linking. A conflicting operation or code preserves the earlier credential and cannot report the new request successful until its own code is processed. Mount/focus recovery and Refresh balance retry the retained original request. Settings exposes pending status, manual Refresh balance, and interruption feedback even before access is connected. The server stores only credential/code hashes. Existing valid paid sessions can migrate to guest access without resetting ledger identity or balances; no application SQLite schema change is introduced.
 
@@ -54,7 +60,7 @@ Saving an application retains the existing form and data behavior. Paid match an
 
 ## Service availability
 
-No real service or Stripe account is connected. The desktop URL defaults to empty; checkout is disabled with an honest unavailable message. The prepared [service guide](../../credits-service/README.md) covers Supabase PostgreSQL, guest wallet access, Stripe test keys and signed webhooks, a Node 22 or Docker HTTPS host, owner OpenAI/Anthropic keys, and desktop connection. Supabase email or anonymous Auth setup and SMTP are not needed. Only the public ZEBBY_CREDITS_SERVICE_URL is compiled into desktop builds. The service's bounded trusted-proxy setting is enabled only for a verified fixed proxy chain. Service balances are separate from the selected application SQLite database. No real payment was taken during implementation.
+The final purchase flow keeps pack selection and Continue usable before the service is configured, subject to secure storage. An attempted checkout reports a connection error if the service cannot be reached. Actual checkout requires the public ZEBBY_CREDITS_SERVICE_URL compiled into desktop builds; its default is empty. No real service or Stripe account is connected. The prepared [service guide](../../credits-service/README.md) covers Supabase PostgreSQL, guest wallet access, Stripe test keys and signed webhooks, a Node 22 or Docker HTTPS host, owner OpenAI/Anthropic keys, and desktop connection. Supabase email or anonymous Auth setup and SMTP are not needed. The service's bounded trusted-proxy setting is enabled only for a verified fixed proxy chain. Service balances are separate from the selected application SQLite database. No real payment was taken during implementation.
 
 ## Historical verification, 2026-10-04
 
@@ -74,9 +80,9 @@ Zebby 1.7.0 shipped the earlier account-based integration from source commit 57b
 
 The local suite passed 108 tests, including 22 payments tests. TypeScript, lint, desktop build, and service build passed. GitHub also passed native Windows editing/cancellation checks, compiled renderer checks on both hosts, packaged local-model checks, self-update checks, and the Mac distribution first-launch check. ARM64 Windows packaging was verified; execution on physical Windows ARM64 hardware was not tested.
 
-For that release, renderer checks exercised all five first-use methods, four pricing choices without early model selection, unavailable checkout, email delivery failure and retry, synthetic payment confirmation, post-purchase model choice, credit quotes, sidebar balances, Settings, sign-out, and focus restoration. Captures were reviewed in wide light and narrow dark layouts. A dialog positioning issue was corrected with native modal centering and protected by geometry checks. Email-code and sign-out scenes are historical and have been replaced by the guest flow above.
+For that release, renderer checks exercised all five first-use methods, four pricing choices without early model selection, email delivery failure and retry, synthetic payment confirmation, post-purchase model choice, credit quotes, sidebar balances, Settings, sign-out, and focus restoration. Captures were reviewed in wide light and narrow dark layouts. A dialog positioning issue was corrected with native modal centering and protected by geometry checks. Email-code and sign-out scenes are historical and have been replaced by the guest flow above.
 
-No app or browser was launched on the user's PC, and no personal database, profile, or resume was accessed. All screen checks used synthetic data on GitHub runners. Stripe, Supabase, and a public service endpoint were unconnected, so checkout stayed disabled. Real email delivery, hosted webhooks, live provider calls, and deployed Docker behavior were unverified by that release's evidence.
+No app or browser was launched on the user's PC, and no personal database, profile, or resume was accessed. All screen checks used synthetic data on GitHub runners. Stripe, Supabase, and a public service endpoint were unconnected. Real email delivery, hosted webhooks, live provider calls, and deployed Docker behavior were unverified by that release's evidence.
 
 ## Guest-wallet handoff, 2026-10-10
 
@@ -90,6 +96,12 @@ The independent report in work/guest-wallet-finish-review.md found two material 
 
 All eight current captures are under work/guest-wallet-review-final/qa-output/renderer-1.5.0/credits-*.png: method choice, packs in both layouts, wallet Settings, pairing, a quote, and pending error/manual retry in both layouts. The independent reviewer found all eight valid. Windows light uses 1550x850; Mac CSS dark uses 790x850. The captures use a synthetic wallet, mock native bridge, platform CSS/theme overrides, and fixture version labels. They are current renderer evidence, with no live payment or physical Mac claim.
 
-No local app, Electron, browser, Playwright, or desktop control was used in this handoff, and no personal profile, database, or resume was accessed. No service or real financial/provider credentials were configured. Paid checkout remains disabled with the empty desktop URL. Hosted multi-connection concurrency, real Stripe/webhook/provider calls, container startup, real OS secure storage, and guest-wallet behavior on physical Mac hardware remain unverified.
+No local app, Electron, browser, Playwright, or desktop control was used in this handoff, and no personal profile, database, or resume was accessed. No service or real financial/provider credentials were configured. Hosted multi-connection concurrency, real Stripe/webhook/provider calls, container startup, real OS secure storage, and guest-wallet behavior on physical Mac hardware were unverified by that handoff.
 
 Zebby [2.1.0](https://github.com/desigrit/zebby-the-scout/releases/tag/v2.1.0) is published from d0c34b4. The [release workflow](https://github.com/desigrit/zebby-the-scout/actions/runs/38037269117) passed its Windows x64 and macOS ARM64 jobs and published direct Windows x64, Windows ARM64, and Apple Silicon installers. All three assets have uploaded state and GitHub SHA-256 digests; their download URLs returned HTTP 200. Mac distribution launch, packaged local-model, and self-update checks passed on the GitHub runner. Windows ARM64 packaging passed without a physical ARM64 execution claim. The service Docker dependency correction is on main, the branch specified in the owner guide; it does not change these desktop installers.
+
+## Credits and chart streamline verification, 2026-10-10
+
+The full scoped finish review at e78362edf08acaa4a64dac2dc0df424c302888b3 against baseline 3d35192c0b06f08e506546e4931227898cbd31ca returned disposition: ship with no material fixes. All 13 required captures were opened and valid, and source and QA corroborated the implementation. Supplied [CI 38046698808](https://github.com/desigrit/zebby-the-scout/actions/runs/38046698808) passed 157 Node tests, typecheck, lint, production build, full renderer flows and 18 native Windows checks. These gates were not rerun by the documenter.
+
+Synthetic renderer captures are component and theme previews with mixed platform overrides. Actual native Windows evidence is separate; physical Mac rendering, live Stripe/webhooks/provider service and Windows ARM hardware remain unverified. The [Settings handoff](settings.md#credits-and-chart-streamline-handoff-2026-10-10) records packaging status and the preserved incumbent system. No local GUI or personal data was accessed during documentation.
