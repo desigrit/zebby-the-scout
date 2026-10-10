@@ -74,8 +74,5 @@ export default function ApplicationActivity({ days }: { days: ApplicationDay[] }
     </div>
     {days.length > 0 && <div className="activity-axis" aria-hidden="true"><span>{dayLabel(days[0].date)}</span>
       <span>{dayLabel(days[Math.floor((days.length - 1) / 2)].date)}</span><span>Today</span></div>}
-    <div className="activity-legend" aria-label="Current status">
-      {APPLICATION_STATUSES.map((status) => <span key={status}><span className="activity-swatch" data-status={status} aria-hidden="true" />{status}</span>)}
-    </div>
   </figure>;
 }

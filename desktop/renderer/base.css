@@ -118,8 +118,7 @@ a { color: inherit; text-underline-offset: 3px; }
 .activity-day:hover .activity-tooltip, .activity-day:focus-visible .activity-tooltip { opacity: 1; visibility: visible; }
 .activity-bars[data-tooltip-dismissed="true"] .activity-tooltip { opacity: 0; visibility: hidden; }
 .activity-axis { display: flex; justify-content: space-between; margin-top: 6px; color: var(--ink-soft); font-size: 10px; font-variant-numeric: tabular-nums; }
-.activity-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 9px; color: var(--ink-soft); font-size: 10px; }
-.activity-legend > span, .activity-tooltip-statuses > span { display: inline-flex; align-items: center; gap: 6px; }
+.activity-tooltip-statuses > span { display: inline-flex; align-items: center; gap: 6px; }
 .activity-swatch { display: inline-block; flex: none; width: 7px; height: 7px; border-radius: 2px; }
 .activity-tooltip-statuses { display: grid; gap: 4px; margin-top: 7px; text-align: left; }
 .activity-tooltip-statuses b { margin-left: auto; padding-left: 12px; color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }

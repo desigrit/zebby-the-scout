@@ -80,10 +80,7 @@ export function AnalysisSettings({ state, onState, provider: suppliedProvider, o
       <p className="settings-help">{provider === "openai" ? "OpenAI" : "Anthropic"} receives job and resume content. Usage is billed to your API account.</p>
       {!state.canSaveApiKey && <p className="settings-help">Secure storage is unavailable. This key lasts until Zebby closes.</p>}
     </>}
-    {provider === "credits" && <>
-      <p className="settings-help">{state.credits.signedIn && state.credits.wallet?.purchased ? "Choose your model in Credits below." : "Choose your model after purchasing credits."}</p>
-      {!state.credits.signedIn && <div className="settings-actions"><SettingsAction variant="primary" icon={CreditCard} onClick={openCredits}
-        disabled={!state.credits.available || !state.canSaveApiKey}>Buy credits</SettingsAction></div>}
-    </>}
+    {provider === "credits" && <div className="settings-actions"><SettingsAction variant="primary" icon={CreditCard} onClick={openCredits}
+      disabled={working || !state.canSaveApiKey}>Buy credits</SettingsAction></div>}
   </div>;
 }

@@ -89,7 +89,7 @@ export class CreditsClient {
       wallet: this.wallet, pending: [...this.pending.values()], candidate: this.candidate, recovery: this.recovery }) : "");
   }
   private async request(path: string, body?: unknown, authenticated = true, signal?: AbortSignal, deviceToken?: string): Promise<unknown> {
-    if (!this.url) throw new Error("Paid credits are not available yet. Choose a local model or your own API key.");
+    if (!this.url) throw new Error("Could not reach the credits service. Try again.");
     const generation = this.generation;
     if (authenticated) {
       if (!this.session) throw new Error("Buy credits, restore your wallet, or connect this computer in Settings.");

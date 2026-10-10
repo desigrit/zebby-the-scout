@@ -11,6 +11,7 @@ import { importanceForTerms } from "../desktop/plan-importance.ts";
 // It does not launch Electron, read settings, or open an application database.
 const renderer = path.resolve("desktop-dist/renderer");
 const output = path.resolve("qa-output/renderer-1.5.0");
+const { version: appVersion } = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 const executablePath = process.env.PM_TRACKER_BROWSER || [
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
   "C:/Program Files/Google/Chrome/Application/chrome.exe",
@@ -47,7 +48,7 @@ const state = { filePath: "example.sqlite", filename: "Applications.sqlite", dir
   builtInModelId: "", acceptedModelTerms: [], localModels: LOCAL_MODELS.map(({ id }) =>
     ({ id, status: "not-installed", downloadedBytes: 0, error: "" })), modelsFolder: "example/Models",
   localEngine: { status: "idle", modelId: "" }, totalMemory: 32e9, availableMemory: 16e9,
-  updates: { currentVersion: "1.5.0", checking: false, checkedAt: "", error: "", available: null,
+  updates: { currentVersion: appVersion, checking: false, checkedAt: "", error: "", available: null,
     download: { phase: "idle", received: 0, total: 0, error: "" } } };
 const pending = new Map();
 const requested = new Map();
@@ -120,7 +121,7 @@ try {
     await page.screenshot({ path: path.join(output, filename), fullPage });
   }
   async function assertSettingsActions() {
-    const actions = await page.locator('.settings-page button:not(.settings-link)').evaluateAll((buttons) => buttons.map((button) => {
+    const actions = await page.locator('.settings-page button:not(.settings-link):visible').evaluateAll((buttons) => buttons.map((button) => {
       const style = getComputedStyle(button), icon = button.querySelector('svg');
       return { label: button.getAttribute('aria-label') || button.innerText, shared: button.classList.contains('settings-action'),
         height: button.getBoundingClientRect().height, size: style.fontSize, weight: style.fontWeight,
@@ -255,7 +256,9 @@ try {
           devices: initialState.credits.access.devices.filter((item) => item.id !== id) } });
         return snapshot();
       },
-      startCreditCheckout: async (pack) => { window.creditQA.checkouts.push(pack);
+      startCreditCheckout: async (pack) => {
+        if (!initialState.credits.available) throw new Error("Could not reach the credits service. Try again.");
+        window.creditQA.checkouts.push(pack);
         updateCredits({ signedIn: true, wallet: { ...wallet, balance: 0, purchased: 0 }, access: walletAccess, stale: false });
         return { id: "cs_test_fixture", mode: "test" }; },
       creditCheckoutStatus: async () => {
@@ -598,7 +601,7 @@ try {
   assert.equal(await page.evaluate(() => document.activeElement.getAttribute("aria-label")), "Sep 29, 2026: 2 applications, Applied: 2");
   await page.locator(".activity-day:focus").press("Home");
   assert.equal(await page.evaluate(() => document.activeElement.getAttribute("aria-label")), "Sep 1, 2026: 0 applications");
-  assert.deepEqual(await page.locator('.activity-legend > span').allTextContents(), ['Applied', 'Heard back', 'Interview scheduled', 'Rejected']);
+  assert.equal(await page.locator('.activity-legend').count(), 0);
   const statusDay = page.locator('.activity-day[data-date="2026-09-29"]');
   const originalBarHeight = await statusDay.locator('.activity-bar').evaluate(element => element.getBoundingClientRect().height);
   const firstStatus = firstRow.getByRole('combobox', { name: 'Status for Senior Product Manager at Expedia Group', exact: true });
@@ -887,6 +890,36 @@ try {
   // All payment and guest-wallet traffic below uses the synthetic desktop bridge.
   // These checks send no email, open no checkout, and request no provider inference.
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.setViewportSize({ width: 1550, height: 850 });
+  await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32"; document.documentElement.dataset.theme = "light"; });
+  const emptyCredits = page.getByRole("region", { name: "Credits", exact: true });
+  const settingsPage = page.locator(".settings-page");
+  for (const method of ["ollama", "builtin", "openai", "anthropic"]) {
+    await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption(method);
+    assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).count(), 0);
+  }
+  await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption("credits");
+  assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).count(), 1);
+  assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).isEnabled(), true);
+  assert.equal(await emptyCredits.getByRole("button", { name: "Buy credits", exact: true }).count(), 0);
+  assert.equal(await emptyCredits.getByRole("combobox").count(), 0);
+  assert.doesNotMatch(await settingsPage.innerText(), /Paid credits are not|not connected yet/);
+  await settingsPage.evaluate(element => { element.scrollTop = 0; });
+  await assertSettingsActions();
+  await captureSettings("credits-empty-windows-light.png", false);
+  await page.setViewportSize({ width: 790, height: 850 });
+  await page.evaluate(() => { window.modelQA.setPlatform("darwin"); document.documentElement.dataset.platform = "darwin"; document.documentElement.dataset.theme = "dark"; });
+  await captureSettings("credits-empty-mac-dark-narrow.png", false);
+  await emptyCredits.getByRole("button", { name: "Learn more", exact: true }).click();
+  const creditHelp = page.getByRole("dialog", { name: "About credits", exact: true });
+  await creditHelp.getByRole("heading", { name: "Restore credits", exact: true }).waitFor();
+  assert.match(await creditHelp.innerText(), /saved recovery code/);
+  assert.match(await creditHelp.innerText(), /expire after 10 minutes and work once/);
+  assert.ok((await creditHelp.boundingBox()).width <= 480);
+  await captureSettings("credits-help-empty-mac-dark-narrow.png", false);
+  await page.keyboard.press("Escape");
+  await creditHelp.waitFor({ state: "hidden" });
+  assert.equal(await emptyCredits.getByRole("button", { name: "Learn more", exact: true }).evaluate(element => element === document.activeElement), true);
   await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption("openai");
   await nav.getByRole("button", { name: "Plan", exact: true }).click();
   const analyze = page.getByRole("button", { name: "Analyze", exact: true });
@@ -906,14 +939,16 @@ try {
   assert.equal(await analysisDialog.getByRole("radio").count(), 4);
   assert.equal(await analysisDialog.getByRole("combobox").count(), 0);
   assert.match(await analysisDialog.innerText(), /Choose your model after purchasing credits/);
-  assert.equal(await analysisDialog.getByRole("button", { name: "Continue, $20", exact: true }).isDisabled(), true);
-  assert.match(await analysisDialog.innerText(), /Paid credits are not available yet/);
+  assert.equal(await analysisDialog.getByRole("button", { name: "Continue, $20", exact: true }).isEnabled(), true);
+  assert.doesNotMatch(await analysisDialog.innerText(), /Paid credits are not|not connected yet/);
   await captureSettings("credits-packs-windows-light.png", false);
   await page.setViewportSize({ width: 790, height: 850 });
   await page.evaluate(() => { window.modelQA.setPlatform("darwin"); document.documentElement.dataset.platform = "darwin";
     document.documentElement.dataset.theme = "dark"; });
   assert.equal(await analysisDialog.evaluate(element => element.scrollWidth > element.clientWidth), false);
   await captureSettings("credits-packs-mac-dark-narrow.png", false);
+  await analysisDialog.getByRole("button", { name: "Continue, $20", exact: true }).click();
+  await analysisDialog.getByRole("alert").filter({ hasText: "Could not reach the credits service. Try again." }).waitFor();
   await analysisDialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await analysisDialog.waitFor({ state: "hidden" });
   assert.equal(await analyze.evaluate(element => element === document.activeElement), true);
@@ -952,7 +987,10 @@ try {
   const creditsSettings = page.getByRole("region", { name: "Credits", exact: true });
   await creditsSettings.getByRole("combobox", { name: "Model", exact: true }).waitFor();
   assert.equal(await creditsSettings.getByRole("combobox", { name: "Model", exact: true }).inputValue(), "claude-sonnet-5-5");
+  assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).count(), 1);
+  assert.equal(await creditsSettings.getByRole("button", { name: "Buy credits", exact: true }).count(), 0);
   assert.equal(await creditsSettings.getByRole("button", { name: "Sign out", exact: true }).count(), 0);
+  await creditsSettings.getByRole("button", { name: "Learn more", exact: true }).click();
   await creditsSettings.getByRole("button", { name: "Connect another computer", exact: true }).click();
   await creditsSettings.getByLabel("Pairing code", { exact: true }).waitFor();
   await creditsSettings.getByRole("button", { name: "Copy code", exact: true }).click();
@@ -962,6 +1000,7 @@ try {
   assert.equal(await creditsSettings.evaluate(element => element.scrollWidth > element.clientWidth), false);
   await creditsSettings.getByRole("button", { name: "Cancel pairing", exact: true }).click();
   assert.equal(await page.evaluate(() => window.creditQA.pairingCancelled), 1);
+  await creditHelp.getByRole("button", { name: "Close credit help", exact: true }).click();
   await creditsSettings.getByRole("button", { name: "Connect this computer", exact: true }).click();
   const pairInput = creditsSettings.getByLabel("Pairing code", { exact: true });
   assert.equal(await pairInput.evaluate(element => element === document.activeElement), true);
@@ -971,6 +1010,7 @@ try {
   await pairInput.fill("ABCD-2345"); await pairInput.press("Enter");
   await creditsSettings.getByText("Computer connected.", { exact: true }).waitFor();
   assert.equal(await creditsSettings.getByRole("button", { name: "Connect this computer", exact: true }).evaluate(element => element === document.activeElement), true);
+  await creditsSettings.getByRole("button", { name: "Learn more", exact: true }).click();
   await creditsSettings.getByText("Connected computers (2)", { exact: true }).click();
   await creditsSettings.getByText("Mac laptop", { exact: true }).waitFor();
   await creditsSettings.getByRole("button", { name: "Disconnect", exact: true }).click();
@@ -978,6 +1018,7 @@ try {
   await page.evaluate(() => { window.creditQA.confirmDisconnect = true; });
   await creditsSettings.getByRole("button", { name: "Disconnect", exact: true }).click();
   assert.equal(await creditsSettings.getByText("Mac laptop", { exact: true }).count(), 0);
+  await creditHelp.getByRole("button", { name: "Close credit help", exact: true }).click();
   await creditsSettings.getByRole("button", { name: "Restore credits", exact: true }).click();
   const recoveryInput = creditsSettings.getByLabel("Recovery code", { exact: true });
   await recoveryInput.fill("synthetic private recovery code"); await recoveryInput.press("Escape");
@@ -985,16 +1026,33 @@ try {
   assert.equal(await creditsSettings.getByRole("button", { name: "Restore credits", exact: true }).evaluate(element => element === document.activeElement), true);
   await page.setViewportSize({ width: 1550, height: 850 });
   await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32"; document.documentElement.dataset.theme = "light"; });
-  await creditsSettings.scrollIntoViewIfNeeded();
+  await page.evaluate(() => { window.creditQA.update({ wallet: { balance: 465000000, reserved: 0, used: 35000000, purchased: 500000000,
+    updatedAt: "2026-09-30T20:00:00Z", recent: [{ id: "usage-fixture", model: "claude-sonnet-5-5", kind: "plan", cost: 35000000, createdAt: "2026-09-30T20:00:00Z" }] } }); });
+  const creditBar = creditsSettings.getByRole("progressbar", { name: "Credits remaining", exact: true });
+  assert.equal(await creditBar.getAttribute("aria-valuenow"), "93");
+  assert.match(await creditBar.getAttribute("aria-valuetext"), /465 credits available, 35 used/);
+  await settingsPage.evaluate(element => { element.scrollTop = 0; });
   await assertSettingsActions();
   await captureSettings("credits-wallet-settings-windows-light.png", false);
+  await page.setViewportSize({ width: 790, height: 850 });
+  await page.evaluate(() => { window.modelQA.setPlatform("darwin"); document.documentElement.dataset.platform = "darwin"; document.documentElement.dataset.theme = "dark"; });
+  await settingsPage.evaluate(element => { element.scrollTop = 0; });
+  await captureSettings("credits-funded-mac-dark-narrow.png", false);
+  await creditsSettings.getByRole("combobox", { name: "Model", exact: true }).selectOption("gpt-6-luna");
+  await creditsSettings.getByRole("combobox", { name: "Model", exact: true }).selectOption("claude-sonnet-5-5");
+  await page.setViewportSize({ width: 1550, height: 850 });
+  await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32"; document.documentElement.dataset.theme = "light"; });
+  await creditsSettings.getByRole("button", { name: "Learn more", exact: true }).click();
+  await assertSettingsActions();
+  await captureSettings("credits-help-windows-light.png", false);
+  await creditHelp.getByRole("button", { name: "Close credit help", exact: true }).click();
   assert.equal(await creditsSettings.evaluate(element => element.scrollWidth > element.clientWidth), false);
   await page.evaluate(() => {
     window.creditQA.resumeMode = "error";
     window.creditQA.update({ signedIn: false, pendingConnection: true, wallet: null, access: null, error: "Connection interrupted. Retry when online." });
   });
   await page.waitForFunction(() => window.creditQA.failedResumes > 0);
-  await creditsSettings.getByText("A wallet connection is pending. Refresh balance to finish connecting.", { exact: true }).waitFor();
+  await creditsSettings.getByText("Connection interrupted. Refresh to finish.", { exact: true }).waitFor();
   await creditsSettings.scrollIntoViewIfNeeded();
   await captureSettings("credits-wallet-pending-windows-light.png", false);
   await page.setViewportSize({ width: 790, height: 850 });
@@ -1006,7 +1064,7 @@ try {
   assert.equal(await creditsSettings.getByRole("button", { name: "Refresh balance", exact: true }).isEnabled(), true);
   await page.evaluate(() => { window.creditQA.resumeMode = "complete"; });
   await creditsSettings.getByRole("button", { name: "Refresh balance", exact: true }).click();
-  await page.waitForFunction(() => !document.querySelector(".credit-settings-content")?.textContent.includes("A wallet connection is pending"));
+  await page.waitForFunction(() => !document.querySelector(".credit-settings-content")?.textContent.includes("Refresh to finish"));
   assert.equal(await creditsSettings.getByRole("alert").count(), 0);
   await creditsSettings.getByRole("combobox", { name: "Model", exact: true }).waitFor();
   assert.deepEqual(await page.evaluate(() => window.creditQA.checkouts), ["starter"]);

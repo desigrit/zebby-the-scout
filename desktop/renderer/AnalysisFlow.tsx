@@ -141,7 +141,6 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
               <span className="credit-pack-selection">{pack === item.id ? <><Check size={16} />Selected</> : "Select"}</span>
             </label>)}
           </fieldset><p className="settings-help">Prices in USD. Estimates use 20,000 input and 6,000 output tokens, including cache writes. Usage varies by job and model. You confirm the maximum before each analysis.</p>
-          {!state.credits.available && <p className="credit-unavailable" role="status">Paid credits are not available yet. Local models and your own API keys are ready to use.</p>}
           {state.credits.signedIn && <p className="credit-account">Credits will be added to your connected wallet.</p>}
           {!state.credits.signedIn && <p className="settings-help">Already have credits? Restore or connect this computer in Settings.</p>}
           {!state.canSaveApiKey && <p className="form-error">Secure storage is unavailable. Restore access to Windows secure storage or Mac Keychain to buy credits.</p>}
@@ -181,7 +180,7 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
         <button className="button button-secondary" type="button" disabled={working} onClick={() => close()}>{scene === "checkout" ? "Close" : "Cancel"}</button>
         {scene === "choose" && <button className="button button-primary" type="button" onClick={() => show(method === "credits" ? "buy" : "setup")}>Continue<ChevronRight size={17} /></button>}
         {scene === "setup" && <button className="button button-primary" type="button" disabled={working || !providerReady(state, method)} onClick={() => void finishSetup()}>{hasPending ? "Continue to analysis" : "Done"}</button>}
-        {scene === "buy" && <button className="button button-primary" type="button" disabled={working || !state.credits.available || !state.canSaveApiKey} onClick={() => void purchase()}>
+        {scene === "buy" && <button className="button button-primary" type="button" disabled={working || !state.canSaveApiKey} onClick={() => void purchase()}>
           {working ? <LoaderCircle size={16} className="spin" /> : <ExternalLink size={16} />}Continue, ${CREDIT_PACKS.find((item) => item.id === pack)?.dollars}</button>}
         {scene === "ready" && <button className="button button-primary" type="button" disabled={working} onClick={() => void action(async () => {
           updateState(await window.desktop!.setAnalysisProvider("credits")); if (pending.current) await requestQuote(); else close(); })}>{hasPending ? "Continue to analysis" : "Done"}</button>}
@@ -197,13 +196,14 @@ export function SidebarCredits() {
   const [expanded, setExpanded] = useState(false);
   if (!state.credits.signedIn || !state.credits.wallet?.purchased) return null;
   const wallet = state.credits.wallet, remaining = (wallet?.balance || 0) - (wallet?.reserved || 0);
+  const popover = state.sidebarCollapsed || state.analysisProvider !== "credits";
   return <div className="sidebar-credits">
     <button className="sidebar-credit-button" type="button" aria-label={`${formatCredits(remaining)} credits available, ${formatCredits(wallet?.used || 0)} used`}
-      aria-expanded={state.sidebarCollapsed ? expanded : undefined} onClick={() => state.sidebarCollapsed ? setExpanded(!expanded) : openCredits()}>
+      aria-expanded={popover ? expanded : undefined} onClick={() => popover ? setExpanded(!expanded) : openCredits()}>
       <Coins size={21} aria-hidden="true" /><span><strong>{formatCredits(remaining)} credits</strong><small>{formatCredits(wallet?.used || 0)} used{state.credits.stale ? " · Saved" : ""}</small></span>
     </button>
-    {state.sidebarCollapsed && expanded && <div className="sidebar-credit-popover"><button className="icon-button" type="button" aria-label="Close credits" onClick={() => setExpanded(false)}><X size={16} /></button>
+    {popover && expanded && <div className="sidebar-credit-popover"><button className="icon-button" type="button" aria-label="Close credits" onClick={() => setExpanded(false)}><X size={16} /></button>
       <strong>{formatCredits(remaining)} credits available</strong><small>{formatCredits(wallet?.used || 0)} used{state.credits.stale ? " · Last saved balance" : ""}</small>
-      <button className="button button-secondary" type="button" onClick={() => { setExpanded(false); openCredits(); }}>Buy credits</button></div>}
+      {state.analysisProvider === "credits" && <button className="button button-secondary" type="button" onClick={() => { setExpanded(false); openCredits(); }}>Buy credits</button>}</div>}
   </div>;
 }
