@@ -11,6 +11,7 @@ import { importanceForTerms } from "../desktop/plan-importance.ts";
 // It does not launch Electron, read settings, or open an application database.
 const renderer = path.resolve("desktop-dist/renderer");
 const output = path.resolve("qa-output/renderer-1.5.0");
+const captureImages = process.env.ZEBBY_QA_CHECKS_ONLY !== "1";
 const { version: appVersion } = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 const executablePath = process.env.PM_TRACKER_BROWSER || [
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
@@ -118,7 +119,7 @@ try {
       assert.ok(Math.abs(bounds.x + bounds.width / 2 - bounds.viewportWidth / 2) <= 1, "Analysis dialogs center horizontally");
       assert.ok(Math.abs(bounds.y + bounds.height / 2 - bounds.viewportHeight / 2) <= 1, "Analysis dialogs center vertically");
     }
-    await page.screenshot({ path: path.join(output, filename), fullPage });
+    if (captureImages) await page.screenshot({ path: path.join(output, filename), fullPage });
   }
   async function assertFullTextRows(paragraphs) {
     const rows = await paragraphs.evaluateAll((elements) => elements.map((element) => {
@@ -208,8 +209,8 @@ try {
       await Promise.all(document.getAnimations().filter((animation) =>
         animation.effect?.getTiming().iterations !== Infinity).map((animation) => animation.finished.catch(() => undefined)));
     });
-    await section.screenshot({ path: path.join(output, filename) });
-    if (process.env.ZEBBY_CAPTURE_DOCS && docsFilename) await page.screenshot({ path: path.join(output, docsFilename) });
+    if (captureImages) await section.screenshot({ path: path.join(output, filename) });
+    if (captureImages && process.env.ZEBBY_CAPTURE_DOCS && docsFilename) await page.screenshot({ path: path.join(output, docsFilename) });
     await page.setViewportSize(viewport);
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   }
@@ -299,6 +300,7 @@ try {
       ollamaThinkingCapability: async () => ({ options: [{ value: "off", label: "Off" }, { value: "on", label: "On" }], defaultValue: "off", known: true }),
       setOnlineModel: async (provider, model) => {
         window.creditQA.models.push({ provider, model });
+        await new Promise(resolve => setTimeout(resolve, 25));
         if (provider === "credits") updateCredits({ model });
         else if (provider === "openai") initialState.openaiModel = model;
         else initialState.anthropicModel = model;
@@ -546,7 +548,7 @@ try {
   assert.equal(await page.getByText("Estimated job importance.", { exact: false }).count(), 1);
   assert.equal(await page.locator(".brand-mark").evaluate((element) => element.complete && element.naturalWidth > 0), true);
   await captureSettings("plan-windows-light.png");
-  await page.locator(".cv-section").screenshot({ path: path.join(output, "plan-cv-actions-light.png") });
+  if (captureImages) await page.locator(".cv-section").screenshot({ path: path.join(output, "plan-cv-actions-light.png") });
   const overviewBeforeCollapse = await page.getByRole("textbox", { name: "Current resume overview", exact: true }).inputValue();
   await page.getByRole("button", { name: "Collapse navigation", exact: true }).focus();
   await page.keyboard.press("Enter");
@@ -569,7 +571,7 @@ try {
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
   await captureSettings("plan-windows-dark.png");
   await captureAnalysis("plan-analysis-dark.png");
-  await page.locator(".cv-section").screenshot({ path: path.join(output, "plan-cv-actions-dark.png") });
+  if (captureImages) await page.locator(".cv-section").screenshot({ path: path.join(output, "plan-cv-actions-dark.png") });
   await page.setViewportSize({ width: 1050, height: 900 });
   await captureSettings("plan-windows-compact.png");
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
@@ -810,8 +812,13 @@ try {
   assert.deepEqual(await analysisModel.locator('option').evaluateAll(options => options.map(option => option.value)),
     ['gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-astra']);
   await thinking.selectOption('max'); await analysisModel.selectOption('gpt-6-luna');
+  await page.waitForFunction(() => [...document.querySelectorAll('.analysis-configuration label')]
+    .find(label => label.querySelector('span')?.textContent === 'Thinking level')?.querySelector('select')?.options[0]?.value === 'off');
   assert.equal(await thinking.inputValue(), 'high'); await thinking.selectOption('off');
-  await analysisModel.selectOption('gpt-6.1-sol'); assert.equal(await thinking.inputValue(), 'max');
+  await analysisModel.selectOption('gpt-6.1-sol');
+  await page.waitForFunction(() => [...document.querySelectorAll('.analysis-configuration label')]
+    .find(label => label.querySelector('span')?.textContent === 'Thinking level')?.querySelector('select')?.value === 'max');
+  assert.equal(await thinking.inputValue(), 'max');
   await thinking.selectOption('high');
   await captureSettings('settings-actions-key-windows-light.png', false);
   const changeKey = page.getByRole('button', { name: 'Change key', exact: true });
@@ -847,8 +854,12 @@ try {
   await page.getByRole('button', { name: 'Remove key', exact: true }).waitFor();
   await assertSettingsActions();
   await analysisModel.selectOption('claude-haiku-4-5-20251001');
+  await page.waitForFunction(() => [...document.querySelectorAll('.analysis-configuration label')]
+    .find(label => label.querySelector('span')?.textContent === 'Thinking level')?.querySelector('select')?.options.length === 2);
   assert.deepEqual(await thinking.locator('option').evaluateAll(options => options.map(option => option.value)), ['off', 'on']);
   await thinking.selectOption('on'); await analysisModel.selectOption('claude-sonnet-5-5');
+  await page.waitForFunction(() => [...document.querySelectorAll('.analysis-configuration label')]
+    .find(label => label.querySelector('span')?.textContent === 'Thinking level')?.querySelector('select')?.options.length === 5);
   await captureSettings('analysis-anthropic-windows-light.png', false);
   await page.getByRole('button', { name: 'Remove key', exact: true }).click();
   await page.getByRole('button', { name: 'Remove key', exact: true }).waitFor({ state: 'detached' });
@@ -1239,7 +1250,7 @@ try {
   assert.equal(await page.evaluate(() => document.querySelector('.desktop-workspace').inert), true);
   assert.equal(await page.evaluate(() => window.modelQA.installRequests), 2);
   assert.deepEqual(errors, []);
-  console.log(`Headless renderer checks passed. No desktop app was launched. Screenshots: ${output}`);
+  console.log(`Headless renderer checks passed. No desktop app was launched. ${captureImages ? `Screenshots: ${output}` : "No new screenshots were captured."}`);
 } finally {
   for (const resolve of pending.values()) resolve();
   await browser?.close();

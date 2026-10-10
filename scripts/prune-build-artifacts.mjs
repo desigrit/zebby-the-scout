@@ -2,7 +2,8 @@ import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-const diagnostics = new Set(["desktop-visual-review", "local-engine-qa-windows", "local-engine-qa-macos", "mac-distribution-qa"]);
+const diagnostics = new Set(["desktop-visual-review", "local-engine-qa-windows", "local-engine-qa-macos", "mac-distribution-qa",
+  "credits-renderer-qa-windows", "credits-renderer-qa-macos"]);
 
 function artifactGroup(name) {
   const installer = /^(?:zebby|pm-application-tracker)-(windows-x64|windows-arm64|macos-arm64)$/.exec(name);

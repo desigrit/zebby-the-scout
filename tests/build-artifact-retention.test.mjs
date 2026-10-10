@@ -37,3 +37,10 @@ test("only the latest diagnostic artifact remains, without changing the source s
   assert.deepEqual(plan.keep.map((entry) => entry.id), [2]);
   assert.equal(JSON.stringify(artifacts), snapshot);
 });
+
+test("older credits screenshots are pruned separately for Windows and Mac", () => {
+  const artifacts = [artifact(1, "credits-renderer-qa-windows", 10), artifact(2, "credits-renderer-qa-macos", 10),
+    artifact(3, "credits-renderer-qa-windows", 20, "2026-10-10T00:00:00Z"), artifact(4, "credits-renderer-qa-macos", 20, "2026-10-10T00:00:00Z")];
+  const plan = planArtifactCleanup(artifacts, [{ id: 10, status: "completed" }, { id: 20, status: "completed" }]);
+  assert.deepEqual(plan.remove.map(({ id }) => id).sort(), [1, 2]); assert.deepEqual(plan.keep.map(({ id }) => id).sort(), [3, 4]);
+});
