@@ -55,7 +55,7 @@ Windows scroll containers reserve a stable 12px gutter. The resting 2px thumb wi
 - Older analyses retain text with Unrated importance. Edited or added terms remain Unrated until refreshed. Job changes clear importance; CV-only changes retain unchanged job importance. Job or CV source changes clear the prior match and its explanation, and stale analysis persistence is rejected.
 - Suggested resume overview remains editable. What changed or No wording changes presents its separate saved rationale as read-only text. Analysis details expands provider and importance context on demand.
 
-The overview rationale and paragraphs inside Analysis details use the full available document width. This user-requested footer exception removes only their 72ch caps.
+Why, the overview rationale and paragraphs inside Analysis details use the full available document width, preserving saved paragraph breaks and wrapping naturally when space is narrower. This is the user-approved exception to the default 65-75ch measure.
 
 ## Overview and persistence
 
@@ -114,3 +114,9 @@ Analyze remains below Your CV, and Save stays outside document scrolling. Initia
 The flow returns to the saved Plan analysis without changing its source fields, editable recommendations, separate Why and wording rationale, cancellation, or stale-result protection. No fallback substitutes a different provider. Full local model inputs, including Qwen, retain their existing path.
 
 See [Analysis and credits](analysis-credits.md) for the approved flow and finish evidence. The supplied final run passed 91 Node tests, with lint, TypeScript, and both builds passing. The independent source and test review cleared paid recovery, partial refund duplication, and stale account wallet responses. No current Plan screenshot or native interaction run was made. Earlier capture claims remain historical; hosted paid integration and current visual rendering are unverified.
+
+### 2026-10-10 copy-width correction
+
+Source 1bef24b754293473367d327bf701e7b12d49bcf7 was compared with baseline 47d15b655641abe3e8fc4f1c7fa42b3e069fc819. The CSS diff removes three text measure caps, honoring the user's screenshots with full available rows and natural wrapping. DESIGN.md and .impeccable/design.json are preserved. Setup is unchanged.
+
+The full scoped review in work/copy-width-finish-review.md returned disposition: ship, with no material fixes, after reviewing all six final captures and both user originals. [CI 38073818970](https://github.com/desigrit/zebby-the-scout/actions/runs/38073818970) passed 157 Node tests, typecheck, lint, production build, full renderer flows and 18 native Windows checks. Synthetic component/theme previews use mixed renderer platform overrides; Plan deliberately scrolls to results. Physical Mac visuals, Windows ARM hardware and live services remain unverified. [Release CI 38074447709](https://github.com/desigrit/zebby-the-scout/actions/runs/38074447709) passed Windows/macOS packaging, packaged-model and update checks on the reviewed source; stable [v2.1.3](https://github.com/desigrit/zebby-the-scout/releases/tag/v2.1.3) is published with direct Windows x64, Windows ARM64 and Mac ARM64 installers, each returning HTTP 200.

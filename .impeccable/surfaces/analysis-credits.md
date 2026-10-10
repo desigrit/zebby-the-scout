@@ -26,7 +26,7 @@ OWN-WORLD: Incumbent Ember warm neutral canvas, restrained terracotta actions, q
 
 STORY: Choose a method, finish focused setup, complete guest checkout in an external browser, choose a model after purchase, save a recovery code, pair another computer when needed, review a maximum quote or recover the paid result for free, then receive wallet feedback.
 
-FIRST VIEWPORT: Initial setup retains a native modal with four method tiles in two columns and a full-width Buy credits tile. Settings shows Buy credits under Analysis only when Zebby credits is selected. Empty Credits has concise no-credit text, Restore credits | Connect this computer and Learn more; funded Credits has a slim usage summary and model dropdown. Dialog bodies scroll independently, and narrow windows adapt the choice grid.
+FIRST VIEWPORT: Initial setup retains a native modal with four method tiles in two columns and a full-width Buy credits tile. Settings shows Buy credits under Analysis only when Zebby credits is selected. Empty Credits has concise no-credit text, Restore credits | Connect this computer and Learn more; funded Credits has a slim usage summary and model dropdown. Dialog bodies scroll independently. Analysis introductions and pricing helper text use the modal's full content width and wrap naturally in narrower windows, where the choice grid also adapts.
 
 FORM: The approved Quick choice A concept translated into Ember and the incumbent Plan and Application editors. The separate prototype is a direction reference, not current product verification.
 

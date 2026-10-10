@@ -36,7 +36,7 @@ Database, conditional provider, credits, recovery/pairing, local model and updat
 
 Primary controls use the incumbent rust action treatment for Save, Save key, Buy credits, downloads and updates. Secondary controls use paper or the dark field fill and a fine border. Destructive Settings controls use secondary geometry with rust text and an accent-wash hover; existing native confirmations still guard the operations that require them. Busy controls show a 16px spinner, expose busy state and disable activation. The shared focus outline, disabled feedback, arrow cursor and reduced-motion behavior remain inherited from Ember.
 
-Provider configuration has one explicit grid column, with each field spanning the full row. Action rows align controls and wrap with an 8px gap when needed. Folder and external navigation, including Open model folder, Open logs folder, Report an issue and Release notes, retain the existing underlined link treatment.
+Provider configuration has one explicit grid column, with each field spanning the full row. Helper paragraphs, including provider and local-model terms/privacy copy, use their existing section width and wrap naturally in narrower sections. Action rows align controls and wrap with an 8px gap when needed. Folder and external navigation, including Open model folder, Open logs folder, Report an issue and Release notes, retain the existing underlined link treatment.
 
 ## Database and logs
 
