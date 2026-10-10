@@ -103,16 +103,26 @@ a { color: inherit; text-underline-offset: 3px; }
 .activity-period { color: var(--ink-soft); }
 .activity-bars { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); align-items: end; gap: 5px; height: 48px; }
 .activity-day { position: relative; display: flex; align-items: flex-end; justify-content: center; min-width: 0; height: 100%; padding: 0; border: 0; border-radius: 3px; background: transparent; }
-.activity-bar { display: block; width: 100%; max-width: 22px; min-height: 2px; border-radius: 3px 3px 1px 1px; background: var(--line); }
-.has-applications .activity-bar { background: var(--chart); }
-.activity-day:hover .activity-bar, .activity-day:focus-visible .activity-bar { background: var(--focus); }
+.application-activity { --activity-applied: #8f8176; --activity-heard-back: var(--chart); --activity-interview: #338161; --activity-rejected: #b45448; }
+.activity-bar { display: flex; flex-direction: column-reverse; width: 100%; max-width: 22px; min-height: 2px; border-radius: 3px 3px 1px 1px; overflow: hidden; background: var(--line); }
+.activity-segment { display: block; flex-basis: 0; min-height: 0; width: 100%; }
+.activity-day:hover .activity-bar { outline: 1px solid var(--line-strong); outline-offset: 2px; }
+.activity-segment[data-status="Applied"], .activity-swatch[data-status="Applied"] { background: var(--activity-applied); }
+.activity-segment[data-status="Heard back"], .activity-swatch[data-status="Heard back"] { background: var(--activity-heard-back); }
+.activity-segment[data-status="Interview scheduled"], .activity-swatch[data-status="Interview scheduled"] { background: var(--activity-interview); }
+.activity-segment[data-status="Rejected"], .activity-swatch[data-status="Rejected"] { background: var(--activity-rejected); }
 .activity-day:focus-visible { outline-width: 2px; outline-offset: 4px; }
-.activity-tooltip { position: absolute; z-index: 2; bottom: calc(100% + 9px); left: 50%; display: flex; flex-direction: column; gap: 1px; min-width: 108px; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--paper); color: var(--ink-soft); font-size: 11px; text-align: center; white-space: nowrap; opacity: 0; visibility: hidden; pointer-events: none; transform: translateX(-50%); box-shadow: 0 4px 12px rgba(20,36,24,.12); }
+.activity-tooltip { position: absolute; z-index: 2; top: calc(100% + 9px); left: 50%; display: flex; flex-direction: column; gap: 1px; min-width: 108px; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--paper); color: var(--ink-soft); font-size: 11px; text-align: center; white-space: nowrap; opacity: 0; visibility: hidden; transform: translateX(-50%); box-shadow: 0 4px 12px rgba(20,36,24,.12); }
+.activity-tooltip::before { content: ""; position: absolute; inset: -10px 0 auto; height: 10px; }
 .activity-tooltip strong { color: var(--ink); font-size: 12px; font-weight: 650; }
-.activity-day:nth-child(-n+3) .activity-tooltip { left: 0; transform: none; }
-.activity-day:nth-last-child(-n+3) .activity-tooltip { right: 0; left: auto; transform: none; }
 .activity-day:hover .activity-tooltip, .activity-day:focus-visible .activity-tooltip { opacity: 1; visibility: visible; }
+.activity-bars[data-tooltip-dismissed="true"] .activity-tooltip { opacity: 0; visibility: hidden; }
 .activity-axis { display: flex; justify-content: space-between; margin-top: 6px; color: var(--ink-soft); font-size: 10px; font-variant-numeric: tabular-nums; }
+.activity-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 9px; color: var(--ink-soft); font-size: 10px; }
+.activity-legend > span, .activity-tooltip-statuses > span { display: inline-flex; align-items: center; gap: 6px; }
+.activity-swatch { display: inline-block; flex: none; width: 7px; height: 7px; border-radius: 2px; }
+.activity-tooltip-statuses { display: grid; gap: 4px; margin-top: 7px; text-align: left; }
+.activity-tooltip-statuses b { margin-left: auto; padding-left: 12px; color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 
 .stats-band {
   display: grid;

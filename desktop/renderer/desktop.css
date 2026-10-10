@@ -12,6 +12,7 @@ html[data-theme="dark"] {
   --focus-ring: rgba(240,172,145,.2); --button-ink: #24201e;
   --selection-bg: #785344; --selection-ink: #fff5ec; --scroll-thumb: #a69b92;
 }
+html[data-theme="dark"] .application-activity { --activity-applied: #a69b92; --activity-interview: #80b593; --activity-rejected: #d58d81; }
 .desktop-shell { --sidebar-width: 210px; --brand-inset: 26px; --sidebar-motion: 280ms cubic-bezier(.16, 1, .3, 1); --titlebar-height: 44px; display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); grid-template-rows: var(--titlebar-height) minmax(0, 1fr); height: 100%; transition: grid-template-columns var(--sidebar-motion); }
 .desktop-shell.sidebar-collapsed { --sidebar-width: 96px; --brand-inset: 25px; }
 .platform-windows { font-family: "Segoe UI Variable", "Segoe UI", Arial, sans-serif; }
@@ -277,6 +278,11 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .database-location strong { font-size: 13px; font-weight: 650; }
 .database-location code { font: inherit; font-size: 11px; color: var(--ink-soft); overflow-wrap: anywhere; }
 .settings-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.settings-action.button { min-width: 96px; min-height: 36px; gap: 8px; padding: 8px 13px; border-radius: 8px; font-size: 13px; font-weight: 650; line-height: 1.2; }
+.settings-action > svg { flex: none; }
+.settings-action-icon.button { flex: none; min-width: 36px; width: 36px; padding: 8px; }
+.settings-action-danger.button { color: var(--accent); }
+.settings-action-danger.button:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-wash); }
 .settings-help { max-width: 72ch; margin: 10px 0 0; font-size: 11px; line-height: 1.6; color: var(--ink-soft); }
 .settings-content .sync-warning { margin: 12px 0 0; font-size: 12px; color: var(--accent); }
 .settings-content > .field, .local-model-field { display: flex; margin-bottom: 14px; }
@@ -398,14 +404,13 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .credit-access-row strong svg { color: var(--ink-soft); flex: none; }
 .credit-access-row p { margin: 6px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.5; max-width: 65ch; }
 .credit-access-row > button { flex: none; }
-.credit-restore-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; margin: 12px 0; }
-.credit-restore-actions > button { display: inline-flex; align-items: center; gap: 6px; }
+.credit-restore-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
 .credit-connect-form { margin: 18px 0; max-width: 560px; }
 .credit-connect-form .field { margin: 0; }
 .credit-connect-form input { width: 100%; }
 .credit-pairing-panel { margin: 4px 0 20px; padding: 16px 18px; border-radius: 8px; background: var(--accent-wash); }
 .credit-pairing-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 13px; }
-.credit-pairing-heading .icon-button { flex: none; }
+.credit-pairing-heading .settings-action { flex: none; }
 .credit-pairing-panel .settings-help { margin: 6px 0 16px; }
 .credit-pairing-code { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; }
 .credit-pairing-code output { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: .08em; overflow-wrap: anywhere; }
@@ -419,6 +424,7 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .credit-devices li strong { font-size: 12px; font-weight: 500; }
 .credit-devices li small { color: var(--ink-soft); }
 .credit-devices li > button { margin-left: auto; flex: none; }
+.credit-recovery-options > .settings-action { margin-top: 12px; }
 .credit-recovery-prompt { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
 .credit-recovery-prompt > span { display: grid; gap: 6px; font-size: 13px; }
 .credit-recovery-prompt small { color: var(--ink-soft); font-size: 12px; }
@@ -430,7 +436,6 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .credit-history li > span { display: grid; gap: 4px; }
 .credit-history li small { color: var(--ink-soft); }
 .credit-history li strong { flex: none; font-weight: 500; }
-.text-button { background: none; border: 0; padding: 4px 0; color: var(--accent); font: inherit; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
 .sidebar-credits { position: relative; margin-bottom: 12px; }
 .sidebar-credit-button { display: flex; align-items: center; gap: 12px; padding: 12px; width: 100%; border: 0; border-radius: 8px; color: var(--ink); background: var(--accent-wash); text-align: left; }
 .sidebar-credit-button > svg { color: var(--accent); flex: none; }

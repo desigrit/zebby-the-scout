@@ -2,6 +2,7 @@ import { Check, Download, FolderOpen, Pause, Play, RotateCw, Trash2 } from "luci
 import { useState } from "react";
 import { formatModelBytes, LOCAL_MODELS, type LocalModel, type LocalModelStatus } from "../local-model-catalog";
 import type { DesktopState } from "../bridge";
+import SettingsAction from "./SettingsAction";
 
 function downloadState(model: LocalModel, status: LocalModelStatus) {
   if (status.status === "ready") return "Ready";
@@ -34,21 +35,19 @@ export default function LocalModelsSettings({ state, onState }: { state: Desktop
   function controls(model: LocalModel, status: LocalModelStatus) {
     const running = status.status === "downloading" || status.status === "verifying";
     return <div className="local-model-actions">
-      {needsConsent && model.license ? <button type="button" className="button button-primary model-agreement" disabled={working}
+      {needsConsent && model.license ? <SettingsAction variant="primary" icon={Download} className="model-agreement" disabled={working}
         onClick={() => void run(() => window.desktop!.resumeModelDownload(model.id, model.license!.version))}>
-        <Download size={15} aria-hidden="true" /> {status.status === "ready" ? "Agree and use" : "Agree and download"}</button>
-      : running ? <button type="button" className="button button-secondary" disabled={working}
+        {status.status === "ready" ? "Agree and use" : "Agree and download"}</SettingsAction>
+      : running ? <SettingsAction icon={Pause} disabled={working}
         onClick={() => void run(() => window.desktop!.pauseModelDownload())}>
-        <Pause size={15} aria-hidden="true" /> Pause</button>
-      : status.status !== "ready" && <button type="button" className="button button-secondary" disabled={working}
+        Pause</SettingsAction>
+      : status.status !== "ready" && <SettingsAction variant="primary" icon={status.status === "error" ? RotateCw : status.downloadedBytes ? Play : Download} disabled={working}
         onClick={() => void run(() => window.desktop!.resumeModelDownload(model.id))}>
-        {status.status === "error" ? <RotateCw size={15} aria-hidden="true" />
-          : status.downloadedBytes ? <Play size={15} aria-hidden="true" /> : <Download size={15} aria-hidden="true" />}
-        {status.status === "error" ? "Retry download" : status.downloadedBytes ? "Resume download" : "Download model"}</button>}
-      {(status.status !== "not-installed" || status.downloadedBytes > 0) && <button type="button"
-        className="button button-secondary model-delete" aria-label={`Delete ${model.name}`} disabled={working}
+        {status.status === "error" ? "Retry download" : status.downloadedBytes ? "Resume download" : "Download model"}</SettingsAction>}
+      {(status.status !== "not-installed" || status.downloadedBytes > 0) && <SettingsAction variant="danger" icon={Trash2}
+        className="model-delete" aria-label={`Delete ${model.name}`} disabled={working}
         onClick={() => void run(() => window.desktop!.deleteLocalModel(model.id))}>
-        <Trash2 size={15} aria-hidden="true" /> Delete</button>}
+        Delete</SettingsAction>}
     </div>;
   }
 
@@ -97,9 +96,9 @@ export default function LocalModelsSettings({ state, onState }: { state: Desktop
         return <li key={status.id}>
           <div className="local-model-library-info"><strong>{model.name}</strong>
             <span>{status.status === "ready" ? formatModelBytes(model.bytes) : `${formatModelBytes(status.downloadedBytes)} downloaded`} · {status.status === "ready" ? "Ready" : "Partial download"}</span></div>
-          <button type="button" className="button button-secondary model-delete" aria-label={`Delete ${model.name}`} disabled={working}
+          <SettingsAction variant="danger" icon={Trash2} className="model-delete" aria-label={`Delete ${model.name}`} disabled={working}
             onClick={() => void run(() => window.desktop!.deleteLocalModel(model.id))}>
-            <Trash2 size={15} aria-hidden="true" /> Delete</button>
+            Delete</SettingsAction>
         </li>;
       })}</ul>
     </details>}

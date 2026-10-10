@@ -14,6 +14,7 @@ import { onlineModel } from "../../shared/online-models";
 import PlanRecommendations from "./PlanRecommendations";
 import NavigationButton from "./NavigationButton";
 import UpdateButton from "./UpdateButton";
+import SettingsAction from "./SettingsAction";
 import { LOCAL_MODELS } from "../local-model-catalog";
 import { importanceForTerms } from "../plan-importance";
 import { useInteractiveScrollbars, useWorkspaceShortcuts } from "./useWorkspaceShortcuts";
@@ -489,12 +490,9 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking 
         <div className="database-location"><span>Current file</span><strong>{state.filename || "No database selected"}</strong>
           {state.filePath && <code title={state.filePath}>{state.filePath}</code>}</div>
         {state.dirty && <p className="sync-warning">The latest changes are still on this computer. Retry the save before switching devices.</p>}
-        <div className="settings-actions"><button className="button button-secondary" type="button" onClick={() => void choose("open")} disabled={working}>
-          <FolderOpen size={17} aria-hidden="true" /> Open database</button>
-          <button className="button button-secondary" type="button" data-command="new" onClick={() => void choose("create")} disabled={working}>
-          <Plus size={17} aria-hidden="true" /> Create new database</button>
-          {state.dirty && <button className="button button-primary" type="button" onClick={() => void retry()} disabled={working}>
-            <RotateCw size={16} aria-hidden="true" /> Retry save</button>}
+        <div className="settings-actions"><SettingsAction icon={FolderOpen} onClick={() => void choose("open")} disabled={working}>Open database</SettingsAction>
+          <SettingsAction icon={Plus} data-command="new" onClick={() => void choose("create")} disabled={working}>Create new database</SettingsAction>
+          {state.dirty && <SettingsAction variant="primary" icon={RotateCw} onClick={() => void retry()} disabled={working}>Retry save</SettingsAction>}
         </div>
         <p className="settings-help">Quit Zebby and wait for file sync before switching computers.</p>
       </div>
@@ -530,10 +528,10 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking 
       <div className="settings-section-heading"><h2 id="updates-settings">Updates</h2><p>Zebby {state.updates.currentVersion}</p></div>
       <div className="settings-content">
         <div className="settings-actions">
-          <button className="button button-secondary" type="button" onClick={() => void checkUpdates()}
+          <SettingsAction icon={RefreshCw} busy={state.updates.checking} onClick={() => void checkUpdates()}
             disabled={state.updates.checking || !["idle", "error"].includes(state.updates.download.phase)}>
-            {state.updates.checking && <LoaderCircle className="spin" size={16} aria-hidden="true" />} Check for updates</button>
-          <UpdateButton updates={state.updates} working={updateWorking} onClick={onUpdate} />
+            Check for updates</SettingsAction>
+          <UpdateButton updates={state.updates} working={updateWorking} onClick={onUpdate} settings />
         </div>
         <p className="settings-help" role="status">{state.updates.checking ? "Checking GitHub for a new release."
           : state.updates.available ? `Version ${state.updates.available.version} is available.`

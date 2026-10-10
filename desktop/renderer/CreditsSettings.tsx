@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Check, Copy, KeyRound, Link2, LoaderCircle, Monitor, RefreshCw, ShieldCheck, X } from "lucide-react";
+import { Check, Copy, CreditCard, KeyRound, Link2, LoaderCircle, Monitor, RefreshCw, ShieldCheck, Unplug, X } from "lucide-react";
 import { formatCredits, onlineModel } from "../../shared/online-models";
 import type { WalletPairing } from "../../shared/wallet-access";
 import { OnlineModelSelect } from "./AnalysisSettings";
+import SettingsAction from "./SettingsAction";
 import { useAnalysisFlow } from "./AnalysisFlow";
 
 export function CreditsSettings() {
@@ -83,37 +84,37 @@ export function CreditsSettings() {
       {credits.available && !state.canSaveApiKey && <p className="form-error">Paid credits need Windows secure storage or Mac Keychain.</p>}
       {credits.pendingConnection && <p className="settings-help" role="status">A wallet connection is pending. Refresh balance to finish connecting.</p>}
       <div className="settings-actions">
-        <button className="button button-primary" type="button" disabled={!usable || working} onClick={openCredits}>Buy credits</button>
-        {(credits.signedIn || credits.pendingConnection) && <button className="button button-secondary" type="button" disabled={!usable || working} onClick={() => void action(async () => {
+        <SettingsAction variant="primary" icon={CreditCard} disabled={!usable || working} onClick={openCredits}>Buy credits</SettingsAction>
+        {(credits.signedIn || credits.pendingConnection) && <SettingsAction icon={RefreshCw} disabled={!usable || working} onClick={() => void action(async () => {
           updateState(await window.desktop!.refreshCredits()); updateState(await window.desktop!.refreshCreditAccess());
-        })}><RefreshCw size={16} aria-hidden="true" />Refresh balance</button>}
+        })}>Refresh balance</SettingsAction>}
       </div>
       <div className="credit-access-controls">
         {credits.signedIn && <>
           <div className="credit-access-row"><div><strong><ShieldCheck size={17} aria-hidden="true" />Recovery code</strong>
             <p>{credits.recoverySaved ? "Your recovery code is saved." : credits.access?.hasRecoveryCode ? "A recovery code is set. Keep your saved copy." : "Keep your credits if you reinstall or replace this computer."}</p></div>
-            <button className="button button-secondary" type="button" disabled={!usable || working} onClick={() => void action(() => saveRecovery())}>Save recovery code</button>
+            <SettingsAction icon={ShieldCheck} disabled={!usable || working} onClick={() => void action(() => saveRecovery())}>Save recovery code</SettingsAction>
           </div>
           <div className="credit-access-row"><div><strong><Monitor size={17} aria-hidden="true" />Other computers</strong><p>Use the same credit balance on Windows and Mac.</p></div>
-            <button className="button button-secondary" type="button" disabled={!usable || working || Boolean(pairing)} onClick={() => void action(startPairing)}>Connect another computer</button>
+            <SettingsAction icon={Monitor} disabled={!usable || working || Boolean(pairing)} onClick={() => void action(startPairing)}>Connect another computer</SettingsAction>
           </div>
         </>}
         {pairing && <div className="credit-pairing-panel" aria-labelledby="credit-pairing-title">
           <div className="credit-pairing-heading"><strong id="credit-pairing-title">Enter this code on your other computer</strong>
-            <button className="icon-button" type="button" disabled={working} aria-label="Cancel pairing" onClick={() => void action(async () => {
+            <SettingsAction icon={X} iconOnly disabled={working} aria-label="Cancel pairing" title="Cancel pairing" onClick={() => void action(async () => {
               await window.desktop!.cancelCreditPairing(); setPairing(null); setCopied(false);
-            })}><X size={17} /></button></div>
+            })} /></div>
           <p className="settings-help">Open Settings, Credits, then Connect this computer.</p>
           <div className="credit-pairing-code"><output aria-label="Pairing code">{displayCode}</output>
-            <button className="button button-secondary" type="button" disabled={working || remaining <= 0} onClick={() => void action(async () => {
+            <SettingsAction icon={copied ? Check : Copy} disabled={working || remaining <= 0} onClick={() => void action(async () => {
               await navigator.clipboard.writeText(displayCode); setCopied(true);
-            })}>{copied ? <Check size={16} /> : <Copy size={16} />}{copied ? "Copied" : "Copy code"}</button></div>
+            })}>{copied ? "Copied" : "Copy code"}</SettingsAction></div>
           <div className="credit-pairing-expiry"><span>{remaining > 0 ? `Expires in ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}` : "Code expired. Generate a new one."}</span>
-            <button className="text-button" type="button" disabled={working} onClick={() => void action(startPairing)}>New code</button></div>
+            <SettingsAction icon={RefreshCw} disabled={working} onClick={() => void action(startPairing)}>New code</SettingsAction></div>
         </div>}
         <div className="credit-restore-actions">
-          <button className="text-button" type="button" disabled={!usable || working || Boolean(pairing)} onClick={(event) => openEditor("restore", event.currentTarget)}><KeyRound size={15} aria-hidden="true" />Restore credits</button>
-          <button className="text-button" type="button" disabled={!usable || working || Boolean(pairing)} onClick={(event) => openEditor("connect", event.currentTarget)}><Link2 size={15} aria-hidden="true" />Connect this computer</button>
+          <SettingsAction icon={KeyRound} disabled={!usable || working || Boolean(pairing)} onClick={(event) => openEditor("restore", event.currentTarget)}>Restore credits</SettingsAction>
+          <SettingsAction icon={Link2} disabled={!usable || working || Boolean(pairing)} onClick={(event) => openEditor("connect", event.currentTarget)}>Connect this computer</SettingsAction>
         </div>
         {editor && <form className="credit-connect-form" onSubmit={(event) => { event.preventDefault(); void action(async () => {
           const result = await window.desktop!.connectCreditWallet(editor, code); updateState(result.state);
@@ -122,20 +123,20 @@ export function CreditsSettings() {
           <label className="field"><span>{editor === "restore" ? "Recovery code" : "Pairing code"}</span>
             <input ref={input} type={editor === "restore" ? "password" : "text"} value={code} spellCheck={false} autoComplete="off" maxLength={100}
               placeholder={editor === "restore" ? "Paste your saved recovery code" : "ABCD-EFGH"} required disabled={working} onChange={(event) => setCode(event.target.value)} /></label>
-          <div className="settings-actions"><button className="button button-primary" type="submit" disabled={working || !code.trim()}>
-            {working && <LoaderCircle size={16} className="spin" aria-hidden="true" />}{editor === "restore" ? "Restore credits" : "Connect"}</button>
-            <button className="button button-secondary" type="button" disabled={working} onClick={closeEditor}>Cancel</button></div>
+          <div className="settings-actions"><SettingsAction variant="primary" icon={editor === "restore" ? KeyRound : Link2} type="submit" busy={working} disabled={!code.trim()}>
+            {editor === "restore" ? "Restore credits" : "Connect"}</SettingsAction>
+            <SettingsAction disabled={working} onClick={closeEditor}>Cancel</SettingsAction></div>
         </form>}
         {credits.signedIn && <>
           <details className="credit-devices"><summary>Connected computers{credits.access ? ` (${credits.access.devices.length})` : ""}</summary>
             {credits.access ? <ul>{credits.access.devices.map((device) => <li key={device.id}><Monitor size={17} aria-hidden="true" />
               <span><strong>{device.name}</strong><small>{device.current ? "This computer" : `Last used ${new Date(device.lastSeenAt).toLocaleDateString()}`}</small></span>
-              {!device.current && <button className="text-button" type="button" disabled={working} onClick={() => void action(async () => {
+              {!device.current && <SettingsAction variant="danger" icon={Unplug} disabled={working} onClick={() => void action(async () => {
                 updateState(await window.desktop!.removeCreditDevice(device.id));
-              })}>Disconnect</button>}</li>)}</ul> : <p className="settings-help">Refresh balance to load connected computers.</p>}
+              })}>Disconnect</SettingsAction>}</li>)}</ul> : <p className="settings-help">Refresh balance to load connected computers.</p>}
           </details>
           {credits.access?.hasRecoveryCode && <details className="credit-recovery-options"><summary>Recovery options</summary><p className="settings-help">A new code replaces the previous one. Connected computers keep access.</p>
-            <button className="text-button" type="button" disabled={!usable || working} onClick={() => void action(() => saveRecovery(true))}>Create new recovery code</button></details>}
+            <SettingsAction icon={RefreshCw} disabled={!usable || working} onClick={() => void action(() => saveRecovery(true))}>Create new recovery code</SettingsAction></details>}
         </>}
       </div>
       {(error || credits.error) && <p className="form-error" role="alert">{error || credits.error}</p>}

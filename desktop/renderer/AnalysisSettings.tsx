@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Check, RotateCw } from "lucide-react";
+import { Check, CreditCard, KeyRound, RotateCw, Trash2 } from "lucide-react";
 import type { DesktopState } from "../bridge";
 import LocalModelsSettings from "./LocalModelsSettings";
 import { LOCAL_MODELS } from "../local-model-catalog";
 import { ONLINE_MODELS, type AnalysisProvider } from "../../shared/online-models";
+import SettingsAction from "./SettingsAction";
 export function providerReady(state: DesktopState, provider = state.analysisProvider) {
   if (provider === "openai") return state.hasApiKey;
   if (provider === "anthropic") return state.hasAnthropicKey;
@@ -56,14 +57,14 @@ export function AnalysisSettings({ state, onState, provider: suppliedProvider, o
       <div className="ollama-model-row"><label className="field"><span>Model</span><select value={models.includes(model) ? model : "custom"}
         onChange={(event) => setModel(event.target.value === "custom" ? "" : event.target.value)}>
         {models.map((name) => <option key={name}>{name}</option>)}<option value="custom">Enter model name</option>
-      </select></label><button className="icon-button model-refresh" type="button" disabled={working || finding} aria-label="Find models"
+      </select></label><SettingsAction className="model-refresh" icon={RotateCw} iconOnly busy={finding} disabled={working} aria-label="Find models" title="Find models"
         onClick={async () => { setFinding(true); setError(""); try { const result = await window.desktop!.listOllamaModels(url); setModels(result);
           if (!result.length) setNotice("No models found on this server."); } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not connect."); }
-          finally { setFinding(false); } }}><RotateCw size={17} className={finding ? "spin" : undefined} /></button></div>
+          finally { setFinding(false); } }} /></div>
       {!models.includes(model) && <label className="field"><span>Model name</span><input value={model} spellCheck={false}
         onChange={(event) => setModel(event.target.value)} placeholder="qwen3:8b" /></label>}
-      <div className="settings-actions"><button className="button button-primary" type="button" disabled={working || finding || !model.trim()}
-        onClick={() => void action(() => window.desktop!.setOllamaConfig({ url, model }), "Server settings saved.")}><Check size={17} />Save</button></div>
+      <div className="settings-actions"><SettingsAction variant="primary" icon={Check} disabled={working || finding || !model.trim()}
+        onClick={() => void action(() => window.desktop!.setOllamaConfig({ url, model }), "Server settings saved.")}>Save</SettingsAction></div>
       <p className="settings-help">Job text and resume text go to your selected server.</p>
     </>}
     {provider === "builtin" && <LocalModelsSettings state={state} onState={onState} />}
@@ -72,16 +73,17 @@ export function AnalysisSettings({ state, onState, provider: suppliedProvider, o
       <p className={`key-status ${hasKey ? "key-ready" : ""}`}>{hasKey ? state.canSaveApiKey ? "API key saved" : "API key set for this session" : "Use your own API account"}</p>
       <label className="field key-field"><span>{hasKey ? "Replace API key" : "API key"}</span><input type="password" value={key} autoComplete="off" spellCheck={false}
         onChange={(event) => setKey(event.target.value)} placeholder={provider === "openai" ? "sk-..." : "sk-ant-..."} /></label>
-      <div className="settings-actions"><button className="button button-primary" type="button" disabled={working || !key.trim()}
-        onClick={() => void action(async () => { const next = await (provider === "openai" ? window.desktop!.setApiKey(key) : window.desktop!.setAnthropicKey(key)); setKey(""); return next; }, "API key saved.")}>Save key</button>
-        {hasKey && <button className="button button-secondary" type="button" disabled={working}
-          onClick={() => void action(() => provider === "openai" ? window.desktop!.setApiKey("") : window.desktop!.setAnthropicKey(""), "API key removed.")}>Remove key</button>}</div>
+      <div className="settings-actions"><SettingsAction variant="primary" icon={KeyRound} disabled={working || !key.trim()}
+        onClick={() => void action(async () => { const next = await (provider === "openai" ? window.desktop!.setApiKey(key) : window.desktop!.setAnthropicKey(key)); setKey(""); return next; }, "API key saved.")}>Save key</SettingsAction>
+        {hasKey && <SettingsAction variant="danger" icon={Trash2} disabled={working}
+          onClick={() => void action(() => provider === "openai" ? window.desktop!.setApiKey("") : window.desktop!.setAnthropicKey(""), "API key removed.")}>Remove key</SettingsAction>}</div>
       <p className="settings-help">{provider === "openai" ? "OpenAI" : "Anthropic"} receives job and resume content. Usage is billed to your API account.</p>
       {!state.canSaveApiKey && <p className="settings-help">Secure storage is unavailable. This key lasts until Zebby closes.</p>}
     </>}
     {provider === "credits" && <>
       <p className="settings-help">{state.credits.signedIn && state.credits.wallet?.purchased ? "Choose your model in Credits below." : "Choose your model after purchasing credits."}</p>
-      {!state.credits.signedIn && <button className="button button-secondary" type="button" onClick={openCredits}>Buy credits</button>}
+      {!state.credits.signedIn && <div className="settings-actions"><SettingsAction variant="primary" icon={CreditCard} onClick={openCredits}
+        disabled={!state.credits.available || !state.canSaveApiKey}>Buy credits</SettingsAction></div>}
     </>}
   </div>;
 }

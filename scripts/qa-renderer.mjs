@@ -119,6 +119,34 @@ try {
     }
     await page.screenshot({ path: path.join(output, filename), fullPage });
   }
+  async function assertSettingsActions() {
+    const actions = await page.locator('.settings-page button:not(.settings-link)').evaluateAll((buttons) => buttons.map((button) => {
+      const style = getComputedStyle(button), icon = button.querySelector('svg');
+      return { label: button.getAttribute('aria-label') || button.innerText, shared: button.classList.contains('settings-action'),
+        height: button.getBoundingClientRect().height, size: style.fontSize, weight: style.fontWeight,
+        radius: style.borderRadius, gap: style.gap, iconWidth: icon ? parseFloat(getComputedStyle(icon).width) : undefined,
+        iconHeight: icon ? parseFloat(getComputedStyle(icon).height) : undefined };
+    }));
+    assert.ok(actions.length > 0);
+    for (const action of actions) {
+      assert.equal(action.shared, true, `${action.label} uses the common Settings control`);
+      assert.equal(action.height, 36, `${action.label} has a consistent target height`);
+      assert.equal(action.size, '13px'); assert.equal(action.weight, '650');
+      assert.equal(action.radius, '8px'); assert.equal(action.gap, '8px');
+      if (action.iconWidth !== undefined) { assert.equal(action.iconWidth, 16); assert.equal(action.iconHeight, 16); }
+    }
+  }
+  async function assertActivityTooltipBounds() {
+    const bounds = await page.locator('.activity-bars').boundingBox();
+    for (const index of [0, 3, 6, 14, 23, 26, 29]) {
+      const day = page.locator('.activity-day').nth(index);
+      await day.focus();
+      const tooltip = await day.locator('.activity-tooltip').boundingBox();
+      assert.ok(tooltip.x >= bounds.x - 1 && tooltip.x + tooltip.width <= bounds.x + bounds.width + 1,
+        `Day ${index + 1} tooltip stays within the chart at ${page.viewportSize().width}px`);
+    }
+    await page.locator('.application-row-select').first().focus();
+  }
   async function settleSidebar() {
     await page.evaluate(async () => {
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -263,6 +291,9 @@ try {
       openLogs: async () => { if (window.modelQA.failLogOpen) throw new Error("Synthetic logs folder error"); window.modelQA.logOpens++; },
       listOllamaModels: async () => ["qwen3.8:27b", "qwen3:8b"],
       setAnalysisProvider: async (provider) => { initialState.analysisProvider = provider; return snapshot(); },
+      setOllamaConfig: async ({ url, model }) => { initialState.ollamaUrl = url; initialState.ollamaModel = model; return snapshot(); },
+      setApiKey: async (key) => { initialState.hasApiKey = Boolean(key); return snapshot(); },
+      setAnthropicKey: async (key) => { initialState.hasAnthropicKey = Boolean(key); return snapshot(); },
       setAppearance: async (appearance) => { initialState.appearance = appearance; return snapshot(); },
       setSidebarCollapsed: async (collapsed) => {
         if (window.modelQA.rejectSidebarSave) throw new Error("Synthetic settings save error");
@@ -564,9 +595,30 @@ try {
   assert.match(await page.locator(".activity-caption").innerText(), /11 applications/);
   const today = page.getByRole("button", { name: "Sep 30, 2026: 0 applications", exact: true });
   await today.focus(); await today.press("ArrowLeft");
-  assert.equal(await page.evaluate(() => document.activeElement.getAttribute("aria-label")), "Sep 29, 2026: 2 applications");
+  assert.equal(await page.evaluate(() => document.activeElement.getAttribute("aria-label")), "Sep 29, 2026: 2 applications, Applied: 2");
   await page.locator(".activity-day:focus").press("Home");
   assert.equal(await page.evaluate(() => document.activeElement.getAttribute("aria-label")), "Sep 1, 2026: 0 applications");
+  assert.deepEqual(await page.locator('.activity-legend > span').allTextContents(), ['Applied', 'Heard back', 'Interview scheduled', 'Rejected']);
+  const statusDay = page.locator('.activity-day[data-date="2026-09-29"]');
+  const originalBarHeight = await statusDay.locator('.activity-bar').evaluate(element => element.getBoundingClientRect().height);
+  const firstStatus = firstRow.getByRole('combobox', { name: 'Status for Senior Product Manager at Expedia Group', exact: true });
+  for (const status of ['Heard back', 'Interview scheduled', 'Rejected']) {
+    await firstStatus.selectOption(status);
+    await page.waitForFunction((status) => document.querySelector(`.activity-day[data-date="2026-09-29"] .activity-segment[data-status="${status}"]`)?.dataset.count === '1', status);
+    assert.equal(await statusDay.locator('.activity-segment[data-status="Applied"]').getAttribute('data-count'), '1');
+    assert.equal(await page.locator('.activity-day[data-date="2026-09-30"] .activity-segment').count(), 0);
+  }
+  await table.getByRole('combobox', { name: 'Status for Product Manager at Meta', exact: true }).selectOption('Interview scheduled');
+  await page.waitForFunction(() => !document.querySelector('.activity-day[data-date="2026-09-29"] .activity-segment[data-status="Applied"]'));
+  assert.equal(await statusDay.locator('.activity-segment[data-status="Interview scheduled"]').getAttribute('data-count'), '1');
+  assert.equal(await statusDay.locator('.activity-segment[data-status="Rejected"]').getAttribute('data-count'), '1');
+  assert.equal(await statusDay.locator('.activity-bar').evaluate(element => element.getBoundingClientRect().height), originalBarHeight);
+  await assertActivityTooltipBounds();
+  await statusDay.focus();
+  await captureSettings('applications-status-tooltip-windows-light.png', false);
+  await statusDay.press('Escape');
+  assert.equal(await statusDay.locator('.activity-tooltip').evaluate(element => getComputedStyle(element).visibility), 'hidden');
+  await firstSelector.focus();
   await page.getByRole("button", { name: "Show all 8 locations" }).click();
   const expanded = page.locator(".location-expanded");
   assert.equal(await expanded.locator(".location-place").count(), 8);
@@ -630,6 +682,7 @@ try {
   assert.equal(await table.locator(".row-actions").first().evaluate((element) => element.getBoundingClientRect().right <= innerWidth), true);
   await page.setViewportSize({ width: 780, height: 900 });
   await assertApplicationMetrics();
+  await assertActivityTooltipBounds();
   await captureSettings("applications-narrow.png", false);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
 
@@ -660,6 +713,10 @@ try {
   assert.equal(await page.evaluate(() => window.modelQA.logOpens), 1);
   assert.equal(await page.getByRole("alert").count(), 0);
   await page.getByRole("combobox", { name: "Model", exact: true }).getByRole("option", { name: "qwen3.8:27b", exact: true }).waitFor({ state: "attached" });
+  await assertSettingsActions();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByText('Server settings saved.', { exact: true }).waitFor();
+  await captureSettings('settings-actions-server-windows-light.png', false);
   await provider.selectOption("builtin");
   const localModel = page.getByRole("combobox", { name: "Local model", exact: true });
   await localModel.waitFor();
@@ -669,6 +726,7 @@ try {
   await page.getByText("Downloading SmolLM2 360M", { exact: true }).waitFor();
   await page.evaluate(() => window.modelQA.update("smollm2-360m", { downloadedBytes: 81000000 }));
   await page.getByText("81 MB / 271 MB", { exact: true }).waitFor();
+  await assertSettingsActions();
   const progress = page.getByRole("progressbar", { name: "SmolLM2 360M download progress" });
   assert.equal(await progress.getAttribute("max"), "270590880");
   await captureSettings("settings-windows-download.png");
@@ -688,6 +746,20 @@ try {
   assert.equal(await page.getByText("Ready", { exact: true }).count(), 1);
   await provider.selectOption("openai");
   await page.getByRole("textbox", { name: "API key", exact: true }).waitFor();
+  await page.getByRole('textbox', { name: 'API key', exact: true }).fill('sk-fixture-only');
+  await page.getByRole('button', { name: 'Save key', exact: true }).click();
+  await page.getByRole('button', { name: 'Remove key', exact: true }).waitFor();
+  await assertSettingsActions();
+  await captureSettings('settings-actions-key-windows-light.png', false);
+  await page.getByRole('button', { name: 'Remove key', exact: true }).click();
+  await page.getByRole('button', { name: 'Remove key', exact: true }).waitFor({ state: 'detached' });
+  await provider.selectOption('anthropic');
+  await page.getByRole('textbox', { name: 'API key', exact: true }).fill('sk-ant-fixture-only');
+  await page.getByRole('button', { name: 'Save key', exact: true }).click();
+  await page.getByRole('button', { name: 'Remove key', exact: true }).waitFor();
+  await assertSettingsActions();
+  await page.getByRole('button', { name: 'Remove key', exact: true }).click();
+  await page.getByRole('button', { name: 'Remove key', exact: true }).waitFor({ state: 'detached' });
   await provider.selectOption("ollama");
   assert.equal(await page.getByRole("textbox", { name: "Server URL", exact: true }).inputValue(), "http://localhost:11434");
   assert.equal(await page.getByRole("combobox", { name: "Model", exact: true }).inputValue(), "qwen3.8:27b");
@@ -706,6 +778,7 @@ try {
   await page.getByRole("button", { name: "Delete SmolLM2 360M", exact: true }).waitFor();
   await page.setViewportSize({ width: 790, height: 850 });
   await captureSettings("settings-windows-compact.png");
+  await assertSettingsActions();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   await page.evaluate(() => { window.modelQA.confirmDelete = true; });
   await page.getByRole("button", { name: "Delete SmolLM2 360M", exact: true }).click();
@@ -729,6 +802,7 @@ try {
   await page.setViewportSize({ width: 790, height: 850 });
   await page.getByRole("radio", { name: "Dark", exact: true }).check();
   await captureSettings("settings-mac-compact-dark.png");
+  await assertSettingsActions();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   // The newly added models require explicit agreement before download.
   for (const id of ["lfm25-350m", "gemma3-270m"]) {
@@ -883,6 +957,7 @@ try {
   await creditsSettings.getByLabel("Pairing code", { exact: true }).waitFor();
   await creditsSettings.getByRole("button", { name: "Copy code", exact: true }).click();
   assert.equal(await page.evaluate(() => window.controlsQA.copied), "ABCD-2345");
+  await assertSettingsActions();
   await captureSettings("credits-wallet-pairing-mac-dark-narrow.png", false);
   assert.equal(await creditsSettings.evaluate(element => element.scrollWidth > element.clientWidth), false);
   await creditsSettings.getByRole("button", { name: "Cancel pairing", exact: true }).click();
@@ -911,6 +986,7 @@ try {
   await page.setViewportSize({ width: 1550, height: 850 });
   await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32"; document.documentElement.dataset.theme = "light"; });
   await creditsSettings.scrollIntoViewIfNeeded();
+  await assertSettingsActions();
   await captureSettings("credits-wallet-settings-windows-light.png", false);
   assert.equal(await creditsSettings.evaluate(element => element.scrollWidth > element.clientWidth), false);
   await page.evaluate(() => {
