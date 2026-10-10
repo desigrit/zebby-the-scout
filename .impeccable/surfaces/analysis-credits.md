@@ -34,7 +34,7 @@ FORM: The approved Quick choice A concept translated into Ember and the incumben
 
 Initial setup offers Local server (Ollama), Download a model, OpenAI API key, Anthropic API key, and Buy credits. Focused setup reuses the Settings controls. Personal-key model choices are limited to that provider. Native radio inputs retain method and pack selection, visible focus, and readable selection feedback. The modal restores the opener's focus on close; reduced motion removes its entrance animation.
 
-The pricing scene shows four USD packs: $5 for 500 credits, $20 for 3,000, $50 for 8,000, and $100 for 16,000. Its illustrative GPT-6 Luna counts are 100, 600, 1,600, and 3,200 analyses, assuming 20,000 input and 6,000 output tokens each. The assumption is visible. Counts vary with job length and model choice. There is no model dropdown in pricing.
+The pricing scene shows four USD packs: $5 for 500 credits, $20 for 3,000, $50 for 8,000, and $100 for 16,000. Its illustrative GPT-6 Luna counts are 90, 540, 1,450, and 2,900 analyses, assuming 20,000 input and 6,000 output tokens each, including cache-write charges. The assumption is visible. Counts vary with cache hits, job length, and model choice. There is no model dropdown in pricing.
 
 Paid users enter an email code. Secure storage remembers the session per computer; without it, sign-in lasts for the session. Checkout opens in the external browser. The waiting scene supports explicit payment checks and expired-checkout retry. Test checkout visibly says no real payment is taken. Only confirmed payment reveals the post-purchase model step.
 

@@ -1,7 +1,7 @@
 import { onlineModel, outputLimit, type AnalysisKind, type TokenUsage } from "../shared/online-models.ts";
 type Content = { type: string; text?: string };
 type ProviderPayload = { status?: string; stop_reason?: string; output?: { content?: Content[] }[]; content?: Content[];
-  usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number };
+  usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
     cache_read_input_tokens?: number; cache_creation_input_tokens?: number;
     cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number } } };
 
@@ -38,10 +38,12 @@ export async function onlineAnalysis(options: { model: string; key: string; inst
   try { result = JSON.parse(text); } catch { throw new Error("The model returned an unreadable result. No result was saved."); }
   if (!result || typeof result !== "object" || Array.isArray(result)) throw new Error("The model returned an invalid result.");
   const raw = payload.usage || {};
-  const usage: TokenUsage = isOpenAI ? { input: raw.input_tokens ?? NaN, cached: raw.input_tokens_details?.cached_tokens || 0,
-    output: raw.output_tokens ?? NaN } : { input: (raw.input_tokens ?? NaN) + (raw.cache_read_input_tokens || 0),
-    cached: raw.cache_read_input_tokens || 0, output: raw.output_tokens ?? NaN,
-    cacheWrite5m: raw.cache_creation ? raw.cache_creation.ephemeral_5m_input_tokens || 0 : raw.cache_creation_input_tokens || 0,
-    cacheWrite1h: raw.cache_creation?.ephemeral_1h_input_tokens || 0 };
+  const cacheWrite = raw.input_tokens_details?.cache_write_tokens ?? 0;
+  const usage: TokenUsage = isOpenAI ? { input: (raw.input_tokens ?? NaN) - cacheWrite,
+    cached: raw.input_tokens_details?.cached_tokens ?? 0, cacheWrite, output: raw.output_tokens ?? NaN }
+    : { input: (raw.input_tokens ?? NaN) + (raw.cache_read_input_tokens ?? 0),
+      cached: raw.cache_read_input_tokens ?? 0, output: raw.output_tokens ?? NaN,
+      cacheWrite5m: raw.cache_creation ? raw.cache_creation.ephemeral_5m_input_tokens ?? 0 : raw.cache_creation_input_tokens ?? 0,
+      cacheWrite1h: raw.cache_creation?.ephemeral_1h_input_tokens ?? 0 };
   return { result, usage };
 }

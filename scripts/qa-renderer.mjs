@@ -161,7 +161,7 @@ try {
       if (window.controlsQA.failCopy) throw new Error("Synthetic clipboard failure");
       window.controlsQA.copied = text;
     } }, configurable: true });
-    const listeners = new Set(), updateListeners = new Set();
+    const listeners = new Set(), updateListeners = new Set(), creditListeners = new Set();
     const snapshot = () => structuredClone(initialState);
     const update = (id, change) => { initialState.localModels = initialState.localModels.map((item) =>
       item.id === id ? { ...item, ...change } : item); for (const listener of listeners) listener(snapshot()); };
@@ -169,6 +169,14 @@ try {
       initialState.updates = { ...initialState.updates, ...change };
       for (const listener of updateListeners) listener(structuredClone(initialState.updates));
     };
+    const updateCredits = (change) => {
+      initialState.credits = { ...initialState.credits, ...change };
+      for (const listener of creditListeners) listener(snapshot());
+    };
+    const wallet = { balance: 500000000, reserved: 0, used: 0, purchased: 500000000,
+      updatedAt: "2026-09-30T20:00:00Z", recent: [] };
+    window.creditQA = { update: updateCredits, codes: [], verifications: [], checkouts: [], models: [],
+      failCode: false, payment: "open", quote: null };
     window.modelQA = { confirmDelete: false, deleteRequests: [], selections: [], rejectSidebarSave: false,
       updateState, installRequests: 0, failInstall: false, failCheck: false, finishDownload: null,
       logOpens: 0, failLogOpen: false, databaseRequests: [], update,
@@ -176,7 +184,32 @@ try {
     window.desktop = { state: async () => initialState, onDatabaseChanged: () => () => {}, onNavigate: () => () => {},
       onLocalModelsChanged: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
       onUpdatesChanged: (listener) => { updateListeners.add(listener); return () => updateListeners.delete(listener); },
-      onCreditsChanged: () => () => {},
+      onCreditsChanged: (listener) => { creditListeners.add(listener); return () => creditListeners.delete(listener); },
+      refreshCredits: async () => snapshot(),
+      sendCreditCode: async (email) => {
+        if (window.creditQA.failCode) throw new Error("Synthetic email delivery error. Try again.");
+        window.creditQA.codes.push(email);
+      },
+      verifyCreditCode: async (email, code) => {
+        window.creditQA.verifications.push({ email, code });
+        updateCredits({ signedIn: true, email, wallet: { ...wallet, balance: 0, purchased: 0 }, stale: false });
+        return snapshot();
+      },
+      signOutCredits: async () => { updateCredits({ signedIn: false, email: "", wallet: null }); return snapshot(); },
+      startCreditCheckout: async (pack) => { window.creditQA.checkouts.push(pack); return { id: "cs_test_fixture", mode: "test" }; },
+      creditCheckoutStatus: async () => {
+        if (window.creditQA.payment === "paid") updateCredits({ wallet: { ...wallet }, stale: false });
+        return window.creditQA.payment;
+      },
+      quoteCreditAnalysis: async () => window.creditQA.quote || { id: "quote-fixture", model: initialState.credits.model,
+        maximum: 20000000, expiresAt: "2026-09-30T20:05:00Z" },
+      setOnlineModel: async (provider, model) => {
+        window.creditQA.models.push({ provider, model });
+        if (provider === "credits") updateCredits({ model });
+        else if (provider === "openai") initialState.openaiModel = model;
+        else initialState.anthropicModel = model;
+        return snapshot();
+      },
       confirmUpdateLoaded: async () => {},
       checkForUpdates: async () => {
         updateState({ checking: true }); await new Promise(resolve => setTimeout(resolve, 25));
@@ -744,6 +777,84 @@ try {
   await assertLocationKeyboard(page.locator(".location-editor"), "Mac Plan");
   await page.getByRole("button", { name: "Save plan", exact: true }).click();
   await page.locator(".save-state").filter({ hasText: "Saved" }).waitFor();
+  // All payment and account traffic below uses the synthetic desktop bridge.
+  // These checks send no email, open no checkout, and request no provider inference.
+  await nav.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption("openai");
+  await nav.getByRole("button", { name: "Plan", exact: true }).click();
+  const analyze = page.getByRole("button", { name: "Analyze", exact: true });
+  const analysisDialog = page.getByRole("dialog");
+  await analyze.click();
+  await analysisDialog.getByRole("heading", { name: "How would you like to analyze?", exact: true }).waitFor();
+  assert.equal(await analysisDialog.getByRole("radio").count(), 5);
+  for (const name of ["Local server", "Download a model", "OpenAI API key", "Anthropic API key", "Buy credits"]) {
+    assert.equal(await analysisDialog.getByRole("radio", { name: new RegExp(name) }).count(), 1);
+  }
+  await page.setViewportSize({ width: 1550, height: 850 });
+  await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32";
+    document.documentElement.dataset.theme = "light"; });
+  await captureSettings("credits-choice-windows-light.png", false);
+  await analysisDialog.getByRole("radio", { name: /Buy credits/ }).check();
+  await analysisDialog.getByRole("button", { name: "Continue", exact: true }).click();
+  assert.equal(await analysisDialog.getByRole("radio").count(), 4);
+  assert.equal(await analysisDialog.getByRole("combobox").count(), 0);
+  assert.match(await analysisDialog.innerText(), /choose your model after purchasing credits/);
+  assert.equal(await analysisDialog.getByRole("button", { name: "Continue, $20", exact: true }).isDisabled(), true);
+  assert.match(await analysisDialog.innerText(), /Paid credits are not available yet/);
+  await captureSettings("credits-packs-windows-light.png", false);
+  await page.setViewportSize({ width: 790, height: 850 });
+  await page.evaluate(() => { window.modelQA.setPlatform("darwin"); document.documentElement.dataset.platform = "darwin";
+    document.documentElement.dataset.theme = "dark"; });
+  assert.equal(await analysisDialog.evaluate(element => element.scrollWidth > element.clientWidth), false);
+  await captureSettings("credits-packs-mac-dark-narrow.png", false);
+  await analysisDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await analysisDialog.waitFor({ state: "hidden" });
+  assert.equal(await analyze.evaluate(element => element === document.activeElement), true);
+  assert.equal(await page.evaluate(() => window.creditQA.checkouts.length + window.creditQA.codes.length), 0);
+  await page.evaluate(() => window.creditQA.update({ available: true }));
+  await analyze.click();
+  await analysisDialog.getByRole("radio", { name: /Buy credits/ }).check();
+  await analysisDialog.getByRole("button", { name: "Continue", exact: true }).click();
+  await analysisDialog.getByRole("radio", { name: /^\$5\b/ }).check();
+  await analysisDialog.getByRole("button", { name: "Continue, $5", exact: true }).click();
+  await analysisDialog.getByRole("textbox", { name: "Email", exact: true }).fill("peer@example.com");
+  await page.evaluate(() => { window.creditQA.failCode = true; });
+  await analysisDialog.getByRole("button", { name: "Send code", exact: true }).click();
+  await analysisDialog.getByRole("alert").filter({ hasText: "Synthetic email delivery error" }).waitFor();
+  assert.equal(await analysisDialog.getByRole("textbox", { name: "Email", exact: true }).inputValue(), "peer@example.com");
+  await page.evaluate(() => { window.creditQA.failCode = false; });
+  await analysisDialog.getByRole("button", { name: "Send code", exact: true }).click();
+  await analysisDialog.getByRole("textbox", { name: "Email code", exact: true }).fill("123456");
+  await analysisDialog.getByRole("button", { name: "Verify code", exact: true }).click();
+  await analysisDialog.getByRole("button", { name: "Continue, $5", exact: true }).click();
+  await analysisDialog.getByText("Test checkout. No real payment is taken.", { exact: true }).waitFor();
+  assert.equal(await analysisDialog.getByRole("combobox").count(), 0);
+  await page.evaluate(() => { window.creditQA.payment = "paid"; });
+  await analysisDialog.getByRole("button", { name: "Check payment", exact: true }).click();
+  await analysisDialog.getByRole("heading", { name: "Your credits are ready", exact: true }).waitFor();
+  const paidModel = analysisDialog.getByRole("combobox", { name: "Model", exact: true });
+  assert.equal(await paidModel.locator("option").count(), 6);
+  await paidModel.selectOption("claude-sonnet-5-5");
+  await analysisDialog.getByRole("button", { name: "Continue to analysis", exact: true }).click();
+  await analysisDialog.getByText("Maximum for this analysis", { exact: true }).waitFor();
+  assert.match(await analysisDialog.innerText(), /20 credits/);
+  assert.match(await analysisDialog.innerText(), /Zebby and Anthropic/);
+  await captureSettings("credits-quote-mac-dark-narrow.png", false);
+  await analysisDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  const sidebarWallet = page.locator(".sidebar-credits").getByRole("button", { name: "500 credits available, 0 used", exact: true });
+  await sidebarWallet.click();
+  await page.getByRole("button", { name: "Close credits", exact: true }).click();
+  await nav.getByRole("button", { name: "Settings", exact: true }).click();
+  const creditsSettings = page.getByRole("region", { name: "Credits", exact: true });
+  await creditsSettings.getByRole("combobox", { name: "Model", exact: true }).waitFor();
+  assert.equal(await creditsSettings.getByRole("combobox", { name: "Model", exact: true }).inputValue(), "claude-sonnet-5-5");
+  await creditsSettings.getByRole("button", { name: "Sign out", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector(".sidebar-credits") === null);
+  assert.deepEqual(await page.evaluate(() => window.creditQA.codes), ["peer@example.com"]);
+  assert.deepEqual(await page.evaluate(() => window.creditQA.checkouts), ["starter"]);
+  assert.equal(await page.evaluate(() => window.creditQA.verifications.length), 1);
+  await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption("ollama");
+  await page.setViewportSize({ width: 1550, height: 850 });
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
   // Updates are available in both navigation modes and Settings, without opening an installer during QA.
   await nav.getByRole("button", { name: "Settings", exact: true }).click();

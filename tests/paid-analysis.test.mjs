@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { createHmac, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
-import { CREDIT_PACKS, NANODOLLARS_PER_CREDIT, onlineModel, usageCost, quoteNeedsCredits } from "../shared/online-models.ts";
+import { CREDIT_PACKS, NANODOLLARS_PER_CREDIT, onlineModel, usageCost, maximumCost, quoteNeedsCredits } from "../shared/online-models.ts";
 import { onlineAnalysis } from "../desktop/online-analysis.ts";
 import { CreditsClient } from "../desktop/credits-client.ts";
 import { createService } from "../credits-service/service.ts";
@@ -25,9 +25,12 @@ function signature(event, secret = config.stripeWebhookSecret, timestamp = Math.
   return { raw, signature: `t=${timestamp},v1=${createHmac("sha256", secret).update(timestamp + ".").update(raw).digest("hex")}` };
 }
 test("credit pack counts and illustrative Luna costs are consistent", () => {
-  const example = usageCost(onlineModel("gpt-6-luna"), { input: 20000, cached: 0, output: 6000 });
-  assert.equal(example / NANODOLLARS_PER_CREDIT, 5);
-  for (const pack of CREDIT_PACKS) assert.equal(pack.analyses, pack.credits / 5);
+  const example = usageCost(onlineModel("gpt-6-luna"), { input: 0, cached: 0, cacheWrite: 20000, output: 6000 });
+  assert.equal(example / NANODOLLARS_PER_CREDIT, 5.5);
+  for (const pack of CREDIT_PACKS) {
+    assert.ok(pack.analyses * example <= pack.credits * NANODOLLARS_PER_CREDIT);
+    assert.ok(pack.credits * NANODOLLARS_PER_CREDIT - pack.analyses * example < 10 * example);
+  }
   assert.equal(usageCost(onlineModel("gpt-6-astra"), { input: 20000, cached: 0, output: 6000 }) / NANODOLLARS_PER_CREDIT, 500);
   assert.equal(usageCost(onlineModel("gpt-6-luna"), { input: 100, cached: 50, output: 10 }), 10500);
   assert.throws(() => usageCost(onlineModel("gpt-6-luna"), { input: 1, cached: 2, output: 0 }));
@@ -40,6 +43,33 @@ test("Stripe signatures reject changes, stale events, and invalid signatures", (
   assert.throws(() => verifyStripeEvent(signed.raw, "t=1,v1=abc", config.stripeWebhookSecret));
   const old = signature(event, config.stripeWebhookSecret, 1);
   assert.throws(() => verifyStripeEvent(old.raw, old.signature, config.stripeWebhookSecret));
+});
+
+test("OpenAI cache writes are charged once at the published rate", async () => {
+  const response = await onlineAnalysis({ model: "gpt-6-luna", key: "fixture", instructions: "Compare evidence.", input,
+    name: "resume_match", schema: { type: "object" }, kind: "match", fetcher: async () => Response.json({
+      status: "completed", output: [{ content: [{ type: "output_text", text: JSON.stringify(match) }] }],
+      usage: { input_tokens: 1000, input_tokens_details: { cached_tokens: 100, cache_write_tokens: 200 }, output_tokens: 25 },
+    }) });
+  assert.deepEqual(response.usage, { input: 800, cached: 100, cacheWrite: 200, output: 25 });
+  assert.equal(usageCost(onlineModel("gpt-6-luna"), response.usage), 108500);
+  assert.ok(maximumCost(onlineModel("gpt-6-luna"), 1000, 0, "match") >= 108500);
+});
+
+test("OpenAI maximum quotes cover cache writes and long-context pricing", () => {
+  const model = onlineModel("gpt-6-luna");
+  assert.equal(usageCost(model, { input: 272000, cached: 0, output: 6000 }), 30200000);
+  assert.equal(usageCost(model, { input: 272001, cached: 0, output: 6000 }), 58900200);
+  const bound = maximumCost(model, 268000, 0, "plan");
+  for (const usage of [
+    { input: 0, cached: 0, cacheWrite: 280000, output: 6000 },
+    { input: 140000, cached: 100000, cacheWrite: 140000, output: 6000 },
+  ]) assert.ok(usageCost(model, usage) <= bound);
+  assert.throws(() => usageCost(model, { input: -1, cached: 0, cacheWrite: 1001, output: 0 }));
+});
+
+test("Sonnet 5.5 cache hits use its published five-percent input rate", () => {
+  assert.equal(usageCost(onlineModel("claude-sonnet-5-5"), { input: 100, cached: 50, output: 10 }), 205000);
 });
 test("recovering an already paid result is allowed with zero or negative balance", () => {
   const recovery = { id: randomUUID(), model: "gpt-6-luna", maximum: 0, expiresAt: new Date(Date.now()+60000).toISOString(), recovery: true };

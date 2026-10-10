@@ -102,16 +102,16 @@ No real app, browser, database, email, or Stripe checkout was opened during impl
 
 | Price | Credits | About this many analyses using GPT-6 Luna |
 | --- | ---: | ---: |
-| $5 | 500 | 100 |
-| $20 | 3,000 | 600 |
-| $50 | 8,000 | 1,600 |
-| $100 | 16,000 | 3,200 |
+| $5 | 500 | 90 |
+| $20 | 3,000 | 540 |
+| $50 | 8,000 | 1,450 |
+| $100 | 16,000 | 2,900 |
 
-One credit represents $0.001 of underlying provider usage. Fractional credits are retained internally as integer nanodollars. Per-analysis quotes reserve a conservative maximum from the submitted text and output limit. Settlement charges actual reported input, cached input, and output usage, including billed reasoning tokens; unused holds return to the wallet. Cancelled, failed, and invalid analyses release their holds. Provider costs incurred on those failures are absorbed by Zebby.
+One credit represents $0.001 of underlying provider usage. Fractional credits are retained internally as integer nanodollars. Per-analysis quotes reserve a conservative maximum from the submitted text and output limit, including OpenAI cache writes and long-context rates. Settlement charges actual reported input, cached input, cache writes, and output usage, including billed reasoning tokens; unused holds return to the wallet. Cancelled, failed, and invalid analyses release their holds. Provider costs incurred on those failures are absorbed by Zebby.
 
 If a reply is lost after settlement, Zebby retains the original request ID and can recover the result without another charge. Recovery metadata, without resume or job text, is saved in encrypted local settings when secure storage is available. Main clears it only after the result is saved to SQLite. A pending result can be recovered after restarting on that computer within the server's 24-hour result retention window. Changing accounts rejects obsolete replies and prevents an older account's wallet from replacing the current one.
 
-Counts assume 20,000 input tokens and 6,000 output tokens, costing 5 credits with Luna at the rates checked on October 4, 2026. They are illustrative, not measured average counts or guarantees. Different job lengths and models change usage. The catalog is in [online-models.ts](../shared/online-models.ts). Sources: [OpenAI Luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [OpenAI Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [OpenAI Astra](https://developers.openai.com/api/docs/models/gpt-6-astra), and [Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing).
+Counts assume 20,000 input tokens and 6,000 output tokens, with all input charged as cache writes. This costs 5.5 credits with Luna at the rates checked on October 9, 2026. Counts are rounded down to the nearest ten analyses. They are illustrative, not measured average counts or guarantees. Cache hits, different job lengths, and model choice change usage. The catalog is in [online-models.ts](../shared/online-models.ts). Sources: [OpenAI Luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [OpenAI Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [OpenAI Astra](https://developers.openai.com/api/docs/models/gpt-6-astra), [OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching), and [Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing).
 
 | Price | Maximum provider budget | Stripe assumption | Operating reserve assumption | Retained under these assumptions |
 | --- | ---: | ---: | ---: | ---: |

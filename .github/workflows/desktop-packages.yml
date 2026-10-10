@@ -84,6 +84,15 @@ jobs:
       - run: node --experimental-strip-types scripts/qa-local-engine.mjs smollm2-360m
       - run: node node_modules/playwright-core/cli.js install chromium
       - run: npm run test:renderer
+      - name: Save credits flow review captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: credits-renderer-qa-windows
+          retention-days: 1
+          path: qa-output/renderer-1.5.0/credits-*.png
+          if-no-files-found: ignore
+      - run: npm run credits:build
       - run: npx electron-builder --win nsis --x64 --publish never -c electron-builder.local.cjs
       - run: node scripts/qa-self-update-windows.mjs
       - run: node scripts/qa-packaged-engine.mjs
@@ -131,6 +140,14 @@ jobs:
       - run: node --experimental-strip-types scripts/qa-local-engine.mjs smollm2-360m
       - run: node node_modules/playwright-core/cli.js install chromium
       - run: npm run test:renderer
+      - name: Save credits flow review captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: credits-renderer-qa-macos
+          retention-days: 1
+          path: qa-output/renderer-1.5.0/credits-*.png
+          if-no-files-found: ignore
       - run: npx electron-builder --mac dmg --arm64 --publish never
       - name: Verify distributed Mac bundle and first launch on Tahoe
         run: node scripts/qa-mac-distribution.mjs

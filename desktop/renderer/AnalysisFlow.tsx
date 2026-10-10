@@ -140,7 +140,7 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
               <small>About {item.analyses.toLocaleString()} analyses using GPT-6 Luna</small>
               <span className="credit-pack-selection">{pack === item.id ? <><Check size={16} />Selected</> : "Select"}</span>
             </label>)}
-          </fieldset><p className="settings-help">Prices in USD. Estimates assume 20,000 input and 6,000 output tokens. Job length and model choice change usage. You confirm the maximum before each analysis.</p>
+          </fieldset><p className="settings-help">Prices in USD. Estimates use 20,000 input and 6,000 output tokens, including cache writes. Usage varies by job and model. You confirm the maximum before each analysis.</p>
           {!state.credits.available && <p className="credit-unavailable" role="status">Paid credits are not available yet. Local models and your own API keys are ready to use.</p>}
           {state.credits.signedIn && <p className="credit-account">Buying as {state.credits.email}</p>}
         </>}
