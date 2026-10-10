@@ -2,12 +2,14 @@
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=
 ZEBBY_PUBLIC_SERVICE_URL=https://your-service.example.com
-STRIPE_SECRET_KEY=sk_test_
+# Restricted key: Checkout Sessions Write and Charges and Refunds Read.
+STRIPE_SECRET_KEY=rk_test_
 STRIPE_WEBHOOK_SECRET=whsec_
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
 PORT=8080
 # 0 ignores forwarded headers. Set 1-4 only for a verified, fixed proxy chain.
 ZEBBY_TRUST_PROXY_HOPS=0
-# Leave false until prices, taxes, legal terms, and real payment tests are checked.
+# Leave false during sandbox checks. Live credentials must match live mode.
+# Confirm prices, taxes, business activation and purchase terms before accepting payments.
 ZEBBY_ALLOW_LIVE_PAYMENTS=false

@@ -1,6 +1,8 @@
 # Zebby credits service
 
-The final desktop purchase flow is implemented: pack selection and Continue remain usable before service configuration, subject to secure storage. An attempted checkout reports a connection error if the service cannot be reached. Actual checkout requires `ZEBBY_CREDITS_SERVICE_URL` compiled into the desktop build. This service is prepared for Stripe test mode, but no payment account or hosted endpoint has been connected.
+The desktop purchase flow is implemented. Zebby 2.1.4 connects to the service at `https://zebby-credits.onrender.com`, with Stripe live payments and server-side OpenAI and Anthropic credentials configured. Custom builds need `ZEBBY_CREDITS_SERVICE_URL` compiled into the desktop main process. Secure storage is required for wallet access.
+
+The hosted checks verified service health, guest wallet access, an unpaid live Checkout session, and webhook signature handling. The unpaid session was expired, and no credits were granted. All three OpenAI models completed a synthetic structured response; all three offered Claude models were listed by the Anthropic API. A completed customer payment, receipt delivery, and funded Claude inference remain separate checks.
 
 Every analysis method works without a Zebby signup or sign-in screen. The first credit purchase silently creates a guest wallet. Each computer keeps its own encrypted access credential, and the service owns the shared balance. Opening a SQLite database on another computer does not connect its credit wallet.
 
@@ -33,7 +35,7 @@ The schema enables RLS, removes ordinary client access, and permits ledger and w
 
 1. Create an account at [Stripe](https://dashboard.stripe.com/register).
 2. Open a **test sandbox**. Keep live mode off during setup.
-3. Open **Developers / Workbench → API keys**. Add the test secret key, beginning `sk_test_`, to `STRIPE_SECRET_KEY` on the service host.
+3. Open **Developers / Workbench → API keys** and create a restricted key for your own integration. Give **Checkout Sessions** Write access and **Charges and Refunds** Read access, leaving other resources at None. Add the key, beginning `rk_test_`, to `STRIPE_SECRET_KEY` on the service host. A standard `sk_test_` key also works. A publishable `pk_` key cannot be used by this service.
 4. Do not create product prices manually. The server creates Checkout line items from the four authoritative packs below.
 5. After the service URL is assigned, open **Developers / Workbench → Webhooks**, then **Add destination**.
 6. Use `https://YOUR-SERVICE/v1/stripe/webhook` and select:
@@ -58,13 +60,13 @@ For Render:
 2. Connect `desigrit/zebby-the-scout` and select the `main` branch.
 3. Choose **Docker** as the language, leave **Root Directory** empty, and set **Dockerfile Path** to `credits-service/Dockerfile`.
 4. Leave the Docker command empty. The Dockerfile supplies the start command. Set the health check path to `/health`.
-5. Add the environment variables listed in [environment.example](environment.example). Use an HTTPS origin without a path for `ZEBBY_PUBLIC_SERVICE_URL`.
+5. Add the environment variables listed in [environment.example](environment.example). Under **Environment → Edit → More options → Import from .env**, paste the private file and choose **Add variables**. Remove duplicate rows before saving. Use Environment Variables, rather than Secret Files. Use an HTTPS origin without a path for `ZEBBY_PUBLIC_SERVICE_URL`.
 6. Render assigns an `onrender.com` hostname. Set `ZEBBY_PUBLIC_SERVICE_URL` to that HTTPS origin. Now create the Stripe webhook destination from step 2 and add its real `STRIPE_WEBHOOK_SECRET`. If the first deployment started before these values were ready, finish the environment settings and select **Manual Deploy → Deploy latest commit**.
-7. Add real provider keys to `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`. A provider without a key remains unavailable. Test payments do not make provider inference free; analysis uses your provider API balance.
+7. Add real provider keys to `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`. In OpenAI's project API Keys page, use a restricted key with **List models: Read** and **Responses (/v1/responses): Write**. Leave other capabilities at None. In Claude Console, create an ordinary API key scoped to the intended workspace, rather than an Admin API key. The current Zebby deployment uses keys with no expiration. A provider without a key remains unavailable. Both accounts need their own API funding, including during Stripe sandbox tests.
 8. Keep `ZEBBY_ALLOW_LIVE_PAYMENTS=false`. Connect the Stripe webhook from step 2 and deploy again after setting its secret.
 9. Visit `https://YOUR-SERVICE/health`. It should return `{"ok":true,"mode":"test"}`.
 
-Choose an always-on service before offering paid analysis. Sleeping hosts can delay webhooks and credit refresh. [Render's Docker guide](https://render.com/docs/docker) describes the Dockerfile and service configuration.
+Render Free sleeps after 15 minutes without requests and normally needs about a minute to wake. Zebby checks the public `/health` endpoint before its first credit request and after idle time, allowing up to two minutes for startup. It retries health checks only; checkout and paid analysis are not replayed. Cancellation stops the wait and preserves saved wallet access. There is no background keepalive. A sleeping service can also delay webhook processing. An always-on tier removes this wake-up delay. See [Render Free](https://render.com/docs/free) and [Render's Docker guide](https://render.com/docs/docker).
 
 The same container can run on another host. Build from the repository root:
 
@@ -93,14 +95,14 @@ Configure hosting logs without request-body or Authorization-header capture. No 
    npm run desktop:build
    ```
 
-5. Test with a separate empty database and disposable resumes. Open **Settings > Analysis**, set **Analyze with** to **Zebby credits**, then choose **Buy credits**, select a pack, and finish Stripe Checkout in your external browser. The same action supports top-ups. First-use setup also retains its purchase choice. There is no Zebby email-code or signup step.
+5. For payment tests, use a Stripe sandbox, matching test credentials and a separate Supabase project. Use a separate empty application database and disposable resumes. Open **Settings > Analysis**, set **Analyze with** to **Zebby credits**, then choose **Buy credits**, select a pack, and finish Stripe Checkout in your external browser. The same action supports top-ups. First-use setup also retains its purchase choice. There is no Zebby email-code or signup step.
 6. In a Stripe test sandbox, use card `4242 4242 4242 4242`, a future expiry, and any valid CVC. No real card charge is made. See [Stripe's testing guide](https://docs.stripe.com/testing).
 7. Wait for webhook confirmation. Zebby should show a slim summary with available, used and total credits and percentage remaining, then allow model selection. Choose **Save recovery code** after purchase or in **Settings > Credits > Learn more**, and keep the text file somewhere private, outside the app's data folder. Analyze one Plan and one resume match, and verify used and remaining credits. Reservations reduce availability without counting as used; usage is cumulative, with no weekly reset.
 8. On the first computer, open **Settings > Credits > Learn more > Connect another computer**. On the second, choose **Settings > Credits > Connect this computer** and enter the temporary code. Both should show the same balance and used credits. Pairing connects credits only, so each computer still selects its application database separately.
 9. Test **Settings > Credits > Restore credits** with the saved recovery code on a fresh disposable profile. In **Settings > Credits > Learn more > Connected computers**, disconnect that device and verify it cannot spend. Test Cancel in the native recovery-save and disconnect dialogs and an expired/used pairing code. In **Learn more > Replace recovery code > Create new recovery code**, verify the new code invalidates the old code and leaves connected devices active. Review **Learn more > Recent usage** for the model, date, analysis type and credit charges.
 10. Test analysis cancellation, insufficient funds, a duplicate webhook delivery, a refund, and network interruption during checkout, pairing and analysis. Confirm a lost connection reply can recover after restarting, and check Stripe deliveries and the Supabase ledger for each result.
 
-The checked-in Node tests use an isolated PostgreSQL engine and mocked network requests. Remote renderer checks use a synthetic wallet and mock native dialogs. Real hosted payment, receipt delivery, and OS secure-storage integration still need the configured accounts and a time when the desktop can be used.
+The checked-in Node tests use an isolated PostgreSQL engine and mocked network requests. Remote renderer checks use a synthetic wallet and mock native dialogs. Hosted connection checks can create and expire an unpaid Checkout session without entering card details or granting credits. Never use real card details for payment tests in live mode. A completed customer payment and receipt delivery are not proven by an unpaid session. See [Stripe's testing guide](https://docs.stripe.com/testing).
 
 ## Packs and estimates
 
@@ -132,7 +134,7 @@ Verify that your provider accounts can access every offered model. No provider f
 
 Configure your business details and payouts in Stripe, publish your purchase/refund and privacy terms, and confirm the applicable tax handling. The initial Checkout integration charges the pack amount only; it does not add automatic tax or tax-inclusive accounting. Test first with a small audience and measure actual usage and overhead.
 
-Then replace the Stripe test key and webhook secret with their live equivalents and explicitly set `ZEBBY_ALLOW_LIVE_PAYMENTS=true`. Use a separate Supabase project or reset test accounts through an audited admin process so test balances cannot become live spendable credits. The service rejects events whose test/live mode differs from its configuration.
+Then replace the Stripe test key and webhook secret with their live equivalents and explicitly set `ZEBBY_ALLOW_LIVE_PAYMENTS=true`. A restricted live key begins `rk_live_`; a standard live secret key begins `sk_live_`. Both must match the selected payment mode. Create a live webhook destination with the same five events listed above. Use a separate Supabase project or audit the ledger before enabling live payments so test balances cannot become live spendable credits. The service rejects events whose test/live mode differs from its configuration. Zebby's initial hosted ledger was checked for existing wallets, purchases and balances before live configuration, and was empty.
 
 ## Verification commands
 

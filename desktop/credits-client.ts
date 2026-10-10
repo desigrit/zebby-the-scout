@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
+import { needsServiceWakeup, waitForCreditsService } from "./credits-service-ready.ts";
 import { onlineModel, type AnalysisSource, type CreditQuote, type CreditsState, type Wallet, type AnalysisKind } from "../shared/online-models.ts";
 import { deviceNameSchema, deviceTokenSchema, guestSessionSchema, pairingCodeSchema, pairingSchema, recoveryCodeSchema,
   walletAccessSchema, type WalletAccess, type WalletPairing } from "../shared/wallet-access.ts";
@@ -44,6 +45,7 @@ export class CreditsClient {
   private pairing: WalletPairing | null = null;
   private secretHistory: string[] = [];
   private unreadableStorage = false;
+  private lastServiceResponse = 0;
   readonly url: string;
   private options: ClientOptions;
   constructor(url: string, options: ClientOptions) {
@@ -104,13 +106,21 @@ export class CreditsClient {
     }
     const controller = new AbortController(); this.controllers.add(controller);
     try {
-      const response = await (this.options.fetcher || fetch)(this.url + path, { method: body === undefined ? "GET" : "POST",
+      const fetcher = this.options.fetcher || fetch;
+      const activeSignal = AbortSignal.any([controller.signal, ...(signal ? [signal] : [])]);
+      if (needsServiceWakeup(this.url, this.lastServiceResponse)) {
+        await waitForCreditsService(this.url, fetcher, activeSignal);
+        this.checkGeneration(generation); activeSignal.throwIfAborted();
+        this.lastServiceResponse = Date.now();
+      }
+      const response = await fetcher(this.url + path, { method: body === undefined ? "GET" : "POST",
         headers: { "Content-Type": "application/json", ...((authenticated || deviceToken) ? { Authorization: `Bearer ${deviceToken || this.session!.access}` } : {}) },
         body: body === undefined ? undefined : JSON.stringify(body),
-        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(path === "/v1/analysis" ? 210000 : 20000), ...(signal ? [signal] : [])]) });
+        signal: AbortSignal.any([activeSignal, AbortSignal.timeout(path === "/v1/analysis" ? 210000 : 20000)]) });
       let result: unknown;
       try { result = await response.json(); } catch { throw new Error("The credit service returned an unreadable response."); }
       this.checkGeneration(generation);
+      this.lastServiceResponse = Date.now();
       if (!response.ok) {
         // Keep the credential and cached balance on authentication or network failures.
         // An automatic empty replacement wallet could strand a purchase.

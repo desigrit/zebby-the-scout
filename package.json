@@ -1,6 +1,6 @@
 {
   "name": "pm-application-tracker",
-  "version": "2.1.3",
+  "version": "2.1.4",
   "private": true,
   "main": "desktop-dist/main.cjs",
   "engines": {
@@ -11,9 +11,9 @@
     "build": "npm run desktop:build",
     "start": "electron .",
     "lint": "eslint .",
-    "test": "node --experimental-strip-types --test tests/job-details.test.mjs tests/job-text.test.mjs tests/public-address.test.mjs tests/desktop-store.test.mjs tests/cloud-database-safety.test.mjs tests/local-analysis.test.mjs tests/application-activity.test.mjs tests/local-models.test.mjs tests/window-shell.test.mjs tests/diagnostic-log.test.mjs tests/release-updates.test.mjs tests/analysis-cancellation.test.mjs tests/paid-analysis.test.mjs tests/guest-wallets.test.mjs tests/build-artifact-retention.test.mjs tests/local-model-response.test.mjs",
+    "test": "node --experimental-strip-types --test tests/job-details.test.mjs tests/job-text.test.mjs tests/public-address.test.mjs tests/desktop-store.test.mjs tests/cloud-database-safety.test.mjs tests/local-analysis.test.mjs tests/application-activity.test.mjs tests/local-models.test.mjs tests/window-shell.test.mjs tests/diagnostic-log.test.mjs tests/release-updates.test.mjs tests/analysis-cancellation.test.mjs tests/paid-analysis.test.mjs tests/guest-wallets.test.mjs tests/credits-service-ready.test.mjs tests/build-artifact-retention.test.mjs tests/local-model-response.test.mjs",
     "test:job-details": "node --experimental-strip-types --test tests/job-details.test.mjs tests/job-text.test.mjs",
-    "test:credits": "node --experimental-strip-types --test tests/paid-analysis.test.mjs tests/guest-wallets.test.mjs",
+    "test:credits": "node --experimental-strip-types --test tests/paid-analysis.test.mjs tests/guest-wallets.test.mjs tests/credits-service-ready.test.mjs",
     "test:renderer": "node --experimental-strip-types scripts/qa-renderer.mjs",
     "test:desktop:windows": "node scripts/qa-ember.mjs",
     "desktop:build": "node scripts/build-desktop.mjs",
