@@ -63,3 +63,13 @@ The final combined log, work/paid-implementation-final-tests.log, reports 91 pas
 No app, Electron, browser, Playwright, or desktop control was used for this documentation pass, and no user profile or database was opened. No current screenshots exist for this feature. Previous public captures apply only to their historical releases. Real database concurrency, email delivery, Stripe webhook delivery, provider model access, Docker deployment, installers, physical Mac behavior, and current native visual rendering remain unverified.
 
 One supplied static detector snapshot, work/paid-design-detect.json, was read. Its new thick side accent has been removed in current source. Existing sidebar layout transition warnings remain pinned and unchanged. Feature-specific dialog type, radius, shadow, and backdrop literals produced advisories; they were not promoted into the global system or visually certified. The detector was not rerun during documentation. Existing .impeccable/critique artifacts were preserved.
+
+## Release verification, 2026-10-09
+
+Zebby 1.7.0 ships this prepared integration from source commit 57b91eff1a65b950a928b45ce55f53f541015a9b. The [release build](https://github.com/desigrit/zebby-the-scout/actions/runs/38027754793) passed on Windows x64 and macOS Apple Silicon, then produced Windows x64, Windows ARM64, and Mac ARM64 installers. All three direct release downloads returned HTTP 200, with uploaded state and GitHub SHA-256 digests verified.
+
+The local suite passed 108 tests, including 22 payments tests. TypeScript, lint, desktop build, and service build passed. GitHub also passed native Windows editing/cancellation checks, compiled renderer checks on both hosts, packaged local-model checks, self-update checks, and the Mac distribution first-launch check. ARM64 Windows packaging was verified; execution on physical Windows ARM64 hardware was not tested.
+
+The renderer checks now exercise all five first-use methods, four pricing choices without early model selection, unavailable checkout, email delivery failure and retry, synthetic payment confirmation, post-purchase model choice, credit quotes, sidebar balances, Settings, sign-out, and focus restoration. Captures were reviewed in wide light and narrow dark layouts. A dialog positioning issue was corrected with native modal centering, and geometry checks protect it.
+
+No app or browser was launched on the user's PC, and no personal database, profile, or resume was accessed. All screen checks used synthetic data on GitHub runners. Stripe, Supabase, and a public service endpoint remain unconnected, so checkout stays disabled. Real email delivery, hosted webhooks, live provider calls, and deployed Docker behavior still require setup and verification.
