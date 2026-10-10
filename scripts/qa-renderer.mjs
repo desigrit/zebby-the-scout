@@ -1001,6 +1001,7 @@ try {
   await creditsSettings.getByRole("button", { name: "Cancel pairing", exact: true }).click();
   assert.equal(await page.evaluate(() => window.creditQA.pairingCancelled), 1);
   await creditHelp.getByRole("button", { name: "Close credit help", exact: true }).click();
+  assert.equal(await creditsSettings.getByRole("button", { name: "Connect this computer", exact: true }).isEnabled(), true);
   await creditsSettings.getByRole("button", { name: "Connect this computer", exact: true }).click();
   const pairInput = creditsSettings.getByLabel("Pairing code", { exact: true });
   assert.equal(await pairInput.evaluate(element => element === document.activeElement), true);

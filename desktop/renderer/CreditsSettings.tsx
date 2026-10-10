@@ -21,7 +21,7 @@ export function CreditsSettings() {
   const opener = useRef<HTMLButtonElement | null>(null), input = useRef<HTMLInputElement | null>(null);
   const restoreFocus = useRef(false);
   const usable = state.canSaveApiKey;
-  const pairingActive = remaining > 0;
+  const pairingActive = Boolean(pairing) && remaining > 0;
   useEffect(() => {
     if (!credits.signedIn) return;
     let active = true;
@@ -147,7 +147,7 @@ export function CreditsSettings() {
             {pairing && <div className="credit-pairing-panel" aria-labelledby="credit-pairing-title">
               <div className="credit-pairing-heading"><strong id="credit-pairing-title">Enter this code on your other computer</strong>
                 <SettingsAction icon={X} iconOnly disabled={working} aria-label="Cancel pairing" title="Cancel pairing" onClick={() => void action(async () => {
-                  await window.desktop!.cancelCreditPairing(); setPairing(null); setCopied(false);
+                  await window.desktop!.cancelCreditPairing(); setPairing(null); setRemaining(0); setCopied(false);
                 })} /></div>
               <p className="settings-help">Open Settings, Credits, then Connect this computer.</p>
               <div className="credit-pairing-code"><output aria-label="Pairing code">{displayCode}</output>
