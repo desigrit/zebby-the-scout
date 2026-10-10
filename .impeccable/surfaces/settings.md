@@ -26,9 +26,17 @@ STORY: Open a database or create a blank file, choose Analyze with and solve its
 
 FIRST VIEWPORT: Start with Database and Current file, Open database, Create new database, and one sync helper line. Analysis follows with Analyze with, then Credits, Appearance, Logs, and Updates. There is no repeated page heading. Narrow layouts put headings above controls.
 
-FORM: The user's selected Ember Settings code concept, with aligned native controls and concise labels. The selected local model's terms/progress-to-Ready flow remains inline.
+FORM: The user's selected Ember Settings code concept, with aligned native controls, a shared action family and concise labels. Provider configuration uses one column with aligned action rows. The selected local model's terms/progress-to-Ready flow remains inline.
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+
+## Shared action controls
+
+Database, conditional provider, credits, recovery/pairing, local model and update actions use SettingsAction. Text controls have a 36px minimum height, 96px minimum width, 8px corners and icon gap, 8px 13px padding, inherited platform type at 13px and weight 650, and 16px SVG icons. Icon-only Find models and Cancel pairing controls use 36px squares with accessible names and tooltips.
+
+Primary controls use the incumbent rust action treatment for Save, Save key, Buy credits, downloads and updates. Secondary controls use paper or the dark field fill and a fine border. Destructive Settings controls use secondary geometry with rust text and an accent-wash hover; existing native confirmations still guard the operations that require them. Busy controls show a 16px spinner, expose busy state and disable activation. The shared focus outline, disabled feedback, arrow cursor and reduced-motion behavior remain inherited from Ember.
+
+Provider configuration has one explicit grid column, with each field spanning the full row. Action rows align controls and wrap with an 8px gap when needed. Folder and external navigation, including Open model folder, Open logs folder, Report an issue and Release notes, retain the existing underlined link treatment.
 
 ## Database and logs
 
@@ -116,3 +124,9 @@ The owner guide now requires Supabase PostgreSQL, Stripe test keys and signed we
 No local app, Electron, browser, Playwright, or desktop control was used in this handoff, and no personal profile, database, or resume was accessed. Hosted concurrency, live Stripe/webhook/provider behavior, container startup, and guest-wallet behavior on physical Mac hardware remain unverified. The [Analysis and credits contract](analysis-credits.md) carries the full current flow and historical verification context.
 
 Zebby [2.1.0](https://github.com/desigrit/zebby-the-scout/releases/tag/v2.1.0) is published from d0c34b4. The [release workflow](https://github.com/desigrit/zebby-the-scout/actions/runs/38037269117) passed its Windows x64 and macOS ARM64 jobs and published direct Windows x64, Windows ARM64, and Apple Silicon installers. All three assets have uploaded state and GitHub SHA-256 digests; their download URLs returned HTTP 200. Mac distribution launch, packaged local-model, and self-update checks passed on the GitHub runner. Windows ARM64 packaging passed without a physical ARM64 execution claim. The service Docker dependency correction is on main, the branch specified in the owner guide; it does not change these desktop installers.
+
+## Settings controls and activity handoff, 2026-10-10
+
+Source 4b16d25ea255a854374d0314ac0c287b21b73a15 was compared with baseline 8b66b23 and the incumbent system, sampling SettingsAction, provider/model/credits/update controls, ApplicationActivity, application-activity.ts, base.css and desktop.css. DESIGN.md and .impeccable/design.json are preserved. Their pre-existing recommendation Copy and application-row sample drift is reported without repair. The service and owner setup guide are unchanged.
+
+The supplied [final CI](https://github.com/desigrit/zebby-the-scout/actions/runs/38042851497) passed 154 Node tests, typecheck, lint, desktop build, isolated native Windows flows and headless renderer flows. The independent scoped review in work/settings-activity-finish-review.md returned ship with no material fixes after inspecting all 12 required captures. Provenance is in work/settings-activity-finish-packet.json: synthetic fixture data on a GitHub Windows runner, mocked providers/native bridge, and platform/theme overrides for renderer captures. Some controls are shown after scrolling; the dark pairing frame uses a fixture theme override. Physical Mac rendering, Windows ARM hardware, hosted payments and version 2.1.1 packaging remain outside this evidence. Documentation verification used source reads, with no test reruns, local app/browser control or personal data access.

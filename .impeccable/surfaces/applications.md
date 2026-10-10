@@ -6,7 +6,7 @@ TASK: Add optional application details, scan hiring progress, select a role, and
 
 FREQUENCY: Several entries and status checks a day across resume versions and companies.
 
-INFORMATION: Attached daily activity and compact totals; search/company/status filters; role, company, locations, date, match, status, resume, Notes, captured listing, and score explanation.
+INFORMATION: Attached 30-day activity stacked by current status on applied dates and compact totals; search/company/status filters; role, company, locations, date, match, status, resume, Notes, captured listing, and score explanation.
 
 STATES: Loading/error/empty/filtered list; selected role; wide inspector or compact inline details; active match analysis with Cancel; full optional form; duplicate warning; confirmation dialogs.
 
@@ -20,19 +20,27 @@ MODE: Operate.
 
 THESIS: Keep the search's activity visible while a compact selectable ledger connects each role to its full details.
 
-OWN-WORLD: Ember warm neutral canvas, rust actions, ochre activity bars, quiet selection wash, native fonts, and fine separators. The unchanged circular zebra remains the shared identity.
+OWN-WORLD: Ember warm neutral canvas, rust actions, activity stacks in semantic hiring-stage colors, quiet selection wash, native fonts, and fine separators. The unchanged circular zebra remains the shared identity.
 
 WORLD: The approved Ember Search Ledger replaces Graphite in both themes. Hiring stages and application match tracks retain their semantic roles and readable text values.
 
 STORY: Add a role, review imported details, save, filter the ledger, select a record, and change status or inspect evidence and Notes.
 
-FIRST VIEWPORT: The native title region reads Zebby. Add application sits at the toolbar's right. Daily bars and compact totals share a paper panel above search and native filters. A dense role list sits beside a persistent inspector when its content width is at least 940px. Smaller layouts expand details inline.
+FIRST VIEWPORT: The native title region reads Zebby. Add application sits at the toolbar's right. Daily status stacks, their named legend and compact totals share a paper panel above search and native filters. A dense role list sits beside a persistent inspector when its content width is at least 940px. Smaller layouts expand details inline.
 
 SIGNATURE INTERACTION: Selecting a role gives its details a stable place beside the list; compact layouts use a disclosure in the selected row. The full listing-first New Application form stays in the workspace.
 
 FORM: The user's selected Ember Applications code concept. Preserve the attached overview and inspector composition, and use the approved inline adaptation when space requires it. The launch window remains 1550 by 850 device-independent pixels, capped to the work area.
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+
+## Application activity contract
+
+The chart covers 30 consecutive applied dates ending today. Each bar's height represents that day's total applications; its proportional segments represent their current Applied, Heard back, Interview scheduled and Rejected statuses. Changing a status updates the original applied day's stack and preserves its total and height. Records without an applied date remain outside the chart.
+
+Applied uses muted neutral fill, Heard back uses the incumbent ochre chart color, interviews use green and rejections use muted red, with appearance-specific fills. These are local chart roles within Ember. A wrapping four-status legend names every color. Hover or keyboard focus shows the date and total; populated days also show exact counts for all four statuses. Accessible day names include the date, total and every nonzero status count, so the breakdown is available without color.
+
+One day is in the Tab sequence. Left and Right move focus between days; Home and End focus the first and last day. Escape dismisses the tooltip, and a new hover or focus restores it. Tooltips are clamped to the chart's horizontal bounds before paint and repositioned when data or chart width changes. The chart stays attached above totals and filters in wide, narrow and scaled layouts.
 
 ## 1.6.1 action contract
 
@@ -167,3 +175,9 @@ Save preserves the complete application form and every optional field. With Zebb
 The shared method setup, paid wallet, and purchase sequence are recorded in [Analysis and credits](analysis-credits.md). Match results continue to use the existing row, inspector, or compact details and separate score explanation. Cancel and previous-result preservation retain their existing provider contract.
 
 Supplied final verification passed 91 Node tests, lint, TypeScript, and both desktop and service builds. The independent source and test review cleared the three scored paid-flow fixes. No current Application screenshot or native interaction check was made. The historical captures above remain evidence only for their stated releases. Current visual rendering and real hosted payment behavior remain unverified; paid checkout is unavailable until the service is configured.
+
+### Current-status activity, 2026-10-10
+
+ApplicationActivity.tsx, lib/application-activity.ts and both stylesheets at source 4b16d25ea255a854374d0314ac0c287b21b73a15 were compared with baseline 8b66b23 and the incumbent system. The independent review in work/settings-activity-finish-review.md returned ship for the shared Settings controls and status chart after inspecting all 12 required captures. Its six Applications frames cover wide and narrow layouts, 200% scaling and reached inline details, the right-edge status tooltip, and the Mac renderer inspector. The existing rows, inspector, optional form, inference and schema 10 are preserved.
+
+The supplied [final CI](https://github.com/desigrit/zebby-the-scout/actions/runs/38042851497) passed 154 Node tests and the build, type, lint, native Windows and renderer gates. These were not rerun by the documenter. The [Settings handoff](settings.md#settings-controls-and-activity-handoff-2026-10-10) records synthetic capture provenance and the remaining physical-device, hosted-payment and version 2.1.1 packaging limits. DESIGN.md and its sidecar remain preserved, including their pre-existing sample drift.
