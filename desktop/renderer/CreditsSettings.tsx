@@ -81,9 +81,10 @@ export function CreditsSettings() {
       </> : <p className="settings-help">Buy credits and choose an online model. No signup needed.</p>}
       {!credits.available && <p className="credit-unavailable">Paid credits are not connected yet. Local models and your own API keys still work.</p>}
       {credits.available && !state.canSaveApiKey && <p className="form-error">Paid credits need Windows secure storage or Mac Keychain.</p>}
+      {credits.pendingConnection && <p className="settings-help" role="status">A wallet connection is pending. Refresh balance to finish connecting.</p>}
       <div className="settings-actions">
         <button className="button button-primary" type="button" disabled={!usable || working} onClick={openCredits}>Buy credits</button>
-        {credits.signedIn && <button className="button button-secondary" type="button" disabled={!usable || working} onClick={() => void action(async () => {
+        {(credits.signedIn || credits.pendingConnection) && <button className="button button-secondary" type="button" disabled={!usable || working} onClick={() => void action(async () => {
           updateState(await window.desktop!.refreshCredits()); updateState(await window.desktop!.refreshCreditAccess());
         })}><RefreshCw size={16} aria-hidden="true" />Refresh balance</button>}
       </div>

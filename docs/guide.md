@@ -149,6 +149,7 @@ In **Settings → Credits**:
 - **Save recovery code** exports a private text file. Keep it outside Zebby's app-data folder so it remains available after uninstalling. Anyone with the code can use your credits.
 - **Restore credits** reconnects a new installation using that saved code. This restores the credit wallet, not the applications database.
 - **Connect another computer** displays a code that expires after ten minutes. On your other computer, choose **Connect this computer** and enter it. The code works once, and both computers share one balance.
+- If a connection is interrupted, **Refresh balance** retries the original request. Finish it before entering a different code. An expired or invalid pairing code can be replaced with a new one.
 - **Connected computers** lists the devices that can spend credits. **Disconnect** asks for confirmation and removes that device's access, preserving the wallet balance. The current computer cannot disconnect itself.
 - **Recovery options → Create new recovery code** replaces the previous code after confirmation. Already connected computers retain access.
 

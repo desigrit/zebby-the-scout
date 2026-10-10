@@ -16,7 +16,11 @@ const recoveredSchema = z.object({ status: z.enum(["reserved", "completed", "fai
 type PendingRun = z.infer<typeof pendingSchema>;
 const storedSessionSchema = z.object({ access: z.string().min(1).max(8192), refresh: z.string().min(1).max(8192), expires: z.number(),
   email: z.union([z.string().email(), z.literal("")]), id: z.string().uuid(), kind: z.enum(["guest", "account"]).default("account"), deviceId: z.string().uuid().optional() });
-const candidateSchema = z.object({ token: deviceTokenSchema, name: deviceNameSchema, kind: z.enum(["guest", "restore", "connect", "legacy"]) });
+const candidateSchema = z.object({ token: deviceTokenSchema, name: deviceNameSchema, kind: z.enum(["guest", "restore", "connect", "legacy"]),
+  intentHash: z.string().regex(/^[a-f0-9]{64}$/).optional(), code: z.union([recoveryCodeSchema, pairingCodeSchema]).optional() })
+  .refine((value) => !value.code || ["restore", "connect"].includes(value.kind) &&
+    (value.kind === "restore" ? recoveryCodeSchema : pairingCodeSchema).safeParse(value.code).success &&
+    value.intentHash === createHash("sha256").update(value.code).digest("hex"));
 const recoverySchema = z.object({ code: recoveryCodeSchema, walletId: z.string().uuid(), version: z.string().uuid().nullable(), saved: z.boolean() });
 type Session = z.infer<typeof storedSessionSchema>;
 type Candidate = z.infer<typeof candidateSchema>;
@@ -55,6 +59,7 @@ export class CreditsClient {
       this.session = stored.session ? storedSessionSchema.parse(stored.session) : null;
       this.wallet = this.session ? walletSchema.safeParse(stored.wallet).data || null : null;
       this.candidate = candidateSchema.safeParse(stored.candidate).data || null;
+      if (stored.candidate && !this.candidate) this.restoreFailed();
       this.recovery = recoverySchema.safeParse(stored.recovery).data || null;
       for (const entry of Array.isArray(stored.pending) ? stored.pending.slice(0, 20) : []) {
         const item = pendingSchema.safeParse(entry);
@@ -67,7 +72,8 @@ export class CreditsClient {
     email: this.session?.email || "", wallet: this.wallet, stale: this.stale, error: this.error, model, access: this.access,
     recoverySaved: Boolean(this.recovery?.saved && this.recovery.walletId === this.session?.id && this.access?.recoveryVersion === this.recovery.version),
     pendingConnection: Boolean(this.candidate) }; }
-  secrets() { return [this.session?.access || "", this.session?.refresh || "", this.candidate?.token || "", this.recovery?.code || "", this.pairing?.code || "",
+  secrets() { return [this.session?.access || "", this.session?.refresh || "", this.candidate?.token || "", this.candidate?.code || "",
+    this.candidate?.kind === "connect" ? this.candidate.code?.replace(/(.{4})(.{4})/, "$1-$2") || "" : "", this.recovery?.code || "", this.pairing?.code || "",
     this.pairing?.code.replace(/(.{4})(.{4})/, "$1-$2") || "", ...this.secretHistory]; }
   private rememberSecret(value: string) { this.secretHistory.push(value); if (this.secretHistory.length > 16) this.secretHistory.shift(); }
   private checkGeneration(generation: number) { if (generation !== this.generation) throw new DOMException("The credit wallet changed.", "AbortError"); }
@@ -194,13 +200,24 @@ export class CreditsClient {
       return true;
     } catch (error) { if (error instanceof HttpError && error.status === 401) return false; throw error; }
   }
-  private async resumeConnection() { return this.accessAction(() => this.resolveCandidate()); }
+  private async resumeConnection() {
+    return this.accessAction(async () => {
+      const candidate = this.candidate;
+      if (!candidate) return false;
+      // Older pending records can be recovered by token, but never rebound to a new code.
+      if (["restore", "connect"].includes(candidate.kind) && !candidate.code) return this.resolveCandidate();
+      await this.connect(candidate.kind, candidate.code); return true;
+    });
+  }
   private async connect(kind: Candidate["kind"], code?: string) {
+    const intentHash = code ? createHash("sha256").update(code).digest("hex") : undefined;
+    if (this.candidate && (this.candidate.kind !== kind || this.candidate.intentHash !== intentHash)) {
+      throw new Error("A different wallet connection is pending. Refresh balance to finish it before entering another code.");
+    }
     if (await this.resolveCandidate()) return;
-    if (this.candidate && this.candidate.kind !== kind) throw new Error("Finish your pending wallet connection before starting another.");
     if (!this.candidate) {
       const candidate: Candidate = { token: "zby_device_" + randomBytes(32).toString("hex"),
-        kind, name: deviceNameSchema.parse(this.options.deviceName || "This computer") };
+        kind, name: deviceNameSchema.parse(this.options.deviceName || "This computer"), ...(code ? { code, intentHash } : {}) };
       this.candidate = candidate;
       // Persist the new credential before the server can link or consume a code.
       try { await this.persist(); } catch (error) { this.candidate = null; throw error; }
@@ -220,7 +237,8 @@ export class CreditsClient {
   private async ensureGuest() {
     if (this.unreadableStorage && !this.session && !this.candidate) throw new Error(this.error);
     if (this.session?.kind === "guest" && !this.candidate) return;
-    await this.accessAction(() => this.connect(this.session ? "legacy" : "guest"));
+    if (this.candidate) await this.resumeConnection();
+    else await this.accessAction(() => this.connect(this.session ? "legacy" : "guest"));
   }
   async refreshAccess(): Promise<WalletAccess> {
     await this.ensureGuest();

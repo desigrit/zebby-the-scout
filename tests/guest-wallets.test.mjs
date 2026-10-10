@@ -255,6 +255,57 @@ test("desktop wallet connections survive lost replies and local persistence fail
       assert.equal(JSON.parse(stored).session.id, session.walletId); assert.equal(JSON.parse(stored).candidate, null);
       assert.equal(restarted.state("gpt-6-luna").wallet.balance, 500000000);
     });
+    for (const [originalKind, requestedKind] of [["guest", "restore"], ["connect", "restore"], ["restore", "connect"], ["connect", "connect"], ["restore", "restore"]]) {
+      await t.test(`a pending ${originalKind} cannot report a different ${requestedKind} intent successful`, async () => {
+        const origin = token(), destination = token();
+        const originalWallet = await f.request("", "/v1/wallet/guest", { deviceToken: origin, name: "Original" });
+        const nextWallet = await f.request("", "/v1/wallet/guest", { deviceToken: destination, name: "Destination" });
+        await f.pay(destination);
+        const originalCode = originalKind === "connect" ? (await f.request(origin, "/v1/wallet/pairing", {})).code : recovery();
+        if (originalKind === "restore") await f.request(origin, "/v1/wallet/recovery", { code: originalCode });
+        const requestedCode = requestedKind === "connect" ? (await f.request(destination, "/v1/wallet/pairing", {})).code : recovery();
+        if (requestedKind === "restore") await f.request(destination, "/v1/wallet/recovery", { code: requestedCode });
+        let stored = "", lose = true; const routes = [];
+        const client = new CreditsClient(config.publicUrl, { save: async (value) => { stored = value; }, onChange() {}, fetcher: f.bridge((route) => {
+          routes.push(route);
+          if (route === "/v1/wallet/" + originalKind && lose) { lose = false; throw new TypeError("Original connection reply lost"); }
+        }) });
+        await assert.rejects(originalKind === "guest" ? client.checkout("starter") : client.connectWallet(originalKind, originalCode), /reply lost/);
+        const pending = JSON.parse(stored).candidate;
+        if (originalKind !== "guest") {
+          assert.equal(pending.intentHash, hash(originalCode));
+          assert.equal(pending.code, originalCode);
+          assert.ok(!JSON.stringify(client.state("gpt-6-luna")).includes(originalCode));
+        }
+        routes.length = 0;
+        await assert.rejects(client.connectWallet(requestedKind, requestedCode), /different wallet connection is pending/);
+        assert.deepEqual(routes, []); assert.equal(client.state("gpt-6-luna").signedIn, false);
+        assert.equal(JSON.parse(stored).candidate.token, pending.token);
+        await client.refreshWallet();
+        const recovered = JSON.parse(stored).session;
+        if (originalKind !== "guest") assert.equal(recovered.id, originalWallet.walletId);
+        assert.notEqual(recovered.id, nextWallet.walletId);
+        assert.equal(JSON.parse(stored).candidate, null);
+        await client.connectWallet(requestedKind, requestedCode);
+        assert.equal(JSON.parse(stored).session.id, nextWallet.walletId);
+        assert.equal(client.state("gpt-6-luna").wallet.balance, 500000000);
+      });
+    }
+    await t.test("manual retry completes the original pairing after a failure before server receipt", async () => {
+      const owner = token(); await f.request("", "/v1/wallet/guest", { deviceToken: owner, name: "Source" }); await f.pay(owner);
+      const pairing = await f.request(owner, "/v1/wallet/pairing", {}); let stored = "", fail = true;
+      const client = new CreditsClient(config.publicUrl, { save: async (value) => { stored = value; }, onChange() {}, fetcher: async (url, options) => {
+        if (new URL(url).pathname === "/v1/wallet/connect" && fail) { fail = false; throw new TypeError("Connection lost before receipt"); }
+        return f.bridge()(url, options);
+      } });
+      await assert.rejects(client.connectWallet("connect", pairing.code), /before receipt/);
+      assert.equal(client.state("gpt-6-luna").pendingConnection, true);
+      const restarted = new CreditsClient(config.publicUrl, { save: async (value) => { stored = value; }, onChange() {}, fetcher: f.bridge() }); restarted.restore(stored);
+      await restarted.refreshWallet();
+      assert.equal(restarted.state("gpt-6-luna").wallet.balance, 500000000);
+      assert.equal(restarted.state("gpt-6-luna").pendingConnection, false);
+      assert.equal((await f.request(owner, "/v1/wallet/access")).devices.length, 2);
+    });
     await t.test("a failed final settings save still preserves the linked credential for restart recovery", async () => {
       const owner = token(); await f.request("", "/v1/wallet/guest", { deviceToken: owner, name: "Source" }); await f.pay(owner);
       const pairing = await f.request(owner, "/v1/wallet/pairing", {}); let stored = "", fail = true;

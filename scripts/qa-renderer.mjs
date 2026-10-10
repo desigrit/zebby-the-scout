@@ -190,7 +190,8 @@ try {
     const secondDevice = { ...firstDevice, id: "22222222-2222-4222-8222-222222222222", name: "Mac laptop", current: false };
     const walletAccess = { hasRecoveryCode: false, recoveryVersion: null, devices: [firstDevice] };
     window.creditQA = { update: updateCredits, checkouts: [], models: [], connections: [], recoverySaves: [],
-      cancelRecovery: false, confirmDisconnect: false, disconnects: [], pairingCancelled: 0, payment: "open", quote: null };
+      cancelRecovery: false, confirmDisconnect: false, disconnects: [], pairingCancelled: 0, payment: "open", quote: null,
+      resumeMode: "none", failedResumes: 0 };
     window.modelQA = { confirmDelete: false, deleteRequests: [], selections: [], rejectSidebarSave: false,
       updateState, installRequests: 0, failInstall: false, failCheck: false, finishDownload: null,
       logOpens: 0, failLogOpen: false, databaseRequests: [], update,
@@ -199,7 +200,11 @@ try {
       onLocalModelsChanged: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
       onUpdatesChanged: (listener) => { updateListeners.add(listener); return () => updateListeners.delete(listener); },
       onCreditsChanged: (listener) => { creditListeners.add(listener); return () => creditListeners.delete(listener); },
-      refreshCredits: async () => snapshot(),
+      refreshCredits: async () => {
+        if (window.creditQA.resumeMode === "error") { window.creditQA.failedResumes++; throw new Error("Connection interrupted. Retry when online."); }
+        if (window.creditQA.resumeMode === "complete") updateCredits({ signedIn: true, pendingConnection: false, wallet: { ...wallet }, access: walletAccess, error: "", stale: false });
+        return snapshot();
+      },
       refreshCreditAccess: async () => snapshot(),
       saveCreditRecoveryCode: async (rotate = false) => {
         window.creditQA.recoverySaves.push(rotate);
@@ -908,6 +913,26 @@ try {
   await creditsSettings.scrollIntoViewIfNeeded();
   await captureSettings("credits-wallet-settings-windows-light.png", false);
   assert.equal(await creditsSettings.evaluate(element => element.scrollWidth > element.clientWidth), false);
+  await page.evaluate(() => {
+    window.creditQA.resumeMode = "error";
+    window.creditQA.update({ signedIn: false, pendingConnection: true, wallet: null, access: null, error: "Connection interrupted. Retry when online." });
+  });
+  await page.waitForFunction(() => window.creditQA.failedResumes > 0);
+  await creditsSettings.getByText("A wallet connection is pending. Refresh balance to finish connecting.", { exact: true }).waitFor();
+  await creditsSettings.scrollIntoViewIfNeeded();
+  await captureSettings("credits-wallet-pending-windows-light.png", false);
+  await page.setViewportSize({ width: 790, height: 850 });
+  await page.evaluate(() => { window.modelQA.setPlatform("darwin"); document.documentElement.dataset.platform = "darwin"; document.documentElement.dataset.theme = "dark"; });
+  await creditsSettings.scrollIntoViewIfNeeded();
+  await captureSettings("credits-wallet-pending-mac-dark-narrow.png", false);
+  await creditsSettings.getByRole("button", { name: "Refresh balance", exact: true }).click();
+  await creditsSettings.getByRole("alert").filter({ hasText: "Connection interrupted" }).waitFor();
+  assert.equal(await creditsSettings.getByRole("button", { name: "Refresh balance", exact: true }).isEnabled(), true);
+  await page.evaluate(() => { window.creditQA.resumeMode = "complete"; });
+  await creditsSettings.getByRole("button", { name: "Refresh balance", exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector(".credit-settings-content")?.textContent.includes("A wallet connection is pending"));
+  assert.equal(await creditsSettings.getByRole("alert").count(), 0);
+  await creditsSettings.getByRole("combobox", { name: "Model", exact: true }).waitFor();
   assert.deepEqual(await page.evaluate(() => window.creditQA.checkouts), ["starter"]);
   await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption("ollama");
   await page.setViewportSize({ width: 1550, height: 850 });
