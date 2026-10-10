@@ -16,6 +16,10 @@ const methods = [
   { id: "anthropic", title: "Anthropic API key", description: "Use your own Anthropic account.", icon: KeyRound },
   { id: "credits", title: "Buy credits", description: "Choose an online model, no API key needed.", icon: Coins },
 ] as const;
+function warmCreditsService() {
+  // Keep plan selection instant. Checkout can retry if this background check fails.
+  void window.desktop!.warmCreditsService().catch(() => undefined);
+}
 export function AnalysisFlowProvider({ state, onState, children }: { state: DesktopState; onState: (state: DesktopState) => void; children: ReactNode }) {
   const current = useRef(state);
   useLayoutEffect(() => { current.current = state; }, [state]);
@@ -30,7 +34,8 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
   const dialogOpen = scene !== null;
   const updateState = useCallback((next: DesktopState) => { current.current = next; onState(next); }, [onState]);
   function close(value: Authorization | null = null) { pending.current?.resolve(value); pending.current = null; setHasPending(false); setScene(null); setError(""); setQuote(null); }
-  const show = useCallback((next: Scene) => { if (!scene) opener.current = document.activeElement as HTMLElement; setError(""); setScene(next); }, [scene]);
+  const show = useCallback((next: Scene) => { if (next === "buy") warmCreditsService();
+    if (!scene) opener.current = document.activeElement as HTMLElement; setError(""); setScene(next); }, [scene]);
   useEffect(() => {
     const element = dialog.current; if (!element) return;
     if (dialogOpen && !element.open) element.showModal();
@@ -125,7 +130,8 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
         {scene === "choose" && <><p className="analysis-intro">Pick a method. You can change it in Settings.</p>
           <fieldset className="analysis-methods"><legend className="visually-hidden">Analysis method</legend>
             {methods.map((item) => <label key={item.id} className={`analysis-method ${method === item.id ? "selected" : ""} ${item.id === "credits" ? "analysis-method-paid" : ""}`}>
-              <input type="radio" name="analysis-method" value={item.id} checked={method === item.id} onChange={() => setMethod(item.id)} />
+              <input type="radio" name="analysis-method" value={item.id} checked={method === item.id}
+                onChange={() => { if (item.id === "credits") warmCreditsService(); setMethod(item.id); }} />
               <item.icon size={24} aria-hidden="true" /><span><strong>{item.title}</strong><small>{item.description}</small></span>
               {method === item.id && <Check size={17} className="method-check" aria-hidden="true" />}</label>)}
           </fieldset><p className="settings-help">No signup needed for any method.</p></>}

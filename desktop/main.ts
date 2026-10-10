@@ -490,7 +490,8 @@ function registerIpc() {
       const started = Date.now();
       const trace = !["desktop:state", "desktop:refresh-credits", "desktop:credit-checkout-status"].includes(channel);
       const changing = !["desktop:state", "desktop:check-updates", "desktop:download-update", "desktop:install-update",
-        "desktop:list-ollama-models", "desktop:open-logs", "desktop:open-model-folder", "desktop:download-resume"].includes(channel);
+        "desktop:list-ollama-models", "desktop:open-logs", "desktop:open-model-folder", "desktop:download-resume",
+        "desktop:warm-credits-service"].includes(channel);
       if (installingUpdate && changing) throw new Error("Zebby is restarting to install an update.");
       if (changing) activeSettingsRequests++;
       if (trace) logEvent(`Setting request started (${channel})`);
@@ -503,6 +504,7 @@ function registerIpc() {
     });
   }
   handle("desktop:state", () => state());
+  handle("desktop:warm-credits-service", () => creditsClient.warmService());
   handle("desktop:refresh-credits", async () => { await creditsClient.refreshWallet(); return state(); });
   handle("desktop:refresh-credit-access", async () => { walletChangesAllowed(); await creditsClient.refreshAccess(); return state(); });
   handle("desktop:connect-credit-wallet", async (_event, kind: "restore" | "connect", code: string) => {

@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld("desktop", {
   createCreditPairing: () => ipcRenderer.invoke("desktop:create-credit-pairing"),
   cancelCreditPairing: () => ipcRenderer.invoke("desktop:cancel-credit-pairing"),
   removeCreditDevice: (id: string) => ipcRenderer.invoke("desktop:remove-credit-device", id),
+  warmCreditsService: () => ipcRenderer.invoke("desktop:warm-credits-service"),
   startCreditCheckout: (pack: string) => ipcRenderer.invoke("desktop:start-credit-checkout", pack),
   creditCheckoutStatus: (id: string) => ipcRenderer.invoke("desktop:credit-checkout-status", id),
   quoteCreditAnalysis: (source: unknown) => ipcRenderer.invoke("desktop:quote-credit-analysis", source),

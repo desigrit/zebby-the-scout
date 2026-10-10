@@ -41,6 +41,88 @@ test("an unavailable service has a bounded wait", async () => {
     new AbortController().signal, { waitMs: 25, retryMs: 1 }), /did not become ready/);
 });
 
+test("opening the purchase flow warms Render without creating wallet access, a checkout or a charge", async () => {
+  const paths = [];
+  const client = new CreditsClient(origin, { save: async () => assert.fail("Do not save wallet access"),
+    onChange: () => assert.fail("Do not change wallet state"), fetcher: async (url, options) => {
+      paths.push(new URL(url).pathname);
+      assert.equal(options.method, "GET"); assert.equal(options.headers, undefined); assert.equal(options.body, undefined);
+      return Response.json({ ok: true, mode: "live" });
+    } });
+  const before = client.state("gpt-6-luna");
+  await client.warmService(); await client.warmService();
+  assert.deepEqual(paths, ["/health"]);
+  assert.deepEqual(client.state("gpt-6-luna"), before);
+});
+
+test("purchase warmup and checkout share one readiness check, with checkout sent only after readiness", async () => {
+  const paths = []; let ready;
+  const healthResponse = new Promise(resolve => { ready = resolve; });
+  const client = new CreditsClient(origin, { save: async () => {}, onChange() {}, fetcher: async (url) => {
+    const path = new URL(url).pathname; paths.push(path);
+    if (path === "/health") return healthResponse;
+    assert.equal(path, "/v1/checkout");
+    return Response.json({ id: "cs_live_fixture", url: "https://checkout.stripe.com/c/pay/fixture", mode: "live" });
+  } });
+  client.restore(stored());
+  const warmup = client.warmService(), secondClick = client.warmService(), checkout = client.checkout("starter");
+  assert.deepEqual(paths, ["/health"]);
+  ready(Response.json({ ok: true, mode: "live" }));
+  await Promise.all([warmup, secondClick, checkout]);
+  assert.deepEqual(paths, ["/health", "/v1/checkout"]);
+});
+
+test("cancelling analysis cannot stop a purchase warmup or send the paid analysis", async () => {
+  const paths = []; const controller = new AbortController(); let ready, healthSignal;
+  const healthResponse = new Promise(resolve => { ready = resolve; });
+  const client = new CreditsClient(origin, { save: async () => {}, onChange() {}, fetcher: async (url, options) => {
+    const path = new URL(url).pathname; paths.push(path);
+    if (path === "/health") { healthSignal = options.signal; return healthResponse; }
+    assert.equal(path, "/v1/wallet"); return Response.json(wallet);
+  } });
+  client.restore(stored());
+  const warmup = client.warmService();
+  const analysis = client.analyze(randomUUID(), {}, controller.signal);
+  controller.abort(new DOMException("Cancelled", "AbortError"));
+  await assert.rejects(analysis, { name: "AbortError" });
+  assert.equal(healthSignal.aborted, false);
+  assert.deepEqual(paths, ["/health"]);
+  ready(Response.json({ ok: true, mode: "live" })); await warmup;
+  await client.refreshWallet();
+  assert.deepEqual(paths, ["/health", "/v1/wallet"]);
+  assert.equal(client.state("gpt-6-luna").wallet.balance, wallet.balance);
+});
+
+test("the last cancelled consumer stops startup and a later checkout can retry", async () => {
+  const paths = []; const controller = new AbortController(); let healthSignal;
+  const client = new CreditsClient(origin, { save: async () => {}, onChange() {}, fetcher: async (url, options) => {
+    const path = new URL(url).pathname; paths.push(path);
+    if (path === "/health") {
+      if (paths.length > 1) return Response.json({ ok: true, mode: "live" });
+      healthSignal = options.signal;
+      return new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
+    }
+    assert.equal(path, "/v1/checkout");
+    return Response.json({ id: "cs_live_fixture", url: "https://checkout.stripe.com/c/pay/fixture", mode: "live" });
+  } });
+  client.restore(stored());
+  const warmup = client.warmService(controller.signal);
+  controller.abort(new DOMException("Cancelled", "AbortError"));
+  await assert.rejects(warmup, { name: "AbortError" });
+  assert.equal(healthSignal.aborted, true);
+  await client.checkout("starter");
+  assert.deepEqual(paths, ["/health", "/health", "/v1/checkout"]);
+});
+
+test("prewarming unconfigured and non-Render builds performs no network or wallet operation", async () => {
+  for (const url of ["", "https://credits.example"]) {
+    const client = new CreditsClient(url, { save: async () => assert.fail("Do not save wallet access"), onChange() {},
+      fetcher: () => assert.fail("Do not contact an unconfigured or always-on host") });
+    await client.warmService();
+    assert.equal(client.state("gpt-6-luna").pendingConnection, false);
+  }
+});
+
 test("checkout waits for readiness and is sent once, with warm requests skipping the preflight", async () => {
   const paths = []; let healthChecks = 0;
   const client = new CreditsClient(origin, { save: async () => {}, onChange() {}, fetcher: async (url, options) => {

@@ -51,6 +51,7 @@ export class CreditsClient {
   private secretHistory: string[] = [];
   private unreadableStorage = false;
   private lastServiceResponse = 0;
+  private serviceWarmup: { controller: AbortController; promise: Promise<void>; waiters: number } | null = null;
   readonly url: string;
   private options: ClientOptions;
   constructor(url: string, options: ClientOptions) {
@@ -100,6 +101,36 @@ export class CreditsClient {
     await this.options.save(this.session || this.pending.size || this.candidate || this.recovery ? JSON.stringify({ url: this.url, session: this.session,
       wallet: this.wallet, pending: [...this.pending.values()], candidate: this.candidate, recovery: this.recovery }) : "");
   }
+  // Public health only. Opening the purchase flow must not create a wallet or checkout.
+  async warmService(signal?: AbortSignal) {
+    signal?.throwIfAborted();
+    if (!this.url || !needsServiceWakeup(this.url, this.lastServiceResponse)) return;
+    let warmup = this.serviceWarmup;
+    if (!warmup || warmup.controller.signal.aborted) {
+      const controller = new AbortController();
+      const promise = waitForCreditsService(this.url, this.options.fetcher || fetch, controller.signal)
+        .then(() => { this.lastServiceResponse = Date.now(); })
+        .finally(() => { if (this.serviceWarmup?.controller === controller) this.serviceWarmup = null; });
+      warmup = { controller, promise, waiters: 0 };
+      this.serviceWarmup = warmup;
+    }
+    warmup.waiters++;
+    let onAbort: (() => void) | undefined;
+    try {
+      await (signal ? Promise.race([warmup.promise, new Promise<never>((_resolve, reject) => {
+        onAbort = () => reject(signal.reason);
+        signal.addEventListener("abort", onAbort, { once: true });
+        if (signal.aborted) onAbort();
+      })]) : warmup.promise);
+    } finally {
+      if (signal && onAbort) signal.removeEventListener("abort", onAbort);
+      // One cancelled request cannot stop another request or the purchase flow's warmup.
+      if (--warmup.waiters === 0) {
+        warmup.controller.abort();
+        if (this.serviceWarmup === warmup) this.serviceWarmup = null;
+      }
+    }
+  }
   private async request(path: string, body?: unknown, authenticated = true, signal?: AbortSignal, deviceToken?: string): Promise<unknown> {
     if (!this.url) throw new Error("Could not reach the credits service. Try again.");
     const generation = this.generation;
@@ -119,9 +150,8 @@ export class CreditsClient {
       const fetcher = this.options.fetcher || fetch;
       const activeSignal = AbortSignal.any([controller.signal, ...(signal ? [signal] : [])]);
       if (needsServiceWakeup(this.url, this.lastServiceResponse)) {
-        await waitForCreditsService(this.url, fetcher, activeSignal);
+        await this.warmService(activeSignal);
         this.checkGeneration(generation); activeSignal.throwIfAborted();
-        this.lastServiceResponse = Date.now();
       }
       const response = await fetcher(this.url + path, { method: body === undefined ? "GET" : "POST",
         headers: { "Content-Type": "application/json", ...((authenticated || deviceToken) ? { Authorization: `Bearer ${deviceToken || this.session!.access}` } : {}) },

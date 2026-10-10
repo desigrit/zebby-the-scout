@@ -51,6 +51,7 @@ export type DesktopBridge = {
   createCreditPairing(): Promise<WalletPairing>;
   cancelCreditPairing(): Promise<void>;
   removeCreditDevice(id: string): Promise<DesktopState>;
+  warmCreditsService(): Promise<void>;
   startCreditCheckout(pack: string): Promise<{ id: string; mode: "test" | "live" }>;
   creditCheckoutStatus(id: string): Promise<"paid" | "pending" | "expired">;
   quoteCreditAnalysis(source: AnalysisSource): Promise<CreditQuote>;

@@ -233,7 +233,7 @@ try {
     const walletAccess = { hasRecoveryCode: false, recoveryVersion: null, devices: [firstDevice] };
     window.creditQA = { update: updateCredits, checkouts: [], models: [], connections: [], recoverySaves: [],
       cancelRecovery: false, confirmDisconnect: false, disconnects: [], pairingCancelled: 0, payment: "open", quote: null,
-      resumeMode: "none", failedResumes: 0 };
+      resumeMode: "none", failedResumes: 0, warmups: 0, warmupMode: "ready", finishWarmup: null };
     window.modelQA = { confirmDelete: false, deleteRequests: [], selections: [], rejectSidebarSave: false,
       updateState, installRequests: 0, failInstall: false, failCheck: false, finishDownload: null,
       logOpens: 0, failLogOpen: false, databaseRequests: [], update,
@@ -268,6 +268,11 @@ try {
         if (window.creditQA.confirmDisconnect) updateCredits({ access: { ...initialState.credits.access,
           devices: initialState.credits.access.devices.filter((item) => item.id !== id) } });
         return snapshot();
+      },
+      warmCreditsService: async () => {
+        window.creditQA.warmups++;
+        if (window.creditQA.warmupMode === "error") throw new Error("The credits service did not become ready. Try again shortly.");
+        if (window.creditQA.warmupMode === "pending") await new Promise(resolve => { window.creditQA.finishWarmup = resolve; });
       },
       startCreditCheckout: async (pack) => {
         if (!initialState.credits.available) throw new Error("Could not reach the credits service. Try again.");
@@ -945,6 +950,24 @@ try {
   await page.keyboard.press("Escape");
   await creditHelp.waitFor({ state: "hidden" });
   assert.equal(await emptyCredits.getByRole("button", { name: "Learn more", exact: true }).evaluate(element => element === document.activeElement), true);
+  // A cold or unavailable host must not hold up choosing a pack or cancelling.
+  await page.evaluate(() => { window.creditQA.warmupMode = "pending"; });
+  await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).click();
+  const pricingDialog = page.getByRole("dialog", { name: "A little fuel for your next move", exact: true });
+  await pricingDialog.getByRole("radio", { name: /^\$5\b/ }).waitFor();
+  assert.equal(await page.evaluate(() => window.creditQA.warmups), 1);
+  assert.equal(await page.evaluate(() => window.creditQA.checkouts.length), 0);
+  assert.equal(await pricingDialog.getByRole("button", { name: "Continue, $20", exact: true }).isEnabled(), true);
+  await pricingDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await pricingDialog.waitFor({ state: "hidden" });
+  await page.evaluate(() => { window.creditQA.finishWarmup(); window.creditQA.finishWarmup = null; window.creditQA.warmupMode = "error"; });
+  await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).click();
+  await pricingDialog.getByRole("radio", { name: /^\$5\b/ }).waitFor();
+  assert.equal(await pricingDialog.getByRole("alert").count(), 0);
+  assert.equal(await pricingDialog.getByRole("button", { name: "Continue, $20", exact: true }).isEnabled(), true);
+  await pricingDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await pricingDialog.waitFor({ state: "hidden" });
+  await page.evaluate(() => { window.creditQA.warmupMode = "ready"; });
   await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption("openai");
   await nav.getByRole("button", { name: "Plan", exact: true }).click();
   const analyze = page.getByRole("button", { name: "Analyze", exact: true });
@@ -959,7 +982,10 @@ try {
   await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32";
     document.documentElement.dataset.theme = "light"; });
   await captureSettings("credits-choice-windows-light.png", false);
+  const warmupsBeforeChoice = await page.evaluate(() => window.creditQA.warmups);
   await analysisDialog.getByRole("radio", { name: /Buy credits/ }).check();
+  assert.equal(await page.evaluate(() => window.creditQA.warmups), warmupsBeforeChoice + 1);
+  assert.equal(await page.evaluate(() => window.creditQA.checkouts.length), 0);
   await analysisDialog.getByRole("button", { name: "Continue", exact: true }).click();
   assert.equal(await analysisDialog.getByRole("radio").count(), 4);
   assert.equal(await analysisDialog.getByRole("combobox").count(), 0);
