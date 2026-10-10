@@ -259,6 +259,30 @@ test("rapid model changes pause earlier transfers and delete cancels active writ
   assert.equal(await stat(path.join(folder, "second.gguf.part")).catch(() => null), null);
 });
 
+test("Stop cancels an active transfer and removes only the incomplete model", async (t) => {
+  const { downloads, folder } = await fixture(t, { fetcher: async () =>
+    new Response(new ReadableStream({ start(controller) { controller.enqueue(bytes.subarray(0, 12)); } })) });
+  const unrelated = path.join(folder, "applications.sqlite");
+  await writeFile(unrelated, "unrelated test data");
+  await downloads.start(model.id);
+  await until(() => downloads.status(model.id).downloadedBytes === 12);
+  assert.equal(await downloads.stop(model.id), true);
+  assert.equal(downloads.status(model.id).status, "not-installed");
+  assert.equal(downloads.status(model.id).downloadedBytes, 0);
+  assert.equal(await stat(path.join(folder, `${model.filename}.part`)).catch(() => null), null);
+  assert.equal(await readFile(unrelated, "utf8"), "unrelated test data");
+  await assert.rejects(downloads.stop("unknown"), /Choose a built-in model/);
+});
+
+test("Stop preserves a completed model when the transfer finishes before the action", async (t) => {
+  const { downloads, folder } = await fixture(t, { fetcher: async () => new Response(bytes) });
+  await downloads.start(model.id);
+  await until(() => downloads.status(model.id).status === "ready");
+  assert.equal(await downloads.stop(model.id), false);
+  assert.equal(downloads.status(model.id).status, "ready");
+  assert.deepEqual(await readFile(path.join(folder, model.filename)), bytes);
+});
+
 test("model deletion defaults to Cancel, releases the engine on confirmation, and blocks analysis races", async () => {
   const calls = [];
   const engine = { busy: false, modelId: "smollm2-360m", stop: async () => { calls.push("stop"); } };

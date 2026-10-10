@@ -104,6 +104,7 @@ try {
     }
   }
   async function captureSettings(filename, fullPage = true) {
+    if (await page.locator('.settings-page').count()) await page.locator('.desktop-workspace').evaluate(element => element.scrollTo({ top: 0, behavior: 'instant' }));
     await page.evaluate(async () => {
       window.scrollTo({ top: 0, behavior: "instant" });
       await document.fonts.ready;
@@ -136,7 +137,7 @@ try {
     }
   }
   async function assertSettingsActions() {
-    const actions = await page.locator('.settings-page button:not(.settings-link):visible').evaluateAll((buttons) => buttons.map((button) => {
+    const actions = await page.locator('.settings-page button:not(.settings-link):not([role="switch"]):not([role="radio"]):visible').evaluateAll((buttons) => buttons.map((button) => {
       const style = getComputedStyle(button), icon = button.querySelector('svg');
       return { label: button.getAttribute('aria-label') || button.innerText, shared: button.classList.contains('settings-action'),
         height: button.getBoundingClientRect().height, size: style.fontSize, weight: style.fontWeight,
@@ -151,12 +152,14 @@ try {
       assert.equal(action.radius, '8px'); assert.equal(action.gap, '8px');
       if (action.iconWidth !== undefined) { assert.equal(action.iconWidth, 16); assert.equal(action.iconHeight, 16); }
     }
-    const grid = await page.locator('.settings-page .analysis-primary-fields').evaluate(element => {
-      const children = [...element.children].map(child => child.getBoundingClientRect());
-      return { width: element.clientWidth, offset: Math.abs(children[0].top - children[1].top), overflow: element.scrollWidth > element.clientWidth };
-    });
-    assert.equal(grid.overflow, false, 'Analysis controls fit the available width');
-    if (grid.width >= 500) assert.ok(grid.offset <= 1, 'Provider and model or server align on the same row');
+    const rows = await page.locator('.settings-page .analysis-setting-row').evaluateAll(elements => elements.map(element => ({
+      overflow: element.scrollWidth > element.clientWidth,
+      label: element.querySelector('.analysis-setting-label').getBoundingClientRect().left,
+    })));
+    assert.ok(rows.length >= 2);
+    assert.equal(rows.some(row => row.overflow), false, 'Quiet rows fit the available width');
+    assert.ok(rows.every(row => Math.abs(row.label - rows[0].label) <= 1), 'Preference labels align');
+    assert.equal(await page.locator('.analysis-configuration').getByText(/Job and resume text go to|receives job and resume content/).count(), 0);
   }
   async function assertActivityTooltipBounds() {
     const bounds = await page.locator('.activity-bars').boundingBox();
@@ -244,7 +247,7 @@ try {
       resumeMode: "none", failedResumes: 0, warmups: 0, warmupMode: "ready", finishWarmup: null };
     window.modelQA = { confirmDelete: false, deleteRequests: [], selections: [], rejectSidebarSave: false,
       updateState, installRequests: 0, failInstall: false, failCheck: false, finishDownload: null,
-      logOpens: 0, failLogOpen: false, failKeySave: false, keySaveAttempts: 0, thinkingSelections: [], databaseRequests: [], update,
+      logOpens: 0, failLogOpen: false, failKeySave: false, keySaveAttempts: 0, thinkingSelections: [], databaseRequests: [], stopRequests: [], update,
       setPlatform: (platform) => { initialState.platform = platform; } };
     window.desktop = { state: async () => initialState, onDatabaseChanged: () => () => {}, onNavigate: () => () => {},
       onLocalModelsChanged: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
@@ -349,6 +352,9 @@ try {
           update(id, { status: "downloading", downloadedBytes: 0, error: "" }); return snapshot(); },
       pauseModelDownload: async () => { for (const item of initialState.localModels)
         if (["downloading", "verifying"].includes(item.status)) update(item.id, { status: "paused" }); return snapshot(); },
+      stopModelDownload: async (id) => { window.modelQA.stopRequests.push(id);
+        if (initialState.localModels.find(item => item.id === id).status !== "ready")
+          update(id, { status: "not-installed", downloadedBytes: 0, error: "" }); return snapshot(); },
       resumeModelDownload: async (id, termsVersion) => {
         if (licenseVersions[id] && !initialState.acceptedModelTerms.includes(id)) {
           if (termsVersion !== licenseVersions[id]) throw new Error("Review the model terms first.");
@@ -751,7 +757,7 @@ try {
   await page.getByRole("main", { name: "Settings", exact: true }).waitFor();
   assert.equal(await page.getByRole("heading", { name: "Settings", exact: true }).count(), 0);
   assert.equal(await page.getByText("Preferences for this computer.", { exact: true }).count(), 0);
-  assert.equal(await page.getByRole("switch").count(), 0);
+  assert.equal(await page.getByRole("switch", { name: /logs|errors/i }).count(), 0);
   assert.equal(await page.getByRole("button", { name: "Create database copy", exact: true }).count(), 0);
   assert.doesNotMatch(await page.locator(".settings-page").innerText(), /weekly backups|Logs may include/i);
   assert.equal(await page.getByText("Quit Zebby and wait for file sync before switching computers.", { exact: true }).count(), 1);
@@ -773,7 +779,7 @@ try {
   await page.getByRole('combobox', { name: 'Model', exact: true }).selectOption('qwen3:8b');
   await page.getByRole('combobox', { name: 'Model', exact: true }).selectOption('qwen3.8:27b');
   assert.equal(await page.evaluate(() => window.desktop.state().then(state => state.ollamaModel)), 'qwen3.8:27b');
-  await page.getByRole('combobox', { name: 'Thinking level', exact: true }).selectOption('on');
+  await page.getByRole('switch', { name: 'Thinking', exact: true }).click();
   await captureSettings('settings-actions-server-windows-light.png', false);
   await provider.selectOption("builtin");
   const localModel = page.getByRole("combobox", { name: "Local model", exact: true });
@@ -781,27 +787,62 @@ try {
   assert.equal(await localModel.getByRole("option").count(), LOCAL_MODELS.length + 1);
   assert.equal(await page.getByRole("button", { name: /Delete SmolLM2/ }).count(), 0);
   await localModel.selectOption("smollm2-360m");
-  await page.getByText("Downloading SmolLM2 360M", { exact: true }).waitFor();
+  await page.getByRole('status').filter({ hasText: 'Downloading' }).waitFor();
+  assert.equal(await page.getByRole('switch', { name: 'Thinking', exact: true }).count(), 0);
+  assert.equal(await page.getByRole('radiogroup', { name: 'Thinking level', exact: true }).count(), 0);
   await page.evaluate(() => window.modelQA.update("smollm2-360m", { downloadedBytes: 81000000 }));
-  await page.getByText("81 MB / 271 MB", { exact: true }).waitFor();
+  await page.getByText("30%", { exact: true }).waitFor();
+  assert.equal(await page.locator('.local-model-picker .model-size-badge').innerText(), '271 MB');
   await assertSettingsActions();
   const progress = page.getByRole("progressbar", { name: "SmolLM2 360M download progress" });
   assert.equal(await progress.getAttribute("max"), "270590880");
   await captureSettings("settings-windows-download.png");
-  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const pauseDownload = page.getByRole('button', { name: 'Pause SmolLM2 360M download', exact: true });
+  assert.equal(await pauseDownload.innerText(), '');
+  assert.equal(await pauseDownload.evaluate(element => getComputedStyle(element).borderWidth), '0px');
+  await pauseDownload.click();
   await page.getByText("Download paused", { exact: true }).waitFor();
-  await page.getByRole("button", { name: "Resume download", exact: true }).click();
+  const resumeDownload = page.getByRole('button', { name: 'Resume SmolLM2 360M download', exact: true });
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Resume SmolLM2 360M download');
+  assert.equal(await resumeDownload.evaluate(element => element === document.activeElement), true);
+  await captureSettings('analysis-quiet-paused-windows-light.png', false);
+  await resumeDownload.click();
   await page.evaluate(() => window.modelQA.update("smollm2-360m", { status: "error", error: "The download stopped early. Choose Retry download to continue." }));
   await page.getByRole("alert").getByText(/stopped early/).waitFor();
-  await page.getByRole("button", { name: "Retry download", exact: true }).click();
+  await captureSettings('analysis-quiet-error-windows-light.png', false);
+  await page.getByRole('button', { name: 'Retry SmolLM2 360M download', exact: true }).click();
+  await page.getByRole('button', { name: 'Stop SmolLM2 360M download', exact: true }).click();
+  await page.getByText('Not downloaded', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('progressbar', { name: 'SmolLM2 360M download progress' }).count(), 0);
+  assert.deepEqual(await page.evaluate(() => window.modelQA.stopRequests), ['smollm2-360m']);
+  await page.getByRole('button', { name: 'Download model', exact: true }).click();
   await page.evaluate(() => window.modelQA.update("smollm2-360m", { status: "verifying", downloadedBytes: 270590880 }));
   await page.getByText("Checking download", { exact: true }).waitFor();
   await page.evaluate(() => window.modelQA.update("smollm2-360m", { status: "ready" }));
-  await page.getByText("Ready", { exact: true }).waitFor();
+  await page.getByText("Ready on this computer", { exact: true }).waitFor();
   assert.equal(await progress.count(), 0);
-  const deleteModel = page.getByRole("button", { name: "Delete SmolLM2 360M", exact: true });
+  await page.locator('.local-model-library > summary').click();
+  // Transfer actions stay on the unselected library model, then return to the
+  // library disclosure when Stop removes its partial file and row.
+  await page.evaluate(() => window.modelQA.update('qwen3-06b', { status: 'paused', downloadedBytes: 1000000, error: '' }));
+  const libraryResume = page.getByRole('button', { name: 'Resume Qwen3 0.6B download', exact: true });
+  await libraryResume.focus(); await libraryResume.press('Enter');
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Pause Qwen3 0.6B download');
+  assert.equal(await localModel.inputValue(), 'smollm2-360m');
+  const libraryPause = page.getByRole('button', { name: 'Pause Qwen3 0.6B download', exact: true });
+  await libraryPause.press('Enter');
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Resume Qwen3 0.6B download');
+  await captureSettings('analysis-library-paused-focus-windows-light.png', false);
+  const libraryStop = page.getByRole('button', { name: 'Stop Qwen3 0.6B download', exact: true });
+  await libraryStop.focus(); await libraryStop.press('Enter');
+  await page.waitForFunction(() => document.activeElement === document.querySelector('.local-model-library > summary'));
+  assert.equal(await page.locator('.local-model-library [data-model-id="qwen3-06b"]').count(), 0);
+  assert.equal(await localModel.inputValue(), 'smollm2-360m');
+  assert.deepEqual(await page.evaluate(() => window.modelQA.stopRequests), ['smollm2-360m', 'qwen3-06b']);
+  await captureSettings('analysis-library-stopped-focus-windows-light.png', false);
+  const deleteModel = page.getByRole("button", { name: "Remove SmolLM2 360M", exact: true });
   await deleteModel.click(); // Simulated native Cancel result.
-  assert.equal(await page.getByText("Ready", { exact: true }).count(), 1);
+  assert.equal(await page.getByText("Ready on this computer", { exact: true }).count(), 1);
   await provider.selectOption("openai");
   await page.getByRole("textbox", { name: "API key", exact: true }).waitFor();
   await page.getByRole('textbox', { name: 'API key', exact: true }).fill('sk-fixture-only');
@@ -814,18 +855,21 @@ try {
   assert.equal(await page.getByLabel('Saved API key', { exact: true }).innerText(), 'sk-••••••••only');
   assert.equal(await page.evaluate(() => window.modelQA.keySaveAttempts), 1);
   const analysisModel = page.getByRole('combobox', { name: 'Model', exact: true });
-  const thinking = page.getByRole('combobox', { name: 'Thinking level', exact: true });
+  const thinking = page.getByRole('radiogroup', { name: 'Thinking level', exact: true });
   assert.deepEqual(await analysisModel.locator('option').evaluateAll(options => options.map(option => option.value)),
     ['gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-astra']);
-  await thinking.selectOption('max'); await analysisModel.selectOption('gpt-6-luna');
-  await page.waitForFunction(() => [...document.querySelectorAll('.analysis-configuration label')]
-    .find(label => label.querySelector('span')?.textContent === 'Thinking level')?.querySelector('select')?.options[0]?.value === 'off');
-  assert.equal(await thinking.inputValue(), 'high'); await thinking.selectOption('off');
+  await thinking.getByRole('radio', { name: 'Maximum', exact: true }).click(); await analysisModel.selectOption('gpt-6-luna');
+  await thinking.getByRole('radio', { name: 'Off', exact: true }).waitFor();
+  await thinking.getByRole('radio', { name: 'High', checked: true, exact: true }).waitFor();
+  await thinking.getByRole('radio', { name: 'Off', exact: true }).click();
   await analysisModel.selectOption('gpt-6.1-sol');
-  await page.waitForFunction(() => [...document.querySelectorAll('.analysis-configuration label')]
-    .find(label => label.querySelector('span')?.textContent === 'Thinking level')?.querySelector('select')?.value === 'max');
-  assert.equal(await thinking.inputValue(), 'max');
-  await thinking.selectOption('high');
+  await thinking.getByRole('radio', { name: 'Maximum', checked: true, exact: true }).waitFor();
+  await thinking.getByRole('radio', { name: 'High', exact: true }).click();
+  await thinking.getByRole('radio', { name: 'High', checked: true, exact: true }).waitFor();
+  await thinking.getByRole('radio', { name: 'High', exact: true }).focus();
+  await page.keyboard.press('ArrowRight');
+  await thinking.getByRole('radio', { name: 'Extra high', checked: true, exact: true }).waitFor();
+  await thinking.getByRole('radio', { name: 'High', exact: true }).click();
   await captureSettings('settings-actions-key-windows-light.png', false);
   const changeKey = page.getByRole('button', { name: 'Change key', exact: true });
   await changeKey.click();
@@ -876,12 +920,12 @@ try {
   await page.getByRole('button', { name: 'Remove key', exact: true }).waitFor();
   await assertSettingsActions();
   await analysisModel.selectOption('claude-haiku-4-5-20251001');
-  await page.waitForFunction(() => [...document.querySelectorAll('.analysis-configuration label')]
-    .find(label => label.querySelector('span')?.textContent === 'Thinking level')?.querySelector('select')?.options.length === 2);
-  assert.deepEqual(await thinking.locator('option').evaluateAll(options => options.map(option => option.value)), ['off', 'on']);
-  await thinking.selectOption('on'); await analysisModel.selectOption('claude-sonnet-5-5');
-  await page.waitForFunction(() => [...document.querySelectorAll('.analysis-configuration label')]
-    .find(label => label.querySelector('span')?.textContent === 'Thinking level')?.querySelector('select')?.options.length === 5);
+  const binaryThinking = page.getByRole('switch', { name: 'Thinking', exact: true });
+  await binaryThinking.waitFor();
+  assert.equal(await thinking.count(), 0);
+  await binaryThinking.click(); await analysisModel.selectOption('claude-sonnet-5-5');
+  await thinking.getByRole('radio', { name: 'High', exact: true }).waitFor();
+  assert.equal(await thinking.getByRole('radio').count(), 5);
   await captureSettings('analysis-anthropic-windows-light.png', false);
   await page.getByRole('button', { name: 'Remove key', exact: true }).click();
   await page.getByRole('button', { name: 'Remove key', exact: true }).waitFor({ state: 'detached' });
@@ -889,8 +933,8 @@ try {
   assert.equal(await page.getByRole("textbox", { name: "Server URL", exact: true }).inputValue(), "http://localhost:11434");
   assert.equal(await page.getByRole("combobox", { name: "Model", exact: true }).inputValue(), "qwen3.8:27b");
   await provider.selectOption("builtin");
-  await page.getByText("Ready", { exact: true }).waitFor();
-  assert.equal(await page.getByText("Ready", { exact: true }).count(), 1);
+  await page.getByText("Ready on this computer", { exact: true }).waitFor();
+  assert.equal(await page.getByText("Ready on this computer", { exact: true }).count(), 1);
   await captureSettings("settings-windows-ready.png");
   await nav.getByRole("button", { name: "Plan", exact: true }).click();
   await page.getByText("Compact mode uses basic keyword coverage and limited overview suggestions.").waitFor();
@@ -899,15 +943,15 @@ try {
   await captureSettings("settings-windows-dark.png");
   await localModel.selectOption("qwen3-4b");
   await page.evaluate(() => window.modelQA.update("qwen3-4b", { status: "ready", downloadedBytes: 2497280256 }));
-  await page.getByText("Other downloads (1)").click();
-  await page.getByRole("button", { name: "Delete SmolLM2 360M", exact: true }).waitFor();
+  await page.locator('.local-model-library > summary').click();
+  await page.getByRole("button", { name: "Remove SmolLM2 360M", exact: true }).waitFor();
   await page.setViewportSize({ width: 790, height: 850 });
   await captureSettings("settings-windows-compact.png");
   await assertSettingsActions();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   await page.evaluate(() => { window.modelQA.confirmDelete = true; });
-  await page.getByRole("button", { name: "Delete SmolLM2 360M", exact: true }).click();
-  assert.equal(await page.getByText("Other downloads (1)").count(), 0);
+  await page.getByRole("button", { name: "Remove SmolLM2 360M", exact: true }).click();
+  assert.equal(await page.getByRole('button', { name: 'Remove SmolLM2 360M', exact: true }).count(), 0);
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.evaluate(() => { window.modelQA.setPlatform("darwin"); });
   await page.getByRole("radio", { name: "Light", exact: true }).check();
@@ -944,10 +988,10 @@ try {
     }
     await captureSettings(`settings-${id}-terms.png`);
     await page.getByRole("button", { name: "Agree and download", exact: true }).click();
-    await page.getByText(`Downloading ${LOCAL_MODELS.find((model) => model.id === id).name}`, { exact: true }).waitFor();
+    await page.getByRole('status').filter({ hasText: 'Downloading' }).waitFor();
     await page.evaluate(({ id, bytes }) => window.modelQA.update(id, { status: "ready", downloadedBytes: bytes }),
       { id, bytes: LOCAL_MODELS.find((model) => model.id === id).bytes });
-    await page.getByText("Ready", { exact: true }).waitFor();
+    await page.getByText("Ready on this computer", { exact: true }).waitFor();
     assert.equal(await page.getByRole("button", { name: "Agree and download", exact: true }).count(), 0);
     await nav.getByRole("button", { name: "Plan", exact: true }).click();
     assert.equal(await page.locator(".plan-analyze-actions small").innerText(), LOCAL_MODELS.find((model) => model.id === id).name);
@@ -1147,7 +1191,7 @@ try {
   const paidModel = analysisDialog.getByRole("combobox", { name: "Model", exact: true });
   assert.equal(await paidModel.locator("option").count(), 2);
   await paidModel.selectOption("gpt-6-astra");
-  await analysisDialog.getByRole("combobox", { name: "Thinking level", exact: true }).selectOption("high");
+  await analysisDialog.getByRole('radiogroup', { name: 'Thinking level', exact: true }).getByRole('radio', { name: 'High', exact: true }).click();
   await page.evaluate(() => { window.creditQA.cancelRecovery = true; });
   await analysisDialog.getByRole("button", { name: "Save recovery code", exact: true }).click();
   assert.equal(await analysisDialog.getByRole("button", { name: "Save recovery code", exact: true }).isVisible(), true);

@@ -67,6 +67,7 @@ export type DesktopBridge = {
   ollamaThinkingCapability(url: string, model: string): Promise<ThinkingCapability>;
   selectLocalModel(id: string): Promise<DesktopState>;
   pauseModelDownload(): Promise<DesktopState>;
+  stopModelDownload(id: string): Promise<DesktopState>;
   resumeModelDownload(id: string, termsVersion?: string): Promise<DesktopState>;
   deleteLocalModel(id: string): Promise<DesktopState>;
   openModelFolder(): Promise<string>;

@@ -256,6 +256,18 @@ export class LocalModelDownloads {
     return filename;
   }
 
+  stop(id: string) {
+    return this.serialize(async () => {
+      this.model(id);
+      // A completed download can arrive after the Stop click. Never remove it here.
+      if (this.status(id).status === "ready") return false;
+      if (this.active?.id === id) await this.pauseActive();
+      if (this.status(id).status === "ready") return false;
+      await this.removeModel(id);
+      return true;
+    });
+  }
+
   remove(id: string) { return this.serialize(() => this.removeModel(id)); }
 
   private async removeModel(id: string) {

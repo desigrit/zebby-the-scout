@@ -45,20 +45,14 @@ export function AnalysisSettings({ state, onState, provider: suppliedProvider, o
   const keyed = provider === "openai" || provider === "anthropic";
   const onlineId = provider === "credits" ? state.credits.model : provider === "openai" ? state.openaiModel : state.anthropicModel;
   return <div className={`analysis-configuration${suppliedProvider ? " analysis-configuration-focused" : ""}`}>
-    <div className="analysis-primary-fields">
-      {!suppliedProvider && <label className="field provider-field"><span>Analyze with</span><select value={provider} disabled={working}
+    <div className="analysis-settings-group">
+      {!suppliedProvider && <div className="analysis-setting-row"><span className="analysis-setting-label">Analyze with</span><label className="field provider-field"><span>Analyze with</span><select value={provider} disabled={working}
         onChange={(event) => { setError(""); setNotice(""); void action(() => window.desktop!.setAnalysisProvider(event.target.value as AnalysisProvider)); }}>
         <option value="ollama">Local server</option><option value="builtin">Downloaded model</option><option value="openai">OpenAI API key</option>
         <option value="anthropic">Anthropic API key</option><option value="credits">Zebby credits</option>
-      </select></label>}
-      {provider === "ollama" ? <label className="field"><span>Server URL</span><input type="url" value={url} spellCheck={false} disabled={working}
-        onChange={(event) => { setUrl(event.target.value); setModels([]); }} onBlur={() => saveServer()}
-        onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); saveServer(); } }} placeholder="http://localhost:11434" /></label>
-        : provider === "builtin" ? <LocalModelSelect state={state} onState={onState} disabled={working} onBusy={setWorking} />
-        : <OnlineModelSelect state={state} onState={onState} provider={provider as "openai" | "anthropic" | "credits"} disabled={working} onBusy={setWorking} />}
-    </div>
-    <div className={`analysis-secondary-fields${provider === "ollama" ? " analysis-secondary-server" : ""}`}>
-      {provider === "ollama" && <div className="analysis-server-model"><div className="ollama-model-row"><label className="field"><span>Model</span>
+      </select></label></div>}
+      <div className="analysis-setting-row"><span className="analysis-setting-label">Model</span>
+      {provider === "ollama" ? <div className="analysis-server-model"><div className="ollama-model-row"><label className="field"><span>Model</span>
         <select value={models.includes(model) ? model : "custom"} disabled={working || finding}
           onChange={(event) => { const value = ["custom", "new-custom"].includes(event.target.value) ? "" : event.target.value; setModel(value); if (value) saveServer(url, value); }}>
           {!models.includes(model) && model && <option value="custom">{model}</option>}
@@ -71,18 +65,21 @@ export function AnalysisSettings({ state, onState, provider: suppliedProvider, o
         {!models.includes(model) && <label className="field custom-model-field"><span>Model name</span><input value={model} spellCheck={false} disabled={working}
           onChange={(event) => setModel(event.target.value)} onBlur={() => saveServer()}
           onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); saveServer(); } }} placeholder="qwen3:8b" /></label>}
-      </div>}
+      </div> : provider === "builtin" ? <LocalModelSelect state={state} onState={onState} disabled={working} onBusy={setWorking} />
+        : <OnlineModelSelect state={state} onState={onState} provider={provider as "openai" | "anthropic" | "credits"} disabled={working} onBusy={setWorking} />}
+      </div>
+      {provider === "ollama" && <div className="analysis-setting-row"><span className="analysis-setting-label">Server URL</span><label className="field"><span>Server URL</span><input type="url" value={url} spellCheck={false} disabled={working}
+        onChange={(event) => { setUrl(event.target.value); setModels([]); }} onBlur={() => saveServer()}
+        onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); saveServer(); } }} placeholder="http://localhost:11434" /></label></div>}
+      {keyed && <div className="analysis-setting-row"><span className="analysis-setting-label">API key</span><ApiKeyField key={provider} state={state} onState={onState} provider={provider} disabled={working} onBusy={setWorking} onPendingChange={setKeyPending} /></div>}
       <ThinkingSelect key={`${provider}:${provider === "builtin" ? state.builtInModelId : provider === "ollama" ? `${state.ollamaUrl}:${state.ollamaModel}` : onlineId}`}
         state={state} onState={onState} provider={provider} model={provider === "builtin" ? state.builtInModelId : provider === "ollama" ? state.ollamaModel : onlineId}
-        disabled={working || provider === "ollama" && serverModelChanged} onBusy={setWorking} />
+        disabled={working || provider === "ollama" && serverModelChanged} onBusy={setWorking} quiet />
     </div>
-    {keyed && <ApiKeyField key={provider} state={state} onState={onState} provider={provider} disabled={working} onBusy={setWorking} onPendingChange={setKeyPending} />}
     {provider === "builtin" && <LocalModelsSettings state={state} onState={onState} hideSelector />}
     {provider === "credits" && <div className="settings-actions"><SettingsAction variant="primary" icon={CreditCard} onClick={openCredits}
       disabled={working || !state.canSaveApiKey}>Buy credits</SettingsAction></div>}
     {error && <p className="form-error" role="alert">{error}</p>}{notice && <p className="notice" role="status">{notice}</p>}
-    {provider !== "builtin" && <p className="settings-help analysis-privacy">{provider === "ollama" ? "Job and resume text go to your server."
-      : keyed ? `${provider === "openai" ? "OpenAI" : "Anthropic"} receives job and resume content. Billed to your API account.`
-      : "Job and resume text go to Zebby and OpenAI. Pay only for the tokens used."}</p>}
+    {(keyed || provider === "credits") && <p className="settings-help analysis-billing">{keyed ? "Billed to your API account." : "Pay only for the tokens used."}</p>}
   </div>;
 }

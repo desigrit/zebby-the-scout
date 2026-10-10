@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld("desktop", {
   ollamaThinkingCapability: (url: string, model: string) => ipcRenderer.invoke("desktop:ollama-thinking-capability", url, model),
   selectLocalModel: (id: string) => ipcRenderer.invoke("desktop:select-local-model", id),
   pauseModelDownload: () => ipcRenderer.invoke("desktop:pause-model-download"),
+  stopModelDownload: (id: string) => ipcRenderer.invoke("desktop:stop-model-download", id),
   resumeModelDownload: (id: string, termsVersion?: string) => ipcRenderer.invoke("desktop:resume-model-download", id, termsVersion),
   deleteLocalModel: (id: string) => ipcRenderer.invoke("desktop:delete-local-model", id),
   openModelFolder: () => ipcRenderer.invoke("desktop:open-model-folder"),

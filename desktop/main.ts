@@ -705,6 +705,11 @@ function registerIpc() {
     return state();
   });
   handle("desktop:pause-model-download", async () => { await modelDownloads.pause(); return state(); });
+  handle("desktop:stop-model-download", async (_event, id: string) => {
+    getLocalModel(id);
+    await modelDownloads.stop(id);
+    return state();
+  });
   handle("desktop:resume-model-download", async (_event, id: string, termsVersion?: string) => {
     const accepted = settings.acceptedModelTerms || {};
     const next = acceptModelTerms(getLocalModel(id), accepted, termsVersion);
