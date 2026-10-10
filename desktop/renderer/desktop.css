@@ -235,7 +235,7 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .match-result .score-track > span { background: var(--accent); }
 .match-why { width: 100%; padding-top: 8px; }
 .match-why summary { font-size: 12px; font-weight: 650; }
-.match-why p { max-width: 72ch; margin: 8px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.6; white-space: pre-line; }
+.match-why p { margin: 8px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.6; white-space: pre-line; }
 .job-importance-hint { margin: 0 0 18px; font-size: 11px; color: var(--ink-soft); }
 .analysis-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; margin-bottom: 24px; }
 .recommendations { min-width: 0; }
@@ -283,7 +283,7 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .settings-action-icon.button { flex: none; min-width: 36px; width: 36px; padding: 8px; }
 .settings-action-danger.button { color: var(--accent); }
 .settings-action-danger.button:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-wash); }
-.settings-help { max-width: 72ch; margin: 10px 0 0; font-size: 11px; line-height: 1.6; color: var(--ink-soft); }
+.settings-help { margin: 10px 0 0; font-size: 11px; line-height: 1.6; color: var(--ink-soft); }
 .settings-content .sync-warning { margin: 12px 0 0; font-size: 12px; color: var(--accent); }
 .settings-content > .field, .local-model-field { display: flex; margin-bottom: 14px; }
 .settings-content .field > span:first-child { font-size: 12px; font-weight: 500; }
@@ -352,7 +352,7 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .analysis-dialog-body::-webkit-scrollbar { width: 7px; }
 .analysis-dialog-body::-webkit-scrollbar-thumb { border-radius: 5px; background: var(--scroll-thumb); border: 2px solid var(--paper); }
 .analysis-dialog-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 24px; border-top: 1px solid var(--line); }
-.analysis-intro { color: var(--ink-soft); margin: 0 0 22px; line-height: 1.6; max-width: 70ch; }
+.analysis-intro { color: var(--ink-soft); margin: 0 0 22px; line-height: 1.6; }
 .analysis-methods, .credit-packs { border: 0; padding: 0; margin: 0; display: grid; gap: 12px; }
 .analysis-methods { grid-template-columns: 1fr 1fr; }
 .analysis-method { position: relative; display: flex; align-items: center; gap: 14px; border: 1px solid var(--line); border-radius: 8px;

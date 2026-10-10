@@ -120,6 +120,19 @@ try {
     }
     await page.screenshot({ path: path.join(output, filename), fullPage });
   }
+  async function assertFullTextRows(paragraphs) {
+    const rows = await paragraphs.evaluateAll((elements) => elements.map((element) => {
+      const parent = element.parentElement, style = getComputedStyle(parent);
+      return { text: element.textContent.slice(0, 60), width: element.clientWidth,
+        available: parent.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+        overflow: element.scrollWidth > element.clientWidth };
+    }));
+    assert.ok(rows.length > 0, "The expected text is rendered");
+    for (const row of rows) {
+      assert.ok(Math.abs(row.width - row.available) <= 2, `Text uses the available row: ${JSON.stringify(row)}`);
+      assert.equal(row.overflow, false, `Text wraps within its row: ${row.text}`);
+    }
+  }
   async function assertSettingsActions() {
     const actions = await page.locator('.settings-page button:not(.settings-link):visible').evaluateAll((buttons) => buttons.map((button) => {
       const style = getComputedStyle(button), icon = button.querySelector('svg');
@@ -344,7 +357,7 @@ try {
         applications = applications.map((item) => item.id === id ? { ...item, matchStrength: 89, updatedAt: "2026-09-30T20:00:00Z" } : item);
         data = { application: applications.find((item) => item.id === id) };
       } else { plan = { ...plan, matchStrength: 86,
-        matchNotes: "Customer discovery and roadmap delivery are well demonstrated in the selected resume. The posting asks for deeper experimentation experience than the resume shows." };
+        matchNotes: "Customer discovery and roadmap delivery are well demonstrated in the selected resume. The posting asks for deeper experimentation experience than the resume shows. The candidate has led product strategy, worked with design and engineering, and used customer evidence to prioritize work. The main gaps are direct experience in the posting's domain and clearer examples of experiments that connect product decisions to measured outcomes. The score reflects strong transferable product experience with room to demonstrate those specific requirements more clearly." };
         plans = plans.map((item) => item.id === plan.id ? plan : item); data = { plan }; }
     } else if (pathname.startsWith("/api/plans/") && method === "PUT") {
       const id = pathname.split("/")[3];
@@ -475,6 +488,18 @@ try {
   await page.keyboard.press("Enter");
   assert.equal(await page.locator(".match-why").getAttribute("open"), "");
   assert.match(await page.locator(".match-why").innerText(), /deeper experimentation experience/);
+  await assertFullTextRows(page.locator(".match-why p"));
+  await page.locator(".match-why").scrollIntoViewIfNeeded();
+  await captureSettings("plan-score-copy-wide-light.png", false);
+  await page.setViewportSize({ width: 790, height: 850 });
+  await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
+  await assertFullTextRows(page.locator(".match-why p"));
+  assert.equal(await page.locator(".plan-document-scroll").evaluate(element => element.scrollWidth > element.clientWidth), false);
+  await page.locator(".match-why").scrollIntoViewIfNeeded();
+  await captureSettings("plan-score-copy-narrow-dark.png", false);
+  await page.setViewportSize({ width: 1550, height: 850 });
+  await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
+  await page.locator(".plan-document-scroll").evaluate(element => { element.scrollTop = 0; });
   const keywordRows = page.locator(".recommendations-keywords .recommendation-row");
   const themeRows = page.locator(".recommendations-themes .recommendation-row");
   assert.equal(await keywordRows.first().locator(".recommendation-importance").innerText(), "96%");
@@ -941,11 +966,16 @@ try {
   assert.match(await analysisDialog.innerText(), /Choose your model after purchasing credits/);
   assert.equal(await analysisDialog.getByRole("button", { name: "Continue, $20", exact: true }).isEnabled(), true);
   assert.doesNotMatch(await analysisDialog.innerText(), /Paid credits are not|not connected yet/);
+  await assertFullTextRows(analysisDialog.locator(".analysis-intro, .analysis-dialog-body > p.settings-help"));
   await captureSettings("credits-packs-windows-light.png", false);
+  await page.setViewportSize({ width: 951, height: 850 });
+  await assertFullTextRows(analysisDialog.locator(".analysis-intro, .analysis-dialog-body > p.settings-help"));
+  await captureSettings("credits-packs-row-951-light.png", false);
   await page.setViewportSize({ width: 790, height: 850 });
   await page.evaluate(() => { window.modelQA.setPlatform("darwin"); document.documentElement.dataset.platform = "darwin";
     document.documentElement.dataset.theme = "dark"; });
   assert.equal(await analysisDialog.evaluate(element => element.scrollWidth > element.clientWidth), false);
+  await assertFullTextRows(analysisDialog.locator(".analysis-intro, .analysis-dialog-body > p.settings-help"));
   await captureSettings("credits-packs-mac-dark-narrow.png", false);
   await analysisDialog.getByRole("button", { name: "Continue, $20", exact: true }).click();
   await analysisDialog.getByRole("alert").filter({ hasText: "Could not reach the credits service. Try again." }).waitFor();
