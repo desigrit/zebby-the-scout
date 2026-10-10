@@ -7,32 +7,39 @@ function dayLabel(date: string, long = false) {
     .format(new Date(`${date}T12:00:00`));
 }
 
-function positionTooltip(button: HTMLButtonElement | null, bars: HTMLDivElement | null) {
-  const tooltip = button?.querySelector<HTMLElement>(".activity-tooltip");
-  if (!button || !bars || !tooltip) return;
-  const bounds = bars.getBoundingClientRect(), anchor = button.getBoundingClientRect();
-  tooltip.style.maxWidth = `${bounds.width}px`;
-  const width = tooltip.getBoundingClientRect().width;
-  const left = Math.max(bounds.left, Math.min(anchor.left + anchor.width / 2 - width / 2, bounds.right - width));
-  tooltip.style.left = `${left - anchor.left}px`;
-  tooltip.style.transform = "none";
+function positionTooltips(bars: HTMLDivElement | null, active?: HTMLButtonElement) {
+  if (!bars) return;
+  const bounds = bars.getBoundingClientRect();
+  const buttons = active ? [active] : [...bars.querySelectorAll<HTMLButtonElement>(".activity-day")];
+  const items = buttons.flatMap((button) => {
+    const tooltip = button.querySelector<HTMLElement>(".activity-tooltip");
+    return tooltip ? [{ button, tooltip }] : [];
+  });
+  for (const { tooltip } of items) tooltip.style.maxWidth = `${bounds.width}px`;
+  const positions = items.map(({ button, tooltip }) => {
+    const anchor = button.getBoundingClientRect(), width = tooltip.getBoundingClientRect().width;
+    const left = Math.max(bounds.left, Math.min(anchor.left + anchor.width / 2 - width / 2, bounds.right - width));
+    return { tooltip, offset: left - anchor.left };
+  });
+  for (const { tooltip, offset } of positions) {
+    tooltip.style.left = `${offset}px`; tooltip.style.right = "auto"; tooltip.style.transform = "none";
+  }
 }
 
 export default function ApplicationActivity({ days }: { days: ApplicationDay[] }) {
   const [focusedDay, setFocusedDay] = useState(Math.max(0, days.length - 1));
   const [tooltipDismissed, setTooltipDismissed] = useState(false);
   const barsRef = useRef<HTMLDivElement>(null);
-  const activeDayRef = useRef<HTMLButtonElement>(null);
   const maximum = Math.max(1, ...days.map((day) => day.count));
   const total = days.reduce((sum, day) => sum + day.count, 0);
   useEffect(() => {
     const dismiss = (event: KeyboardEvent) => { if (event.key === "Escape") setTooltipDismissed(true); };
-    const observer = new ResizeObserver(() => positionTooltip(activeDayRef.current, barsRef.current));
+    const observer = new ResizeObserver(() => positionTooltips(barsRef.current));
     if (barsRef.current) observer.observe(barsRef.current);
     document.addEventListener("keydown", dismiss);
     return () => { observer.disconnect(); document.removeEventListener("keydown", dismiss); };
   }, []);
-  useLayoutEffect(() => { positionTooltip(activeDayRef.current, barsRef.current); }, [days]);
+  useLayoutEffect(() => { positionTooltips(barsRef.current); }, [days]);
 
   return <figure className="application-activity" aria-label="Applications by applied date and current status over the last 30 days">
     <figcaption className="activity-caption"><span>Application activity</span>
@@ -42,9 +49,9 @@ export default function ApplicationActivity({ days }: { days: ApplicationDay[] }
       {days.map((day, index) => <button className={`activity-day ${day.count ? "has-applications" : ""}`}
         key={day.date} data-date={day.date} type="button" tabIndex={index === focusedDay ? 0 : -1}
         aria-label={`${dayLabel(day.date, true)}: ${day.count} ${day.count === 1 ? "application" : "applications"}${APPLICATION_STATUSES.filter((status) => day.statuses[status]).map((status) => `, ${status}: ${day.statuses[status]}`).join("")}`}
-        onFocus={(event) => { activeDayRef.current = event.currentTarget; positionTooltip(event.currentTarget, barsRef.current);
+        onFocus={(event) => { positionTooltips(barsRef.current, event.currentTarget);
           setFocusedDay(index); setTooltipDismissed(false); }}
-        onMouseEnter={(event) => { activeDayRef.current = event.currentTarget; positionTooltip(event.currentTarget, barsRef.current); setTooltipDismissed(false); }}
+        onMouseEnter={(event) => { positionTooltips(barsRef.current, event.currentTarget); setTooltipDismissed(false); }}
         onKeyDown={(event) => {
           const next = event.key === "ArrowLeft" ? Math.max(0, index - 1)
             : event.key === "ArrowRight" ? Math.min(days.length - 1, index + 1)
