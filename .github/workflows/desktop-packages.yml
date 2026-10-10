@@ -158,6 +158,11 @@ jobs:
       - run: node scripts/qa-packaged-engine.mjs
       - run: node scripts/qa-packaged-engine.mjs lfm25-350m
       - run: node scripts/qa-packaged-engine.mjs gemma3-270m
+      - name: Check streamed Mac analysis with full-length synthetic postings and resumes
+        run: |
+          node scripts/qa-packaged-engine.mjs smollm2-360m --long-input
+          node scripts/qa-packaged-engine.mjs lfm25-350m --long-input
+          node scripts/qa-packaged-engine.mjs gemma3-270m --long-input
       - uses: actions/upload-artifact@v4
         if: always()
         with:

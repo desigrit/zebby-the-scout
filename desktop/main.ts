@@ -63,6 +63,10 @@ function logsPath() { return path.join(app.getPath("userData"), "Logs"); }
 function logDiagnostic(message: string, error?: unknown) {
   diagnosticLog.error(message, error);
 }
+function logEvent(message: string, error?: unknown) {
+  if (error) diagnosticLog.error(message, error);
+  else diagnosticLog.event(message);
+}
 
 async function saveSettings() {
   const snapshot = JSON.stringify(settings, null, 2);
@@ -117,6 +121,7 @@ async function loadSettings() {
       logDiagnostic("Could not open the saved database", error); }
   }
   if (!store.status.filePath) {
+    if (settings.databasePath) logEvent("Selected database unavailable; opening the local workspace without replacing the selected file");
     const previousLocal = path.join(app.getPath("userData"), "PM Applications.sqlite");
     const localPath = (await stat(previousLocal).catch(() => null))?.isFile()
       ? previousLocal : path.join(app.getPath("userData"), "Zebby Applications.sqlite");
@@ -177,6 +182,7 @@ async function chooseDatabase(kind: "open" | "create") {
   settings.databasePath = filePath;
   startupError = "";
   await saveSettings();
+  logEvent(`Database selected (${kind}, ${filePath})`);
   mainWindow?.webContents.send("desktop:database-changed", state());
   return state();
 }
@@ -244,6 +250,9 @@ async function analyzeWithSelectedProvider(instructions: string, input: unknown,
   schema: Record<string, unknown>, failure: string, selected: ReturnType<typeof selectedAnalysis>, signal: AbortSignal,
   paid?: { quoteId: string; source: AnalysisSource }): Promise<Record<string, unknown>> {
   signal.throwIfAborted();
+  const model = selected.provider === "builtin" ? selected.builtInModelId : selected.provider === "ollama" ? selected.ollamaModel
+    : selected.provider === "openai" ? settings.openaiModel : selected.provider === "anthropic" ? settings.anthropicModel : settings.creditModel;
+  logEvent(`Analysis provider selected (${name}, ${selected.provider}, ${model || "default"})`);
   return runSelectedAnalysis(selected, {
     ollama: (baseUrl, model, prompt, content, format) => analyzeWithOllama({ baseUrl,
       model, instructions: prompt, content: JSON.stringify(content), schema: format, signal }),
@@ -357,8 +366,10 @@ async function analyzeApplicationMatch(id: string, signal: AbortSignal, commit: 
 
 async function handleApi(request: Request, pathname: string): Promise<Response> {
   const method = request.method.toUpperCase();
+  const started = Date.now();
   if (installingUpdate && method !== "GET") return jsonError("Zebby is restarting to install an update.", 503);
   activeApiRequests++;
+  if (method !== "GET") logEvent(`Request started (${method} ${pathname})`);
   try {
     if (pathname === "/api/applications") {
       if (method === "GET") return Response.json({ applications: store.listApplications() });
@@ -425,12 +436,18 @@ async function handleApi(request: Request, pathname: string): Promise<Response> 
         request.headers.get("X-Zebby-Credit-Quote") || "")) });
     return jsonError("Not found.", 404);
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") return jsonError("Analysis cancelled.", 499);
+    if (error instanceof Error && error.name === "AbortError") {
+      logEvent(`Request cancelled (${method} ${pathname}, ${Date.now() - started} ms)`);
+      return jsonError("Analysis cancelled.", 499);
+    }
     console.error("Desktop API request failed", pathname, error);
     logDiagnostic(`Request failed (${method} ${pathname})`, error);
     const message = error instanceof Error ? error.message : "The request could not be completed.";
     return jsonError(message, /changed outside|changed while/.test(message) ? 409 : 400);
-  } finally { activeApiRequests--; }
+  } finally {
+    activeApiRequests--;
+    if (method !== "GET") logEvent(`Request finished (${method} ${pathname}, ${Date.now() - started} ms)`);
+  }
 }
 
 function registerProtocol() {
@@ -455,13 +472,19 @@ function registerIpc() {
   function handle<Args extends unknown[], Result>(channel: string,
     listener: (event: Electron.IpcMainInvokeEvent, ...args: Args) => Result | Promise<Result>) {
     ipcMain.handle(channel, async (event, ...args: Args) => {
+      const started = Date.now();
+      const trace = !["desktop:state", "desktop:refresh-credits", "desktop:credit-checkout-status"].includes(channel);
       const changing = !["desktop:state", "desktop:check-updates", "desktop:download-update", "desktop:install-update",
         "desktop:list-ollama-models", "desktop:open-logs", "desktop:open-model-folder", "desktop:download-resume"].includes(channel);
       if (installingUpdate && changing) throw new Error("Zebby is restarting to install an update.");
       if (changing) activeSettingsRequests++;
+      if (trace) logEvent(`Setting request started (${channel})`);
       try { return await listener(event, ...args); }
       catch (error) { logDiagnostic(`Request failed (${channel})`, error); throw error; }
-      finally { if (changing) activeSettingsRequests--; }
+      finally {
+        if (changing) activeSettingsRequests--;
+        if (trace) logEvent(`Setting request finished (${channel}, ${Date.now() - started} ms)`);
+      }
     });
   }
   handle("desktop:state", () => state());
@@ -488,7 +511,11 @@ function registerIpc() {
     else delete settings.encryptedAnthropicKey;
     await saveSettings(); return state();
   });
-  handle("desktop:cancel-analysis", (_event, id: string) => analysisRequests.cancel(id));
+  handle("desktop:cancel-analysis", (_event, id: string) => {
+    const accepted = analysisRequests.cancel(id);
+    logEvent(`Analysis cancellation requested (${id}, accepted ${accepted})`);
+    return accepted;
+  });
   handle("desktop:check-updates", () => updates.check(true));
   handle("desktop:confirm-update-loaded", () => selfUpdater.cleanupInstalled(app.getVersion()));
   handle("desktop:download-update", async () => {
@@ -677,7 +704,8 @@ else {
   app.whenReady().then(async () => {
     if (!profile) throw profileError || new Error("The Zebby data folder could not be created.");
     await migrateApplicationProfile(profile);
-    store = new DesktopStore(app.getPath("userData"));
+    logEvent(`Zebby starting (${app.getVersion()}, ${process.platform}/${process.arch}, profile ${app.getPath("userData")})`);
+    store = new DesktopStore(app.getPath("userData"), logEvent);
     await loadSettings();
     nativeTheme.themeSource = settings.appearance === "auto" || !settings.appearance ? "system" : settings.appearance;
     nativeTheme.on("updated", updateWindowAppearance);
@@ -704,7 +732,7 @@ else {
     }
     modelDownloads = new LocalModelDownloads(modelsFolder, { onChange: modelsChanged, licensesFolder: path.join(runtimeFolder, "model-licenses") });
     await modelDownloads.initialize();
-    modelEngine = new LocalModelEngine({ downloads: modelDownloads, onChange: modelsChanged,
+    modelEngine = new LocalModelEngine({ downloads: modelDownloads, onChange: modelsChanged, onDiagnostic: logEvent,
       runtimeFolder,
       workerPath: path.join(appRoot, "local-runtime-worker.cjs") });
     selfUpdater = new SelfUpdater({ folder: path.join(path.dirname(modelsFolder), "Updates"), platform: process.platform,
@@ -721,16 +749,18 @@ else {
   app.on("before-quit", (event) => {
     if (store?.status.dirty) {
       event.preventDefault();
+      logEvent("Close deferred because database changes have not reached the selected file");
       dialog.showMessageBoxSync({ type: "warning", title: "Changes have not synced",
         message: "The latest changes are still on this computer.",
         detail: "Open Settings and use Retry save before closing the app.", buttons: ["Keep app open"] });
     } else if (!shuttingDown) {
       event.preventDefault(); shuttingDown = true;
+      logEvent("Zebby closing; stopping model workers and flushing logs");
       analysisRequests.cancelAll();
       void Promise.all([modelDownloads?.pause(), modelEngine?.shutdown(), selfUpdater?.cancel()])
         .catch((error) => logDiagnostic("Could not stop the local model", error))
-        .then(() => diagnosticLog.flush())
-        .finally(() => { store?.close(); app.quit(); });
+        .then(async () => { store?.close(); await diagnosticLog.flush(); })
+        .finally(() => app.quit());
     } else store?.close();
   });
 }

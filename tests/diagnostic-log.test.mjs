@@ -29,3 +29,26 @@ test("error logs are automatic, created only on error, ordered, and redact the A
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("transport causes are logged and redacted, including cyclic cause chains", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "zebby-log-cause-"));
+  try {
+    const key = "synthetic-secret-inside-cause";
+    const log = new DiagnosticLog(() => root, () => [key]);
+    const cause = new Error(`UND_ERR_HEADERS_TIMEOUT ${key}`);
+    const error = new TypeError("fetch failed", { cause });
+    cause.cause = error;
+    log.event("Local model first token (smollm2-360m, 120 ms)");
+    log.error("Local model request failed", error);
+    await log.flush();
+    const contents = await readFile(path.join(root, "tracker.log"), "utf8");
+    assert.match(contents, /\[info\] Local model first token/);
+    assert.match(contents, /fetch failed/);
+    assert.match(contents, /Caused by:.*UND_ERR_HEADERS_TIMEOUT \[redacted\]/);
+    assert.equal(contents.includes(key), false);
+    assert.equal(contents.match(/Caused by:/g).length, 1);
+  } finally {
+    assert.ok(path.resolve(root).startsWith(path.resolve(tmpdir()) + path.sep));
+    await rm(root, { recursive: true, force: true });
+  }
+});

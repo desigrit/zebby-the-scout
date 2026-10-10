@@ -248,7 +248,7 @@ export class SelfUpdater {
     if (prepared.version !== version || !/^\d+\.\d+\.\d+$/.test(version)) return;
     if (prepared.backup && this.options.platform === "darwin") {
       this.validateMacPaths(prepared);
-      await rm(prepared.backup, { recursive: true, force: true });
+      await rm(prepared.backup, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
     }
     await rm(path.join(this.options.folder, version), { recursive: true, force: true });
     await rm(path.join(this.options.folder, "pending.json"), { force: true });

@@ -29,6 +29,52 @@ test("cancellation aborts the Ollama transport and never reaches persistence", a
   assert.equal(persisted, false);
 });
 
+for (const phase of ["tokenizing", "first-token", "stalled-stream", "worker-exit"]) test(`CPU ${phase} failure stops its worker and permits a fresh analysis`, async () => {
+  const folder = await mkdtemp(path.join(tmpdir(), "zebby-engine-recovery-"));
+  const pidPath = path.join(folder, "worker.pid");
+  await writeFile(path.join(folder, "runtime.json"), JSON.stringify({ executable: "fake-server" }));
+  await writeFile(path.join(folder, "fake-server"), "test runtime");
+  const worker = path.join(folder, "worker.mjs");
+  await writeFile(worker, `import { writeFileSync } from 'node:fs';
+    writeFileSync(${JSON.stringify(pidPath)}, String(process.pid));
+    process.stdin.on('data', () => process.exit(0));
+    ${phase === "worker-exit" ? "setTimeout(() => process.exit(7), 50);" : "setInterval(() => {}, 1000);"}`);
+  let blocked = true;
+  const engine = new LocalModelEngine({ runtimeFolder: folder, workerPath: worker,
+    downloads: { readyPath: async () => path.join(folder, "test.gguf") },
+    timeouts: { tokenizeMs: 40, firstTokenMs: phase === "worker-exit" ? 2000 : 40, stallMs: 40 },
+    fetcher: async (url, options) => {
+      if (url.endsWith("/health")) return Response.json({});
+      if (url.endsWith("/tokenize")) {
+        if (blocked && phase === "tokenizing") {
+          options.signal.throwIfAborted();
+          await new Promise((_, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
+        }
+        return Response.json({ tokens: [1, 2] });
+      }
+      assert.equal(JSON.parse(options.body).stream, true);
+      if (!blocked) return Response.json({ choices: [{ finish_reason: "stop", message: { content: '{"score":81}' } }] });
+      return new Response(new ReadableStream({ start(controller) {
+        if (phase === "stalled-stream") controller.enqueue(new TextEncoder().encode(
+          'data: {"choices":[{"delta":{"content":"{\\\"score\\\":"}}]}\n\n'));
+      } }), { headers: { "Content-Type": "text/event-stream" } });
+    } });
+  try {
+    await assert.rejects(engine.analyze("smollm2-360m", "instructions", { resume: "complete" }, {}, 200),
+      phase === "worker-exit" ? /engine stopped/ : /respond|too long/);
+    assert.equal(engine.busy, false);
+    assert.equal(engine.status, "idle");
+    const pid = Number(await readFile(pidPath, "utf8"));
+    assert.throws(() => process.kill(pid, 0), /ESRCH|no such process/i);
+    blocked = false;
+    assert.deepEqual(await engine.analyze("smollm2-360m", "instructions", { resume: "complete" }, {}, 200), { score: 81 });
+  } finally {
+    await engine.shutdown();
+    assert.ok(path.resolve(folder).startsWith(path.resolve(tmpdir()) + path.sep));
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+
 test("an early cancel skips inference, and a late provider response cannot overwrite results", async () => {
   const requests = new AnalysisRequests();
   const early = randomUUID(); requests.cancel(early);

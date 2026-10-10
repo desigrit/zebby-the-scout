@@ -8,6 +8,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { getLocalModel } from "./local-model-catalog.ts";
 import type { LocalModelDownloads } from "./local-model-downloads.ts";
 import { availableModelMemory } from "./local-model-memory.ts";
+import { LocalResponseWatchdog, readLocalCompletion } from "./local-model-response.ts";
 
 export function localModelMessages(id: string, instructions: string, content: string) {
   // Gemma's chat template accepts user/model turns, not a system turn.
@@ -56,7 +57,9 @@ type EngineOptions = {
   workerPath: string;
   downloads: LocalModelDownloads;
   onChange?: () => void;
+  onDiagnostic?: (message: string, error?: unknown) => void;
   fetcher?: typeof fetch;
+  timeouts?: { loadMs?: number; tokenizeMs?: number; firstTokenMs?: number; stallMs?: number; totalMs?: number };
 };
 
 export class LocalModelEngine {
@@ -76,12 +79,14 @@ export class LocalModelEngine {
   get busy() { return this.pending > 0; }
   get modelId() { return this.loadedId; }
   private changed() { this.options.onChange?.(); }
+  private diagnostic(message: string, error?: unknown) { this.options.onDiagnostic?.(message, error); }
 
   async stop(force = false) {
     if (this.busy && !force) throw new Error("Wait for the current local analysis to finish, then try again.");
     clearTimeout(this.idleTimer);
     this.controller.abort(); this.controller = new AbortController();
     const child = this.child;
+    if (child) this.diagnostic(`Local model stopping (${this.loadedId}, force ${force})`);
     this.child = null; this.loadedId = ""; this.baseUrl = ""; this.secret = "";
     this.status = "idle"; this.changed();
     if (child && child.exitCode === null && child.signalCode === null) {
@@ -102,12 +107,16 @@ export class LocalModelEngine {
     await this.stop(true);
     requestSignal?.throwIfAborted();
     const model = getLocalModel(id);
-    if (await availableModelMemory() < model.minimumFreeMemory) {
+    const memory = await availableModelMemory();
+    this.diagnostic(`Local model memory check (${id}, available ${memory}, required ${model.minimumFreeMemory})`);
+    if (memory < model.minimumFreeMemory) {
       throw new Error(`${model.name} needs more available memory. Close other apps or choose a smaller built-in model.`);
     }
     const root = path.resolve(this.options.runtimeFolder);
     const manifest = await readFile(path.join(root, "runtime.json"), "utf8")
-      .then((text) => JSON.parse(text) as { executable: string }).catch(() => null);
+      .then((text) => JSON.parse(text) as { executable: string }).catch((error) => {
+        this.diagnostic("Local runtime manifest could not be read", error); return null;
+      });
     if (!manifest?.executable) throw new Error("The local analysis engine is missing. Reinstall the latest app version.");
     const executable = path.resolve(root, manifest.executable);
     const relative = path.relative(root, executable);
@@ -120,7 +129,9 @@ export class LocalModelEngine {
     this.secret = randomBytes(32).toString("hex");
     this.baseUrl = `http://127.0.0.1:${port}`;
     this.loadedId = id; this.status = "loading"; this.changed();
+    this.diagnostic(`Local model loading (${id}, ${process.platform}/${process.arch})`);
     const threads = Math.max(1, Math.min(4, Math.floor(availableParallelism() / 2)));
+    this.diagnostic(`Local model CPU worker starting (${id}, ${threads} threads, context ${model.context})`);
     const child = spawn(process.execPath, [this.options.workerPath, String(process.pid), executable,
       "--model", modelFile, "--host", "127.0.0.1", "--port", String(port),
       "--ctx-size", String(model.context), "--parallel", "1", "--threads", String(threads),
@@ -131,19 +142,25 @@ export class LocalModelEngine {
     });
     this.child = child;
     child.stdin?.on("error", () => {});
+    const runtimeController = this.controller;
     let failed = false;
-    child.once("error", () => { failed = true; });
-    child.once("exit", () => { failed = true; if (this.child === child) {
+    child.once("error", (error) => {
+      failed = true;
+      runtimeController.abort(new Error("The local analysis engine could not start. Reinstall the latest app.", { cause: error }));
+    });
+    child.once("exit", (code, signal) => { failed = true; if (this.child === child) {
+      this.diagnostic(`Local model engine exited (${id}, code ${code}, signal ${signal})`);
+      runtimeController.abort(new Error("The local analysis engine stopped. Close other apps or try another model."));
       this.child = null; this.loadedId = ""; this.status = "idle"; this.changed();
     } });
-    const deadline = Date.now() + 120_000;
+    const deadline = Date.now() + (this.options.timeouts?.loadMs ?? 120_000);
     const loadingSignal = requestSignal ? AbortSignal.any([this.controller.signal, requestSignal]) : this.controller.signal;
     while (Date.now() < deadline) {
       if (failed || this.child !== child) throw new Error("The local analysis engine stopped. Close other apps or reinstall the app.");
       loadingSignal.throwIfAborted();
       const health = await (this.options.fetcher || fetch)(`${this.baseUrl}/health`,
         { signal: AbortSignal.any([loadingSignal, AbortSignal.timeout(1500)]) }).catch(() => null);
-      if (health?.ok) return;
+      if (health?.ok) { this.diagnostic(`Local model ready (${id})`); return; }
       await delay(250, undefined, { signal: loadingSignal });
     }
     await this.stop(true);
@@ -161,37 +178,65 @@ export class LocalModelEngine {
       const content = typeof input === "string" ? input : JSON.stringify(input);
       const headers = { Authorization: `Bearer ${this.secret}`, "Content-Type": "application/json" };
       const fetcher = this.options.fetcher || fetch;
-      const signal = AbortSignal.any([this.controller.signal, AbortSignal.timeout(900_000), ...(requestSignal ? [requestSignal] : [])]);
+      const signal = AbortSignal.any([this.controller.signal, AbortSignal.timeout(this.options.timeouts?.totalMs ?? 900_000), ...(requestSignal ? [requestSignal] : [])]);
       // Check the full text against the model budget rather than silently truncating it.
-      const tokenResponse = await fetcher(`${this.baseUrl}/tokenize`, { method: "POST", headers, signal,
-        body: JSON.stringify({ content: `${instructions}\n${content}`, add_special: true }) });
+      this.diagnostic(`Local model reading input (${id})`);
+      const tokenResponse = await fetcher(`${this.baseUrl}/tokenize`, { method: "POST", headers,
+        body: JSON.stringify({ content: `${instructions}\n${content}`, add_special: true }),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(this.options.timeouts?.tokenizeMs ?? 30_000)]) });
       const tokenData = await tokenResponse.json() as { tokens?: number[] };
       if (!tokenResponse.ok || !Array.isArray(tokenData.tokens)) throw new Error("The local model could not read this request. Try again.");
       if (tokenData.tokens.length + maxTokens + 256 > getLocalModel(id).context) {
+        this.diagnostic(`Local model context exceeded (${id}, ${tokenData.tokens.length} input tokens, ${maxTokens} output budget, limit ${getLocalModel(id).context})`);
         throw new Error("This posting and resume exceed the selected model's context. Choose a larger model or use your configured Ollama or OpenAI provider.");
       }
-      const response = await fetcher(`${this.baseUrl}/v1/chat/completions`, { method: "POST", headers, signal,
-        body: JSON.stringify({ messages: localModelMessages(id, instructions, content),
-          stream: false, temperature: 0, ...getLocalModel(id).sampling, seed: 0, max_tokens: maxTokens,
-          response_format: { type: "json_object", schema: localModelResponseSchema(id, schema, input) },
-          chat_template_kwargs: { enable_thinking: false } }) });
-      const payload = await response.json() as { error?: { message?: string };
-        choices?: Array<{ finish_reason?: string; message?: { content?: string } }> };
-      if (!response.ok) throw new Error(payload.error?.message || "Local analysis failed. Try again.");
-      const choice = payload.choices?.[0];
-      if (choice?.finish_reason !== "stop" || !choice.message?.content) throw new Error("The local analysis was incomplete. Try again or choose a larger model.");
-      let analysis: unknown;
-      try { analysis = JSON.parse(choice.message.content); }
-      catch { throw new Error("The local model returned an unreadable analysis. Try again."); }
-      if (!analysis || typeof analysis !== "object" || Array.isArray(analysis)) throw new Error("The local analysis was incomplete. Try again.");
-      signal.throwIfAborted();
-      return analysis as Record<string, unknown>;
+      const watchdog = new LocalResponseWatchdog(this.options.timeouts?.firstTokenMs ?? (getLocalModel(id).tier === "Medium" || getLocalModel(id).tier === "Larger" ? 300_000 : 180_000),
+        this.options.timeouts?.stallMs ?? 60_000);
+      const generationSignal = AbortSignal.any([signal, watchdog.controller.signal]);
+      const started = Date.now();
+      let responded = false;
+      this.diagnostic(`Local model generating (${id}, ${tokenData.tokens.length} input tokens)`);
+      try {
+        const response = await fetcher(`${this.baseUrl}/v1/chat/completions`, { method: "POST", headers, signal: generationSignal,
+          body: JSON.stringify({ messages: localModelMessages(id, instructions, content),
+            stream: true, temperature: 0, ...getLocalModel(id).sampling, seed: 0, max_tokens: maxTokens,
+            response_format: { type: "json_object", schema: localModelResponseSchema(id, schema, input) },
+            chat_template_kwargs: { enable_thinking: false } }) });
+        const payload = await readLocalCompletion(response, generationSignal, () => {
+          watchdog.progress();
+          if (!responded) { responded = true; this.diagnostic(`Local model first token (${id}, ${Date.now() - started} ms)`); }
+        });
+        if (!response.ok) throw new Error(payload.error?.message || "Local analysis failed. Try again.");
+        const choice = payload.choices?.[0];
+        if (choice?.finish_reason !== "stop" || !choice.message?.content) {
+          this.diagnostic(`Local model response incomplete (${id}, finish ${choice?.finish_reason || "missing"})`);
+          throw new Error("The local analysis was incomplete. Try again or choose a larger model.");
+        }
+        let analysis: unknown;
+        try { analysis = JSON.parse(choice.message.content); }
+        catch { throw new Error("The local model returned an unreadable analysis. Try again."); }
+        if (!analysis || typeof analysis !== "object" || Array.isArray(analysis)) throw new Error("The local analysis was incomplete. Try again.");
+        generationSignal.throwIfAborted();
+        this.diagnostic(`Local model completed (${id}, ${Date.now() - started} ms)`);
+        return analysis as Record<string, unknown>;
+      } finally { watchdog.dispose(); }
     }).catch(async (error) => {
+      if (requestSignal?.aborted) this.diagnostic(`Local model request cancelled (${id})`);
+      else this.diagnostic(`Local model request failed (${id})`, error);
+      // Also stop failed and timed-out workers, so the next request starts with
+      // a healthy process rather than queueing behind an abandoned generation.
+      await this.stop(true);
       if (requestSignal?.aborted) {
         // Terminate the CPU worker too, including model loading or a server
         // that keeps generating after its HTTP connection closes.
-        await this.stop(true);
         requestSignal.throwIfAborted();
+      }
+      if (error instanceof Error && error.name === "TimeoutError") {
+        throw new Error(error.message === "The operation was aborted due to timeout"
+          ? "The local model took too long to respond. Try again or choose a smaller model." : error.message, { cause: error });
+      }
+      if (error instanceof TypeError && error.message === "fetch failed") {
+        throw new Error("The connection to the local model stopped. Try again or choose another model.", { cause: error });
       }
       throw error;
     });

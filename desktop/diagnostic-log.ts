@@ -11,8 +11,18 @@ export class DiagnosticLog {
     this.secrets = secrets;
   }
 
-  error(message: string, error?: unknown) {
-    const detail = error instanceof Error ? error.stack || error.message : error ? String(error) : "";
+  event(message: string) { this.write(`[info] ${message}`); }
+  error(message: string, error?: unknown) { this.write(`[error] ${message}`, error); }
+
+  private write(message: string, error?: unknown) {
+    let detail = error instanceof Error ? error.stack || error.message : error ? String(error) : "";
+    const seen = new Set<unknown>([error]);
+    let cause = error instanceof Error ? error.cause : undefined;
+    for (let depth = 0; cause && !seen.has(cause) && depth < 4; depth++) {
+      seen.add(cause);
+      detail += `\nCaused by: ${cause instanceof Error ? cause.stack || cause.message : String(cause)}`;
+      cause = cause instanceof Error ? cause.cause : undefined;
+    }
     let text = `${new Date().toISOString()} ${message}${detail ? `: ${detail}` : ""}`;
     for (const secret of this.secrets().filter(Boolean)) text = text.replaceAll(secret, "[redacted]");
     const line = text.slice(0, 7999) + "\n";

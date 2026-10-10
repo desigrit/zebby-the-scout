@@ -307,7 +307,8 @@ export class DesktopStore {
   private dirty = false;
   private writeQueue: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly userData: string) {}
+  constructor(private readonly userData: string,
+    private readonly diagnostic: (message: string, error?: unknown) => void = () => {}) {}
 
   get status() {
     return { filePath: this.filePath, filename: this.filePath ? path.basename(this.filePath) : "", dirty: this.dirty };
@@ -324,6 +325,7 @@ export class DesktopStore {
     await this.writeQueue;
     if (this.dirty) throw new Error("Save the pending database changes before creating a new file.");
     const target = path.resolve(filePath);
+    this.diagnostic(`Database create requested (${target})`);
     if (existsSync(target)) throw new Error("That file already exists. Use Open database instead.");
     await mkdir(path.dirname(target), { recursive: true });
     const scratch = path.join(this.userData, `new-${randomUUID()}.sqlite`);
@@ -335,6 +337,7 @@ export class DesktopStore {
     try {
       await copyFile(scratch, target, constants.COPYFILE_EXCL);
       await this.open(target);
+      this.diagnostic(`Database created (${target})`);
     } finally { await unlink(scratch).catch(() => undefined); }
   }
 
@@ -342,6 +345,7 @@ export class DesktopStore {
     await this.writeQueue;
     if (this.dirty) throw new Error("Save the pending database changes before switching files.");
     const target = path.resolve(filePath);
+    this.diagnostic(`Database open requested (${target})`);
     if (!(await stat(target).catch(() => null))?.isFile()) throw new Error("The database file could not be found. Wait for cloud sync, then try again.");
     const checkDb = new DatabaseSync(target, { readOnly: true });
     let previousVersion = 0;
@@ -350,6 +354,7 @@ export class DesktopStore {
       previousVersion = Number((checkDb.prepare("PRAGMA user_version").get() as Row).user_version);
     } finally { checkDb.close(); }
     if (previousVersion < 10) {
+      this.diagnostic(`Database migration starting (${target}, schema ${previousVersion} to 10)`);
       await mkdir(this.backupsPath, { recursive: true });
       const prefix = createHash("sha256").update(target.toLowerCase()).digest("hex").slice(0, 12);
       await copyFile(target, path.join(this.backupsPath,
@@ -360,6 +365,11 @@ export class DesktopStore {
     const workingPath = path.join(workingDir, createHash("sha256").update(target.toLowerCase()).digest("hex") + ".sqlite");
     const temp = workingPath + ".incoming";
     await copyFile(target, temp);
+    const sourceHash = await hashFile(temp);
+    if (sourceHash !== await hashFile(target)) {
+      await unlink(temp).catch(() => undefined);
+      throw new Error("The cloud database changed while opening. Wait for cloud sync, then reopen it.");
+    }
     const incoming = new DatabaseSync(temp);
     let migrated = false;
     try {
@@ -372,17 +382,20 @@ export class DesktopStore {
     this.db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = DELETE; PRAGMA busy_timeout = 3000;");
     this.filePath = target;
     this.workingPath = workingPath;
-    this.syncedHash = await hashFile(target);
+    this.syncedHash = sourceHash;
     this.dirty = migrated;
     if (migrated) await this.flush();
+    this.diagnostic(`Database opened (${target}, schema 10, migrated ${migrated})`);
     return this.status;
   }
 
   private async assertCurrentFile() {
     if (!this.filePath || !existsSync(this.filePath)) {
+      this.diagnostic(`Database save refused: selected file missing (${this.filePath})`);
       throw new Error("The selected database is missing. Wait for cloud sync, then reopen it.");
     }
     if (await hashFile(this.filePath) !== this.syncedHash) {
+      this.diagnostic(`Database save refused: selected file changed outside Zebby (${this.filePath})`);
       throw new Error("The cloud database changed outside this app. Reopen it in Settings before editing.");
     }
   }
@@ -390,16 +403,24 @@ export class DesktopStore {
   private async flush() {
     const db = this.requireDb();
     await this.assertCurrentFile();
-    const temp = path.join(path.dirname(this.filePath), `.${path.basename(this.filePath)}.${randomUUID()}.tmp`);
-    try {
-      await backup(db, temp);
-      await rename(temp, this.filePath);
-      this.syncedHash = await hashFile(this.filePath);
-      this.dirty = false;
-    } finally { await unlink(temp).catch(() => undefined); }
+    const started = Date.now();
+    this.diagnostic(`Database save started (${this.filePath})`);
+    // Preserve the selected file's identity for OneDrive/File Provider. Renaming
+    // a sibling over it removes the original file object. SQLite's backup API
+    // updates the existing destination within a rollback-protected transaction.
+    // All temporary files and cleanup remain inside the app's local profile.
+    try { await backup(db, this.filePath); }
+    catch (cause) {
+      this.diagnostic(`Database save failed; pending changes retained locally (${this.filePath})`, cause);
+      throw new Error("The database could not be saved. Wait for cloud sync or close other apps using it, then use Retry save in Settings.", { cause });
+    }
+    this.syncedHash = await hashFile(this.filePath);
+    this.dirty = false;
+    this.diagnostic(`Database save completed (${this.filePath}, ${Date.now() - started} ms)`);
   }
 
   async retrySync() {
+    this.diagnostic(`Database retry requested (${this.filePath}, pending ${this.dirty})`);
     if (this.dirty) await this.flush();
     return this.status;
   }
@@ -646,5 +667,8 @@ export class DesktopStore {
     });
   }
 
-  close() { this.db?.close(); this.db = null; }
+  close() {
+    if (this.db) this.diagnostic(`Database closed (${this.filePath}, pending ${this.dirty})`);
+    this.db?.close(); this.db = null;
+  }
 }
