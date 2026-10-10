@@ -1,6 +1,6 @@
 # Zebby credits service
 
-The desktop purchase flow is implemented. Zebby 2.1.4 connects to the service at `https://zebby-credits.onrender.com`, with Stripe live payments and server-side OpenAI and Anthropic credentials configured. Custom builds need `ZEBBY_CREDITS_SERVICE_URL` compiled into the desktop main process. Secure storage is required for wallet access.
+The desktop purchase flow is implemented. Zebby 2.1.5 connects to the service at `https://zebby-credits.onrender.com`, with Stripe live payments and server-side OpenAI and Anthropic credentials configured. Custom builds need `ZEBBY_CREDITS_SERVICE_URL` compiled into the desktop main process. Secure storage is required for wallet access.
 
 The hosted checks verified service health, guest wallet access, an unpaid live Checkout session, and webhook signature handling. The unpaid session was expired, and no credits were granted. All three OpenAI models completed a synthetic structured response; all three offered Claude models were listed by the Anthropic API. A completed customer payment, receipt delivery, and funded Claude inference remain separate checks.
 

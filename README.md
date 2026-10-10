@@ -53,7 +53,7 @@ Screenshots use sample data from Zebby 1.6.7.
 
 </details>
 
-Built-in analysis stays on your computer. Choose an Ollama server, your own OpenAI or Anthropic key, or Zebby credits for online analysis. Credits use a guest wallet with recovery codes and computer pairing, so there is no signup or sign-in screen. Official builds from 2.1.4 connect to Zebby's hosted credits service. Personal API keys, wallet credentials, and downloaded models stay on each computer, outside the shared database. The hosted service keeps its provider and payment keys on the server. Zebby detects changes to the shared file and keeps an original copy before upgrading its database format. A cloud drive cannot merge simultaneous SQLite edits.
+Built-in analysis stays on your computer. Choose an Ollama server, your own OpenAI or Anthropic key, or Zebby credits for online analysis. Credits use a guest wallet with recovery codes and computer pairing, so there is no signup or sign-in screen. Official builds from 2.1.5 connect to Zebby's hosted credits service. Personal API keys, wallet credentials, and downloaded models stay on each computer, outside the shared database. The hosted service keeps its provider and payment keys on the server. Zebby detects changes to the shared file and keeps an original copy before upgrading its database format. A cloud drive cannot merge simultaneous SQLite edits.
 
 ## Peek under the stripes
 

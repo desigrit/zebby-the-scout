@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { test } from "node:test";
 import { CreditsClient } from "../desktop/credits-client.ts";
 import { needsServiceWakeup, waitForCreditsService } from "../desktop/credits-service-ready.ts";
@@ -87,4 +87,54 @@ test("cancelling an analysis during startup preserves wallet access and never se
   assert.ok(!paths.includes("/v1/analysis"));
   assert.deepEqual(JSON.parse(saved).session, JSON.parse(original).session);
   assert.equal(client.state("gpt-6-luna").wallet.balance, wallet.balance);
+});
+
+test("a preconfiguration checkout can resume with the same pending credential after the hosted release is installed", async () => {
+  let saved = "";
+  const unconfigured = new CreditsClient("", { save: async value => { saved = value; }, onChange() {},
+    fetcher: () => assert.fail("An unconfigured build cannot register a wallet") });
+  await assert.rejects(unconfigured.checkout("starter"), /Could not reach/);
+  const pending = JSON.parse(saved);
+  assert.equal(pending.url, ""); assert.equal(pending.session, null);
+  const paths = [], configuredOrigin = "https://credits.example";
+  const installed = new CreditsClient(configuredOrigin, { save: async value => { saved = value; }, onChange() {},
+    fetcher: async (url, options) => {
+      const path = new URL(url).pathname; paths.push(path);
+      if (path === "/v1/wallet/session") {
+        assert.equal(options.headers.Authorization, "Bearer " + pending.candidate.token);
+        return Response.json({ error: "Not registered" }, { status: 401 });
+      }
+      if (path === "/v1/wallet/guest") {
+        assert.equal(JSON.parse(options.body).deviceToken, pending.candidate.token);
+        return Response.json({ walletId: randomUUID(), deviceId: randomUUID() });
+      }
+      assert.equal(path, "/v1/checkout");
+      assert.equal(options.headers.Authorization, "Bearer " + pending.candidate.token);
+      return Response.json({ id: "cs_live_fixture", url: "https://checkout.stripe.com/c/pay/fixture", mode: "live" });
+    } });
+  installed.restore(saved); await installed.checkout("starter");
+  assert.deepEqual(paths, ["/v1/wallet/session", "/v1/wallet/guest", "/v1/checkout"]);
+  assert.equal(JSON.parse(saved).url, configuredOrigin);
+  assert.equal(JSON.parse(saved).session.access, pending.candidate.token);
+  assert.equal(JSON.parse(saved).candidate, null);
+});
+
+test("preconfiguration migration never replaces wallet, analysis, recovery or foreign-origin access", async () => {
+  const base = { url: "", session: null, wallet: null, pending: [], recovery: null,
+    candidate: { token: "zby_device_" + "a".repeat(64), name: "This computer", kind: "guest" } };
+  const code = "ZEBBY-" + Array(5).fill("A".repeat(8)).join("-");
+  const variants = [
+    { ...base, url: "https://another.example" },
+    { ...base, session: JSON.parse(stored()).session, wallet },
+    { ...base, pending: [{ quoteId: randomUUID() }] },
+    { ...base, recovery: { code, walletId: randomUUID(), version: randomUUID(), saved: true } },
+    { ...base, candidate: { ...base.candidate, kind: "restore", code, intentHash: createHash("sha256").update(code).digest("hex") } },
+    { ...base, unknownAccess: "Preserve unknown future fields" },
+  ];
+  for (const value of variants) {
+    const client = new CreditsClient("https://credits.example", { onChange() {},
+      save: async () => assert.fail("Do not overwrite old access"), fetcher: () => assert.fail("Do not register a fresh wallet") });
+    client.restore(JSON.stringify(value));
+    await assert.rejects(client.checkout("starter"), /could not be read/);
+  }
 });

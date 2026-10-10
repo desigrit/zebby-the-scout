@@ -23,6 +23,11 @@ const candidateSchema = z.object({ token: deviceTokenSchema, name: deviceNameSch
     (value.kind === "restore" ? recoveryCodeSchema : pairingCodeSchema).safeParse(value.code).success &&
     value.intentHash === createHash("sha256").update(value.code).digest("hex"));
 const recoverySchema = z.object({ code: recoveryCodeSchema, walletId: z.string().uuid(), version: z.string().uuid().nullable(), saved: z.boolean() });
+// With no service origin, no request could have registered this pending guest.
+// Keep its persisted credential when the first configured build supplies an origin.
+const unconfiguredGuestSchema = z.object({ url: z.literal(""), session: z.null(), wallet: z.null(),
+  pending: z.array(z.never()).max(0), recovery: z.null(), candidate: candidateSchema })
+  .strict().refine((value) => value.candidate.kind === "guest" && !value.candidate.code && !value.candidate.intentHash);
 type Session = z.infer<typeof storedSessionSchema>;
 type Candidate = z.infer<typeof candidateSchema>;
 type ClientOptions = { save: (value: string) => Promise<void>; onChange: () => void; fetcher?: typeof fetch; deviceName?: string };
@@ -57,7 +62,12 @@ export class CreditsClient {
     try {
       const stored = JSON.parse(value);
       if (!this.url) return;
-      if (stored.url !== this.url) { this.restoreFailed(); return; }
+      if (stored.url !== this.url) {
+        const unconfigured = unconfiguredGuestSchema.safeParse(stored);
+        if (unconfigured.success) this.candidate = unconfigured.data.candidate;
+        else this.restoreFailed();
+        return;
+      }
       this.session = stored.session ? storedSessionSchema.parse(stored.session) : null;
       this.wallet = this.session ? walletSchema.safeParse(stored.wallet).data || null : null;
       this.candidate = candidateSchema.safeParse(stored.candidate).data || null;
