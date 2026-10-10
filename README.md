@@ -4,7 +4,7 @@
 
 **Your job search sidekick. Excellent stripes. Questionable sunglasses.**
 
-I wanted to build something useful for my fellow peers: a simple place to prepare for roles, keep track of applications, and stop wondering which resume went where. Meet Zebby. Zebby's cool, and local tracking and analysis don't require an account.
+I wanted to build something useful for my fellow peers: a simple place to prepare for roles, keep track of applications, and stop wondering which resume went where. Meet Zebby. Zebby's cool, and no signup is required.
 
 ## Get Zebby
 
@@ -53,7 +53,7 @@ Screenshots use sample data from Zebby 1.6.7.
 
 </details>
 
-Built-in analysis stays on your computer. Choose an Ollama server, your own OpenAI or Anthropic key, or Zebby credits for online analysis. An account is only needed for credits. Paid checkout requires a configured service and is not active in unconfigured builds. API keys and downloaded models stay on each computer, outside the shared database. Zebby detects changes to the shared file and keeps an original copy before upgrading its database format. A cloud drive cannot merge simultaneous SQLite edits.
+Built-in analysis stays on your computer. Choose an Ollama server, your own OpenAI or Anthropic key, or Zebby credits for online analysis. Credits use a guest wallet with recovery codes and computer pairing, so there is no signup or sign-in screen. Paid checkout requires a configured service and is not active in unconfigured builds. API keys, wallet credentials, and downloaded models stay on each computer, outside the shared database. Zebby detects changes to the shared file and keeps an original copy before upgrading its database format. A cloud drive cannot merge simultaneous SQLite edits.
 
 ## Peek under the stripes
 

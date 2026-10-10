@@ -134,7 +134,7 @@ test("late account A responses cannot replace account B wallet or persisted sess
     return Response.json(wallet(options.headers.Authorization === "Bearer access-a" ? 500000000 : 9000000));
   } });
   await client.verify("a@example.com", "123456"); delay = true;
-  const old = client.refreshWallet(), rejected = assert.rejects(old, /account changed/); await ready;
+  const old = client.refreshWallet(), rejected = assert.rejects(old, /wallet changed/); await ready;
   await client.signOut(); await client.verify("b@example.com", "123456"); release(); await rejected;
   assert.equal(client.state("gpt-6-luna").email, "b@example.com"); assert.equal(client.state("gpt-6-luna").wallet.balance, 9000000);
   assert.equal(JSON.parse(saved).session.id, otherId); assert.equal(JSON.parse(saved).wallet.balance, 9000000);

@@ -140,8 +140,18 @@ The first **Analyze** opens a setup dialog when no working method is configured.
 
 Settings has a normal model dropdown for each API provider. OpenAI offers GPT-6 Luna, GPT-6.1 Sol, and GPT-6 Astra. Anthropic offers Claude Haiku 4.5, Sonnet 5.5, and Opus 5.5. Models are used as selected, with no automatic fallback to a weaker model. Hosted model availability depends on the API account.
 
-Paid users sign in with a remembered email code. Credit packs show illustrative Luna analysis counts; model choice comes after purchase. Before a paid analysis, choose a model and confirm the maximum credit cost. Actual reported usage is charged, and unused holds return to the wallet. Saving an application never automatically spends paid credits.
+Paid credits use a guest wallet with no signup or sign-in screen. Choose a pack, pay in your external browser, then choose your model. Stripe collects your payment details and receipt email. Credit packs show illustrative Luna analysis counts. Before a paid analysis, choose a model and confirm the maximum credit cost. Actual reported usage is charged, and unused holds return to the wallet. Saving an application never automatically spends paid credits.
 
-The sidebar and Settings show available and used credits, with recent usage in Settings. Job and resume text go to the selected online provider, through Zebby's service for credit-funded analysis. Personal keys and paid sessions use operating system encryption when available; they stay outside the shared SQLite database.
+The sidebar and Settings show available and used credits, with recent usage in Settings. Job and resume text go to the selected online provider, through Zebby's service for credit-funded analysis. Each computer keeps an independent encrypted wallet credential outside the shared SQLite database. Paid checkout needs working Windows secure storage or Mac Keychain. Credentials and recovery codes are redacted from app logs.
 
-Paid checkout is unavailable until the owner connects the service. Follow the [Stripe test-mode setup guide](../credits-service/README.md) to prepare Supabase email sign-in, the ledger, provider keys, and hosting. The implementation has not taken any real payment.
+In **Settings → Credits**:
+
+- **Save recovery code** exports a private text file. Keep it outside Zebby's app-data folder so it remains available after uninstalling. Anyone with the code can use your credits.
+- **Restore credits** reconnects a new installation using that saved code. This restores the credit wallet, not the applications database.
+- **Connect another computer** displays a code that expires after ten minutes. On your other computer, choose **Connect this computer** and enter it. The code works once, and both computers share one balance.
+- **Connected computers** lists the devices that can spend credits. **Disconnect** asks for confirmation and removes that device's access, preserving the wallet balance. The current computer cannot disconnect itself.
+- **Recovery options → Create new recovery code** replaces the previous code after confirmation. Already connected computers retain access.
+
+The first successful purchase also offers **Save recovery code**. Sharing your applications SQLite file does not share wallet credentials. If you lose every connected computer and your recovery code, automatic recovery is unavailable. Connection and payment failures preserve saved wallet access so Retry or a restart can resume it. Switching a funded computer to another wallet first requires a recovery code for its current wallet and a native confirmation.
+
+Paid checkout is unavailable until the owner connects the service. Follow the [Stripe test-mode setup guide](../credits-service/README.md) to prepare the Supabase ledger, Stripe webhook, provider keys, and hosting. Email sign-in and SMTP setup are not required. The implementation has not taken any real payment.

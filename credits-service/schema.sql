@@ -31,6 +31,149 @@ create table if not exists public.zebby_stripe_events (id text primary key, crea
 create index if not exists zebby_runs_user on public.zebby_runs(user_id,created_at desc);
 create index if not exists zebby_purchase_user on public.zebby_purchases(user_id);
 
+-- Guest wallet access is independent of Supabase Auth. Only hashes reach PostgreSQL.
+-- Existing wallet UUIDs and their ledger entries are retained when old sessions migrate.
+create table if not exists public.zebby_devices (
+  id uuid primary key, wallet_id uuid not null references public.zebby_wallets(user_id),
+  token_hash text not null unique check(token_hash ~ '^[a-f0-9]{64}$'),
+  connection_hash text not null, name text not null check(length(name) between 1 and 80),
+  created_at timestamptz not null default now(), last_seen_at timestamptz not null default now(), revoked_at timestamptz
+);
+create index if not exists zebby_devices_wallet on public.zebby_devices(wallet_id);
+create table if not exists public.zebby_recovery_codes (
+  wallet_id uuid primary key references public.zebby_wallets(user_id),
+  code_hash text not null unique check(code_hash ~ '^[a-f0-9]{64}$'), version uuid not null default gen_random_uuid(), created_at timestamptz not null default now()
+);
+create table if not exists public.zebby_pairing_codes (
+  wallet_id uuid primary key references public.zebby_wallets(user_id),
+  code_hash text not null unique check(code_hash ~ '^[a-f0-9]{64}$'), expires_at timestamptz not null
+);
+
+create or replace function public.zebby_device_session(p_hash text) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare d zebby_devices;
+begin
+  select * into d from zebby_devices where token_hash=p_hash and revoked_at is null;
+  if not found then return null; end if;
+  update zebby_devices set last_seen_at=now() where id=d.id and last_seen_at<now()-interval '15 minutes' and revoked_at is null;
+  return jsonb_build_object('walletId',d.wallet_id,'deviceId',d.id);
+end $$;
+
+create or replace function public.zebby_attach_device(p_user uuid,p_device uuid,p_hash text,p_name text,p_connection text) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare d zebby_devices;
+begin
+  insert into zebby_wallets(user_id) values(p_user) on conflict do nothing;
+  perform 1 from zebby_wallets where user_id=p_user for update;
+  select * into d from zebby_devices where token_hash=p_hash;
+  if found then
+    if d.wallet_id<>p_user or d.revoked_at is not null or d.connection_hash<>p_connection then raise exception 'Device connection cannot be reused'; end if;
+  else
+    if (select count(*) from zebby_devices where wallet_id=p_user and revoked_at is null)>=20 then raise exception 'Disconnect an unused computer before adding another'; end if;
+    insert into zebby_devices(id,wallet_id,token_hash,name,connection_hash) values(p_device,p_user,p_hash,p_name,p_connection) returning * into d;
+  end if;
+  return jsonb_build_object('walletId',d.wallet_id,'deviceId',d.id);
+end $$;
+
+create or replace function public.zebby_guest(p_device uuid,p_hash text,p_name text) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare d zebby_devices;
+begin
+  -- Serialize retries by token, including two processes completing a lost response.
+  perform pg_advisory_xact_lock(hashtextextended(p_hash,0));
+  select * into d from zebby_devices where token_hash=p_hash;
+  if found then
+    if d.revoked_at is not null or d.connection_hash<>'guest' then raise exception 'Device connection cannot be reused'; end if;
+    return jsonb_build_object('walletId',d.wallet_id,'deviceId',d.id);
+  end if;
+  return zebby_attach_device(gen_random_uuid(),p_device,p_hash,p_name,'guest');
+end $$;
+
+create or replace function public.zebby_recover_device(p_device uuid,p_hash text,p_name text,p_code text) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare target uuid; d zebby_devices;
+begin
+  perform pg_advisory_xact_lock(hashtextextended(p_hash,0));
+  select * into d from zebby_devices where token_hash=p_hash;
+  if found then
+    if d.revoked_at is null and d.connection_hash='recovery:'||p_code then return jsonb_build_object('walletId',d.wallet_id,'deviceId',d.id); end if;
+    return null;
+  end if;
+  select wallet_id into target from zebby_recovery_codes where code_hash=p_code;
+  if not found then return null; end if;
+  perform 1 from zebby_wallets where user_id=target for update;
+  -- Regeneration and recovery lock the same wallet before checking the current code.
+  if not exists(select 1 from zebby_recovery_codes where wallet_id=target and code_hash=p_code) then return null; end if;
+  return zebby_attach_device(target,p_device,p_hash,p_name,'recovery:'||p_code);
+end $$;
+
+create or replace function public.zebby_connect_device(p_device uuid,p_hash text,p_name text,p_code text) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare target uuid; d zebby_devices;
+begin
+  perform pg_advisory_xact_lock(hashtextextended(p_hash,0));
+  select * into d from zebby_devices where token_hash=p_hash;
+  if found then
+    if d.revoked_at is null and d.connection_hash='pairing:'||p_code then return jsonb_build_object('walletId',d.wallet_id,'deviceId',d.id); end if;
+    return null;
+  end if;
+  select wallet_id into target from zebby_pairing_codes where code_hash=p_code and expires_at>now();
+  if not found then return null; end if;
+  perform 1 from zebby_wallets where user_id=target for update;
+  delete from zebby_pairing_codes where wallet_id=target and code_hash=p_code and expires_at>now();
+  if not found then return null; end if;
+  -- Consumption and device creation commit together. A retry with the same device is safe.
+  return zebby_attach_device(target,p_device,p_hash,p_name,'pairing:'||p_code);
+end $$;
+
+create or replace function public.zebby_wallet_access(p_user uuid,p_current uuid) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare devices jsonb;
+begin
+  select coalesce(jsonb_agg(item),'[]') into devices from (select jsonb_build_object(
+    'id',id,'name',name,'createdAt',created_at,'lastSeenAt',last_seen_at,'current',coalesce(id=p_current,false)) item
+    from zebby_devices where wallet_id=p_user and revoked_at is null order by created_at) records;
+  return jsonb_build_object('hasRecoveryCode',exists(select 1 from zebby_recovery_codes where wallet_id=p_user),
+    'recoveryVersion',(select version from zebby_recovery_codes where wallet_id=p_user),'devices',devices);
+end $$;
+
+create or replace function public.zebby_set_recovery(p_user uuid,p_code text) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  perform 1 from zebby_wallets where user_id=p_user for update;
+  if not found then raise exception 'Wallet not found'; end if;
+  insert into zebby_recovery_codes(wallet_id,code_hash) values(p_user,p_code)
+    on conflict(wallet_id) do update set version=case when zebby_recovery_codes.code_hash=excluded.code_hash then zebby_recovery_codes.version else gen_random_uuid() end,
+      code_hash=excluded.code_hash,created_at=now();
+  return jsonb_build_object('version',(select version from zebby_recovery_codes where wallet_id=p_user));
+end $$;
+
+create or replace function public.zebby_start_pairing(p_user uuid,p_code text) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare expiry timestamptz:=now()+interval '10 minutes';
+begin
+  perform 1 from zebby_wallets where user_id=p_user for update;
+  if not found then raise exception 'Wallet not found'; end if;
+  insert into zebby_pairing_codes(wallet_id,code_hash,expires_at) values(p_user,p_code,expiry)
+    on conflict(wallet_id) do update set code_hash=excluded.code_hash,expires_at=excluded.expires_at;
+  return jsonb_build_object('expiresAt',expiry);
+end $$;
+
+create or replace function public.zebby_cancel_pairing(p_user uuid,p_code text) returns void
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  perform 1 from zebby_wallets where user_id=p_user for update;
+  delete from zebby_pairing_codes where wallet_id=p_user and code_hash=p_code;
+end $$;
+
+create or replace function public.zebby_remove_device(p_user uuid,p_device uuid) returns boolean
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  perform 1 from zebby_wallets where user_id=p_user for update;
+  update zebby_devices set revoked_at=now() where wallet_id=p_user and id=p_device and revoked_at is null;
+  return found;
+end $$;
+
 create or replace function public.zebby_wallet(p_user uuid) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare w zebby_wallets; recent jsonb;
@@ -130,6 +273,7 @@ begin
   end loop;
   update zebby_runs set result=null where created_at<now()-interval '24 hours' and result is not null;
   delete from zebby_quotes where expires_at<now()-interval '1 day' and claimed_by is null;
+  delete from zebby_pairing_codes where expires_at<now();
 end $$;
 
 alter table public.zebby_wallets enable row level security;
@@ -147,3 +291,17 @@ grant execute on function public.zebby_wallet(uuid),public.zebby_reserve(uuid,uu
   public.zebby_reverse(text,text,integer,boolean),public.zebby_cleanup() to service_role;
 grant all on public.zebby_wallets,public.zebby_purchases,public.zebby_quotes,public.zebby_runs,public.zebby_ledger,public.zebby_stripe_events to service_role;
 grant usage,select on sequence public.zebby_ledger_id_seq to service_role;
+
+alter table public.zebby_devices enable row level security;
+alter table public.zebby_recovery_codes enable row level security;
+alter table public.zebby_pairing_codes enable row level security;
+revoke all on public.zebby_devices,public.zebby_recovery_codes,public.zebby_pairing_codes from public,anon,authenticated;
+revoke all on function public.zebby_device_session(text),public.zebby_attach_device(uuid,uuid,text,text,text),
+  public.zebby_guest(uuid,text,text),public.zebby_recover_device(uuid,text,text,text),public.zebby_connect_device(uuid,text,text,text),
+  public.zebby_wallet_access(uuid,uuid),public.zebby_set_recovery(uuid,text),public.zebby_start_pairing(uuid,text),
+  public.zebby_cancel_pairing(uuid,text),public.zebby_remove_device(uuid,uuid) from public,anon,authenticated;
+grant all on public.zebby_devices,public.zebby_recovery_codes,public.zebby_pairing_codes to service_role;
+grant execute on function public.zebby_device_session(text),public.zebby_attach_device(uuid,uuid,text,text,text),
+  public.zebby_guest(uuid,text,text),public.zebby_recover_device(uuid,text,text,text),public.zebby_connect_device(uuid,text,text,text),
+  public.zebby_wallet_access(uuid,uuid),public.zebby_set_recovery(uuid,text),public.zebby_start_pairing(uuid,text),
+  public.zebby_cancel_pairing(uuid,text),public.zebby_remove_device(uuid,uuid) to service_role;

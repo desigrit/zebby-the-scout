@@ -1,3 +1,5 @@
+import type { WalletAccess } from "./wallet-access.ts";
+
 export type AnalysisProvider = "ollama" | "builtin" | "openai" | "anthropic" | "credits";
 export type AnalysisKind = "plan" | "match";
 export const PRICE_VERSION = "2026-10-09";
@@ -59,7 +61,7 @@ export function formatCredits(nanos: number) {
 export type Wallet = { balance: number; reserved: number; used: number; purchased: number; updatedAt: string;
   recent: { id: string; model: string; kind: string; cost: number; createdAt: string }[] };
 export type CreditsState = { available: boolean; signedIn: boolean; email: string; wallet: Wallet | null;
-  stale: boolean; error: string; model: string };
+  stale: boolean; error: string; model: string; access: WalletAccess | null; recoverySaved: boolean; pendingConnection: boolean };
 export type CreditQuote = { id: string; model: string; maximum: number; expiresAt: string; recovery?: boolean; pending?: boolean; cost?: number };
 export type AnalysisSource = { kind: AnalysisKind; id: string };
 export function quoteNeedsCredits(quote: CreditQuote, available: number) { return !quote.recovery && available < quote.maximum; }

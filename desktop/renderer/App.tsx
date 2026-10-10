@@ -8,7 +8,8 @@ import type { DesktopState } from "../bridge";
 import type { Plan, PlanInput } from "../store";
 import type { Resume } from "../../lib/application-types";
 import { AnalysisSettings } from "./AnalysisSettings";
-import { AnalysisFlowProvider, CreditsSettings, SidebarCredits, useAnalysisFlow } from "./AnalysisFlow";
+import { AnalysisFlowProvider, SidebarCredits, useAnalysisFlow } from "./AnalysisFlow";
+import { CreditsSettings } from "./CreditsSettings";
 import { onlineModel } from "../../shared/online-models";
 import PlanRecommendations from "./PlanRecommendations";
 import NavigationButton from "./NavigationButton";
@@ -671,7 +672,7 @@ export default function App() {
         <NavigationButton kind="applications" label="Applications" selected={tab === "applications"} collapsed={state.sidebarCollapsed} onActivate={() => navigate("applications")} disabled={analysisRunning} />
         <NavigationButton kind="settings" label="Settings" selected={tab === "settings"} collapsed={state.sidebarCollapsed} onActivate={() => navigate("settings")} disabled={analysisRunning} />
       </nav>
-      {(state.updates.available || state.credits.signedIn || state.filePath && !state.sidebarCollapsed) && <div className="sidebar-footer">
+      {(state.updates.available || state.credits.wallet?.purchased || state.filePath && !state.sidebarCollapsed) && <div className="sidebar-footer">
         <SidebarCredits />
         <UpdateButton updates={state.updates} collapsed={state.sidebarCollapsed} working={updateWorking} onClick={() => void applyUpdate()} />
         {state.filePath && !state.sidebarCollapsed && <div className="sidebar-database" title={state.filePath}>

@@ -40,7 +40,8 @@ let plans = [plan];
 let lastCurrentOverview = plan.currentOverview;
 const state = { filePath: "example.sqlite", filename: "Applications.sqlite", dirty: false, startupError: "", hasApiKey: false,
   hasAnthropicKey: false, openaiModel: "gpt-6.1-sol", anthropicModel: "claude-sonnet-5-5",
-  credits: { available: false, signedIn: false, email: "", wallet: null, stale: true, error: "", model: "gpt-6-luna" },
+  credits: { available: false, signedIn: false, email: "", wallet: null, stale: true, error: "", model: "gpt-6-luna",
+    access: null, recoverySaved: false, pendingConnection: false },
   analysisProvider: "ollama", ollamaUrl: "http://localhost:11434", ollamaModel: "qwen3.8:27b", canSaveApiKey: true,
   appearance: "light", sidebarCollapsed: false, logsPath: "", platform: "win32",
   builtInModelId: "", acceptedModelTerms: [], localModels: LOCAL_MODELS.map(({ id }) =>
@@ -107,7 +108,7 @@ try {
       await Promise.all(document.getAnimations().filter((animation) =>
         animation.effect?.getTiming().iterations !== Infinity).map((animation) => animation.finished.catch(() => undefined)));
     });
-    if (filename.startsWith("credits-")) {
+    if (filename.startsWith("credits-") && await page.locator(".analysis-dialog[open]").count()) {
       const bounds = await page.locator(".analysis-dialog[open]").evaluate(element => {
         const rect = element.getBoundingClientRect();
         return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, viewportWidth: innerWidth, viewportHeight: innerHeight };
@@ -184,8 +185,12 @@ try {
     };
     const wallet = { balance: 500000000, reserved: 0, used: 0, purchased: 500000000,
       updatedAt: "2026-09-30T20:00:00Z", recent: [] };
-    window.creditQA = { update: updateCredits, codes: [], verifications: [], checkouts: [], models: [],
-      failCode: false, payment: "open", quote: null };
+    const firstDevice = { id: "11111111-1111-4111-8111-111111111111", name: "Windows desktop", current: true,
+      createdAt: "2026-09-30T20:00:00Z", lastSeenAt: "2026-09-30T20:00:00Z" };
+    const secondDevice = { ...firstDevice, id: "22222222-2222-4222-8222-222222222222", name: "Mac laptop", current: false };
+    const walletAccess = { hasRecoveryCode: false, recoveryVersion: null, devices: [firstDevice] };
+    window.creditQA = { update: updateCredits, checkouts: [], models: [], connections: [], recoverySaves: [],
+      cancelRecovery: false, confirmDisconnect: false, disconnects: [], pairingCancelled: 0, payment: "open", quote: null };
     window.modelQA = { confirmDelete: false, deleteRequests: [], selections: [], rejectSidebarSave: false,
       updateState, installRequests: 0, failInstall: false, failCheck: false, finishDownload: null,
       logOpens: 0, failLogOpen: false, databaseRequests: [], update,
@@ -195,17 +200,31 @@ try {
       onUpdatesChanged: (listener) => { updateListeners.add(listener); return () => updateListeners.delete(listener); },
       onCreditsChanged: (listener) => { creditListeners.add(listener); return () => creditListeners.delete(listener); },
       refreshCredits: async () => snapshot(),
-      sendCreditCode: async (email) => {
-        if (window.creditQA.failCode) throw new Error("Synthetic email delivery error. Try again.");
-        window.creditQA.codes.push(email);
+      refreshCreditAccess: async () => snapshot(),
+      saveCreditRecoveryCode: async (rotate = false) => {
+        window.creditQA.recoverySaves.push(rotate);
+        if (window.creditQA.cancelRecovery) return { saved: false, state: snapshot() };
+        updateCredits({ recoverySaved: true, access: { ...initialState.credits.access, hasRecoveryCode: true,
+          recoveryVersion: "33333333-3333-4333-8333-333333333333" } });
+        return { saved: true, state: snapshot() };
       },
-      verifyCreditCode: async (email, code) => {
-        window.creditQA.verifications.push({ email, code });
-        updateCredits({ signedIn: true, email, wallet: { ...wallet, balance: 0, purchased: 0 }, stale: false });
+      connectCreditWallet: async (kind, code) => {
+        window.creditQA.connections.push({ kind, code });
+        if (code === "BAD-CODE") throw new Error("That pairing code was used or expired. Generate a new code on your other computer.");
+        updateCredits({ access: { ...initialState.credits.access, devices: [firstDevice, secondDevice] } });
+        return { connected: true, state: snapshot() };
+      },
+      createCreditPairing: async () => ({ code: "ABCD2345", expiresAt: new Date(Date.now() + 600000).toISOString() }),
+      cancelCreditPairing: async () => { window.creditQA.pairingCancelled++; },
+      removeCreditDevice: async (id) => {
+        window.creditQA.disconnects.push(id);
+        if (window.creditQA.confirmDisconnect) updateCredits({ access: { ...initialState.credits.access,
+          devices: initialState.credits.access.devices.filter((item) => item.id !== id) } });
         return snapshot();
       },
-      signOutCredits: async () => { updateCredits({ signedIn: false, email: "", wallet: null }); return snapshot(); },
-      startCreditCheckout: async (pack) => { window.creditQA.checkouts.push(pack); return { id: "cs_test_fixture", mode: "test" }; },
+      startCreditCheckout: async (pack) => { window.creditQA.checkouts.push(pack);
+        updateCredits({ signedIn: true, wallet: { ...wallet, balance: 0, purchased: 0 }, access: walletAccess, stale: false });
+        return { id: "cs_test_fixture", mode: "test" }; },
       creditCheckoutStatus: async () => {
         if (window.creditQA.payment === "paid") updateCredits({ wallet: { ...wallet }, stale: false });
         return window.creditQA.payment;
@@ -786,7 +805,7 @@ try {
   await assertLocationKeyboard(page.locator(".location-editor"), "Mac Plan");
   await page.getByRole("button", { name: "Save plan", exact: true }).click();
   await page.locator(".save-state").filter({ hasText: "Saved" }).waitFor();
-  // All payment and account traffic below uses the synthetic desktop bridge.
+  // All payment and guest-wallet traffic below uses the synthetic desktop bridge.
   // These checks send no email, open no checkout, and request no provider inference.
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption("openai");
@@ -807,7 +826,7 @@ try {
   await analysisDialog.getByRole("button", { name: "Continue", exact: true }).click();
   assert.equal(await analysisDialog.getByRole("radio").count(), 4);
   assert.equal(await analysisDialog.getByRole("combobox").count(), 0);
-  assert.match(await analysisDialog.innerText(), /choose your model after purchasing credits/);
+  assert.match(await analysisDialog.innerText(), /Choose your model after purchasing credits/);
   assert.equal(await analysisDialog.getByRole("button", { name: "Continue, $20", exact: true }).isDisabled(), true);
   assert.match(await analysisDialog.innerText(), /Paid credits are not available yet/);
   await captureSettings("credits-packs-windows-light.png", false);
@@ -819,24 +838,15 @@ try {
   await analysisDialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await analysisDialog.waitFor({ state: "hidden" });
   assert.equal(await analyze.evaluate(element => element === document.activeElement), true);
-  assert.equal(await page.evaluate(() => window.creditQA.checkouts.length + window.creditQA.codes.length), 0);
+  assert.equal(await page.evaluate(() => window.creditQA.checkouts.length), 0);
   await page.evaluate(() => window.creditQA.update({ available: true }));
   await analyze.click();
   await analysisDialog.getByRole("radio", { name: /Buy credits/ }).check();
   await analysisDialog.getByRole("button", { name: "Continue", exact: true }).click();
   await analysisDialog.getByRole("radio", { name: /^\$5\b/ }).check();
   await analysisDialog.getByRole("button", { name: "Continue, $5", exact: true }).click();
-  await analysisDialog.getByRole("textbox", { name: "Email", exact: true }).fill("peer@example.com");
-  await page.evaluate(() => { window.creditQA.failCode = true; });
-  await analysisDialog.getByRole("button", { name: "Send code", exact: true }).click();
-  await analysisDialog.getByRole("alert").filter({ hasText: "Synthetic email delivery error" }).waitFor();
-  assert.equal(await analysisDialog.getByRole("textbox", { name: "Email", exact: true }).inputValue(), "peer@example.com");
-  await page.evaluate(() => { window.creditQA.failCode = false; });
-  await analysisDialog.getByRole("button", { name: "Send code", exact: true }).click();
-  await analysisDialog.getByRole("textbox", { name: "Email code", exact: true }).fill("123456");
-  await analysisDialog.getByRole("button", { name: "Verify code", exact: true }).click();
-  await analysisDialog.getByRole("button", { name: "Continue, $5", exact: true }).click();
   await analysisDialog.getByText("Test checkout. No real payment is taken.", { exact: true }).waitFor();
+  assert.equal(await analysisDialog.getByRole("textbox").count(), 0);
   assert.equal(await analysisDialog.getByRole("combobox").count(), 0);
   await page.evaluate(() => { window.creditQA.payment = "paid"; });
   await analysisDialog.getByRole("button", { name: "Check payment", exact: true }).click();
@@ -844,6 +854,12 @@ try {
   const paidModel = analysisDialog.getByRole("combobox", { name: "Model", exact: true });
   assert.equal(await paidModel.locator("option").count(), 6);
   await paidModel.selectOption("claude-sonnet-5-5");
+  await page.evaluate(() => { window.creditQA.cancelRecovery = true; });
+  await analysisDialog.getByRole("button", { name: "Save recovery code", exact: true }).click();
+  assert.equal(await analysisDialog.getByRole("button", { name: "Save recovery code", exact: true }).isVisible(), true);
+  await page.evaluate(() => { window.creditQA.cancelRecovery = false; });
+  await analysisDialog.getByRole("button", { name: "Save recovery code", exact: true }).click();
+  await analysisDialog.getByText("Recovery code saved.", { exact: true }).waitFor();
   await analysisDialog.getByRole("button", { name: "Continue to analysis", exact: true }).click();
   await analysisDialog.getByText("Maximum for this analysis", { exact: true }).waitFor();
   assert.match(await analysisDialog.innerText(), /20 credits/);
@@ -857,11 +873,42 @@ try {
   const creditsSettings = page.getByRole("region", { name: "Credits", exact: true });
   await creditsSettings.getByRole("combobox", { name: "Model", exact: true }).waitFor();
   assert.equal(await creditsSettings.getByRole("combobox", { name: "Model", exact: true }).inputValue(), "claude-sonnet-5-5");
-  await creditsSettings.getByRole("button", { name: "Sign out", exact: true }).click();
-  await page.waitForFunction(() => document.querySelector(".sidebar-credits") === null);
-  assert.deepEqual(await page.evaluate(() => window.creditQA.codes), ["peer@example.com"]);
+  assert.equal(await creditsSettings.getByRole("button", { name: "Sign out", exact: true }).count(), 0);
+  await creditsSettings.getByRole("button", { name: "Connect another computer", exact: true }).click();
+  await creditsSettings.getByLabel("Pairing code", { exact: true }).waitFor();
+  await creditsSettings.getByRole("button", { name: "Copy code", exact: true }).click();
+  assert.equal(await page.evaluate(() => window.controlsQA.copied), "ABCD-2345");
+  await captureSettings("credits-wallet-pairing-mac-dark-narrow.png", false);
+  assert.equal(await creditsSettings.evaluate(element => element.scrollWidth > element.clientWidth), false);
+  await creditsSettings.getByRole("button", { name: "Cancel pairing", exact: true }).click();
+  assert.equal(await page.evaluate(() => window.creditQA.pairingCancelled), 1);
+  await creditsSettings.getByRole("button", { name: "Connect this computer", exact: true }).click();
+  const pairInput = creditsSettings.getByLabel("Pairing code", { exact: true });
+  assert.equal(await pairInput.evaluate(element => element === document.activeElement), true);
+  await pairInput.fill("BAD-CODE"); await pairInput.press("Enter");
+  await creditsSettings.getByRole("alert").filter({ hasText: "That pairing code was used or expired" }).waitFor();
+  assert.equal(await pairInput.inputValue(), "BAD-CODE");
+  await pairInput.fill("ABCD-2345"); await pairInput.press("Enter");
+  await creditsSettings.getByText("Computer connected.", { exact: true }).waitFor();
+  assert.equal(await creditsSettings.getByRole("button", { name: "Connect this computer", exact: true }).evaluate(element => element === document.activeElement), true);
+  await creditsSettings.getByText("Connected computers (2)", { exact: true }).click();
+  await creditsSettings.getByText("Mac laptop", { exact: true }).waitFor();
+  await creditsSettings.getByRole("button", { name: "Disconnect", exact: true }).click();
+  assert.equal(await creditsSettings.getByText("Mac laptop", { exact: true }).isVisible(), true);
+  await page.evaluate(() => { window.creditQA.confirmDisconnect = true; });
+  await creditsSettings.getByRole("button", { name: "Disconnect", exact: true }).click();
+  assert.equal(await creditsSettings.getByText("Mac laptop", { exact: true }).count(), 0);
+  await creditsSettings.getByRole("button", { name: "Restore credits", exact: true }).click();
+  const recoveryInput = creditsSettings.getByLabel("Recovery code", { exact: true });
+  await recoveryInput.fill("synthetic private recovery code"); await recoveryInput.press("Escape");
+  assert.equal(await recoveryInput.count(), 0);
+  assert.equal(await creditsSettings.getByRole("button", { name: "Restore credits", exact: true }).evaluate(element => element === document.activeElement), true);
+  await page.setViewportSize({ width: 1550, height: 850 });
+  await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32"; document.documentElement.dataset.theme = "light"; });
+  await creditsSettings.scrollIntoViewIfNeeded();
+  await captureSettings("credits-wallet-settings-windows-light.png", false);
+  assert.equal(await creditsSettings.evaluate(element => element.scrollWidth > element.clientWidth), false);
   assert.deepEqual(await page.evaluate(() => window.creditQA.checkouts), ["starter"]);
-  assert.equal(await page.evaluate(() => window.creditQA.verifications.length), 1);
   await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption("ollama");
   await page.setViewportSize({ width: 1550, height: 850 });
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });

@@ -1,6 +1,7 @@
 import type { LocalModelStatus } from "./local-model-catalog";
 import type { UpdateState } from "./release-updates";
 import type { AnalysisProvider, AnalysisSource, CreditQuote, CreditsState } from "../shared/online-models";
+import type { WalletPairing } from "../shared/wallet-access";
 
 export type DesktopState = {
   filePath: string;
@@ -43,10 +44,13 @@ export type DesktopBridge = {
   setApiKey(value: string): Promise<DesktopState>;
   setAnthropicKey(value: string): Promise<DesktopState>;
   setOnlineModel(provider: "openai" | "anthropic" | "credits", model: string): Promise<DesktopState>;
-  sendCreditCode(email: string): Promise<void>;
-  verifyCreditCode(email: string, code: string): Promise<DesktopState>;
-  signOutCredits(): Promise<DesktopState>;
   refreshCredits(): Promise<DesktopState>;
+  refreshCreditAccess(): Promise<DesktopState>;
+  saveCreditRecoveryCode(rotate?: boolean): Promise<{ saved: boolean; state: DesktopState }>;
+  connectCreditWallet(kind: "restore" | "connect", code: string): Promise<{ connected: boolean; state: DesktopState }>;
+  createCreditPairing(): Promise<WalletPairing>;
+  cancelCreditPairing(): Promise<void>;
+  removeCreditDevice(id: string): Promise<DesktopState>;
   startCreditCheckout(pack: string): Promise<{ id: string; mode: "test" | "live" }>;
   creditCheckoutStatus(id: string): Promise<"paid" | "pending" | "expired">;
   quoteCreditAnalysis(source: AnalysisSource): Promise<CreditQuote>;

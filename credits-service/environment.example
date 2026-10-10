@@ -7,5 +7,7 @@ STRIPE_WEBHOOK_SECRET=whsec_
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
 PORT=8080
+# 0 ignores forwarded headers. Set 1-4 only for a verified, fixed proxy chain.
+ZEBBY_TRUST_PROXY_HOPS=0
 # Leave false until prices, taxes, legal terms, and real payment tests are checked.
 ZEBBY_ALLOW_LIVE_PAYMENTS=false

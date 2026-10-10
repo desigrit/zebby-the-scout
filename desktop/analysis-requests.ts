@@ -5,6 +5,7 @@ export class AnalysisRequests {
   private active = new Map<string, { controller: AbortController; committing: boolean }>();
   private cancelled = new Map<string, number>();
   private finished = new Map<string, number>();
+  get busy() { return this.active.size > 0; }
 
   cancel(id: string) {
     this.validate(id);

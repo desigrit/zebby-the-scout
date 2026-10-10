@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { serviceConfig } from "./config.ts";
 import { createService, ServiceError } from "./service.ts";
 import { ZodError } from "zod";
+import { clientAddress } from "./client-address.ts";
 const config = serviceConfig(), service = createService(config);
 const server = createServer(async (request, response) => {
   response.setHeader("Cache-Control", "no-store"); response.setHeader("X-Content-Type-Options", "nosniff");
@@ -22,7 +23,8 @@ const server = createServer(async (request, response) => {
     const result = path === "/v1/stripe/webhook" && request.method === "POST"
       ? await service.webhook(raw, String(request.headers["stripe-signature"] || ""))
       : await service.handle(request.method || "GET", path, raw.length ? JSON.parse(raw.toString("utf8")) : undefined,
-        String(request.headers.authorization || "").replace(/^Bearer /, ""), controller.signal, request.socket.remoteAddress);
+        String(request.headers.authorization || "").replace(/^Bearer /, ""), controller.signal,
+        clientAddress(request.socket.remoteAddress, request.headers["x-forwarded-for"], config.trustedProxyHops));
     response.setHeader("Content-Type", "application/json"); response.end(JSON.stringify(result));
   } catch (error) {
     if (response.destroyed) return;

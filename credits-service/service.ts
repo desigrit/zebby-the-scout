@@ -6,6 +6,8 @@ import { planInstructions, planSchema, matchInstructions, matchSchema } from "..
 import { onlineAnalysis } from "../desktop/online-analysis.ts";
 import { validateInput, validateResult } from "./validation.ts";
 import { stripeRequest, verifyStripeEvent } from "./stripe.ts";
+import { ServiceError } from "./errors.ts";
+import { createWalletAccess } from "./wallet-access.ts";
 import { z } from "zod";
 
 const uuid = z.string().uuid();
@@ -17,7 +19,7 @@ type RunRow = { status: "reserved" | "completed" | "failed"; fresh?: boolean; re
 const stripeCheckout = z.object({ id: z.string().regex(/^cs_[a-zA-Z0-9_]+$/), url: z.string().url() });
 const paidSession = z.object({ id: z.string(), payment_status: z.string(), currency: z.string(), amount_subtotal: z.number().int(),
   client_reference_id: uuid, payment_intent: z.string().startsWith("pi_"), metadata: z.object({ user_id: uuid, purchase_id: uuid, pack: z.string() }) });
-export class ServiceError extends Error { status: number; constructor(message: string, status = 400) { super(message); this.status = status; } }
+export { ServiceError } from "./errors.ts";
 export type Dependencies = { fetcher?: typeof fetch; now?: () => number };
 export function createService(config: ServiceConfig, dependencies: Dependencies = {}) {
   const send = dependencies.fetcher || fetch, now = dependencies.now || Date.now;
@@ -34,17 +36,19 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
     const response = await send(config.supabaseUrl + path, { ...options, headers: { apikey: config.supabaseKey,
       Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...options.headers },
       signal: AbortSignal.timeout(15000) });
-    if (!response.ok) throw new ServiceError(path.startsWith("/auth/") ? "Sign-in could not be completed. Check the code or try again." : "The credit service could not complete this request.", path.startsWith("/auth/") ? 401 : 503);
+    if (!response.ok) throw new ServiceError(path.startsWith("/auth/") ? "Existing wallet access could not be refreshed. Restore credits or reconnect this computer." : "The credit service could not complete this request.", path.startsWith("/auth/") ? 401 : 503);
     if (response.status === 204) return null as T;
     return response.json() as Promise<T>;
   }
   async function rpc<T = unknown>(name: string, value: unknown) { return supabase<T>(`/rest/v1/rpc/zebby_${name}`, { method: "POST", body: JSON.stringify(value) }); }
+  const access = createWalletAccess({ rpc, rateLimit });
   async function rows<T>(table: string, query: string) { return supabase<T[]>(`/rest/v1/zebby_${table}?${query}`); }
   async function insert<T>(table: string, value: unknown) { return supabase<T[]>(`/rest/v1/zebby_${table}`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify(value) }); }
   async function user(token: string) {
-    if (!token || token.length > 8192) throw new ServiceError("Sign in to use credits.", 401);
+    if (token.startsWith("zby_device_")) return access.authenticate(token);
+    if (!token || token.length > 8192) throw new ServiceError("Connect this computer to a credit wallet.", 401);
     const account = await supabase<{ id: string; email: string; email_confirmed_at: string }>("/auth/v1/user", {}, token);
-    if (!uuid.safeParse(account.id).success || !account.email || !account.email_confirmed_at) throw new ServiceError("Verify your email to use credits.", 401);
+    if (!uuid.safeParse(account.id).success || !account.email || !account.email_confirmed_at) throw new ServiceError("Restore credits or reconnect this computer.", 401);
     return { id: account.id as string, email: account.email as string };
   }
   const digest = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -84,24 +88,15 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
     if (method === "GET" && path === "/health") return { ok: true, mode: config.live ? "live" : "test" };
     if (method === "GET" && path === "/v1/catalog") return { packs: CREDIT_PACKS, models: ONLINE_MODELS,
       priceVersion: PRICE_VERSION, mode: config.live ? "live" : "test" };
-    if (method === "POST" && path === "/v1/auth/send-code") {
-      const { email } = z.object({ email: z.string().trim().email().max(254) }).strict().parse(body);
-      rateLimit("email:" + digest(email.toLowerCase()), 3, 15 * 60000);
-      rateLimit("otp-ip:" + ip, 10, 15 * 60000);
-      await supabase("/auth/v1/otp", { method: "POST", body: JSON.stringify({ email: email.toLowerCase(), create_user: true }) });
-      return { sent: true };
-    }
-    if (method === "POST" && path === "/v1/auth/verify") {
-      const value = z.object({ email: z.string().trim().email().max(254), code: z.string().regex(/^\d{6,8}$/) }).strict().parse(body);
-      rateLimit("verify:" + digest(value.email.toLowerCase()), 8, 15 * 60000);
-      return supabase("/auth/v1/verify", { method: "POST", body: JSON.stringify({ email: value.email.toLowerCase(), token: value.code, type: "email" }) });
-    }
     if (method === "POST" && path === "/v1/auth/refresh") {
       const value = z.object({ refreshToken: z.string().min(1).max(8192) }).strict().parse(body);
       return supabase("/auth/v1/token?grant_type=refresh_token", { method: "POST", body: JSON.stringify({ refresh_token: value.refreshToken }) });
     }
+    if (method === "POST" && ["/v1/wallet/guest", "/v1/wallet/connect", "/v1/wallet/restore"].includes(path)) return access.connect(path, body, ip);
     const account = await user(token);
     rateLimit("user:" + account.id, 60);
+    const managed = await access.manage(method, path, body, account);
+    if (managed !== undefined) return managed;
     if (method === "POST" && path === "/v1/auth/logout") { await supabase("/auth/v1/logout?scope=local", { method: "POST" }, token); return { signedOut: true }; }
     if (method === "GET" && path === "/v1/wallet") return rpc("wallet", { p_user: account.id });
     if (method === "GET" && /^\/v1\/analyses\/[\da-f-]{36}$/i.test(path)) {
@@ -118,13 +113,14 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
       if (purchase && (purchase.user_id !== account.id || purchase.pack !== pack.id)) throw new ServiceError("This checkout request cannot be reused.");
       if (!purchase) [purchase] = await insert<PurchaseRow>("purchases", { id: value.requestId, user_id: account.id, pack: pack.id,
         cents: pack.dollars * 100, amount: pack.credits * NANODOLLARS_PER_CREDIT });
-      const fields = new URLSearchParams({ mode: "payment", customer_email: account.email, client_reference_id: account.id,
+      const fields = new URLSearchParams({ mode: "payment", customer_creation: "if_required", client_reference_id: account.id,
         success_url: config.publicUrl + "/checkout/return?session_id={CHECKOUT_SESSION_ID}", cancel_url: config.publicUrl + "/checkout/cancel",
         "metadata[purchase_id]": purchase.id, "metadata[user_id]": account.id, "metadata[pack]": pack.id,
         "payment_intent_data[metadata][purchase_id]": purchase.id, "payment_intent_data[metadata][user_id]": account.id,
         "line_items[0][quantity]": "1", "line_items[0][price_data][currency]": "usd",
         "line_items[0][price_data][unit_amount]": String(pack.dollars * 100),
         "line_items[0][price_data][product_data][name]": `Zebby, ${pack.credits.toLocaleString("en-US")} credits` });
+      if (account.email) fields.set("customer_email", account.email);
       const session = stripeCheckout.parse(await stripeRequest(config.stripeKey, "checkout/sessions", fields, purchase.id, send));
       await supabase(`/rest/v1/zebby_purchases?id=eq.${purchase.id}`, { method: "PATCH", body: JSON.stringify({ session_id: session.id }) });
       return { id: session.id, url: session.url, mode: config.live ? "live" : "test" };

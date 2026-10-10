@@ -40,6 +40,8 @@ Logs are always on for errors, local to each computer, separate from the databas
 
 ## Analysis controls
 
+Credits uses aligned recovery and computer rows below the balance and model. Save recovery code exports through a native file picker. Restore credits and Connect this computer open focused inline forms with Cancel and Escape. Pairing shows a copyable code, expiry, regeneration and explicit cancellation. Connected computers and advanced recovery options stay collapsed. Disconnect, recovery-code replacement and funded-wallet switching use native confirmation with Cancel as default. Checkout has no signup or sign-in screen. This is an extension of the incumbent Ember system.
+
 Analyze with is a native dropdown: Local server, Downloaded model, OpenAI API key, Anthropic API key, or Zebby credits. Only the chosen method's controls appear. Missing prerequisites use short local hints. Local and personal-key methods do not require a Zebby account.
 
 Ollama retains Server URL, installed Model selection, refresh, custom model name, and Save. OpenAI and Anthropic each expose their provider's model dropdown and secure local key saving, replacement, and removal. Keys last for the session when secure storage is unavailable. The selected provider's helper identifies where source content goes and whose API account is billed. The built-in provider retains its model dropdown, required terms, inline download progress, Pause/Resume/Retry, per-model Delete with native confirmation, and expandable storage/library detail.

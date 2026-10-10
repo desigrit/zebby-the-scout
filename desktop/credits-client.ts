@@ -1,6 +1,8 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { onlineModel, type AnalysisSource, type CreditQuote, type CreditsState, type Wallet, type AnalysisKind } from "../shared/online-models.ts";
+import { deviceNameSchema, deviceTokenSchema, guestSessionSchema, pairingCodeSchema, pairingSchema, recoveryCodeSchema,
+  walletAccessSchema, type WalletAccess, type WalletPairing } from "../shared/wallet-access.ts";
 const integer = z.number().int().safe();
 const walletSchema = z.object({ balance: integer, reserved: integer.nonnegative(), used: integer.nonnegative(),
   purchased: integer.nonnegative(), updatedAt: z.string(), recent: z.array(z.object({ id: z.string().uuid(),
@@ -12,8 +14,13 @@ const pendingSchema = z.object({ quoteId: z.string().uuid(), requestId: z.string
 const recoveredSchema = z.object({ status: z.enum(["reserved", "completed", "failed"]), result: z.record(z.unknown()).nullable(),
   model: z.string(), kind: z.enum(["plan", "match"]), cost: integer.nonnegative(), quoteId: z.string().uuid(), wallet: walletSchema });
 type PendingRun = z.infer<typeof pendingSchema>;
-type Session = { access: string; refresh: string; expires: number; email: string; id: string };
-type ClientOptions = { save: (value: string) => Promise<void>; onChange: () => void; fetcher?: typeof fetch };
+const storedSessionSchema = z.object({ access: z.string().min(1).max(8192), refresh: z.string().min(1).max(8192), expires: z.number(),
+  email: z.union([z.string().email(), z.literal("")]), id: z.string().uuid(), kind: z.enum(["guest", "account"]).default("account"), deviceId: z.string().uuid().optional() });
+const candidateSchema = z.object({ token: deviceTokenSchema, name: deviceNameSchema, kind: z.enum(["guest", "restore", "connect", "legacy"]) });
+const recoverySchema = z.object({ code: recoveryCodeSchema, walletId: z.string().uuid(), version: z.string().uuid().nullable(), saved: z.boolean() });
+type Session = z.infer<typeof storedSessionSchema>;
+type Candidate = z.infer<typeof candidateSchema>;
+type ClientOptions = { save: (value: string) => Promise<void>; onChange: () => void; fetcher?: typeof fetch; deviceName?: string };
 class HttpError extends Error { status: number; constructor(message: string, status: number) { super(message); this.status = status; } }
 const hashInput = (input: unknown) => createHash("sha256").update(JSON.stringify(input)).digest("hex");
 export class CreditsClient {
@@ -26,6 +33,13 @@ export class CreditsClient {
   private walletRefresh: { generation: number; promise: Promise<void> } | null = null;
   private controllers = new Set<AbortController>();
   private pending = new Map<string, PendingRun>();
+  private access: WalletAccess | null = null;
+  private candidate: Candidate | null = null;
+  private recovery: z.infer<typeof recoverySchema> | null = null;
+  private accessWorking = false;
+  private pairing: WalletPairing | null = null;
+  private secretHistory: string[] = [];
+  private unreadableStorage = false;
   readonly url: string;
   private options: ClientOptions;
   constructor(url: string, options: ClientOptions) {
@@ -36,33 +50,44 @@ export class CreditsClient {
   restore(value: string) {
     try {
       const stored = JSON.parse(value);
-      if (!this.url || stored.url !== this.url) return;
-      this.session = stored.session ? z.object({ access: z.string().min(1).max(8192), refresh: z.string().min(1).max(8192), expires: z.number(),
-        email: z.string().email(), id: z.string().uuid() }).parse(stored.session) : null;
-      this.wallet = this.session && stored.wallet ? walletSchema.parse(stored.wallet) : null;
-      for (const item of z.array(pendingSchema).max(20).parse(stored.pending || [])) if (item.expires > Date.now()) this.pending.set(item.quoteId, item);
-    } catch { this.session = null; this.wallet = null; this.pending.clear(); }
+      if (!this.url) return;
+      if (stored.url !== this.url) { this.restoreFailed(); return; }
+      this.session = stored.session ? storedSessionSchema.parse(stored.session) : null;
+      this.wallet = this.session ? walletSchema.safeParse(stored.wallet).data || null : null;
+      this.candidate = candidateSchema.safeParse(stored.candidate).data || null;
+      this.recovery = recoverySchema.safeParse(stored.recovery).data || null;
+      for (const entry of Array.isArray(stored.pending) ? stored.pending.slice(0, 20) : []) {
+        const item = pendingSchema.safeParse(entry);
+        if (item.success && item.data.expires > Date.now()) this.pending.set(item.data.quoteId, item.data);
+      }
+    } catch { this.restoreFailed(); }
   }
+  restoreFailed() { this.unreadableStorage = true; this.error = "Saved wallet access could not be read. Restore credits with your recovery code or connect this computer again."; }
   state(model: string): CreditsState { return { available: Boolean(this.url), signedIn: Boolean(this.session),
-    email: this.session?.email || "", wallet: this.wallet, stale: this.stale, error: this.error, model }; }
-  secrets() { return [this.session?.access || "", this.session?.refresh || ""]; }
-  private checkGeneration(generation: number) { if (generation !== this.generation) throw new DOMException("The signed-in account changed.", "AbortError"); }
+    email: this.session?.email || "", wallet: this.wallet, stale: this.stale, error: this.error, model, access: this.access,
+    recoverySaved: Boolean(this.recovery?.saved && this.recovery.walletId === this.session?.id && this.access?.recoveryVersion === this.recovery.version),
+    pendingConnection: Boolean(this.candidate) }; }
+  secrets() { return [this.session?.access || "", this.session?.refresh || "", this.candidate?.token || "", this.recovery?.code || "", this.pairing?.code || "",
+    this.pairing?.code.replace(/(.{4})(.{4})/, "$1-$2") || "", ...this.secretHistory]; }
+  private rememberSecret(value: string) { this.secretHistory.push(value); if (this.secretHistory.length > 16) this.secretHistory.shift(); }
+  private checkGeneration(generation: number) { if (generation !== this.generation) throw new DOMException("The credit wallet changed.", "AbortError"); }
   private invalidate(clearPending = false) {
     this.generation++; for (const controller of this.controllers) controller.abort(); this.controllers.clear();
     this.session = null; this.wallet = null; this.stale = true; this.error = "";
+    this.access = null; this.pairing = null;
     if (clearPending) this.pending.clear();
   }
   private async persist() {
     for (const [id, run] of this.pending) if (run.expires < Date.now()) this.pending.delete(id);
-    await this.options.save(this.session || this.pending.size ? JSON.stringify({ url: this.url, session: this.session,
-      wallet: this.wallet, pending: [...this.pending.values()] }) : "");
+    await this.options.save(this.session || this.pending.size || this.candidate || this.recovery ? JSON.stringify({ url: this.url, session: this.session,
+      wallet: this.wallet, pending: [...this.pending.values()], candidate: this.candidate, recovery: this.recovery }) : "");
   }
-  private async request(path: string, body?: unknown, authenticated = true, signal?: AbortSignal): Promise<unknown> {
+  private async request(path: string, body?: unknown, authenticated = true, signal?: AbortSignal, deviceToken?: string): Promise<unknown> {
     if (!this.url) throw new Error("Paid credits are not available yet. Choose a local model or your own API key.");
     const generation = this.generation;
     if (authenticated) {
-      if (!this.session) throw new Error("Sign in to use credits.");
-      if (this.session.expires < Date.now() + 60000) {
+      if (!this.session) throw new Error("Buy credits, restore your wallet, or connect this computer in Settings.");
+      if (this.session.kind === "account" && this.session.expires < Date.now() + 60000) {
         if (this.refreshing?.generation !== generation) {
           const promise = this.refreshSession(generation).finally(() => { if (this.refreshing?.generation === generation) this.refreshing = null; });
           this.refreshing = { generation, promise };
@@ -71,17 +96,19 @@ export class CreditsClient {
       }
       this.checkGeneration(generation);
     }
-    const controller = new AbortController(); if (authenticated) this.controllers.add(controller);
+    const controller = new AbortController(); this.controllers.add(controller);
     try {
       const response = await (this.options.fetcher || fetch)(this.url + path, { method: body === undefined ? "GET" : "POST",
-        headers: { "Content-Type": "application/json", ...(authenticated ? { Authorization: `Bearer ${this.session!.access}` } : {}) },
+        headers: { "Content-Type": "application/json", ...((authenticated || deviceToken) ? { Authorization: `Bearer ${deviceToken || this.session!.access}` } : {}) },
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: AbortSignal.any([controller.signal, AbortSignal.timeout(path === "/v1/analysis" ? 210000 : 20000), ...(signal ? [signal] : [])]) });
       let result: unknown;
       try { result = await response.json(); } catch { throw new Error("The credit service returned an unreadable response."); }
       this.checkGeneration(generation);
       if (!response.ok) {
-        if (response.status === 401 && authenticated) { this.invalidate(); await this.persist(); this.options.onChange(); }
+        // Keep the credential and cached balance on authentication or network failures.
+        // An automatic empty replacement wallet could strand a purchase.
+        if (response.status === 401 && authenticated) { this.stale = true; this.error = "Restore credits or reconnect this computer in Settings."; this.options.onChange(); }
         const error = z.object({ error: z.string() }).safeParse(result);
         throw new HttpError(error.success ? error.data.error.slice(0, 400) : "The credit service is unavailable. Try again.", response.status);
       }
@@ -91,10 +118,10 @@ export class CreditsClient {
   private async setSession(value: unknown, generation: number, expectedUser?: string) {
     this.checkGeneration(generation);
     const parsed = sessionSchema.parse(value);
-    if (expectedUser && parsed.user.id !== expectedUser) throw new Error("Sign in again to confirm your account.");
+    if (expectedUser && parsed.user.id !== expectedUser) throw new Error("The wallet identity changed. Restore credits or reconnect this computer.");
     this.session = { access: parsed.access_token, refresh: parsed.refresh_token,
       expires: parsed.expires_at ? parsed.expires_at * 1000 : Date.now() + (parsed.expires_in || 3600) * 1000,
-      email: parsed.user.email, id: parsed.user.id };
+      email: parsed.user.email, id: parsed.user.id, kind: "account" };
     for (const [id, run] of this.pending) if (run.userId !== parsed.user.id) this.pending.delete(id);
     await this.persist(); this.checkGeneration(generation);
   }
@@ -102,7 +129,7 @@ export class CreditsClient {
     const session = this.session!;
     try { await this.setSession(await this.request("/v1/auth/refresh", { refreshToken: session.refresh }, false), generation, session.id); }
     catch (error) {
-      if (generation === this.generation && error instanceof HttpError && error.status === 401) { this.invalidate(); await this.persist(); this.options.onChange(); }
+      if (generation === this.generation && error instanceof HttpError && error.status === 401) { this.stale = true; this.error = "Restore credits or reconnect this computer in Settings."; this.options.onChange(); }
       throw error;
     }
   }
@@ -114,12 +141,13 @@ export class CreditsClient {
     await this.refreshWallet();
   }
   async signOut() {
-    const session = this.session; this.invalidate(true); await this.persist(); this.options.onChange();
+    const session = this.session; this.invalidate(true); this.candidate = null; this.recovery = null; await this.persist(); this.options.onChange();
     // Revoke this device's old refresh session without allowing its reply to change a newer account.
     if (session && this.url) await (this.options.fetcher || fetch)(this.url + "/v1/auth/logout", { method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access}` }, body: "{}", signal: AbortSignal.timeout(10000) }).catch(() => undefined);
   }
   async refreshWallet() {
+    if (this.candidate && !this.accessWorking) await this.resumeConnection();
     if (!this.session) return;
     const generation = this.generation;
     if (this.walletRefresh?.generation === generation) return this.walletRefresh.promise;
@@ -132,7 +160,129 @@ export class CreditsClient {
     const promise = operation().finally(() => { if (this.walletRefresh?.generation === generation) this.walletRefresh = null; });
     this.walletRefresh = { generation, promise }; return promise;
   }
+  private async accessAction<T>(operation: () => Promise<T>) {
+    if (this.accessWorking) throw new Error("A wallet connection is already being updated. Try again shortly.");
+    this.accessWorking = true;
+    try { return await operation(); }
+    finally { this.accessWorking = false; this.options.onChange(); }
+  }
+  private async acceptConnection(candidate: Candidate, value: unknown) {
+    const next = guestSessionSchema.parse(value);
+    const previous = { session: this.session, wallet: this.wallet, access: this.access, pending: new Map(this.pending) };
+    this.generation++;
+    for (const controller of this.controllers) controller.abort();
+    this.controllers.clear();
+    this.session = { id: next.walletId, deviceId: next.deviceId, access: candidate.token, refresh: candidate.token,
+      expires: Number.MAX_SAFE_INTEGER, email: "", kind: "guest" };
+    if (previous.session?.id !== next.walletId) { this.wallet = null; this.access = null; }
+    for (const [id, run] of this.pending) if (run.userId !== next.walletId) this.pending.delete(id);
+    this.stale = true; this.error = ""; this.candidate = null;
+    this.unreadableStorage = false;
+    try { await this.persist(); }
+    catch (error) {
+      this.session = previous.session; this.wallet = previous.wallet; this.access = previous.access; this.pending = previous.pending;
+      this.candidate = candidate;
+      throw error;
+    }
+  }
+  private async resolveCandidate() {
+    const candidate = this.candidate;
+    if (!candidate) return false;
+    try {
+      const result = await this.request("/v1/wallet/session", undefined, false, undefined, candidate.token);
+      await this.acceptConnection(candidate, result);
+      return true;
+    } catch (error) { if (error instanceof HttpError && error.status === 401) return false; throw error; }
+  }
+  private async resumeConnection() { return this.accessAction(() => this.resolveCandidate()); }
+  private async connect(kind: Candidate["kind"], code?: string) {
+    if (await this.resolveCandidate()) return;
+    if (this.candidate && this.candidate.kind !== kind) throw new Error("Finish your pending wallet connection before starting another.");
+    if (!this.candidate) {
+      const candidate: Candidate = { token: "zby_device_" + randomBytes(32).toString("hex"),
+        kind, name: deviceNameSchema.parse(this.options.deviceName || "This computer") };
+      this.candidate = candidate;
+      // Persist the new credential before the server can link or consume a code.
+      try { await this.persist(); } catch (error) { this.candidate = null; throw error; }
+    }
+    const candidate = this.candidate;
+    try {
+      const value = await this.request(kind === "legacy" ? "/v1/wallet/device" : "/v1/wallet/" + kind,
+        { deviceToken: candidate.token, name: candidate.name, ...(code ? { code } : {}) }, kind === "legacy");
+      await this.acceptConnection(candidate, value);
+    } catch (error) {
+      // A definitive validation failure never committed a link. Transport failures
+      // retain the encrypted candidate so a restart can find the linked wallet.
+      if (error instanceof HttpError && error.status === 400) { this.candidate = null; await this.persist(); }
+      throw error;
+    }
+  }
+  private async ensureGuest() {
+    if (this.unreadableStorage && !this.session && !this.candidate) throw new Error(this.error);
+    if (this.session?.kind === "guest" && !this.candidate) return;
+    await this.accessAction(() => this.connect(this.session ? "legacy" : "guest"));
+  }
+  async refreshAccess(): Promise<WalletAccess> {
+    await this.ensureGuest();
+    const generation = this.generation;
+    const access = walletAccessSchema.parse(await this.request("/v1/wallet/access"));
+    this.checkGeneration(generation); this.access = access; this.options.onChange(); return access;
+  }
+  async connectWallet(kind: "restore" | "connect", suppliedCode: string) {
+    this.rememberSecret(suppliedCode);
+    const code = (kind === "restore" ? recoveryCodeSchema : pairingCodeSchema).parse(suppliedCode);
+    this.rememberSecret(code);
+    if (this.session && this.wallet?.purchased) {
+      const access = walletAccessSchema.parse(await this.request("/v1/wallet/access"));
+      if (!access.hasRecoveryCode) throw new Error("Save a recovery code for your current wallet before switching wallets.");
+      if (this.recovery?.walletId === this.session.id && !this.recovery.saved &&
+        (this.recovery.version === null || this.recovery.version === access.recoveryVersion)) {
+        throw new Error("Save your current wallet's recovery code to a file before switching wallets.");
+      }
+    }
+    await this.accessAction(() => this.connect(kind, code));
+    await this.refreshWallet(); await this.refreshAccess();
+  }
+  hasCurrentRecoveryCode() {
+    return Boolean(this.recovery && this.recovery.walletId === this.session?.id &&
+      (this.recovery.version === null || this.recovery.version === this.access?.recoveryVersion));
+  }
+  async recoveryCode(rotate = false) {
+    await this.refreshAccess();
+    return this.accessAction(async () => {
+      if (!rotate && this.hasCurrentRecoveryCode() && this.recovery?.version) return this.recovery.code;
+      if (rotate || !this.hasCurrentRecoveryCode()) {
+        const previous = this.recovery;
+        this.recovery = { walletId: this.session!.id, code: "ZEBBY-" + randomBytes(20).toString("hex").toUpperCase().match(/.{8}/g)!.join("-"), version: null, saved: false };
+        try { await this.persist(); } catch (error) { this.recovery = previous; throw error; }
+      }
+      const result = z.object({ version: z.string().uuid() }).parse(await this.request("/v1/wallet/recovery", { code: this.recovery!.code }));
+      this.recovery!.version = result.version;
+      if (this.access) this.access = { ...this.access, hasRecoveryCode: true, recoveryVersion: result.version };
+      await this.persist(); return this.recovery!.code;
+    });
+  }
+  async markRecoverySaved() {
+    if (!this.recovery?.version || this.recovery.walletId !== this.session?.id) throw new Error("Save your current wallet's recovery code first.");
+    this.recovery.saved = true; await this.persist(); this.options.onChange();
+  }
+  async startPairing() {
+    await this.ensureGuest();
+    const value = pairingSchema.parse(await this.request("/v1/wallet/pairing", {}));
+    this.pairing = value; this.rememberSecret(value.code); return value;
+  }
+  async cancelPairing() {
+    if (!this.pairing) return;
+    const pairing = this.pairing;
+    await this.request("/v1/wallet/pairing/cancel", { code: pairing.code });
+    if (this.pairing === pairing) this.pairing = null;
+  }
+  async removeDevice(id: string) {
+    z.string().uuid().parse(id);
+    await this.request("/v1/wallet/devices/" + id + "/remove", {}); await this.refreshAccess();
+  }
   async checkout(pack: string) {
+    await this.ensureGuest();
     const generation = this.generation;
     const result = z.object({ id: z.string().regex(/^cs_[a-zA-Z0-9_]+$/), url: z.string().url(), mode: z.enum(["test", "live"]) })
       .parse(await this.request("/v1/checkout", { pack, requestId: randomUUID() })); this.checkGeneration(generation);
@@ -177,9 +327,9 @@ export class CreditsClient {
     z.string().uuid().parse(quoteId);
     const generation = this.generation, hash = hashInput(input);
     let run = this.pending.get(quoteId);
-    if (run && (run.userId !== this.session?.id || run.hash !== hash)) throw new Error("This analysis belongs to different source data or another account.");
+    if (run && (run.userId !== this.session?.id || run.hash !== hash)) throw new Error("This analysis belongs to different source data or another wallet.");
     if (!run) {
-      if (!this.session) throw new Error("Sign in to use credits.");
+      if (!this.session) throw new Error("Connect this computer to your credits in Settings.");
       if (this.pending.size >= 20) throw new Error("Finish or recover your pending analyses first.");
       run = { quoteId, requestId: randomUUID(), userId: this.session.id, hash, model,
         expires: Date.now() + 24 * 3600000, source: source || { kind: "match", id: quoteId } };

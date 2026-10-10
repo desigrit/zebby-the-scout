@@ -375,7 +375,6 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .credit-pack.selected .credit-pack-selection { color: var(--accent); font-weight: 650; }
 .credit-unavailable { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; background: var(--accent-wash); font-size: 13px; line-height: 1.5; }
 .credit-account { color: var(--ink-soft); font-size: 12px; overflow-wrap: anywhere; }
-.analysis-dialog #credit-account-form .field { margin: 18px 0; }
 .credit-checkout-state { display: grid; justify-items: center; gap: 14px; padding: 18px 0; text-align: center; }
 .credit-checkout-state > svg { color: var(--accent); }
 .credit-checkout-state p { margin: 0; line-height: 1.5; }
@@ -391,6 +390,39 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .credit-settings-balance > div { display: grid; gap: 6px; }
 .credit-settings-balance small { color: var(--ink-soft); }
 .credit-settings-balance strong { font-size: 28px; font-weight: 650; }
+.credit-settings-content > .field { margin-top: 20px; }
+.credit-access-controls { margin-top: 24px; }
+.credit-access-row { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 16px 0; border-top: 1px solid var(--line); }
+.credit-access-row > div { min-width: 0; }
+.credit-access-row strong { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+.credit-access-row strong svg { color: var(--ink-soft); flex: none; }
+.credit-access-row p { margin: 6px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.5; max-width: 65ch; }
+.credit-access-row > button { flex: none; }
+.credit-restore-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; margin: 12px 0; }
+.credit-restore-actions > button { display: inline-flex; align-items: center; gap: 6px; }
+.credit-connect-form { margin: 18px 0; max-width: 560px; }
+.credit-connect-form .field { margin: 0; }
+.credit-connect-form input { width: 100%; }
+.credit-pairing-panel { margin: 4px 0 20px; padding: 16px 18px; border-radius: 8px; background: var(--accent-wash); }
+.credit-pairing-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 13px; }
+.credit-pairing-heading .icon-button { flex: none; }
+.credit-pairing-panel .settings-help { margin: 6px 0 16px; }
+.credit-pairing-code { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; }
+.credit-pairing-code output { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: .08em; overflow-wrap: anywhere; }
+.credit-pairing-expiry { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; color: var(--ink-soft); font-size: 12px; font-variant-numeric: tabular-nums; }
+.credit-devices, .credit-recovery-options { margin-top: 8px; font-size: 12px; }
+.credit-devices summary, .credit-recovery-options summary { padding: 10px 0; }
+.credit-devices ul { list-style: none; margin: 0; padding: 0; }
+.credit-devices li { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.credit-devices li > svg { color: var(--ink-soft); flex: none; }
+.credit-devices li > span { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.credit-devices li strong { font-size: 12px; font-weight: 500; }
+.credit-devices li small { color: var(--ink-soft); }
+.credit-devices li > button { margin-left: auto; flex: none; }
+.credit-recovery-prompt { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
+.credit-recovery-prompt > span { display: grid; gap: 6px; font-size: 13px; }
+.credit-recovery-prompt small { color: var(--ink-soft); font-size: 12px; }
+@media (max-width: 850px) { .credit-access-row { flex-wrap: wrap; gap: 12px; } }
 .credit-history { font-size: 12px; }
 .credit-history summary { padding-block: 10px; }
 .credit-history ul { list-style: none; padding: 0; margin: 0; }

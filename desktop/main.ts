@@ -15,7 +15,7 @@ import { deleteDownloadedModel } from "./local-model-removal";
 import { localModelFolder } from "./local-model-storage";
 import { acceptModelTerms, modelTermsAccepted, type AcceptedModelTerms } from "./local-model-consent";
 import { parsePlanRecommendations } from "./plan-importance";
-import { freemem, totalmem } from "node:os";
+import { freemem, totalmem, hostname } from "node:os";
 import { APP_NAME, configureApplicationProfile, migrateApplicationProfile, migrateModelFolder } from "./app-identity";
 import { ReleaseUpdates } from "./release-updates";
 import { SelfUpdater } from "./self-update";
@@ -26,6 +26,7 @@ import { AnalysisRequests } from "./analysis-requests";
 import { CreditsClient } from "./credits-client";
 import { onlineAnalysis } from "./online-analysis";
 import { onlineModel, type AnalysisProvider, type AnalysisSource } from "../shared/online-models";
+import { writeProfileSettings } from "./settings-persistence";
 
 protocol.registerSchemesAsPrivileged([{
   scheme: "tracker", privileges: { standard: true, secure: true, supportFetchAPI: true },
@@ -55,6 +56,7 @@ let settings: { databasePath?: string; encryptedApiKey?: string; appearance?: Ap
   analysisProvider?: AnalysisProvider; ollamaUrl?: string; ollamaModel?: string; builtInModelId?: string;
   encryptedAnthropicKey?: string; encryptedCreditSession?: string; openaiModel?: string; anthropicModel?: string; creditModel?: string;
   acceptedModelTerms?: AcceptedModelTerms } = {};
+let unreadableProfile = false;
 const diagnosticLog = new DiagnosticLog(() => logsPath(), () => [apiKey, anthropicKey, ...(creditsClient?.secrets() || [])]);
 
 function settingsPath() { return path.join(app.getPath("userData"), "settings.json"); }
@@ -70,7 +72,7 @@ function logEvent(message: string, error?: unknown) {
 
 async function saveSettings() {
   const snapshot = JSON.stringify(settings, null, 2);
-  settingsWrites = settingsWrites.catch(() => undefined).then(() => writeFile(settingsPath(), snapshot, "utf8"));
+  settingsWrites = settingsWrites.catch(() => undefined).then(() => writeProfileSettings(settingsPath(), snapshot));
   await settingsWrites;
 }
 let settingsWrites: Promise<unknown> = Promise.resolve();
@@ -79,7 +81,7 @@ async function loadSettings() {
   try { settings = JSON.parse(await readFile(settingsPath(), "utf8")); }
   catch (error) {
     settings = {};
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") logDiagnostic("Could not read local settings", error);
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") { unreadableProfile = true; logDiagnostic("Could not read local settings", error); }
   }
   if (!["auto", "dark", "light"].includes(settings.appearance || "auto")) settings.appearance = "auto";
   if (!["ollama", "openai", "builtin", "anthropic", "credits"].includes(settings.analysisProvider || "")) {
@@ -107,13 +109,22 @@ async function loadSettings() {
     catch (error) { logDiagnostic("Could not read the saved Anthropic key", error); }
   }
   creditsClient = new CreditsClient(process.env.ZEBBY_CREDITS_SERVICE_URL || "", {
-    save: async (value) => { if (value && safeStorage.isEncryptionAvailable()) settings.encryptedCreditSession = safeStorage.encryptString(value).toString("base64");
-      else delete settings.encryptedCreditSession; await saveSettings(); },
+    save: async (value) => {
+      if (value && !safeStorage.isEncryptionAvailable()) throw new Error("Secure storage is unavailable. Restore access to Windows secure storage or Mac Keychain before using paid credits.");
+      const previous = settings.encryptedCreditSession;
+      try {
+        if (value) settings.encryptedCreditSession = safeStorage.encryptString(value).toString("base64");
+        else delete settings.encryptedCreditSession;
+        await saveSettings();
+      } catch (error) { settings.encryptedCreditSession = previous; throw error; }
+    },
     onChange: () => mainWindow?.webContents.send("desktop:credits-changed", state()),
+    deviceName: `${process.platform === "darwin" ? "Mac" : "Windows"} · ${hostname().slice(0, 60)}`,
   });
+  if (unreadableProfile || settings.encryptedCreditSession && !safeStorage.isEncryptionAvailable()) creditsClient.restoreFailed();
   if (settings.encryptedCreditSession && safeStorage.isEncryptionAvailable()) {
     try { creditsClient.restore(safeStorage.decryptString(Buffer.from(settings.encryptedCreditSession, "base64"))); }
-    catch (error) { logDiagnostic("Could not restore credit sign-in", error); }
+    catch (error) { creditsClient.restoreFailed(); logDiagnostic("Could not restore wallet access", error); }
   }
   if (settings.databasePath) {
     try { await store.open(settings.databasePath); }
@@ -469,6 +480,10 @@ function registerProtocol() {
 }
 
 function registerIpc() {
+  function walletChangesAllowed() {
+    if (analysisRequests.busy) throw new Error("Finish or cancel analysis before changing credit access.");
+    if (!safeStorage.isEncryptionAvailable()) throw new Error("Secure storage is unavailable. Restore access to Windows secure storage or Mac Keychain before using paid credits.");
+  }
   function handle<Args extends unknown[], Result>(channel: string,
     listener: (event: Electron.IpcMainInvokeEvent, ...args: Args) => Result | Promise<Result>) {
     ipcMain.handle(channel, async (event, ...args: Args) => {
@@ -488,11 +503,59 @@ function registerIpc() {
     });
   }
   handle("desktop:state", () => state());
-  handle("desktop:send-credit-code", (_event, email: string) => creditsClient.sendCode(email));
-  handle("desktop:verify-credit-code", async (_event, email: string, code: string) => { await creditsClient.verify(email, code); return state(); });
-  handle("desktop:sign-out-credits", async () => { paidQuotes.clear(); await creditsClient.signOut(); return state(); });
   handle("desktop:refresh-credits", async () => { await creditsClient.refreshWallet(); return state(); });
+  handle("desktop:refresh-credit-access", async () => { walletChangesAllowed(); await creditsClient.refreshAccess(); return state(); });
+  handle("desktop:connect-credit-wallet", async (_event, kind: "restore" | "connect", code: string) => {
+    walletChangesAllowed();
+    if (!["restore", "connect"].includes(kind) || typeof code !== "string" || code.length > 100) throw new Error("Enter a valid recovery or pairing code.");
+    if (state().credits.signedIn && state().credits.wallet?.purchased) {
+      const access = await creditsClient.refreshAccess();
+      if (!access.hasRecoveryCode) throw new Error("Save a recovery code for your current wallet before switching wallets.");
+      if (creditsClient.hasCurrentRecoveryCode() && !state().credits.recoverySaved) throw new Error("Save your current wallet's recovery code to a file before switching wallets.");
+      const response = await dialog.showMessageBox(mainWindow!, { type: "question", title: "Switch credit wallets?",
+        message: "Connect this computer to another credit wallet?", detail: "Your current wallet keeps its credits. You can reconnect using its recovery code.",
+        buttons: ["Cancel", "Switch wallet"], defaultId: 0, cancelId: 0, noLink: true });
+      if (response.response !== 1) return { connected: false, state: state() };
+    }
+    walletChangesAllowed(); paidQuotes.clear();
+    await creditsClient.connectWallet(kind, code); return { connected: true, state: state() };
+  });
+  handle("desktop:save-credit-recovery", async (_event, rotate = false) => {
+    walletChangesAllowed();
+    if (typeof rotate !== "boolean") throw new Error("Invalid recovery request.");
+    const access = await creditsClient.refreshAccess();
+    if (access.hasRecoveryCode && (rotate || !creditsClient.hasCurrentRecoveryCode())) {
+      const response = await dialog.showMessageBox(mainWindow!, { type: "question", title: "Replace recovery code?",
+        message: "Create a new recovery code?", detail: "The previous recovery code will stop working. Connected computers keep their access.",
+        buttons: ["Cancel", "Create new code"], defaultId: 0, cancelId: 0, noLink: true });
+      if (response.response !== 1) return { saved: false, state: state() };
+    }
+    const selected = await dialog.showSaveDialog(mainWindow!, { title: "Save Zebby recovery code", defaultPath: "Zebby recovery code.txt",
+      filters: [{ name: "Text file", extensions: ["txt"] }] });
+    if (selected.canceled || !selected.filePath) return { saved: false, state: state() };
+    const target = path.resolve(selected.filePath);
+    if (path.extname(target).toLowerCase() !== ".txt" || target.toLowerCase() === path.resolve(state().filePath || settingsPath()).toLowerCase()) {
+      throw new Error("Choose a text file for the recovery code. Your database cannot be used.");
+    }
+    walletChangesAllowed();
+    const code = await creditsClient.recoveryCode(rotate);
+    await writeFile(target, `Zebby credit wallet recovery code\n\n${code}\n\nKeep this file private. Anyone with this code can use your remaining credits.\nTo restore access, open Zebby Settings, Credits, Restore credits.\nA new recovery code replaces this one.\n`, { encoding: "utf8", mode: 0o600 });
+    await creditsClient.markRecoverySaved(); return { saved: true, state: state() };
+  });
+  handle("desktop:create-credit-pairing", async () => { walletChangesAllowed(); return creditsClient.startPairing(); });
+  handle("desktop:cancel-credit-pairing", () => creditsClient.cancelPairing());
+  handle("desktop:remove-credit-device", async (_event, id: string) => {
+    walletChangesAllowed();
+    const device = (await creditsClient.refreshAccess()).devices.find((item) => item.id === id && !item.current);
+    if (!device) throw new Error("Choose another connected computer.");
+    const result = await dialog.showMessageBox(mainWindow!, { type: "question", title: "Disconnect computer?", message: `Disconnect ${device.name}?`,
+      detail: "It will need a new pairing or recovery code to use this wallet again. Your credits stay in the wallet.",
+      buttons: ["Cancel", "Disconnect"], defaultId: 0, cancelId: 0, noLink: true });
+    if (result.response === 1) { walletChangesAllowed(); await creditsClient.removeDevice(id); }
+    return state();
+  });
   handle("desktop:start-credit-checkout", async (_event, pack: string) => {
+    walletChangesAllowed();
     const checkout = await creditsClient.checkout(pack); await shell.openExternal(checkout.url);
     return { id: checkout.id, mode: checkout.mode };
   });

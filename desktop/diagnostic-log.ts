@@ -25,6 +25,8 @@ export class DiagnosticLog {
     }
     let text = `${new Date().toISOString()} ${message}${detail ? `: ${detail}` : ""}`;
     for (const secret of this.secrets().filter(Boolean)) text = text.replaceAll(secret, "[redacted]");
+    text = text.replace(/zby_device_[a-f0-9]{64}/gi, "[redacted]")
+      .replace(/ZEBBY-(?:[a-f0-9]{8}-){4}[a-f0-9]{8}/gi, "[redacted]");
     const line = text.slice(0, 7999) + "\n";
     this.queue = this.queue.then(async () => {
       const folder = this.folder();
