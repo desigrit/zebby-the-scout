@@ -107,6 +107,15 @@ try {
       await Promise.all(document.getAnimations().filter((animation) =>
         animation.effect?.getTiming().iterations !== Infinity).map((animation) => animation.finished.catch(() => undefined)));
     });
+    if (filename.startsWith("credits-")) {
+      const bounds = await page.locator(".analysis-dialog[open]").evaluate(element => {
+        const rect = element.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, viewportWidth: innerWidth, viewportHeight: innerHeight };
+      });
+      assert.ok(bounds.x >= 16 && bounds.y >= 16, "Analysis dialogs leave space around the window edges");
+      assert.ok(Math.abs(bounds.x + bounds.width / 2 - bounds.viewportWidth / 2) <= 1, "Analysis dialogs center horizontally");
+      assert.ok(Math.abs(bounds.y + bounds.height / 2 - bounds.viewportHeight / 2) <= 1, "Analysis dialogs center vertically");
+    }
     await page.screenshot({ path: path.join(output, filename), fullPage });
   }
   async function settleSidebar() {

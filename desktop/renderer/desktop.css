@@ -331,7 +331,7 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 @keyframes desktop-spin { to { transform: rotate(360deg); } }
 
 /* Paid analysis follows the existing Ember surfaces and native dialog behavior. */
-.analysis-dialog { width: min(720px, calc(100vw - 64px)); max-height: calc(100dvh - 64px); padding: 0;
+.analysis-dialog { width: min(720px, calc(100vw - 64px)); max-height: calc(100dvh - 64px); margin: auto; padding: 0;
   border: 1px solid var(--line); border-radius: 12px; background: var(--paper); color: var(--ink);
   box-shadow: 0 16px 64px #0003; overflow: hidden; font: inherit; }
 .analysis-dialog[open] { display: flex; flex-direction: column; animation: analysis-dialog-in 140ms ease-out; }
