@@ -100,7 +100,8 @@ try {
           score: 85, explanation: "Strategy and discovery fit well. Add quantified activation evidence if supported.",
           overview: "I help teams turn customer insight into product strategy and measurable growth.", overviewRationale: "Light revision to foreground customer insight and growth." }
           : { score: 85, explanation: "Strategy and discovery fit well. Add quantified activation evidence if supported." };
-        return Response.json(openai ? { output: [{ content: [{ type: "output_text", text: JSON.stringify(result) }] }] }
+        return Response.json(openai ? { status: "completed", output: [{ content: [{ type: "output_text", text: JSON.stringify(result) }] }],
+          usage: { input_tokens: 20000, input_tokens_details: { cached_tokens: 0, cache_write_tokens: 20000 }, output_tokens: 6000 } }
           : { done: true, message: { content: JSON.stringify(result) } });
       }
       return original(url, options);
@@ -392,7 +393,7 @@ try {
   await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption("openai");
   await capture("settings-openai-setup");
   await page.getByRole("textbox", { name: "API key", exact: true }).fill("sk-zebby-fixture");
-  await page.getByRole("button", { name: "Save API key", exact: true }).click();
+  await page.getByRole("button", { name: "Save key", exact: true }).click();
   await nav.getByRole("button", { name: "Plan", exact: true }).click();
   const beforeOpenai = JSON.stringify((await api("/api/plans")).plans[0]);
   await page.getByRole("button", { name: "Analyze", exact: true }).click(); await waitForRequest();
