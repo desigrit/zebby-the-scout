@@ -169,9 +169,7 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
         </div>}
         {scene === "ready" && <>
           <div className="credit-ready"><Check size={26} /><strong>{formatCredits(remaining)} credits available</strong></div>
-          <OnlineModelControls state={state} onState={updateState} provider="credits" disabled={working} onBusy={setWorking} />
-          <p className="settings-help">You can change the model any time in Settings.</p>
-          {!state.credits.recoverySaved && <div className="credit-recovery-prompt"><span><strong>Keep your credits if you reinstall</strong><small>Save a recovery code. You can also do this in Settings.</small></span>
+          {!state.credits.recoverySaved && <div className="credit-recovery-prompt"><span><strong>Keep your credits if you reinstall or want to use Zebby&apos;s credits on another device</strong><small>Save a recovery code. You can also do this in Settings.</small></span>
             <button className="button button-secondary" type="button" disabled={working} onClick={() => void action(async () => {
               const result = await window.desktop!.saveCreditRecoveryCode(); updateState(result.state);
               if (result.saved) setRecoveryNotice("Recovery code saved.");
@@ -192,7 +190,7 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
         </>}
       </div>
       <footer className="analysis-dialog-footer">
-        <button className="button button-secondary" type="button" disabled={working} onClick={() => close()}>{scene === "checkout" ? "Close" : "Cancel"}</button>
+        {scene !== "ready" && <button className="button button-secondary" type="button" disabled={working} onClick={() => close()}>{scene === "checkout" ? "Close" : "Cancel"}</button>}
         {scene === "choose" && <button className="button button-primary" type="button" onClick={() => show(method === "credits" ? "buy" : "setup")}>Continue<ChevronRight size={17} /></button>}
         {scene === "setup" && <button className="button button-primary" type="button" disabled={working || setupPending || !providerReady(state, method)} onClick={() => void finishSetup()}>{hasPending ? "Continue to analysis" : "Done"}</button>}
         {scene === "buy" && <button className="button button-primary" type="button" disabled={working || !state.canSaveApiKey} onClick={() => void purchase()}>

@@ -390,6 +390,7 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .analysis-dialog-body::-webkit-scrollbar { width: 7px; }
 .analysis-dialog-body::-webkit-scrollbar-thumb { border-radius: 5px; background: var(--scroll-thumb); border: 2px solid var(--paper); }
 .analysis-dialog-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 24px; border-top: 1px solid var(--line); }
+.analysis-dialog-footer > .button:only-child { margin-left: auto; }
 .analysis-intro { color: var(--ink-soft); margin: 0 0 22px; line-height: 1.6; }
 .analysis-methods, .credit-packs { border: 0; padding: 0; margin: 0; display: grid; gap: 12px; }
 .analysis-methods { grid-template-columns: 1fr 1fr; }
@@ -519,7 +520,9 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .credit-devices li > button { margin-left: auto; flex: none; }
 .credit-recovery-options > .settings-action { margin-top: 12px; }
 .credit-recovery-prompt { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
-.credit-recovery-prompt > span { display: grid; gap: 6px; font-size: 13px; }
+.credit-recovery-prompt > span { flex: 1 1 260px; min-width: 0; display: grid; gap: 6px; font-size: 13px; line-height: 1.5; }
+.credit-recovery-prompt strong { text-wrap: balance; }
+.credit-recovery-prompt > .button { flex: none; }
 .credit-recovery-prompt small { color: var(--ink-soft); font-size: 12px; }
 .credit-history { font-size: 12px; }
 .credit-history summary { padding-block: 10px; }
