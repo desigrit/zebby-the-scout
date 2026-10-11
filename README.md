@@ -10,18 +10,18 @@ I wanted a simple place to prepare for jobs and remember which CV went where. I 
 
 Windows x64 and ARM64 · Apple Silicon Mac · No signup
 
-![Zebby Applications, showing varied daily activity, stacked application statuses and the selected role's details](docs/screenshots/applications.png?v=2.2.2)
+![Zebby Applications, showing varied daily activity, stacked application statuses and the selected role's details](docs/screenshots/applications.png?v=2.3.0)
 
-<sub>Zebby 2.2.2 with sample applications and analysis results.</sub>
+<sub>Zebby 2.3.0 with sample applications and analysis results.</sub>
 
 ## From a listing to an application
 
 - **Plan:** save a posting, add your CV and overview, then review ATS keywords, resume themes, a match score and suggested wording. Keep several roles in progress.
-- **Applications:** track companies, roles, dates, locations, resumes, notes and statuses. Filter the list and see daily activity by status.
+- **Applications:** track companies, roles, dates, locations, resumes, notes and statuses. Filter the list, see daily activity by status, and celebrate an offer with Zebby confetti.
 - **Saved listings:** keep descriptions for later, even after the posting closes. Paste a copy when a site blocks extraction.
 - **Your files:** keep plans, applications and uploaded resumes together in a SQLite file you choose.
 
-![Zebby Plan, showing individual keyword and theme importance, a resume match score and a suggested overview](docs/screenshots/plan.png?v=2.2.2)
+![Zebby Plan, showing individual keyword and theme importance, a resume match score and a suggested overview](docs/screenshots/plan.png?v=2.3.0)
 
 Keyword and theme percentages estimate importance to the job. Review AI suggestions before updating your CV.
 
@@ -31,14 +31,14 @@ Keyword and theme percentages estimate importance to the job. Review AI suggesti
 | --- | --- |
 | **Bring your own key** | Your OpenAI or Anthropic API key. Usage is billed to your provider account. |
 | **Run a local model** | Your Ollama server, or a model downloaded in Settings. Downloaded models run on CPU and work offline once installed. |
-| **Buy Zebby credits** | Optional credit packs for online analysis with GPT-6.1 Sol or GPT-6 Astra. No API key or Zebby account needed. |
+| **Buy Zebby credits** | Optional credit packs for online analysis with GPT-6.1 Sol, GPT-6 Luna or GPT-6 Astra. No API key or Zebby account needed. |
 
 <details>
 <summary>Bring your own key: Settings preview</summary>
 
 Choose your provider, model and supported thinking level. Keys stay on this computer.
 
-![Zebby Analysis settings with OpenAI selected, a masked demo key and supported thinking levels](docs/screenshots/settings.png?v=2.2.2)
+![Zebby Analysis settings with OpenAI selected, a masked demo key and supported thinking levels](docs/screenshots/settings.png?v=2.3.0)
 
 </details>
 
@@ -46,7 +46,7 @@ Choose your provider, model and supported thinking level. Keys stay on this comp
 
 Choose a pack in Settings and pay in your browser. Pick your model after purchase. Zebby shows the maximum credit cost before each analysis and charges for actual usage.
 
-![Zebby's credit purchase dialog showing current packs and illustrative GPT-6.1 Sol High analysis counts](docs/screenshots/credits.png?v=2.2.2)
+![Zebby's credit purchase dialog with the $5 suggested start and illustrative Sol High and Luna High analysis counts](docs/screenshots/credits.png?v=2.3.0)
 
 Save your recovery code to restore credits later, or connect another computer to the same wallet.
 
@@ -61,13 +61,13 @@ Zebby checks for updates and offers **Restart to update** when a verified downlo
 <details>
 <summary>Dark mode</summary>
 
-![Zebby's dark Applications workspace with varied daily totals and stacked statuses](docs/screenshots/applications-dark.png?v=2.2.2)
+![Zebby's dark Applications workspace with varied daily totals and stacked statuses](docs/screenshots/applications-dark.png?v=2.3.0)
 
-![Zebby's dark Plan workspace with keyword and theme importance](docs/screenshots/plan-dark.png?v=2.2.2)
+![Zebby's dark Plan workspace with keyword and theme importance](docs/screenshots/plan-dark.png?v=2.3.0)
 
-![Zebby's dark Settings with a masked demo API key](docs/screenshots/settings-dark.png?v=2.2.2)
+![Zebby's dark Settings with a masked demo API key](docs/screenshots/settings-dark.png?v=2.3.0)
 
-![Zebby's dark credit purchase dialog](docs/screenshots/credits-dark.png?v=2.2.2)
+![Zebby's dark credit purchase dialog](docs/screenshots/credits-dark.png?v=2.3.0)
 
 </details>
 
