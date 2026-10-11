@@ -445,7 +445,14 @@ try {
       assert.ok(await list.evaluate((e) => e.clientHeight >= 200));
       const role = page.locator(".application-row-select").first();
       await role.scrollIntoViewIfNeeded(); await role.focus();
-      assert.equal(await role.evaluate((e) => { const b = e.getBoundingClientRect(); return b.top >= 44 && b.bottom <= innerHeight; }), true);
+      // Focus can start a native scroll after the layout changes at high zoom.
+      // Wait for that scroll to settle before checking the same visible bounds.
+      await page.waitForFunction(() => {
+        const element = document.querySelector(".application-row-select");
+        const b = element?.getBoundingClientRect();
+        const titlebar = document.querySelector(".desktop-titlebar")?.getBoundingClientRect();
+        return b && titlebar && b.top >= titlebar.bottom && b.bottom <= innerHeight;
+      });
       await page.keyboard.press("Enter");
       await page.locator(".application-inline-details").first().waitFor();
       await assertRowMetrics("200 percent scaling with inline details");
@@ -525,6 +532,17 @@ try {
     scope: "Hidden native Windows Electron. Synthetic data, mocked provider outputs. No real database or model downloads used." }, null, 2));
   console.log(JSON.stringify({ checks: checks.length, captures: captures.length, errors }));
 } catch (error) {
+  if (app) {
+    const page = await app.firstWindow();
+    await page.screenshot({ path: path.join(output, "failure.png") }).catch(() => {});
+    await writeFile(path.join(output, "failure-layout.json"), JSON.stringify(await page.evaluate(() => ({
+      viewport: { width: innerWidth, height: innerHeight },
+      regions: [".desktop-titlebar", ".desktop-workspace", ".application-list", ".application-row-select"].map((selector) => {
+        const element = document.querySelector(selector);
+        return { selector, rect: element?.getBoundingClientRect().toJSON(), scrollTop: element?.scrollTop };
+      }),
+    })).catch(() => ({})), null, 2));
+  }
   await writeFile(path.join(output, "failure.json"), JSON.stringify({ error: String(error.stack), captures, checks, errors }, null, 2));
   throw error;
 } finally { await app?.close(); }

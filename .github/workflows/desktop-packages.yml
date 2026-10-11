@@ -81,6 +81,14 @@ jobs:
         env:
           ZEBBY_QA_CHECKS_ONLY: "1"
           ZEBBY_QA_OUTPUT: work/ember-native-qa
+      - name: Save native failure details
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-windows-failure
+          retention-days: 1
+          path: work/ember-native-qa/failure*
+          if-no-files-found: ignore
       - run: node --experimental-strip-types scripts/qa-local-engine.mjs smollm2-360m
       - name: Check Qwen thinking mode on CPU
         run: node --experimental-strip-types scripts/qa-local-engine.mjs qwen3-06b --thinking

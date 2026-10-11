@@ -116,7 +116,7 @@ try {
   await page.getByRole("main", { name: "Applications", exact: true }).waitFor();
   report.checks.push("Actual copied app launches its GUI with a new isolated database on Tahoe");
   await page.getByRole("navigation", { name: "Workspace" }).getByRole("button", { name: "Settings", exact: true }).click();
-  await page.getByLabel("Analyze with", { exact: true }).selectOption("anthropic");
+  await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption("anthropic");
   const keyField = page.getByLabel("API key", { exact: true });
   await keyField.waitFor(); await keyField.focus();
   // Use only a synthetic key and the isolated runner clipboard/profile.
