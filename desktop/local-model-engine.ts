@@ -167,7 +167,8 @@ export class LocalModelEngine {
     throw new Error("The local model took too long to load. Close other apps or choose a smaller model.");
   }
 
-  analyze(id: string, instructions: string, input: unknown, schema: Record<string, unknown>, maxTokens = 1800, requestSignal?: AbortSignal, thinkingLevel = "off"): Promise<Record<string, unknown>> {
+  analyze(id: string, instructions: string, input: unknown, schema: Record<string, unknown>, maxTokens = 1800, requestSignal?: AbortSignal,
+    thinkingLevel = "off", onProgress?: (stage: "thinking" | "generating") => void): Promise<Record<string, unknown>> {
     if (!["off", "on"].includes(thinkingLevel) || thinkingLevel === "on" && !getLocalModel(id).supportsThinking) {
       return Promise.reject(new Error("This downloaded model does not support that thinking level."));
     }
@@ -208,8 +209,9 @@ export class LocalModelEngine {
             ...(thinking ? { temperature: 0.6, top_k: 20, top_p: 0.95, min_p: 0 } : {}), seed: 0, max_tokens: maxTokens,
             response_format: { type: "json_object", schema: localModelResponseSchema(id, schema, input) },
             chat_template_kwargs: { enable_thinking: thinking } }) });
-        const payload = await readLocalCompletion(response, generationSignal, () => {
+        const payload = await readLocalCompletion(response, generationSignal, (stage) => {
           watchdog.progress();
+          onProgress?.(stage);
           if (!responded) { responded = true; this.diagnostic(`Local model first token (${id}, ${Date.now() - started} ms)`); }
         });
         if (!response.ok) throw new Error(payload.error?.message || "Local analysis failed. Try again.");

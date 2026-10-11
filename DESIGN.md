@@ -473,6 +473,8 @@ Blank space in an application row activates its native selector and opens the se
 
 Plan pairs Job posting and Your CV, keeps Analyze below the CV and Save outside document scrolling, and preserves editable recommendations and suggested overview. Why and the saved wording rationale remain separate explanations. Surface strategy and pinned scope live in the formal briefs.
 
+Plan progress occupies a stable 22px line, 7px below Analyze. Real analysis phases roll downward through a clipped viewport over 280ms with the shell's cubic-bezier(.16, 1, .3, 1) easing; outgoing and incoming labels move together. Labels use 12px secondary text, beside an 11px elapsed timer with tabular numerals. Reduce Motion replaces text without movement. The accessible status announces only phase changes. Rapid updates coalesce to the latest phase rather than queueing animations.
+
 ## Do's and Don'ts
 
 ### Do:

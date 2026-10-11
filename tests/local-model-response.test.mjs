@@ -26,13 +26,13 @@ test("local model streaming preserves fragmented JSON and Unicode without treati
 });
 
 test("thinking tokens count as generation progress and never enter the saved JSON", async () => {
-  let progress = 0;
+  const phases = [];
   const result = await readLocalCompletion(streaming([
     event({ choices: [{ delta: { reasoning_content: "Private reasoning" } }] }),
     event({ choices: [{ delta: { reasoning: "More private reasoning" } }] }),
     event({ choices: [{ delta: { content: '{"score":82}' }, finish_reason: "stop" }] }), event("[DONE]")]),
-  new AbortController().signal, () => progress++);
-  assert.equal(progress, 3); assert.equal(result.choices[0].message.content, '{"score":82}');
+  new AbortController().signal, (phase) => phases.push(phase));
+  assert.deepEqual(phases, ["thinking", "thinking", "generating"]); assert.equal(result.choices[0].message.content, '{"score":82}');
 });
 
 test("an incomplete or token-limited stream cannot claim a complete analysis", async () => {

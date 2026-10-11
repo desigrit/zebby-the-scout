@@ -85,6 +85,8 @@ The circular zebra icon is shared by the desktop app, sidebar, and installers. C
 
 In both Plan and Applications, choose **Add location**, type a location, and press **Enter** to add it. The highlighted **Add location** control keeps keyboard focus, so press **Enter** again to open the next input. Blank Enter keeps the input open; **Escape** or **Cancel** returns to Add location.
 
+Plan shows progress below **Analyze**, with an elapsed timer and a rolling transition between stages. Ollama and downloaded models report **Thinking** only when reasoning tokens arrive, then **Generating results** when answer text arrives. Providers that return a completed answer show **Waiting for model** until it is ready. **Saving results** appears when the validated analysis is being saved. Reduce Motion keeps the labels still.
+
 ## What it records
 
 - Company, job title, team, and individual locations

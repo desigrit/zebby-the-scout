@@ -1,4 +1,6 @@
 import { thinkingLabel, type ThinkingCapability } from "../shared/thinking.ts";
+import type { GenerationStage } from "../shared/analysis-progress.ts";
+import { readOllamaResponse } from "./ollama-response.ts";
 export const DEFAULT_OLLAMA_URL = "http://localhost:11434";
 
 export function normalizeOllamaUrl(value: string): string {
@@ -64,17 +66,19 @@ export async function analyzeWithOllama(input: {
   schema: Record<string, unknown>;
   thinkingLevel?: string;
   signal?: AbortSignal;
+  onProgress?: (stage: GenerationStage) => void;
 }, fetcher: typeof fetch = fetch): Promise<Record<string, unknown>> {
   const model = input.model.trim();
   if (!model || model.length > 200 || /[\r\n]/.test(model)) {
     throw new Error("Choose an Ollama model in Settings.");
   }
   let response: Response;
+  const signal = input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(300_000)]) : AbortSignal.timeout(300_000);
   try {
     response = await fetcher(endpoint(input.baseUrl, "/api/chat"), {
       method: "POST", headers: { "Content-Type": "application/json" },
-      signal: input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(300_000)]) : AbortSignal.timeout(300_000),
-      body: JSON.stringify({ model, stream: false, think: ollamaThinkValue(input.thinkingLevel || "off"),
+      signal,
+      body: JSON.stringify({ model, stream: true, think: ollamaThinkValue(input.thinkingLevel || "off"),
         format: input.schema, options: input.thinkingLevel === "on" ? { temperature: 0.6, top_p: 0.95, top_k: 20 } : { temperature: 0 },
         messages: [
           { role: "system", content: input.instructions },
@@ -88,12 +92,16 @@ export async function analyzeWithOllama(input: {
     }
     throw new Error("Could not reach the Ollama server. Check its URL and that it is running.");
   }
-  const payload = await response.json().catch(() => ({})) as {
-    error?: string; message?: { content?: string }; done?: boolean;
-  };
-  if (!response.ok) throw new Error(payload.error || `Ollama returned ${response.status}.`);
-  const content = payload.message?.content?.trim();
-  if (!content || payload.done === false) throw new Error("Ollama returned an incomplete analysis. Try again.");
+  let content: string;
+  try { content = await readOllamaResponse(response, signal, input.onProgress); }
+  catch (error) {
+    input.signal?.throwIfAborted();
+    if (signal.aborted && signal.reason?.name === "TimeoutError") {
+      throw new Error("Ollama did not finish within five minutes. Try a smaller model or resume.");
+    }
+    if (error instanceof TypeError) throw new Error("The connection to Ollama stopped. Try again.");
+    throw error;
+  }
   let result: unknown;
   try { result = JSON.parse(content); }
   catch { throw new Error("Ollama returned text that could not be read as JSON. Try another model."); }

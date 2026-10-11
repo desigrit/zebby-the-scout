@@ -12,6 +12,8 @@ import { AnalysisFlowProvider, SidebarCredits, useAnalysisFlow } from "./Analysi
 import { CreditsSettings } from "./CreditsSettings";
 import { onlineModel } from "../../shared/online-models";
 import PlanRecommendations from "./PlanRecommendations";
+import PlanAnalysisProgress from "./PlanAnalysisProgress";
+import { ANALYSIS_STAGES, type AnalysisProgress } from "../../shared/analysis-progress";
 import NavigationButton from "./NavigationButton";
 import UpdateButton from "./UpdateButton";
 import SettingsAction from "./SettingsAction";
@@ -68,6 +70,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   const [reading, setReading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState<(AnalysisProgress & { startedAt: number }) | null>(null);
   const analysisFlow = useAnalysisFlow();
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -106,6 +109,14 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
 
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
   useEffect(() => { onAnalysisChange(analyzing); return () => onAnalysisChange(false); }, [analyzing, onAnalysisChange]);
+  useEffect(() => window.desktop?.onAnalysisProgress?.((progress) => {
+    const request = analysisRequest.current;
+    if (!request || request.id !== progress.requestId || request.controller.signal.aborted ||
+        !Object.hasOwn(ANALYSIS_STAGES, progress.stage)) return;
+    setAnalysisProgress((current) => current?.requestId === request.id &&
+      ANALYSIS_STAGES[progress.stage].order > ANALYSIS_STAGES[current.stage].order
+      ? { ...current, stage: progress.stage } : current);
+  }), []);
   useEffect(() => () => {
     const request = analysisRequest.current;
     if (request) { void window.desktop?.cancelAnalysis(request.id).catch(() => undefined); request.controller.abort(); }
@@ -246,6 +257,8 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
       if (!authorization) return;
       request.controller.signal.throwIfAborted();
       setAnalyzing(true);
+      setNotice("");
+      setAnalysisProgress({ requestId: request.id, stage: "preparing", startedAt: performance.now() });
       const { plan } = await readJson<{ plan: Plan }>(await fetch(`/api/plans/${saved.id}/analyze`, {
         method: "POST", headers: { "X-Zebby-Analysis-ID": request.id, ...(authorization.quoteId ? { "X-Zebby-Credit-Quote": authorization.quoteId } : {}) }, signal: request.controller.signal }));
       request.controller.signal.throwIfAborted();
@@ -257,7 +270,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
     } catch (cause) {
       if (request.controller.signal.aborted) setNotice("Analysis cancelled.");
       else setError(errorText(cause));
-    } finally { analysisRequest.current = null; setAnalyzing(false); setCancelling(false); }
+    } finally { analysisRequest.current = null; setAnalyzing(false); setCancelling(false); setAnalysisProgress(null); }
   }
 
   async function cancelAnalysis() {
@@ -371,17 +384,20 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
             <small>{resumeFile ? `${resumeFile.name}, ready to save.` : "PDF, DOCX, or DOC. Up to 10 MB."}</small></label>
           </fieldset>
           <div className="plan-analyze-actions">
-            {analyzing && <span className="visually-hidden" role="status" aria-label="Analyzing role">Analysis in progress</span>}
             <button className="button button-primary analysis-button" type="button" onClick={() => void analyze()}
               disabled={busy || !canAnalyze} aria-label={analyzing ? "Analysis in progress" : "Analyze"}>
               {analyzing ? <LoaderCircle className="spin" size={17} aria-hidden="true" /> : <Sparkles size={17} aria-hidden="true" />}
               Analyze
             </button>
             {analyzing && <button className="button button-secondary" type="button" onClick={() => void cancelAnalysis()}
-              disabled={cancelling}>Cancel</button>}
+              disabled={cancelling || analysisProgress?.stage === "saving"}>Cancel</button>}
             <small>{analysisProvider === "ollama" ? (ollamaModel || "Ollama") : analysisProvider === "builtin"
               ? (builtInModel?.name || "Local model") : onlineModel(analysisProvider === "credits" ? analysisFlow.state.credits.model
                 : analysisProvider === "anthropic" ? analysisFlow.state.anthropicModel : analysisFlow.state.openaiModel).name}</small>
+          </div>
+          <div className="plan-progress-slot">
+            {analyzing && analysisProgress && <PlanAnalysisProgress key={analysisProgress.requestId}
+              stage={analysisProgress.stage} startedAt={analysisProgress.startedAt} />}
           </div>
           {analysisProvider === "builtin" && builtInReady && builtInModel?.basic && <p className="analysis-hint">
             Compact mode uses basic keyword coverage and limited overview suggestions.</p>}

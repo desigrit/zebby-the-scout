@@ -2,6 +2,11 @@ import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("desktop", {
   cancelAnalysis: (id: string) => ipcRenderer.invoke("desktop:cancel-analysis", id),
+  onAnalysisProgress: (callback: (value: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, value: unknown) => callback(value);
+    ipcRenderer.on("desktop:analysis-progress", listener);
+    return () => ipcRenderer.removeListener("desktop:analysis-progress", listener);
+  },
   state: () => ipcRenderer.invoke("desktop:state"),
   checkForUpdates: () => ipcRenderer.invoke("desktop:check-updates"),
   downloadUpdate: () => ipcRenderer.invoke("desktop:download-update"),

@@ -23,6 +23,7 @@ import { nativeWindowShell, windowColors, type Appearance } from "./window-appea
 import { DiagnosticLog } from "./diagnostic-log";
 import { randomUUID, createHash } from "node:crypto";
 import { AnalysisRequests } from "./analysis-requests";
+import type { ReportAnalysisProgress } from "../shared/analysis-progress";
 import { CreditsClient } from "./credits-client";
 import { onlineAnalysis } from "./online-analysis";
 import { creditModel, DEFAULT_CREDIT_MODEL, onlineModel, validateOnlineThinking, type AnalysisProvider, type AnalysisSource } from "../shared/online-models";
@@ -49,7 +50,11 @@ let selfUpdater: SelfUpdater;
 let installingUpdate = false;
 let activeApiRequests = 0;
 let activeSettingsRequests = 0;
-const analysisRequests = new AnalysisRequests();
+const analysisRequests = new AnalysisRequests((progress) => {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
+  try { mainWindow.webContents.send("desktop:analysis-progress", progress); }
+  catch (error) { logDiagnostic("Could not send analysis progress", error); }
+});
 const updates = new ReleaseUpdates({ version: app.getVersion(), platform: process.platform, arch: process.arch,
   onChange: (value) => mainWindow?.webContents.send("desktop:updates-changed", value),
   onError: (error) => logDiagnostic("Could not check for updates", error) });
@@ -275,15 +280,16 @@ async function quoteAnalysis(source: AnalysisSource) {
 
 async function analyzeWithSelectedProvider(instructions: string, input: unknown, name: string,
   schema: Record<string, unknown>, failure: string, selected: ReturnType<typeof selectedAnalysis>, signal: AbortSignal,
-  paid?: { quoteId: string; source: AnalysisSource }): Promise<Record<string, unknown>> {
+  paid?: { quoteId: string; source: AnalysisSource }, progress?: ReportAnalysisProgress): Promise<Record<string, unknown>> {
   signal.throwIfAborted();
+  progress?.("waiting");
   logEvent(`Analysis provider selected (${name}, ${selected.provider}, ${selected.model || "default"}, thinking ${selected.thinkingLevel})`);
   return runSelectedAnalysis(selected, {
     ollama: async (baseUrl, model, prompt, content, format) => {
       const capability = await ollamaThinkingCapability(baseUrl, model, fetch, signal).catch(() => null);
       signal?.throwIfAborted();
       const level = capability ? selectedThinking(selected.thinkingLevels, thinkingKey("ollama", model, baseUrl), capability) : selected.thinkingLevel;
-      return analyzeWithOllama({ baseUrl, model, instructions: prompt, content: JSON.stringify(content), schema: format, thinkingLevel: level, signal });
+      return analyzeWithOllama({ baseUrl, model, instructions: prompt, content: JSON.stringify(content), schema: format, thinkingLevel: level, signal, onProgress: progress });
     },
     openai: async (prompt, content, formatName, format) => (await onlineAnalysis({ model: selected.model, key: selected.apiKey, instructions: prompt,
       input: content, name: formatName, schema: format, kind: formatName === "resume_plan" ? "plan" : "match", thinkingLevel: selected.thinkingLevel, signal })).result,
@@ -302,11 +308,11 @@ async function analyzeWithSelectedProvider(instructions: string, input: unknown,
       acceptModelTerms(getLocalModel(id), settings.acceptedModelTerms || {});
       return modelDownloads.readyPath(id);
     },
-    local: (id, prompt, content, format, maxTokens) => modelEngine.analyze(id, prompt, content, format, maxTokens, signal, selected.thinkingLevel),
+    local: (id, prompt, content, format, maxTokens) => modelEngine.analyze(id, prompt, content, format, maxTokens, signal, selected.thinkingLevel, progress),
   }, instructions, input, name, schema, failure);
 }
 
-async function analyzePlan(id: string, signal: AbortSignal, commit: <T>(persist: () => Promise<T>) => Promise<T>, quoteId = "") {
+async function analyzePlan(id: string, signal: AbortSignal, commit: <T>(persist: () => Promise<T>) => Promise<T>, quoteId = "", progress?: ReportAnalysisProgress) {
   const selected = selectedAnalysis();
   const plan = store.getPlan(id);
   if (!plan) throw new Error("Plan not found.");
@@ -330,7 +336,7 @@ async function analyzePlan(id: string, signal: AbortSignal, commit: <T>(persist:
     ] }];
   const analysis = await analyzeWithSelectedProvider(planInstructions,
     input, "resume_plan", planSchema,
-    "The analysis was incomplete. Try again.", selected, signal, { quoteId, source: { kind: "plan", id } });
+    "The analysis was incomplete. Try again.", selected, signal, { quoteId, source: { kind: "plan", id } }, progress);
   signal.throwIfAborted();
   const keywords = parsePlanRecommendations(analysis.keywords, 6, 20, 200);
   const themes = parsePlanRecommendations(analysis.themes, 5, 6, 1000);
@@ -462,8 +468,8 @@ async function handleApi(request: Request, pathname: string): Promise<Response> 
     }
     const analysisId = pathname.match(/^\/api\/plans\/([\da-f-]+)\/analyze$/i)?.[1];
     if (analysisId && method === "POST") return Response.json({ plan: await analysisRequests.run(
-      request.headers.get("X-Zebby-Analysis-ID") || randomUUID(), (signal, commit) => analyzePlan(analysisId, signal, commit,
-        request.headers.get("X-Zebby-Credit-Quote") || "")) });
+      request.headers.get("X-Zebby-Analysis-ID") || randomUUID(), (signal, commit, progress) => analyzePlan(analysisId, signal, commit,
+        request.headers.get("X-Zebby-Credit-Quote") || "", progress)) });
     return jsonError("Not found.", 404);
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {

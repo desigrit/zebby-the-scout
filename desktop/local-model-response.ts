@@ -1,3 +1,5 @@
+import type { GenerationStage } from "../shared/analysis-progress.ts";
+
 export type LocalCompletion = {
   error?: { message?: string };
   choices?: Array<{ finish_reason?: string | null; message?: { content?: string } }>;
@@ -26,11 +28,12 @@ export class LocalResponseWatchdog {
 }
 
 export async function readLocalCompletion(response: Response, signal: AbortSignal,
-  progress: () => void): Promise<LocalCompletion> {
+  progress: (stage: GenerationStage) => void): Promise<LocalCompletion> {
   signal.throwIfAborted();
   if (!response.ok || !response.headers.get("content-type")?.includes("text/event-stream")) {
     const result = await response.json() as LocalCompletion;
     signal.throwIfAborted();
+    if (response.ok && result.choices?.[0]?.message?.content) progress("generating");
     return result;
   }
   if (!response.body) throw new Error("The local model returned an empty response. Try again.");
@@ -53,13 +56,13 @@ export async function readLocalCompletion(response: Response, signal: AbortSigna
     }
     if (payload.error) throw new Error(payload.error.message || "Local analysis failed. Try again.");
     const choice = payload.choices?.[0];
+    // Thinking is progress, but is neither persisted nor parsed as the final answer.
+    if (choice?.delta?.reasoning_content?.length || choice?.delta?.reasoning?.length) progress("thinking");
     if (typeof choice?.delta?.content === "string" && choice.delta.content.length) {
       content += choice.delta.content;
       if (content.length > 128_000) throw new Error("The local analysis was too long. Try again.");
-      progress();
+      progress("generating");
     }
-    // Thinking is progress, but is neither persisted nor parsed as the final answer.
-    if (choice?.delta?.reasoning_content?.length || choice?.delta?.reasoning?.length) progress();
     if (choice?.finish_reason) finishReason = choice.finish_reason;
   }
   try {

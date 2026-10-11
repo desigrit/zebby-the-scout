@@ -224,6 +224,19 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .plan-analyze-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin-top: 18px; }
 .plan-analyze-actions > small { color: var(--ink-soft); font-size: 11px; }
 .analysis-button { flex: none; min-width: 106px; }
+.plan-progress-slot { min-height: 22px; margin-top: 7px; }
+.plan-analysis-progress { display: flex; align-items: center; gap: 12px; color: var(--ink-soft); font-size: 12px; line-height: 22px; }
+.plan-progress-roller { position: relative; width: 22ch; max-width: calc(100% - 60px); height: 22px; overflow: hidden; }
+.plan-progress-label { position: absolute; inset: 0; white-space: nowrap; }
+.plan-progress-label.is-entering { animation: plan-status-enter 280ms cubic-bezier(.16, 1, .3, 1) both; }
+.plan-progress-label.is-leaving { animation: plan-status-leave 280ms cubic-bezier(.16, 1, .3, 1) both; }
+.plan-progress-time { border-left: 1px solid var(--line); padding-left: 12px; font-size: 11px; font-variant-numeric: tabular-nums; }
+@keyframes plan-status-enter { from { opacity: 0; transform: translateY(-100%); } to { opacity: 1; transform: translateY(0); } }
+@keyframes plan-status-leave { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(100%); } }
+@media (prefers-reduced-motion: reduce) {
+  .plan-progress-label.is-entering { animation: none; }
+  .plan-progress-label.is-leaving { display: none; animation: none; }
+}
 .analysis-hint, .analysis-requirements { margin: 12px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
 .analysis-hint { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
 .analysis-hint button { border: 0; padding: 0; background: transparent; color: var(--accent); font: inherit; font-weight: 650; text-decoration: underline; }

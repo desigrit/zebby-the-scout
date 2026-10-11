@@ -55,7 +55,7 @@ test("Ollama settings normalize URLs and list installed models", async () => {
   assert.deepEqual(models, ["qwen3.8:27b", "qwen3:8b"]);
 });
 
-test("Ollama analysis requests structured JSON without streaming", async () => {
+test("Ollama analysis keeps structured JSON while requesting a streamed response", async () => {
   let request;
   const result = await analyzeWithOllama({ baseUrl: "http://localhost:11434",
     model: "qwen3:8b", instructions: "Analyze this posting.", content: "Product strategy",
@@ -66,7 +66,7 @@ test("Ollama analysis requests structured JSON without streaming", async () => {
   });
   assert.equal(request.url, "http://localhost:11434/api/chat");
   assert.equal(request.body.model, "qwen3:8b");
-  assert.equal(request.body.stream, false);
+  assert.equal(request.body.stream, true);
   assert.deepEqual(request.body.format.required, ["score"]);
   assert.deepEqual(result, { score: 82 });
 });

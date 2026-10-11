@@ -54,8 +54,12 @@ const state = { filePath: "example.sqlite", filename: "Applications.sqlite", dir
     download: { phase: "idle", received: 0, total: 0, error: "" } } };
 const pending = new Map();
 const requested = new Map();
-async function completeAnalysis(pathname) {
+const analysisRequestIds = new Map();
+async function waitForAnalysis(pathname) {
   if (!pending.has(pathname)) await new Promise((resolve) => requested.set(pathname, resolve));
+}
+async function completeAnalysis(pathname) {
+  await waitForAnalysis(pathname);
   pending.get(pathname)();
 }
 const server = createServer(async (request, response) => {
@@ -225,7 +229,8 @@ try {
       if (window.controlsQA.failCopy) throw new Error("Synthetic clipboard failure");
       window.controlsQA.copied = text;
     } }, configurable: true });
-    const listeners = new Set(), updateListeners = new Set(), creditListeners = new Set();
+    const listeners = new Set(), updateListeners = new Set(), creditListeners = new Set(), analysisListeners = new Set();
+    window.analysisQA = { cancelled: [], progress: (event) => { for (const listener of analysisListeners) listener(event); } };
     const snapshot = () => structuredClone(initialState);
     const update = (id, change) => { initialState.localModels = initialState.localModels.map((item) =>
       item.id === id ? { ...item, ...change } : item); for (const listener of listeners) listener(snapshot()); };
@@ -251,6 +256,8 @@ try {
       logOpens: 0, failLogOpen: false, failKeySave: false, keySaveAttempts: 0, thinkingSelections: [], databaseRequests: [], stopRequests: [], update,
       setPlatform: (platform) => { initialState.platform = platform; } };
     window.desktop = { state: async () => initialState, onDatabaseChanged: () => () => {}, onNavigate: () => () => {},
+      onAnalysisProgress: (listener) => { analysisListeners.add(listener); return () => analysisListeners.delete(listener); },
+      cancelAnalysis: async (id) => { window.analysisQA.cancelled.push(id); return true; },
       onLocalModelsChanged: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
       onUpdatesChanged: (listener) => { updateListeners.add(listener); return () => updateListeners.delete(listener); },
       onCreditsChanged: (listener) => { creditListeners.add(listener); return () => creditListeners.delete(listener); },
@@ -370,6 +377,7 @@ try {
   }, { initialState: state, licenseVersions: Object.fromEntries(LOCAL_MODELS.filter((model) => model.license)
     .map((model) => [model.id, model.license.version])) });
   let failNextStatusSave = false;
+  let failNextPlanAnalysis = false;
   await page.route("**/api/**", async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     const method = route.request().method();
@@ -386,8 +394,17 @@ try {
       data = { plan: saved };
     }
     else if (pathname.endsWith("/analyze")) {
+      const requestId = route.request().headers()["x-zebby-analysis-id"];
+      analysisRequestIds.set(pathname, requestId);
       await new Promise((resolve) => { pending.set(pathname, resolve); requested.get(pathname)?.(); requested.delete(pathname); });
       pending.delete(pathname);
+      if (await page.evaluate((id) => window.analysisQA.cancelled.includes(id), requestId)) {
+        await route.abort().catch(() => undefined); return;
+      }
+      if (pathname.startsWith("/api/plans/") && failNextPlanAnalysis) {
+        failNextPlanAnalysis = false;
+        await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "Synthetic interrupted analysis. Try again." }) }); return;
+      }
       if (pathname.startsWith("/api/applications/")) {
         const id = pathname.split("/")[3];
         applications = applications.map((item) => item.id === id ? { ...item, matchStrength: 89, updatedAt: "2026-09-30T20:00:00Z" } : item);
@@ -514,14 +531,102 @@ try {
   const analyzePosition = await page.locator(".cv-section").evaluate((element) =>
     element.querySelector(".plan-analyze-actions").getBoundingClientRect().top >= element.querySelector(".plan-upload").getBoundingClientRect().bottom);
   assert.equal(analyzePosition, true);
+  const progressSlotHeight = await page.locator('.plan-progress-slot').evaluate(element => element.getBoundingClientRect().height);
   await page.getByRole("button", { name: "Analyze", exact: true }).click();
   await page.getByRole("status", { name: "Analyzing role" }).waitFor();
   assert.doesNotMatch(await page.locator(".match-result").innerText(), /Analyzing|Calculating/);
   assert.equal(await page.locator(".match-why").count(), 0);
   assert.equal(await page.getByRole("button", { name: "Analysis in progress", exact: true }).isDisabled(), true);
   assert.equal(await page.getByRole("button", { name: "Copy keyword 1", exact: true }).isDisabled(), true);
+  const planAnalysisPath = "/api/plans/plan-1/analyze";
+  await waitForAnalysis(planAnalysisPath);
+  async function reportPlanProgress(stage, requestId = analysisRequestIds.get(planAnalysisPath)) {
+    await page.evaluate(event => window.analysisQA.progress(event), { stage, requestId });
+  }
+  const planProgress = page.locator('.plan-analysis-progress');
+  const announcedProgress = page.getByRole('status', { name: 'Analyzing role' });
+  assert.equal(await announcedProgress.innerText(), 'Preparing analysis');
+  await reportPlanProgress('saving', '11111111-1111-4111-8111-111111111111');
+  assert.equal(await announcedProgress.innerText(), 'Preparing analysis');
+  await reportPlanProgress('waiting');
+  await page.waitForFunction(() => document.querySelector('.plan-analysis-progress')?.dataset.stage === 'waiting');
+  await planProgress.evaluate(async element => {
+    await Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => undefined)));
+  });
+  await reportPlanProgress('thinking');
+  await page.waitForFunction(() => document.querySelector('.plan-analysis-progress')?.dataset.stage === 'thinking');
+  const rollingMotion = await planProgress.evaluate(element => element.getAnimations({ subtree: true }).map(animation =>
+    ({ name: animation.animationName, timing: animation.effect.getTiming(), frames: animation.effect.getKeyframes().map(frame => frame.transform) })));
+  assert.equal(rollingMotion.length, 2);
+  assert.equal(rollingMotion[0].timing.duration, rollingMotion[1].timing.duration);
+  assert.equal(rollingMotion[0].timing.easing, rollingMotion[1].timing.easing);
+  assert.ok(rollingMotion.some(animation => animation.name === 'plan-status-enter' && animation.frames[0] === 'translateY(-100%)'));
+  assert.ok(rollingMotion.some(animation => animation.name === 'plan-status-leave' && animation.frames.at(-1) === 'translateY(100%)'));
+  await planProgress.scrollIntoViewIfNeeded();
+  await captureSettings('plan-progress-windows-light.png', false);
+  assert.equal(await page.locator('.plan-progress-slot').evaluate(element => element.getBoundingClientRect().height), progressSlotHeight);
+  const progressGeometry = await planProgress.evaluate(element => {
+    const label = element.querySelector('.plan-progress-label:not(.is-leaving)');
+    const range = document.createRange(); range.selectNodeContents(label);
+    return { labelWidth: range.getBoundingClientRect().width, viewportWidth: label.clientWidth,
+      belowButton: element.getBoundingClientRect().top >= document.querySelector('.plan-analyze-actions').getBoundingClientRect().bottom };
+  });
+  assert.ok(progressGeometry.labelWidth <= progressGeometry.viewportWidth); assert.equal(progressGeometry.belowButton, true);
+  await page.setViewportSize({ width: 790, height: 850 });
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; document.documentElement.dataset.platform = 'darwin'; });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await reportPlanProgress('generating');
+  await page.waitForFunction(() => document.querySelector('.plan-analysis-progress')?.dataset.stage === 'generating');
+  assert.deepEqual(await planProgress.evaluate(element => element.getAnimations({ subtree: true }).map(animation => animation.animationName)), []);
+  await reportPlanProgress('generating'); await reportPlanProgress('thinking');
+  assert.equal(await announcedProgress.innerText(), 'Generating results');
+  await planProgress.scrollIntoViewIfNeeded();
+  await captureSettings('plan-progress-mac-dark-narrow.png', false);
+  assert.equal(await page.locator('.plan-document-scroll').evaluate(element => element.scrollWidth > element.clientWidth), false);
+  await page.setViewportSize({ width: 1550, height: 850 });
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'light'; document.documentElement.dataset.platform = 'win32'; });
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await reportPlanProgress('saving');
+  await page.waitForFunction(() => document.querySelector('.plan-analysis-progress')?.dataset.stage === 'saving');
+  assert.equal(await page.locator('.plan-analyze-actions').getByRole('button', { name: 'Cancel', exact: true }).isDisabled(), true);
+  const finishedRequestId = analysisRequestIds.get(planAnalysisPath);
   await completeAnalysis("/api/plans/plan-1/analyze");
   await page.locator(".match-result").getByText("86%").waitFor();
+  assert.equal(await planProgress.count(), 0);
+  assert.equal(await page.locator('.plan-progress-slot').evaluate(element => element.getBoundingClientRect().height), progressSlotHeight);
+  await reportPlanProgress('thinking', finishedRequestId);
+  assert.equal(await planProgress.count(), 0);
+  // Cancellation, failure, and retry each reset the line while retaining saved results.
+  await page.getByRole('button', { name: 'Analyze', exact: true }).click();
+  await waitForAnalysis(planAnalysisPath);
+  const cancelledRequestId = analysisRequestIds.get(planAnalysisPath);
+  await reportPlanProgress('waiting');
+  await page.locator('.plan-analyze-actions').getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByText('Analysis cancelled.', { exact: true }).waitFor();
+  assert.equal(await planProgress.count(), 0);
+  assert.match(await page.locator('.match-result').innerText(), /86%/);
+  await completeAnalysis(planAnalysisPath);
+  await page.waitForFunction(() => window.analysisQA.cancelled.length === 1);
+  failNextPlanAnalysis = true;
+  await page.getByRole('button', { name: 'Analyze', exact: true }).click();
+  await waitForAnalysis(planAnalysisPath);
+  await reportPlanProgress('saving', cancelledRequestId);
+  assert.equal(await announcedProgress.innerText(), 'Preparing analysis');
+  await reportPlanProgress('waiting');
+  await completeAnalysis(planAnalysisPath);
+  await page.getByText('Synthetic interrupted analysis. Try again.', { exact: true }).waitFor();
+  assert.equal(await planProgress.count(), 0);
+  assert.match(await page.locator('.match-result').innerText(), /86%/);
+  await page.getByRole('button', { name: 'Analyze', exact: true }).click();
+  await waitForAnalysis(planAnalysisPath);
+  await page.evaluate(requestId => {
+    for (const stage of ['waiting', 'thinking', 'generating']) window.analysisQA.progress({ requestId, stage });
+  }, analysisRequestIds.get(planAnalysisPath));
+  await page.waitForFunction(() => document.querySelector('.plan-analysis-progress')?.dataset.stage === 'generating');
+  assert.ok(await page.locator('.plan-progress-label').count() <= 2);
+  await completeAnalysis(planAnalysisPath);
+  await page.getByText('Analysis saved.', { exact: true }).waitFor();
+  assert.equal(await planProgress.count(), 0);
   await page.locator(".match-why summary").focus();
   await page.keyboard.press("Enter");
   assert.equal(await page.locator(".match-why").getAttribute("open"), "");

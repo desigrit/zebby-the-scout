@@ -1,3 +1,5 @@
+import { ANALYSIS_STAGES, type AnalysisProgress, type AnalysisStage, type ReportAnalysisProgress } from "../shared/analysis-progress.ts";
+
 // Renderer fetch cancellation does not reliably cancel an Electron protocol
 // handler. Carry a request ID through IPC and use one signal for inference and
 // the final persistence check instead.
@@ -5,6 +7,8 @@ export class AnalysisRequests {
   private active = new Map<string, { controller: AbortController; committing: boolean }>();
   private cancelled = new Map<string, number>();
   private finished = new Map<string, number>();
+  private readonly onProgress?: (progress: AnalysisProgress) => void;
+  constructor(onProgress?: (progress: AnalysisProgress) => void) { this.onProgress = onProgress; }
   get busy() { return this.active.size > 0; }
 
   cancel(id: string) {
@@ -20,7 +24,8 @@ export class AnalysisRequests {
     return true;
   }
 
-  async run<T>(id: string, work: (signal: AbortSignal, commit: <V>(persist: () => Promise<V>) => Promise<V>) => Promise<T>): Promise<T> {
+  async run<T>(id: string, work: (signal: AbortSignal, commit: <V>(persist: () => Promise<V>) => Promise<V>,
+    progress: ReportAnalysisProgress) => Promise<T>): Promise<T> {
     this.validate(id);
     this.prune();
     if (this.active.has(id)) throw new Error("This analysis is already running.");
@@ -29,13 +34,24 @@ export class AnalysisRequests {
     if (this.cancelled.delete(id)) controller.abort(new DOMException("Analysis cancelled.", "AbortError"));
     const request = { controller, committing: false };
     this.active.set(id, request);
+    let stage: AnalysisStage | undefined;
+    const progress: ReportAnalysisProgress = (next) => {
+      // One event per phase, with no late, cancelled, or backwards updates.
+      // Compact local analysis can make several model calls for one result.
+      if (this.active.get(id) !== request || controller.signal.aborted ||
+          stage && ANALYSIS_STAGES[next].order <= ANALYSIS_STAGES[stage].order) return;
+      stage = next;
+      this.onProgress?.({ requestId: id, stage });
+    };
     try {
       controller.signal.throwIfAborted();
+      progress("preparing");
       const result = await work(controller.signal, async (persist) => {
         controller.signal.throwIfAborted();
         request.committing = true;
+        progress("saving");
         return persist();
-      });
+      }, progress);
       if (!request.committing) controller.signal.throwIfAborted();
       return result;
     } finally {

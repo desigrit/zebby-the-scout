@@ -3,6 +3,7 @@ import type { UpdateState } from "./release-updates";
 import type { AnalysisProvider, AnalysisSource, CreditQuote, CreditsState } from "../shared/online-models";
 import type { WalletPairing } from "../shared/wallet-access";
 import type { ThinkingCapability, ThinkingPreferences } from "../shared/thinking";
+import type { AnalysisProgress } from "../shared/analysis-progress";
 
 export type DesktopState = {
   filePath: string;
@@ -38,6 +39,7 @@ export type DesktopState = {
 export type DesktopBridge = {
   state(): Promise<DesktopState>;
   cancelAnalysis(id: string): Promise<boolean>;
+  onAnalysisProgress(callback: (progress: AnalysisProgress) => void): () => void;
   checkForUpdates(): Promise<UpdateState>;
   downloadUpdate(): Promise<UpdateState>;
   installUpdate(): Promise<void>;
