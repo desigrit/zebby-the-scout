@@ -55,6 +55,7 @@ const state = { filePath: "example.sqlite", filename: "Applications.sqlite", dir
 const pending = new Map();
 const requested = new Map();
 const analysisRequestIds = new Map();
+const paidAnalysisRequests = [];
 async function waitForAnalysis(pathname) {
   if (!pending.has(pathname)) await new Promise((resolve) => requested.set(pathname, resolve));
 }
@@ -250,7 +251,8 @@ try {
     const walletAccess = { hasRecoveryCode: false, recoveryVersion: null, devices: [firstDevice] };
     window.creditQA = { update: updateCredits, checkouts: [], models: [], connections: [], recoverySaves: [],
       cancelRecovery: false, confirmDisconnect: false, disconnects: [], pairingCancelled: 0, payment: "open", quote: null,
-      resumeMode: "none", failedResumes: 0, warmups: 0, warmupMode: "ready", finishWarmup: null };
+      resumeMode: "none", failedResumes: 0, warmups: 0, warmupMode: "ready", finishWarmup: null,
+      quoteRequests: [], quoteMode: "ready", finishQuote: null, finishedQuotes: 0 };
     window.modelQA = { confirmDelete: false, deleteRequests: [], selections: [], rejectSidebarSave: false,
       updateState, installRequests: 0, failInstall: false, failCheck: false, finishDownload: null,
       logOpens: 0, failLogOpen: false, failKeySave: false, keySaveAttempts: 0, thinkingSelections: [], databaseRequests: [], stopRequests: [], update,
@@ -302,9 +304,15 @@ try {
         if (window.creditQA.payment === "paid") updateCredits({ wallet: { ...wallet }, stale: false });
         return window.creditQA.payment;
       },
-      quoteCreditAnalysis: async () => window.creditQA.quote || { id: "quote-fixture", model: initialState.credits.model,
-        thinkingLevel: initialState.thinkingLevels[JSON.stringify(["credits", initialState.credits.model])] || "high",
-        maximum: 20000000, expiresAt: new Date(Date.now() + 300000).toISOString() },
+      quoteCreditAnalysis: async (source) => {
+        const quote = window.creditQA.quote || { id: "quote-fixture", model: initialState.credits.model,
+          thinkingLevel: initialState.thinkingLevels[JSON.stringify(["credits", initialState.credits.model])] || "high",
+          maximum: 20000000, expiresAt: new Date(Date.now() + 300000).toISOString() };
+        window.creditQA.quoteRequests.push({ source, model: quote.model, thinking: quote.thinkingLevel });
+        if (window.creditQA.quoteMode === "error") throw new Error("Could not reach the credits service. Try again.");
+        if (window.creditQA.quoteMode === "pending") await new Promise(resolve => { window.creditQA.finishQuote = resolve; });
+        window.creditQA.finishedQuotes++; return quote;
+      },
       setThinkingLevel: async ({ provider, model, level }) => {
         const key = JSON.stringify(provider === "ollama" ? [provider, initialState.ollamaUrl, model] : [provider, model]);
         initialState.thinkingLevels[key] = level; window.modelQA.thinkingSelections.push({ provider, model, level }); return snapshot();
@@ -394,6 +402,7 @@ try {
       data = { plan: saved };
     }
     else if (pathname.endsWith("/analyze")) {
+      if (route.request().headers()["x-zebby-credit-quote"]) paidAnalysisRequests.push({ pathname, quoteId: route.request().headers()["x-zebby-credit-quote"] });
       const requestId = route.request().headers()["x-zebby-analysis-id"];
       analysisRequestIds.set(pathname, requestId);
       await new Promise((resolve) => { pending.set(pathname, resolve); requested.get(pathname)?.(); requested.delete(pathname); });
@@ -1369,25 +1378,77 @@ try {
   await analysisDialog.getByRole("button", { name: "Save recovery code", exact: true }).click();
   await analysisDialog.getByText("Recovery code saved.", { exact: true }).waitFor();
   await analysisDialog.getByRole("button", { name: "Continue to analysis", exact: true }).click();
-  await analysisDialog.getByText("Maximum for this analysis", { exact: true }).waitFor();
-  const paidModel = analysisDialog.getByRole("combobox", { name: "Model", exact: true });
-  assert.deepEqual(await paidModel.locator("option").evaluateAll(options => options.map(option => option.value)), ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"]);
-  await paidModel.selectOption("gpt-6-luna");
-  await analysisDialog.getByRole('radiogroup', { name: 'Thinking level', exact: true }).getByRole('radio', { name: 'Off', exact: true }).click();
-  await paidModel.selectOption("gpt-6-astra");
-  await analysisDialog.getByRole('radiogroup', { name: 'Thinking level', exact: true }).getByRole('radio', { name: 'High', exact: true }).click();
-  await analysisDialog.getByText("Maximum for this analysis", { exact: true }).waitFor();
-  assert.match(await analysisDialog.innerText(), /20 credits/);
-  assert.match(await analysisDialog.innerText(), /Zebby and OpenAI/);
-  await captureSettings("credits-quote-mac-dark-narrow.png", false);
+  await page.waitForFunction(() => window.creditQA.quoteRequests.length > 0);
+  const paidPlanSource = await page.evaluate(() => window.creditQA.quoteRequests.at(-1).source);
+  const paidPlanPath = `/api/plans/${paidPlanSource.id}/analyze`;
+  await waitForAnalysis(paidPlanPath);
+  assert.equal(await analysisDialog.count(), 0);
+  assert.equal(paidAnalysisRequests.at(-1).quoteId, "quote-fixture");
+  // Plan and match can both prepare funded requests without a global modal lock.
+  await nav.getByRole("button", { name: "Applications", exact: true }).click();
+  await table.getByRole("button", { name: "Refresh match for Senior Product Manager at Expedia Group", exact: true }).click();
+  await waitForAnalysis("/api/applications/app-1/analyze");
+  assert.equal(await analysisDialog.count(), 0);
+  assert.equal(pending.has(paidPlanPath), true);
+  await completeAnalysis("/api/applications/app-1/analyze");
+  await completeAnalysis(paidPlanPath);
+  await nav.getByRole("button", { name: "Plan", exact: true }).click();
+  await analyze.waitFor();
+  // Credit checks fail inline and can retry. Cancel also works during a cold start.
+  await page.evaluate(() => { window.creditQA.quoteMode = "error"; });
+  await analyze.click();
+  await page.getByRole("alert").filter({ hasText: "Could not reach the credits service. Try again." }).waitFor();
+  assert.equal(await analysisDialog.count(), 0);
+  const paidCallsBeforeCancel = paidAnalysisRequests.length;
+  await page.evaluate(() => { window.creditQA.quoteMode = "pending"; });
+  await analyze.click(); await page.waitForFunction(() => window.creditQA.finishQuote !== null);
+  await page.locator(".plan-analyze-actions").getByRole("button", { name: "Cancel", exact: true }).click();
+  await analyze.waitFor();
+  await page.evaluate(() => { window.creditQA.finishQuote(); window.creditQA.finishQuote = null; window.creditQA.quoteMode = "ready"; });
+  // Funds reserved elsewhere cannot be reused. This opens packs, never an analysis review.
+  await page.evaluate(() => window.creditQA.update({ wallet: { balance: 500000000, reserved: 490000000, used: 0, purchased: 500000000, recent: [] } }));
+  await analyze.click();
+  await analysisDialog.getByRole("heading", { name: "A little fuel for your next move", exact: true }).waitFor();
+  assert.equal(paidAnalysisRequests.length, paidCallsBeforeCancel);
   await analysisDialog.getByRole("button", { name: "Cancel", exact: true }).click();
-  const sidebarWallet = page.locator(".sidebar-credits").getByRole("button", { name: "500 credits available, 0 used", exact: true });
+  // A paid result can be recovered for free even with no balance. An unfinished
+  // prior run reports inline and cannot accidentally create a second charge.
+  await page.evaluate(() => {
+    window.creditQA.update({ wallet: { balance: 0, reserved: 0, used: 500000000, purchased: 500000000, recent: [] } });
+    window.creditQA.quote = { id: "recovery-fixture", model: "gpt-6.1-sol", maximum: 0, recovery: true, pending: true,
+      expiresAt: new Date(Date.now() + 300000).toISOString() };
+  });
+  await analyze.click();
+  await page.getByRole("alert").filter({ hasText: "Your previous analysis is still running. Try again shortly." }).waitFor();
+  assert.equal(await analysisDialog.count(), 0); assert.equal(paidAnalysisRequests.length, paidCallsBeforeCancel);
+  await page.evaluate(() => { window.creditQA.quote.pending = false; });
+  await analyze.click(); await waitForAnalysis(paidPlanPath);
+  assert.equal(paidAnalysisRequests.at(-1).quoteId, "recovery-fixture"); assert.equal(await analysisDialog.count(), 0);
+  await completeAnalysis(paidPlanPath); await analyze.waitFor();
+  await page.evaluate(() => {
+    window.creditQA.quote = null;
+    window.creditQA.update({ wallet: { balance: 500000000, reserved: 0, used: 0, purchased: 500000000, recent: [] } });
+  });
+  const sidebarWallet = page.locator(".sidebar-credit-button");
   await sidebarWallet.click();
-  await page.getByRole("button", { name: "Close credits", exact: true }).click();
+  await analysisDialog.getByRole("heading", { name: "A little fuel for your next move", exact: true }).waitFor();
+  await analysisDialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
   const creditsSettings = page.getByRole("region", { name: "Credits", exact: true });
   const paidSettingsModel = settingsPage.getByRole("combobox", { name: "Model", exact: true });
   await paidSettingsModel.waitFor();
+  assert.deepEqual(await paidSettingsModel.locator("option").evaluateAll(options => options.map(option => option.value)), ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"]);
+  await paidSettingsModel.selectOption("gpt-6-luna");
+  await settingsPage.getByRole("radiogroup", { name: "Thinking level", exact: true }).getByRole("radio", { name: "Off", exact: true }).click();
+  await paidSettingsModel.selectOption("gpt-6-astra");
+  await settingsPage.getByRole("radiogroup", { name: "Thinking level", exact: true }).getByRole("radio", { name: "High", exact: true }).click();
+  await nav.getByRole("button", { name: "Plan", exact: true }).click();
+  await analyze.click(); await waitForAnalysis(paidPlanPath);
+  assert.deepEqual(await page.evaluate(() => ({ model: window.creditQA.quoteRequests.at(-1).model,
+    thinking: window.creditQA.quoteRequests.at(-1).thinking })), { model: "gpt-6-astra", thinking: "high" });
+  assert.equal(await analysisDialog.count(), 0);
+  await completeAnalysis(paidPlanPath); await analyze.waitFor();
+  await nav.getByRole("button", { name: "Settings", exact: true }).click();
   assert.equal(await paidSettingsModel.inputValue(), "gpt-6-astra");
   assert.equal(await creditsSettings.getByRole("combobox", { name: "Model", exact: true }).count(), 0);
   assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).count(), 1);
@@ -1436,6 +1497,21 @@ try {
   await page.waitForFunction(() => document.querySelector('[role="progressbar"][aria-label="Credits remaining"]')?.getAttribute("aria-valuenow") === "93");
   assert.equal(await creditBar.getAttribute("aria-valuenow"), "93");
   assert.match(await creditBar.getAttribute("aria-valuetext"), /465 credits available, 35 used/);
+  await page.getByRole("button", { name: "Expand navigation", exact: true }).click();
+  await page.getByRole("button", { name: "Collapse navigation", exact: true }).waitFor();
+  assert.equal(await sidebarWallet.getAttribute("aria-label"), "Buy credits. 35 of 500 credits used, 7%.");
+  assert.equal(await sidebarWallet.locator(".sidebar-credit-amount").isVisible(), true);
+  assert.equal(await sidebarWallet.locator(".sidebar-credit-track > span").evaluate(element => element.style.width), "7%");
+  await captureSettings("credits-sidebar-expanded-windows-light.png", false);
+  await sidebarWallet.click();
+  await analysisDialog.getByRole("heading", { name: "A little fuel for your next move", exact: true }).waitFor();
+  await analysisDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await analysisDialog.waitFor({ state: "hidden" });
+  await page.waitForFunction(() => document.activeElement?.classList.contains("sidebar-credit-button"));
+  await page.getByRole("button", { name: "Collapse navigation", exact: true }).click();
+  await page.getByRole("button", { name: "Expand navigation", exact: true }).waitFor();
+  assert.equal(await sidebarWallet.locator(".sidebar-credit-amount").isVisible(), false);
+  assert.equal(await sidebarWallet.locator(".sidebar-credit-percent").innerText(), "7%");
   await settingsPage.evaluate(element => { element.scrollTop = 0; });
   await assertSettingsActions();
   await captureSettings("credits-wallet-settings-windows-light.png", false);
@@ -1443,6 +1519,10 @@ try {
   await page.evaluate(() => { window.modelQA.setPlatform("darwin"); document.documentElement.dataset.platform = "darwin"; document.documentElement.dataset.theme = "dark"; });
   await settingsPage.evaluate(element => { element.scrollTop = 0; });
   await captureSettings("credits-funded-mac-dark-narrow.png", false);
+  await captureSettings("credits-sidebar-collapsed-mac-dark.png", false);
+  await sidebarWallet.press("Enter");
+  await analysisDialog.getByRole("heading", { name: "A little fuel for your next move", exact: true }).waitFor();
+  await page.keyboard.press("Escape"); await analysisDialog.waitFor({ state: "hidden" });
   await paidSettingsModel.selectOption("gpt-6.1-sol");
   await paidSettingsModel.selectOption("gpt-6-astra");
   await page.setViewportSize({ width: 1550, height: 850 });
@@ -1474,6 +1554,9 @@ try {
   await paidSettingsModel.waitFor();
   assert.deepEqual(await page.evaluate(() => window.creditQA.checkouts), ["starter"]);
   await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption("ollama");
+  await sidebarWallet.click();
+  await analysisDialog.getByRole("heading", { name: "A little fuel for your next move", exact: true }).waitFor();
+  await analysisDialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.setViewportSize({ width: 1550, height: 850 });
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
   // Updates are available in both navigation modes and Settings, without opening an installer during QA.

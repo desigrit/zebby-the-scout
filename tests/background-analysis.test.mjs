@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { setImmediate as flush } from "node:timers/promises";
 import { AnalysisJobs, jobRunning } from "../desktop/renderer/analysis-jobs.ts";
 import { AnalysisRequests } from "../desktop/analysis-requests.ts";
 import { editingCommand } from "../desktop/editing-commands.ts";
@@ -18,7 +19,7 @@ test("page subscriptions can leave and return without cancelling any job; result
   let updates = 0;
   const leave = jobs.subscribe(() => updates++);
   const a = jobs.start(first, { prepare }), b = jobs.start(second, { prepare }), c = jobs.start(match, { prepare });
-  await Promise.resolve();
+  await flush();
   assert.equal(pending.size, 3);
   await jobs.start(first, { prepare: () => assert.fail("Duplicate must not prepare or charge") });
   const started = jobs.get(first).startedAt, id = jobs.get(first).requestId;
@@ -43,15 +44,51 @@ test("saving is not cancellable, late progress is ignored, failed jobs unlock an
   const jobs = new AnalysisJobs(() => new Promise(resolve => { finish = () => resolve(Response.json(fail ? { error: "Fixture error" }
     : { plan: { id: "one" } }, { status: fail ? 400 : 200 })); }), async () => assert.fail("Committed job cannot be cancelled"));
   const source = { kind: "plan", id: "one" };
-  let task = jobs.start(source, { prepare }); await Promise.resolve();
+  let task = jobs.start(source, { prepare }); await flush();
   const id = jobs.get(source).requestId;
   jobs.progress({ requestId: id, stage: "saving" }); await jobs.cancel(source);
   finish(); await task;
   jobs.progress({ requestId: id, stage: "thinking" }); assert.equal(jobs.get(source).stage, "saving");
-  fail = true; task = jobs.start(source, { prepare }); await Promise.resolve(); finish(); await task;
+  fail = true; task = jobs.start(source, { prepare }); await flush(); finish(); await task;
   assert.equal(jobRunning(jobs.get(source)), false); assert.equal(jobs.get(source).error, "Fixture error");
-  fail = false; task = jobs.start(source, { prepare }); await Promise.resolve(); finish(); await task;
+  fail = false; task = jobs.start(source, { prepare }); await flush(); finish(); await task;
   assert.equal(jobs.get(source).status, "succeeded");
+});
+
+test("cancelling credit preparation unlocks immediately and a late quote never starts a paid run", async () => {
+  const sent = [], source = { kind: "plan", id: "paid" };
+  let finishQuote, preparationSignal;
+  const jobs = new AnalysisJobs(async (_url, options) => {
+    sent.push(options.headers["X-Zebby-Credit-Quote"]);
+    return Response.json({ plan: { id: source.id } });
+  }, async () => true);
+  const first = jobs.start(source, { prepare: signal => {
+    preparationSignal = signal; return new Promise(resolve => { finishQuote = resolve; });
+  } });
+  await flush(); await jobs.cancel(source); await first;
+  assert.equal(preparationSignal.aborted, true);
+  assert.equal(jobs.get(source).status, "cancelled");
+  await jobs.start(source, { prepare: async () => ({ quoteId: "new-quote" }) });
+  finishQuote({ quoteId: "cancelled-quote" }); await flush();
+  assert.deepEqual(sent, ["new-quote"]);
+  assert.equal(jobs.get(source).status, "succeeded");
+});
+
+test("failed credit checks never send paid requests and independent listings can prepare concurrently", async () => {
+  const first = { kind: "plan", id: "first-paid" }, second = { kind: "match", id: "second-paid" };
+  const sent = [], jobs = new AnalysisJobs(async (url, options) => {
+    sent.push(options.headers["X-Zebby-Credit-Quote"]);
+    return Response.json(url.includes("applications") ? { application: { id: second.id } } : { plan: { id: first.id } });
+  }, async () => true);
+  await jobs.start(first, { prepare: async () => { throw new Error("Credit service unavailable. Try again."); } });
+  assert.deepEqual(sent, []); assert.equal(jobs.get(first).status, "failed");
+  let finish;
+  const pending = jobs.start(first, { prepare: () => new Promise(resolve => { finish = resolve; }) });
+  await flush();
+  await jobs.start(second, { prepare: async () => ({ quoteId: "second-quote" }) });
+  assert.equal(jobs.get(first).status, "running"); assert.equal(jobs.get(second).status, "succeeded");
+  finish({ quoteId: "first-quote" }); await pending;
+  assert.deepEqual(sent, ["second-quote", "first-quote"]);
 });
 
 test("backend locks only the analyzed record, prevents duplicate requests and releases after cancellation", async () => {

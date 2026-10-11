@@ -576,7 +576,7 @@ export default function ApplicationDashboard() {
     setActionError("");
     if (!automatic) setNotice("");
     void jobs.start({ kind: "match", id: item.id }, { automatic,
-      prepare: () => automatic ? Promise.resolve({}) : analysisFlow.prepare({ kind: "match", id: item.id }) });
+      prepare: (signal) => automatic ? Promise.resolve({}) : analysisFlow.prepare({ kind: "match", id: item.id }, signal) });
   }
 
   async function cancelMatch(item: Application) {

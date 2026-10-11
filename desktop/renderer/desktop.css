@@ -469,12 +469,6 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .credit-checkout-state p { margin: 0; line-height: 1.5; }
 .credit-test-label { color: var(--accent); font-size: 12px; }
 .credit-ready { display: flex; align-items: center; gap: 12px; color: var(--accent); margin-bottom: 24px; }
-.credit-quote-loading { display: flex; align-items: center; gap: 10px; color: var(--ink-soft); }
-.credit-quote-summary { display: grid; gap: 7px; border-block: 1px solid var(--line); padding: 20px 0; margin: 20px 0; }
-.credit-quote-summary > span { color: var(--ink-soft); font-size: 12px; }
-.credit-quote-summary > strong { font-size: 28px; font-weight: 650; }
-.credit-quote-summary > small, .credit-quote-summary p { font-size: 12px; color: var(--ink-soft); }
-.credit-quote-summary p { margin: 4px 0 0; line-height: 1.6; }
 .credit-usage-card { padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-hover); }
 .credit-usage-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .credit-usage-heading strong { min-width: 0; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
@@ -531,18 +525,18 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .credit-history li > span { display: grid; gap: 4px; }
 .credit-history li small { color: var(--ink-soft); }
 .credit-history li strong { flex: none; font-weight: 500; }
-.sidebar-credits { position: relative; margin-bottom: 12px; }
-.sidebar-credit-button { display: flex; align-items: center; gap: 12px; padding: 12px; width: 100%; border: 0; border-radius: 8px; color: var(--ink); background: var(--accent-wash); text-align: left; }
-.sidebar-credit-button > svg { color: var(--accent); flex: none; }
-.sidebar-credit-button > span { display: grid; gap: 4px; min-width: 0; }
-.sidebar-credit-button strong { font-size: 12px; font-weight: 650; }
-.sidebar-credit-button small { font-size: 11px; color: var(--ink-soft); }
-.sidebar-collapsed .sidebar-credit-button { width: 44px; height: 44px; padding: 0; justify-content: center; margin: 0 auto; }
-.sidebar-collapsed .sidebar-credit-button > span { display: none; }
-.sidebar-credit-popover { position: absolute; left: calc(100% + 14px); bottom: 0; z-index: 20; width: 250px; display: grid; gap: 12px;
-  padding: 20px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); box-shadow: 0 8px 32px #0002; }
-.sidebar-credit-popover .icon-button { justify-self: end; margin: -8px -8px -8px 0; }
-.sidebar-credit-popover strong { font-size: 13px; }.sidebar-credit-popover small { color: var(--ink-soft); font-size: 12px; }
+.sidebar-credits { min-width: 0; margin-bottom: 12px; }
+.sidebar-credit-button { display: grid; align-content: center; gap: 8px; min-height: 52px; padding: 10px 12px; width: 100%; border: 0; border-radius: 8px; color: var(--ink-soft); background: transparent; text-align: left; font-size: 11px; font-variant-numeric: tabular-nums; transition: background-color .18s ease-out, color .18s ease-out; }
+.sidebar-credit-button:hover { background: var(--surface-hover); color: var(--ink); }
+.sidebar-credit-button:active { background: var(--accent-wash); }
+.sidebar-credit-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 3px; min-width: 0; }
+.sidebar-credit-percent { color: var(--ink); font-weight: 600; white-space: nowrap; }
+.sidebar-credit-divider { color: var(--ink-soft); font-weight: 400; }
+.sidebar-credit-track { display: block; width: 100%; height: 4px; overflow: hidden; border-radius: 2px; background: var(--line-strong); }
+.sidebar-credit-track > span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.sidebar-collapsed .sidebar-credit-button { width: 56px; max-width: 100%; padding-inline: 8px; margin-inline: auto; }
+.sidebar-collapsed .sidebar-credit-summary { justify-content: center; }
+.sidebar-collapsed :is(.sidebar-credit-amount, .sidebar-credit-divider) { display: none; }
 .analysis-dialog :is(button, a, summary, select, label, [role="radio"], input[type="radio"]) { cursor: default; }
 .analysis-dialog input:not([type="radio"]), .analysis-dialog textarea { cursor: text; }
 .analysis-dialog .icon-button { flex: none; }
@@ -613,6 +607,9 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
   .sidebar-nav button { gap: 0; padding-inline: 15px; }
   .sidebar-collapsed .sidebar-nav button { padding-inline: 27px; }
   .nav-label, .sidebar-database { display: none; }
+  .sidebar-credit-button { width: 56px; max-width: 100%; padding-inline: 8px; margin-inline: auto; }
+  .sidebar-credit-summary { justify-content: center; }
+  .sidebar-credit-amount, .sidebar-credit-divider { display: none; }
   .settings-section { grid-template-columns: 1fr; gap: 12px; }
   .desktop-main, .desktop-dashboard .main-content { padding: 14px; }
   .plan-editor-head h2 { font-size: 18px; }

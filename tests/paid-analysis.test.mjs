@@ -13,19 +13,27 @@ import { runSelectedAnalysis } from "../desktop/analysis-routing.ts";
 import { creditUsage } from "../shared/credit-usage.ts";
 
 test("credit usage shows the remaining share of purchased credits", () => {
-  assert.deepEqual(creditUsage({ balance: 2790_000_000, reserved: 0, used: 210_000_000, purchased: 3000_000_000 }),
-    { available: 2790_000_000, total: 3000_000_000, percentRemaining: 93 });
+  const { percentUsed, ...usage } = creditUsage({ balance: 2790_000_000, reserved: 0, used: 210_000_000, purchased: 3000_000_000 });
+  assert.deepEqual(usage, { available: 2790_000_000, total: 3000_000_000, used: 210_000_000, percentRemaining: 93 });
+  assert.ok(Math.abs(percentUsed - 7) < 0.000001);
 });
 test("credit usage excludes reservations without counting them as spent", () => {
   const value = creditUsage({ balance: 2790_000_000, reserved: 300_000_000, used: 210_000_000, purchased: 3000_000_000 });
   assert.equal(value.available, 2490_000_000);
   assert.equal(value.percentRemaining, 83);
+  assert.equal(value.used, 210_000_000);
+  assert.ok(Math.abs(value.percentUsed - 7) < 0.000001);
   assert.equal(creditUsage({ balance: 100, reserved: 110, used: 0, purchased: 100 }).available, 0);
 });
 test("credit usage handles empty, exhausted and restored balances", () => {
-  assert.deepEqual(creditUsage({ balance: 0, reserved: 0, used: 0, purchased: 0 }), { available: 0, total: 0, percentRemaining: 0 });
+  assert.deepEqual(creditUsage({ balance: 0, reserved: 0, used: 0, purchased: 0 }),
+    { available: 0, total: 0, used: 0, percentRemaining: 0, percentUsed: 0 });
   assert.equal(creditUsage({ balance: 0, reserved: 0, used: 500_000_000, purchased: 500_000_000 }).percentRemaining, 0);
   assert.equal(creditUsage({ balance: 100_000_000, reserved: 0, used: 0, purchased: 0 }).percentRemaining, 100);
+  assert.equal(creditUsage({ balance: 0, reserved: 0, used: 500_000_000, purchased: 500_000_000 }).percentUsed, 100);
+  assert.equal(creditUsage({ balance: 100, reserved: 100, used: 0, purchased: 100 }).percentUsed, 0);
+  assert.equal(creditUsage({ balance: -10, reserved: 0, used: 110, purchased: 100 }).percentUsed, 100);
+  assert.equal(creditUsage({ balance: 499_080_000, reserved: 0, used: 920_000, purchased: 500_000_000 }).percentUsed, 0.184);
 });
 
 const userId = "11111111-1111-4111-8111-111111111111", otherId = "22222222-2222-4222-8222-222222222222";

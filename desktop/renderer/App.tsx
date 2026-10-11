@@ -281,7 +281,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
         ? builtInModel?.name || "Local model" : onlineModel(analysisProvider === "credits" ? analysisFlow.state.credits.model
           : analysisProvider === "anthropic" ? analysisFlow.state.anthropicModel : analysisFlow.state.openaiModel).name;
       void jobs.start({ kind: "plan", id: saved.id }, { modelLabel,
-        prepare: () => analysisFlow.prepare({ kind: "plan", id: saved.id }) });
+        prepare: (signal) => analysisFlow.prepare({ kind: "plan", id: saved.id }, signal) });
     } catch (cause) { setError(errorText(cause)); }
     finally { setPreparing(false); }
   }
@@ -448,7 +448,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
             ? `Your posting, overview, and resume stay on this computer. Analysis uses ${builtInModel?.name || "the selected local model"}.`
             : analysisProvider === "ollama"
             ? `Job text, your overview, and extracted resume text are sent to ${ollamaModel || "your selected model"} on your Ollama server.`
-            : analysisProvider === "credits" ? "Job text, your overview, and resume text are sent to Zebby and your selected online provider. You confirm credit use before analysis."
+            : analysisProvider === "credits" ? "Job text, your overview, and resume text are sent to Zebby and your selected online provider. Credits cover actual model usage."
             : `Job text, your overview, and ${analysisProvider === "openai" ? "the selected resume" : "resume text"} are sent to ${analysisProvider === "openai" ? "OpenAI" : "Anthropic"}. Usage is billed to your API account.`}</p>
             <p>Importance reflects job priorities, not resume coverage or a measured ATS score.</p></details>
         </fieldset>

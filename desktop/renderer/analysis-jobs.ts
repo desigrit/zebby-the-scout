@@ -41,7 +41,7 @@ export class AnalysisJobs {
         ANALYSIS_STAGES[progress.stage].order <= ANALYSIS_STAGES[job.stage].order) return;
     this.update(job.requestId, { stage: progress.stage });
   };
-  async start(source: AnalysisSource, options: { prepare: () => Promise<{ quoteId?: string } | null>;
+  async start(source: AnalysisSource, options: { prepare: (signal: AbortSignal) => Promise<{ quoteId?: string } | null>;
     automatic?: boolean; modelLabel?: string }) {
     if (jobRunning(this.get(source))) return;
     const requestId = crypto.randomUUID(), controller = new AbortController();
@@ -51,7 +51,14 @@ export class AnalysisJobs {
       automatic: Boolean(options.automatic), modelLabel: options.modelLabel || "", error: "" }];
     this.publish();
     try {
-      const authorization = await options.prepare();
+      // A sleeping credit service can take time to prepare. Cancel releases the
+      // listing immediately, and a late quote can never start a paid request.
+      const authorization = await new Promise<{ quoteId?: string } | null>((resolve, reject) => {
+        const cancel = () => reject(controller.signal.reason);
+        controller.signal.addEventListener("abort", cancel, { once: true });
+        Promise.resolve().then(() => { controller.signal.throwIfAborted(); return options.prepare(controller.signal); })
+          .then(resolve, reject).finally(() => controller.signal.removeEventListener("abort", cancel));
+      });
       controller.signal.throwIfAborted();
       if (!authorization) { this.jobs = this.jobs.filter((job) => job.requestId !== requestId); this.publish(); return; }
       const path = source.kind === "plan" ? "plans" : "applications";

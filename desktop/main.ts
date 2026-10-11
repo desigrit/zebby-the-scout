@@ -305,7 +305,7 @@ async function analyzeWithSelectedProvider(instructions: string, input: unknown,
       const quote = paid && paidQuotes.get(paid.quoteId);
       if (!paid || !quote || quote.source.id !== paid.source.id || quote.source.kind !== paid.source.kind || quote.expires < Date.now()
         || !quote.recovery && (quote.model !== selected.model || quote.thinkingLevel !== selected.thinkingLevel) || quote.hash !== analysisHash(input)) {
-        throw new Error("Confirm a fresh credit quote before analyzing this job.");
+        throw new Error("Analysis settings or job details changed. Click Analyze to try again.");
       }
       return creditsClient.analyze(paid.quoteId, input, signal, paid.source, quote.model);
     },

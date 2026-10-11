@@ -1,16 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, Check, ChevronRight, Coins, Download, ExternalLink, KeyRound, LoaderCircle, RefreshCw, Server, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, Coins, Download, ExternalLink, KeyRound, LoaderCircle, Server, X } from "lucide-react";
 import type { DesktopState } from "../bridge";
-import { CREDIT_PACKS, CREDIT_ESTIMATE_MODELS, CREDIT_ESTIMATE_DESCRIPTION, estimatedAnalyses, formatCredits, onlineModel, quoteNeedsCredits, type AnalysisProvider, type AnalysisSource, type CreditQuote } from "../../shared/online-models";
+import { CREDIT_PACKS, CREDIT_ESTIMATE_MODELS, CREDIT_ESTIMATE_DESCRIPTION, estimatedAnalyses, formatCredits, onlineModel, quoteNeedsCredits, type AnalysisProvider, type AnalysisSource } from "../../shared/online-models";
+import { creditUsage } from "../../shared/credit-usage";
 import { AnalysisSettings, providerReady } from "./AnalysisSettings";
-import { OnlineModelControls } from "./ThinkingSettings";
-import { thinkingLabel } from "../../shared/thinking";
 type Authorization = { quoteId?: string };
-type Flow = { prepare: (source: AnalysisSource) => Promise<Authorization | null>; canAutoAnalyze: () => boolean;
+type Flow = { prepare: (source: AnalysisSource, signal: AbortSignal) => Promise<Authorization | null>; canAutoAnalyze: () => boolean;
   openCredits: () => void; state: DesktopState; updateState: (state: DesktopState) => void };
 const AnalysisContext = createContext<Flow | null>(null);
 export function useAnalysisFlow() { const flow = useContext(AnalysisContext); if (!flow) throw new Error("Analysis setup is unavailable."); return flow; }
-type Scene = "choose" | "setup" | "buy" | "checkout" | "ready" | "quote" | null;
+type Scene = "choose" | "setup" | "buy" | "checkout" | "ready" | null;
 const methods = [
   { id: "ollama", title: "Local server", description: "Use your Ollama server and model.", icon: Server },
   { id: "builtin", title: "Download a model", description: "Run on this computer, no server needed.", icon: Download },
@@ -27,16 +26,16 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
   useLayoutEffect(() => { current.current = state; }, [state]);
   const [scene, setScene] = useState<Scene>(null), [method, setMethod] = useState<AnalysisProvider>("ollama");
   const [pack, setPack] = useState("starter"), [recoveryNotice, setRecoveryNotice] = useState("");
-  const [working, setWorking] = useState(false), [error, setError] = useState(""), [quote, setQuote] = useState<CreditQuote | null>(null);
+  const [working, setWorking] = useState(false), [error, setError] = useState("");
   const [checkout, setCheckout] = useState<{ id: string; mode: "test" | "live" } | null>(null);
   const [checkoutExpired, setCheckoutExpired] = useState(false);
   const [hasPending, setHasPending] = useState(false);
   const [setupPending, setSetupPending] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null), opener = useRef<HTMLElement | null>(null);
-  const pending = useRef<{ source: AnalysisSource; resolve: (value: Authorization | null) => void } | null>(null);
+  const pending = useRef<{ resolve: (value: Authorization | null) => void } | null>(null);
   const dialogOpen = scene !== null;
   const updateState = useCallback((next: DesktopState) => { current.current = next; onState(next); }, [onState]);
-  function close(value: Authorization | null = null) { pending.current?.resolve(value); pending.current = null; setHasPending(false); setScene(null); setError(""); setQuote(null); }
+  function close(value: Authorization | null = null) { pending.current?.resolve(value); pending.current = null; setHasPending(false); setScene(null); setError(""); }
   const show = useCallback((next: Scene) => { if (next === "buy") warmCreditsService();
     if (!scene) opener.current = document.activeElement as HTMLElement; setError(""); setScene(next); }, [scene]);
   useEffect(() => {
@@ -57,31 +56,40 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
     refresh(); window.addEventListener("focus", refresh);
     return () => window.removeEventListener("focus", refresh);
   }, [state.credits.signedIn, state.credits.pendingConnection, updateState]);
-  async function requestQuote() {
-    if (!pending.current) { close(); return; }
-    setScene("quote"); setQuote(null); setError(""); setWorking(true);
-    try {
-      const refreshed = await window.desktop!.refreshCredits(); updateState(refreshed);
-      const next = await window.desktop!.quoteCreditAnalysis(pending.current.source);
-      // Recovery is free even when the previous analysis consumed the last credits.
-      if (!next.recovery && refreshed.credits.wallet && refreshed.credits.wallet.balance <= 0) show("buy");
-      else setQuote(next);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not estimate credit use."); }
-    finally { setWorking(false); }
-  }
-  async function prepare(source: AnalysisSource): Promise<Authorization | null> {
+  async function prepare(source: AnalysisSource, signal: AbortSignal): Promise<Authorization | null> {
+    signal.throwIfAborted();
     const next = current.current;
     if (next.analysisProvider !== "credits" && providerReady(next)) return {};
+    // Each ready request prepares independently, without opening a modal or
+    // changing the saved model. Quotes still bind the source and spending cap.
+    if (next.analysisProvider === "credits" && next.credits.signedIn) {
+      const refreshed = await window.desktop!.refreshCredits();
+      signal.throwIfAborted(); updateState(refreshed);
+      const quote = await window.desktop!.quoteCreditAnalysis(source);
+      signal.throwIfAborted();
+      if (quote.pending) throw new Error("Your previous analysis is still running. Try again shortly.");
+      const wallet = current.current.credits.wallet;
+      if (!quoteNeedsCredits(quote, wallet ? wallet.balance - wallet.reserved : 0)) {
+        if (Date.parse(quote.expiresAt) <= Date.now()) throw new Error("The analysis estimate expired. Click Analyze to try again.");
+        return { quoteId: quote.id };
+      }
+    }
     if (pending.current || scene) return null;
     opener.current = document.activeElement as HTMLElement;
-    return new Promise((resolve) => {
-      pending.current = { source, resolve };
+    const configured = await new Promise<Authorization | null>((resolve) => {
+      const abort = () => { if (pending.current === request) close(); };
+      const request = { resolve: (value: Authorization | null) => { signal.removeEventListener("abort", abort); resolve(value); } };
+      pending.current = request;
+      signal.addEventListener("abort", abort, { once: true });
       setHasPending(true);
       if (next.analysisProvider === "credits") {
-        if (!next.credits.signedIn) show("buy");
-        else void requestQuote();
-      } else { setMethod(next.analysisProvider); show("choose"); }
+        show("buy");
+        if (next.credits.signedIn) setError("Add credits to continue this analysis.");
+      }
+      else { setMethod(next.analysisProvider); show("choose"); }
     });
+    signal.throwIfAborted();
+    return configured ? prepare(source, signal) : null;
   }
   async function action(operation: () => Promise<void>) {
     setWorking(true); setError("");
@@ -122,14 +130,14 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
   const remaining = state.credits.wallet ? state.credits.wallet.balance - state.credits.wallet.reserved : 0;
   const title = scene === "choose" ? "How would you like to analyze?" : scene === "setup" ? methods.find((item) => item.id === method)?.title
     : scene === "buy" ? "A little fuel for your next move"
-    : scene === "checkout" ? "Finish checkout in your browser" : scene === "ready" ? "Your credits are ready" : "Review this analysis";
+    : scene === "checkout" ? "Finish checkout in your browser" : scene === "ready" ? "Your credits are ready" : "";
   const flow: Flow = { prepare, canAutoAnalyze: () => current.current.analysisProvider !== "credits" && providerReady(current.current),
     openCredits: () => { if (!pending.current) show("buy"); }, state, updateState };
   return <AnalysisContext.Provider value={flow}>{children}
     <dialog ref={dialog} className={`analysis-dialog ${scene === "buy" ? "analysis-dialog-pricing" : ""}`} aria-labelledby="analysis-dialog-title"
       onCancel={(event) => { event.preventDefault(); if (!working) close(); }} onClose={() => { if (scene) close(); }}>
       <header className="analysis-dialog-header">
-        {scene !== "choose" && scene !== "ready" && scene !== "quote" && <button className="icon-button" type="button" aria-label="Back" disabled={working}
+        {scene !== "choose" && scene !== "ready" && <button className="icon-button" type="button" aria-label="Back" disabled={working}
           onClick={() => show(scene === "setup" ? "choose" : scene === "checkout" ? "buy" : "choose")}><ArrowLeft size={20} /></button>}
         <img src="./icon.png" alt="" width="34" height="34" /><h2 id="analysis-dialog-title">{title}</h2>
         <button className="icon-button analysis-dialog-close" type="button" aria-label="Close" disabled={working} onClick={() => close()}><X size={20} /></button>
@@ -176,18 +184,6 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
             })}>Save recovery code</button></div>}
           {recoveryNotice && <p className="notice" role="status">{recoveryNotice}</p>}
         </>}
-        {scene === "quote" && <>
-          {quote?.recovery ? <div className="credit-ready"><Check size={22} /><strong>{quote.pending ? "Your previous analysis is still running" : "Your previous result is ready"}</strong></div>
-            : quote && <OnlineModelControls state={state} onState={async (next) => { updateState(next); await requestQuote(); }} provider="credits" disabled={working} onBusy={setWorking} />}
-          {working && <p className="credit-quote-loading" role="status"><LoaderCircle size={20} className="spin" />Preparing your estimate</p>}
-          {quote && <div className="credit-quote-summary"><span>{quote.recovery ? onlineModel(quote.model).name : "Maximum for this analysis"}</span><strong>{quote.recovery ? "No additional credits" : `${formatCredits(quote.maximum)} credits`}</strong>
-            <small>{formatCredits(remaining)} available{quote.thinkingLevel ? ` · ${thinkingLabel(quote.thinkingLevel)} thinking` : ""}</small><p>Only actual model usage is charged. Unused reserved credits return to your balance.</p></div>}
-          <p className="settings-help">Job text, resume text, and your overview go to Zebby and {onlineModel(state.credits.model).provider === "openai" ? "OpenAI" : "Anthropic"}.</p>
-          {quote && quoteNeedsCredits(quote, remaining) && <p className="form-error">Add credits to cover this analysis.</p>}
-          {error && <button className="button button-secondary" type="button" disabled={working} onClick={() => {
-            if (!state.credits.signedIn) show("buy"); else void requestQuote();
-          }}><RefreshCw size={16} />{state.credits.signedIn ? "Try again" : "Buy credits"}</button>}
-        </>}
       </div>
       <footer className="analysis-dialog-footer">
         {scene !== "ready" && <button className="button button-secondary" type="button" disabled={working} onClick={() => close()}>{scene === "checkout" ? "Close" : "Cancel"}</button>}
@@ -196,27 +192,23 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
         {scene === "buy" && <button className="button button-primary" type="button" disabled={working || !state.canSaveApiKey} onClick={() => void purchase()}>
           {working ? <LoaderCircle size={16} className="spin" /> : <ExternalLink size={16} />}Continue, ${CREDIT_PACKS.find((item) => item.id === pack)?.dollars}</button>}
         {scene === "ready" && <button className="button button-primary" type="button" disabled={working} onClick={() => void action(async () => {
-          updateState(await window.desktop!.setAnalysisProvider("credits")); if (pending.current) await requestQuote(); else close(); })}>{hasPending ? "Continue to analysis" : "Done"}</button>}
-        {scene === "quote" && <>{quote && quoteNeedsCredits(quote, remaining) ? <button className="button button-primary" type="button" onClick={() => show("buy")}>Add credits</button>
-          : <button className="button button-primary" type="button" disabled={working || !quote || quoteNeedsCredits(quote, remaining)}
-            onClick={() => { if (!quote || quote.pending || Date.parse(quote.expiresAt) <= Date.now()) { void requestQuote(); return; } close({ quoteId: quote.id }); }}>{quote?.pending ? "Check again" : quote?.recovery ? "Recover result" : "Analyze"}</button>}</>}
+          updateState(await window.desktop!.setAnalysisProvider("credits")); close({}); })}>{hasPending ? "Continue to analysis" : "Done"}</button>}
       </footer>
     </dialog>
   </AnalysisContext.Provider>;
 }
 export function SidebarCredits() {
   const { state, openCredits } = useAnalysisFlow();
-  const [expanded, setExpanded] = useState(false);
   if (!state.credits.signedIn || !state.credits.wallet?.purchased) return null;
-  const wallet = state.credits.wallet, remaining = (wallet?.balance || 0) - (wallet?.reserved || 0);
-  const popover = state.sidebarCollapsed || state.analysisProvider !== "credits";
+  const { used, total, percentUsed } = creditUsage(state.credits.wallet);
+  const percent = percentUsed > 0 && percentUsed < 0.1 ? "<0.1%" : `${percentUsed.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
+  const usage = `${formatCredits(used)} used of ${formatCredits(total)}`;
+  const label = `Buy credits. ${formatCredits(used)} of ${formatCredits(total)} credits used, ${percent}.${state.credits.stale ? " Last saved usage." : ""}`;
   return <div className="sidebar-credits">
-    <button className="sidebar-credit-button" type="button" aria-label={`${formatCredits(remaining)} credits available, ${formatCredits(wallet?.used || 0)} used`}
-      aria-expanded={popover ? expanded : undefined} onClick={() => popover ? setExpanded(!expanded) : openCredits()}>
-      <Coins size={21} aria-hidden="true" /><span><strong>{formatCredits(remaining)} credits</strong><small>{formatCredits(wallet?.used || 0)} used{state.credits.stale ? " · Saved" : ""}</small></span>
+    <button className="sidebar-credit-button" type="button" aria-label={label} aria-haspopup="dialog" title={label} onClick={openCredits}>
+      <span className="sidebar-credit-summary" aria-hidden="true"><span className="sidebar-credit-amount">{usage}</span>
+        <span className="sidebar-credit-percent"><span className="sidebar-credit-divider"> · </span>{percent}</span></span>
+      <span className="sidebar-credit-track" aria-hidden="true"><span style={{ width: `${percentUsed}%` }} /></span>
     </button>
-    {popover && expanded && <div className="sidebar-credit-popover"><button className="icon-button" type="button" aria-label="Close credits" onClick={() => setExpanded(false)}><X size={16} /></button>
-      <strong>{formatCredits(remaining)} credits available</strong><small>{formatCredits(wallet?.used || 0)} used{state.credits.stale ? " · Last saved balance" : ""}</small>
-      {state.analysisProvider === "credits" && <button className="button button-secondary" type="button" onClick={() => { setExpanded(false); openCredits(); }}>Buy credits</button>}</div>}
   </div>;
 }
