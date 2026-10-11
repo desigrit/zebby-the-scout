@@ -532,11 +532,11 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .sidebar-credit-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 3px; min-width: 0; }
 .sidebar-credit-percent { color: var(--ink); font-weight: 600; white-space: nowrap; }
 .sidebar-credit-divider { color: var(--ink-soft); font-weight: 400; }
-.sidebar-credit-track { display: block; width: 100%; height: 4px; overflow: hidden; border-radius: 2px; background: var(--line-strong); }
+.sidebar-credit-track { display: block; width: 100%; height: 4px; overflow: hidden; border-radius: 2px; background: var(--line); }
 .sidebar-credit-track > span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
 .sidebar-collapsed .sidebar-credit-button { width: 56px; max-width: 100%; padding-inline: 8px; margin-inline: auto; }
 .sidebar-collapsed .sidebar-credit-summary { justify-content: center; }
-.sidebar-collapsed :is(.sidebar-credit-amount, .sidebar-credit-divider) { display: none; }
+.sidebar-collapsed :is(.sidebar-credit-amount, .sidebar-credit-divider, .sidebar-credit-remaining) { display: none; }
 .analysis-dialog :is(button, a, summary, select, label, [role="radio"], input[type="radio"]) { cursor: default; }
 .analysis-dialog input:not([type="radio"]), .analysis-dialog textarea { cursor: text; }
 .analysis-dialog .icon-button { flex: none; }
@@ -609,7 +609,7 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
   .nav-label, .sidebar-database { display: none; }
   .sidebar-credit-button { width: 56px; max-width: 100%; padding-inline: 8px; margin-inline: auto; }
   .sidebar-credit-summary { justify-content: center; }
-  .sidebar-credit-amount, .sidebar-credit-divider { display: none; }
+  .sidebar-credit-amount, .sidebar-credit-divider, .sidebar-credit-remaining { display: none; }
   .settings-section { grid-template-columns: 1fr; gap: 12px; }
   .desktop-main, .desktop-dashboard .main-content { padding: 14px; }
   .plan-editor-head h2 { font-size: 18px; }

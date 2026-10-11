@@ -200,15 +200,15 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
 export function SidebarCredits() {
   const { state, openCredits } = useAnalysisFlow();
   if (!state.credits.signedIn || !state.credits.wallet?.purchased) return null;
-  const { used, total, percentUsed } = creditUsage(state.credits.wallet);
-  const percent = percentUsed > 0 && percentUsed < 0.1 ? "<0.1%" : `${percentUsed.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
+  const { used, total, percentRemaining } = creditUsage(state.credits.wallet);
+  const percent = `${Math.round(percentRemaining).toLocaleString()}%`;
   const usage = `${formatCredits(used)} used of ${formatCredits(total)}`;
-  const label = `Buy credits. ${formatCredits(used)} of ${formatCredits(total)} credits used, ${percent}.${state.credits.stale ? " Last saved usage." : ""}`;
+  const label = `Buy credits. ${formatCredits(used)} of ${formatCredits(total)} credits used, ${percent} remaining.${state.credits.stale ? " Last saved usage." : ""}`;
   return <div className="sidebar-credits">
     <button className="sidebar-credit-button" type="button" aria-label={label} aria-haspopup="dialog" title={label} onClick={openCredits}>
       <span className="sidebar-credit-summary" aria-hidden="true"><span className="sidebar-credit-amount">{usage}</span>
-        <span className="sidebar-credit-percent"><span className="sidebar-credit-divider"> · </span>{percent}</span></span>
-      <span className="sidebar-credit-track" aria-hidden="true"><span style={{ width: `${percentUsed}%` }} /></span>
+        <span className="sidebar-credit-percent"><span className="sidebar-credit-divider"> · </span>{percent}<span className="sidebar-credit-remaining"> left</span></span></span>
+      <span className="sidebar-credit-track" aria-hidden="true"><span style={{ width: `${percentRemaining}%` }} /></span>
     </button>
   </div>;
 }

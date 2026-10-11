@@ -1491,6 +1491,11 @@ try {
   assert.equal(await creditsSettings.getByRole("button", { name: "Restore credits", exact: true }).evaluate(element => element === document.activeElement), true);
   await page.setViewportSize({ width: 1550, height: 850 });
   await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32"; document.documentElement.dataset.theme = "light"; });
+  await page.evaluate(() => { window.creditQA.update({ wallet: { balance: 499000000, reserved: 0, used: 1000000, purchased: 500000000,
+    updatedAt: "2026-09-30T20:00:00Z", recent: [] } }); });
+  await page.waitForFunction(() => document.querySelector(".sidebar-credit-button")?.getAttribute("aria-label") === "Buy credits. 1 of 500 credits used, 100% remaining.");
+  assert.equal(await sidebarWallet.locator(".sidebar-credit-percent").innerText(), "100%");
+  assert.equal(await sidebarWallet.locator(".sidebar-credit-track > span").evaluate(element => element.style.width), "99.8%");
   await page.evaluate(() => { window.creditQA.update({ wallet: { balance: 465000000, reserved: 0, used: 35000000, purchased: 500000000,
     updatedAt: "2026-09-30T20:00:00Z", recent: [{ id: "usage-fixture", model: "claude-sonnet-5-5", kind: "plan", cost: 35000000, createdAt: "2026-09-30T20:00:00Z" }] } }); });
   const creditBar = creditsSettings.getByRole("progressbar", { name: "Credits remaining", exact: true });
@@ -1499,9 +1504,9 @@ try {
   assert.match(await creditBar.getAttribute("aria-valuetext"), /465 credits available, 35 used/);
   await page.getByRole("button", { name: "Expand navigation", exact: true }).click();
   await page.getByRole("button", { name: "Collapse navigation", exact: true }).waitFor();
-  assert.equal(await sidebarWallet.getAttribute("aria-label"), "Buy credits. 35 of 500 credits used, 7%.");
+  assert.equal(await sidebarWallet.getAttribute("aria-label"), "Buy credits. 35 of 500 credits used, 93% remaining.");
   assert.equal(await sidebarWallet.locator(".sidebar-credit-amount").isVisible(), true);
-  assert.equal(await sidebarWallet.locator(".sidebar-credit-track > span").evaluate(element => element.style.width), "7%");
+  assert.equal(await sidebarWallet.locator(".sidebar-credit-track > span").evaluate(element => element.style.width), "93%");
   await captureSettings("credits-sidebar-expanded-windows-light.png", false);
   await sidebarWallet.click();
   await analysisDialog.getByRole("heading", { name: "A little fuel for your next move", exact: true }).waitFor();
@@ -1511,7 +1516,7 @@ try {
   await page.getByRole("button", { name: "Collapse navigation", exact: true }).click();
   await page.getByRole("button", { name: "Expand navigation", exact: true }).waitFor();
   assert.equal(await sidebarWallet.locator(".sidebar-credit-amount").isVisible(), false);
-  assert.equal(await sidebarWallet.locator(".sidebar-credit-percent").innerText(), "7%");
+  assert.equal(await sidebarWallet.locator(".sidebar-credit-percent").innerText(), "93%");
   await settingsPage.evaluate(element => { element.scrollTop = 0; });
   await assertSettingsActions();
   await captureSettings("credits-wallet-settings-windows-light.png", false);
