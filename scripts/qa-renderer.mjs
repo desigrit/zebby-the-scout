@@ -1426,6 +1426,7 @@ try {
   await page.evaluate(() => { window.creditQA.update({ wallet: { balance: 465000000, reserved: 0, used: 35000000, purchased: 500000000,
     updatedAt: "2026-09-30T20:00:00Z", recent: [{ id: "usage-fixture", model: "claude-sonnet-5-5", kind: "plan", cost: 35000000, createdAt: "2026-09-30T20:00:00Z" }] } }); });
   const creditBar = creditsSettings.getByRole("progressbar", { name: "Credits remaining", exact: true });
+  await page.waitForFunction(() => document.querySelector('[role="progressbar"][aria-label="Credits remaining"]')?.getAttribute("aria-valuenow") === "93");
   assert.equal(await creditBar.getAttribute("aria-valuenow"), "93");
   assert.match(await creditBar.getAttribute("aria-valuetext"), /465 credits available, 35 used/);
   await settingsPage.evaluate(element => { element.scrollTop = 0; });

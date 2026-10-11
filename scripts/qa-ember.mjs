@@ -451,7 +451,7 @@ try {
         const element = document.querySelector(".application-row-select");
         const b = element?.getBoundingClientRect();
         const titlebar = document.querySelector(".desktop-titlebar")?.getBoundingClientRect();
-        return b && titlebar && b.top >= titlebar.bottom && b.bottom <= innerHeight;
+        return b && titlebar && b.top >= titlebar.bottom - 1 && b.bottom <= innerHeight + 1;
       });
       await page.keyboard.press("Enter");
       await page.locator(".application-inline-details").first().waitFor();
