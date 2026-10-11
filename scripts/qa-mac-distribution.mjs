@@ -115,6 +115,18 @@ try {
   await page.getByRole("navigation", { name: "Workspace" }).getByRole("button", { name: "Applications", exact: true }).click();
   await page.getByRole("main", { name: "Applications", exact: true }).waitFor();
   report.checks.push("Actual copied app launches its GUI with a new isolated database on Tahoe");
+  await page.getByRole("navigation", { name: "Workspace" }).getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByLabel("Analyze with", { exact: true }).selectOption("anthropic");
+  const keyField = page.getByLabel("API key", { exact: true });
+  await keyField.waitFor(); await keyField.focus();
+  // Use only a synthetic key and the isolated runner clipboard/profile.
+  await app.evaluate(({ clipboard }) => clipboard.writeText("sk-ant-synthetic-paste-fixture"));
+  await page.keyboard.press("Meta+v");
+  assert.equal(await keyField.inputValue(), "sk-ant-synthetic-paste-fixture");
+  await page.keyboard.press("Meta+a"); await page.keyboard.press("Backspace");
+  assert.equal(await keyField.inputValue(), "");
+  await app.evaluate(({ clipboard }) => clipboard.clear());
+  report.checks.push("Packaged macOS API key field accepts Command+V and Command+A without an Edit menu");
   console.log(`Zebby ${pkg.version}: signature, DMG copy and actual GUI startup passed on Tahoe. Apple notarization is not configured; first launch needs user approval.`);
 } catch (error) {
   report.errors.push(String(error.stack || error));

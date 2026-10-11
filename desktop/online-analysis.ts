@@ -1,4 +1,5 @@
 import { onlineModel, outputLimit, validateOnlineThinking, type AnalysisKind, type TokenUsage } from "../shared/online-models.ts";
+import { anthropicSchema, providerFailure, validStructuredResult } from "./online-response.ts";
 type Content = { type: string; text?: string };
 type ProviderPayload = { status?: string; stop_reason?: string; output?: { content?: Content[] }[]; content?: Content[];
   usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
@@ -15,7 +16,9 @@ export async function onlineAnalysis(options: { model: string; key: string; inst
   const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(deadline)]) : AbortSignal.timeout(deadline);
   const isOpenAI = model.provider === "openai";
   const haiku = model.id === "claude-haiku-4-5-20251001";
-  const response = await send(isOpenAI ? "https://api.openai.com/v1/responses" : "https://api.anthropic.com/v1/messages", {
+  const provider = isOpenAI ? "OpenAI" : "Anthropic";
+  let response: Response;
+  try { response = await send(isOpenAI ? "https://api.openai.com/v1/responses" : "https://api.anthropic.com/v1/messages", {
     method: "POST", signal, headers: isOpenAI ? { "Content-Type": "application/json", Authorization: `Bearer ${options.key}` }
       : { "Content-Type": "application/json", "x-api-key": options.key, "anthropic-version": "2023-06-01" },
     body: JSON.stringify(isOpenAI ? {
@@ -27,12 +30,23 @@ export async function onlineAnalysis(options: { model: string; key: string; inst
       model: model.id, max_tokens: outputLimit(options.kind, thinkingLevel), system: options.instructions,
       messages: [{ role: "user", content: JSON.stringify(options.input) }],
       thinking: haiku ? thinkingLevel === "on" ? { type: "enabled", budget_tokens: 4096 } : { type: "disabled" } : { type: "adaptive" },
-      output_config: { ...(!haiku ? { effort: thinkingLevel } : {}), format: { type: "json_schema", schema: options.schema } },
+      output_config: { ...(!haiku ? { effort: thinkingLevel } : {}), format: { type: "json_schema", schema: anthropicSchema(options.schema) } },
     }),
-  });
-  const payload = await response.json() as ProviderPayload;
-  // Provider messages can echo submitted content. Keep those out of desktop logs.
-  if (!response.ok) throw new Error(`${isOpenAI ? "OpenAI" : "Anthropic"} could not complete analysis (${response.status}). Check your model access, key, and billing.`);
+  }); } catch {
+    options.signal?.throwIfAborted();
+    if (signal.aborted) throw new Error(`${provider} timed out. Try again or choose a lower thinking level.`);
+    throw new Error(`Could not reach ${provider}. Check your internet connection and try again.`);
+  }
+  let payload: ProviderPayload;
+  try { payload = await response.json() as ProviderPayload; }
+  catch {
+    options.signal?.throwIfAborted();
+    if (!response.ok) throw providerFailure(provider, model.id, thinkingLevel, response, null);
+    if (signal.aborted) throw new Error(`${provider} timed out. Try again or choose a lower thinking level.`);
+    throw new Error(`${provider} returned an unreadable response. Try again.`);
+  }
+  if (!response.ok) throw providerFailure(provider, model.id, thinkingLevel, response, payload);
+  if (!payload || typeof payload !== "object") throw new Error(`${provider} returned an unreadable response. Try again.`);
   if (isOpenAI && payload.status !== "completed" || !isOpenAI && payload.stop_reason !== "end_turn") {
     throw new Error("The model did not finish its response. No result was saved.");
   }
@@ -42,6 +56,7 @@ export async function onlineAnalysis(options: { model: string; key: string; inst
   let result: Record<string, unknown>;
   try { result = JSON.parse(text); } catch { throw new Error("The model returned an unreadable result. No result was saved."); }
   if (!result || typeof result !== "object" || Array.isArray(result)) throw new Error("The model returned an invalid result.");
+  if (!validStructuredResult(options.schema, result)) throw new Error("The analysis did not meet the required format. No result was saved. Try again.");
   const raw = payload.usage || {};
   const cacheWrite = raw.input_tokens_details?.cache_write_tokens ?? 0;
   const usage: TokenUsage = isOpenAI ? { input: (raw.input_tokens ?? NaN) - cacheWrite,

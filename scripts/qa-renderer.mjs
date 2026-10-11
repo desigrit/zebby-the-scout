@@ -568,10 +568,35 @@ try {
   const progressGeometry = await planProgress.evaluate(element => {
     const label = element.querySelector('.plan-progress-label:not(.is-leaving)');
     const range = document.createRange(); range.selectNodeContents(label);
-    return { labelWidth: range.getBoundingClientRect().width, viewportWidth: label.clientWidth,
+    const time = element.querySelector('.plan-progress-time').getBoundingClientRect();
+    const separator = element.querySelector('.plan-progress-separator');
+    return { timerFirst: time.right < label.getBoundingClientRect().left, separator: separator.textContent,
+      labelWidth: range.getBoundingClientRect().width, viewportWidth: label.clientWidth,
       belowButton: element.getBoundingClientRect().top >= document.querySelector('.plan-analyze-actions').getBoundingClientRect().bottom };
   });
   assert.ok(progressGeometry.labelWidth <= progressGeometry.viewportWidth); assert.equal(progressGeometry.belowButton, true);
+  assert.equal(progressGeometry.timerFirst, true); assert.equal(progressGeometry.separator, '·');
+  const activeTimer = await planProgress.locator('.plan-progress-time').innerText();
+  await nav.getByRole('button', { name: 'Applications', exact: true }).click();
+  await nav.getByRole('button', { name: 'Settings', exact: true }).click();
+  await nav.getByRole('button', { name: 'Plan', exact: true }).click();
+  await page.getByRole('status', { name: 'Analyzing role' }).waitFor();
+  assert.equal(await announcedProgress.innerText(), 'Thinking');
+  assert.equal(await page.getByLabel('Current resume overview', { exact: true }).isDisabled(), true);
+  assert.ok(await planProgress.locator('.plan-progress-time').innerText() >= activeTimer);
+  assert.deepEqual(await page.evaluate(() => window.analysisQA.cancelled), []);
+  const runningPlan = await page.locator('.plan-item[aria-current="page"] strong').innerText();
+  await page.getByRole('button', { name: 'New plan', exact: true }).click();
+  const secondOverview = 'A new draft remains editable while another role is analyzed.';
+  await page.getByLabel('Current resume overview', { exact: true }).fill(secondOverview);
+  await reportPlanProgress('generating');
+  assert.equal(await page.getByLabel('Current resume overview', { exact: true }).inputValue(), secondOverview);
+  assert.equal(await planProgress.count(), 0);
+  page.once('dialog', dialog => dialog.accept());
+  await page.locator('.plan-item').filter({ has: page.locator('strong').filter({ hasText: runningPlan }) }).click();
+  await page.getByRole('status', { name: 'Analyzing role' }).waitFor();
+  assert.equal(await announcedProgress.innerText(), 'Generating results');
+  assert.equal(await page.getByLabel('Current resume overview', { exact: true }).isDisabled(), true);
   await page.setViewportSize({ width: 790, height: 850 });
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; document.documentElement.dataset.platform = 'darwin'; });
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -845,7 +870,13 @@ try {
   await captureSettings("applications-light.png", false);
   await page.getByRole("button", { name: "Refresh match for Product Manager at Meta" }).click();
   assert.equal(await table.getByRole("status", { name: "Analyzing resume match" }).count(), 2);
+  await nav.getByRole('button', { name: 'Settings', exact: true }).click();
   await completeAnalysis("/api/applications/app-1/analyze");
+  await nav.getByRole('button', { name: 'Applications', exact: true }).click();
+  await table.getByText("89%").first().waitFor();
+  assert.equal(await table.getByRole('button', { name: 'Edit Product Manager at Meta', exact: true }).isDisabled(), true);
+  assert.equal(await table.getByRole('button', { name: 'Edit Senior Product Manager at Expedia Group', exact: true }).isDisabled(), false);
+  assert.equal(await table.getByRole('status', { name: 'Analyzing resume match' }).count(), 1);
   await completeAnalysis("/api/applications/app-2/analyze");
   await table.getByText("89%").first().waitFor();
   await page.waitForFunction(() => document.querySelectorAll(".match-progress").length === 0);
@@ -1310,6 +1341,7 @@ try {
   await analysisDialog.getByRole("alert").filter({ hasText: "Could not reach the credits service. Try again." }).waitFor();
   await analysisDialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await analysisDialog.waitFor({ state: "hidden" });
+  await page.waitForFunction(() => document.activeElement?.matches('.analysis-button'));
   assert.equal(await analyze.evaluate(element => element === document.activeElement), true);
   assert.equal(await page.evaluate(() => window.creditQA.checkouts.length), 0);
   await page.evaluate(() => window.creditQA.update({ available: true }));

@@ -23,9 +23,11 @@ import { nativeWindowShell, windowColors, type Appearance } from "./window-appea
 import { DiagnosticLog } from "./diagnostic-log";
 import { randomUUID, createHash } from "node:crypto";
 import { AnalysisRequests } from "./analysis-requests";
+import { editingCommand } from "./editing-commands";
 import type { ReportAnalysisProgress } from "../shared/analysis-progress";
 import { CreditsClient } from "./credits-client";
 import { onlineAnalysis } from "./online-analysis";
+import { OnlineAnalysisError } from "./online-response";
 import { creditModel, DEFAULT_CREDIT_MODEL, onlineModel, validateOnlineThinking, type AnalysisProvider, type AnalysisSource } from "../shared/online-models";
 import { maskedApiKey, onlineThinkingCapability, selectedThinking, thinkingKey, type ThinkingPreferences } from "../shared/thinking";
 import { writeProfileSettings } from "./settings-persistence";
@@ -188,6 +190,7 @@ function state() {
 }
 
 async function chooseDatabase(kind: "open" | "create") {
+  if (activeApiRequests || analysisRequests.busy) throw new Error("Finish or cancel analysis and saving before switching databases.");
   if (kind !== "open" && kind !== "create") throw new Error("Choose whether to open or create a database.");
   const parent = mainWindow || undefined;
   const defaultPath = settings.databasePath ? path.dirname(settings.databasePath) : app.getPath("documents");
@@ -199,6 +202,7 @@ async function chooseDatabase(kind: "open" | "create") {
       filters: [{ name: "SQLite databases", extensions: ["sqlite", "db"] }],
     });
     if (result.canceled) return null;
+    if (activeApiRequests || analysisRequests.busy) throw new Error("Finish or cancel analysis and saving before switching databases.");
     filePath = result.filePaths[0];
     await store.open(filePath);
   } else {
@@ -207,6 +211,7 @@ async function chooseDatabase(kind: "open" | "create") {
       filters: [{ name: "SQLite database", extensions: ["sqlite"] }],
     });
     if (result.canceled || !result.filePath) return null;
+    if (activeApiRequests || analysisRequests.busy) throw new Error("Finish or cancel analysis and saving before switching databases.");
     filePath = result.filePath;
     await store.create(filePath);
   }
@@ -414,6 +419,7 @@ async function handleApi(request: Request, pathname: string): Promise<Response> 
     }
     const applicationId = pathname.match(/^\/api\/applications\/([\da-f-]+)$/i)?.[1];
     if (applicationId) {
+      if (method === "PATCH" || method === "DELETE") analysisRequests.assertEditable(`match:${applicationId}`);
       if (method === "PATCH") return Response.json({ application: await store.saveApplication(
         await captureListing(await request.json() as ApplicationInput,
           store.listApplications().find((item) => item.id === applicationId)),
@@ -423,9 +429,10 @@ async function handleApi(request: Request, pathname: string): Promise<Response> 
     const matchId = pathname.match(/^\/api\/applications\/([\da-f-]+)\/analyze$/i)?.[1];
     if (matchId && method === "POST") return Response.json({ application: await analysisRequests.run(
       request.headers.get("X-Zebby-Analysis-ID") || randomUUID(), (signal, commit) => analyzeApplicationMatch(matchId, signal, commit,
-        request.headers.get("X-Zebby-Credit-Quote") || "")) });
+        request.headers.get("X-Zebby-Credit-Quote") || ""), `match:${matchId}`) });
     const notesId = pathname.match(/^\/api\/applications\/([\da-f-]+)\/notes$/i)?.[1];
     if (notesId && method === "PATCH") {
+      analysisRequests.assertEditable(`match:${notesId}`);
       const input = await request.json() as { notes?: unknown };
       return Response.json({ application: await store.saveApplicationNotes(notesId, input?.notes) });
     }
@@ -462,6 +469,7 @@ async function handleApi(request: Request, pathname: string): Promise<Response> 
     }
     const planId = pathname.match(/^\/api\/plans\/([\da-f-]+)$/i)?.[1];
     if (planId) {
+      if (method === "PUT" || method === "DELETE") analysisRequests.assertEditable(`plan:${planId}`);
       if (method === "PUT") return Response.json({ plan: await store.savePlan(
         await captureListing(await request.json() as PlanInput, store.getPlan(planId) || undefined), planId) });
       if (method === "DELETE") { await store.deletePlan(planId); return new Response(null, { status: 204 }); }
@@ -469,7 +477,7 @@ async function handleApi(request: Request, pathname: string): Promise<Response> 
     const analysisId = pathname.match(/^\/api\/plans\/([\da-f-]+)\/analyze$/i)?.[1];
     if (analysisId && method === "POST") return Response.json({ plan: await analysisRequests.run(
       request.headers.get("X-Zebby-Analysis-ID") || randomUUID(), (signal, commit, progress) => analyzePlan(analysisId, signal, commit,
-        request.headers.get("X-Zebby-Credit-Quote") || "", progress)) });
+        request.headers.get("X-Zebby-Credit-Quote") || "", progress), `plan:${analysisId}`) });
     return jsonError("Not found.", 404);
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
@@ -477,6 +485,7 @@ async function handleApi(request: Request, pathname: string): Promise<Response> 
       return jsonError("Analysis cancelled.", 499);
     }
     console.error("Desktop API request failed", pathname, error);
+    if (error instanceof OnlineAnalysisError) logEvent(`Online analysis rejected (${error.diagnostic})`);
     logDiagnostic(`Request failed (${method} ${pathname})`, error);
     const message = error instanceof Error ? error.message : "The request could not be completed.";
     return jsonError(message, /changed outside|changed while/.test(message) ? 409 : 400);
@@ -792,13 +801,16 @@ function createWindow() {
     }
   });
   mainWindow.webContents.on("before-input-event", (event, input) => {
-    if (input.type !== "keyDown" || input.alt || !(process.platform === "darwin" ? input.meta : input.control)) return;
-    const key = input.key.toLowerCase();
-    if (key === "z" || process.platform !== "darwin" && key === "y") {
-      event.preventDefault();
-      if (input.shift || key === "y") mainWindow?.webContents.redo();
-      else mainWindow?.webContents.undo();
-    }
+    const command = editingCommand(input, process.platform);
+    if (command) { event.preventDefault(); mainWindow?.webContents[command](); }
+  });
+  mainWindow.webContents.on("context-menu", (_event, params) => {
+    if (!mainWindow || !params.isEditable && !params.selectionText) return;
+    const flags = params.editFlags;
+    Menu.buildFromTemplate(params.isEditable ? [
+      { role: "cut", enabled: flags.canCut }, { role: "copy", enabled: flags.canCopy },
+      { role: "paste", enabled: flags.canPaste }, { type: "separator" }, { role: "selectAll", enabled: flags.canSelectAll },
+    ] : [{ role: "copy", enabled: flags.canCopy }]).popup({ window: mainWindow });
   });
   mainWindow.webContents.on("render-process-gone", (_event, details) =>
     logDiagnostic("Renderer process stopped", `${details.reason}, exit code ${details.exitCode}`));

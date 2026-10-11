@@ -13,7 +13,8 @@ import { CreditsSettings } from "./CreditsSettings";
 import { onlineModel } from "../../shared/online-models";
 import PlanRecommendations from "./PlanRecommendations";
 import PlanAnalysisProgress from "./PlanAnalysisProgress";
-import { ANALYSIS_STAGES, type AnalysisProgress } from "../../shared/analysis-progress";
+import { BackgroundAnalysisProvider, useBackgroundAnalysis } from "./BackgroundAnalysis";
+import { jobRunning } from "./analysis-jobs";
 import NavigationButton from "./NavigationButton";
 import UpdateButton from "./UpdateButton";
 import SettingsAction from "./SettingsAction";
@@ -51,11 +52,11 @@ function formatUpdated(value: string) {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(value));
 }
 
-function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady, onDirtyChange, onAnalysisChange }: {
+function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady, onDirtyChange, initialSelectedId, onSelectionChange }: {
   analysisProvider: DesktopState["analysisProvider"]; ollamaModel: string;
   builtInModelId: string; builtInReady: boolean;
   onDirtyChange: (dirty: boolean) => void;
-  onAnalysisChange: (busy: boolean) => void;
+  initialSelectedId: string | null; onSelectionChange: (id: string | null) => void;
 }) {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [resumes, setResumes] = useState<Resume[]>([]);
@@ -69,8 +70,13 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   const [loading, setLoading] = useState(true);
   const [reading, setReading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [analysisProgress, setAnalysisProgress] = useState<(AnalysisProgress & { startedAt: number }) | null>(null);
+  const { jobs } = useBackgroundAnalysis();
+  const analysisProgress = selectedId ? jobs.get({ kind: "plan", id: selectedId }) : undefined;
+  const analyzing = jobRunning(analysisProgress);
+  const cancelling = Boolean(analysisProgress?.cancelling);
+  const [preparing, setPreparing] = useState(false);
+  const handledResults = useRef(new Set<string>());
+  const initialSelection = useRef(initialSelectedId);
   const analysisFlow = useAnalysisFlow();
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -78,10 +84,9 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
 
   const listingController = useRef<AbortController | null>(null);
   const resumeInput = useRef<HTMLInputElement | null>(null);
-  const analysisRequest = useRef<{ id: string; controller: AbortController } | null>(null);
-  const [cancelling, setCancelling] = useState(false);
   const dirty = JSON.stringify(draft) !== JSON.stringify(savedDraft) || Boolean(resumeFile);
-  const busy = reading || saving || analyzing;
+  const navigatingBusy = reading || saving || preparing;
+  const busy = navigatingBusy || analyzing;
   const selectedPlan = plans.find((plan) => plan.id === selectedId);
   const hasAnalysis = Boolean(selectedPlan && (selectedPlan.matchAnalyzedAt || selectedPlan.keywords.length));
   const jobIsCurrent = selectedPlan &&
@@ -107,20 +112,33 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
     Math.max(draft.description.trim().length, draft.snapshotText?.trim().length || 0) < 100 && "job text (100+ characters)",
     !draft.currentOverview.trim() && "your resume overview", !(draft.resumeId || resumeFile) && "a resume"].filter(Boolean);
 
-  useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
-  useEffect(() => { onAnalysisChange(analyzing); return () => onAnalysisChange(false); }, [analyzing, onAnalysisChange]);
-  useEffect(() => window.desktop?.onAnalysisProgress?.((progress) => {
-    const request = analysisRequest.current;
-    if (!request || request.id !== progress.requestId || request.controller.signal.aborted ||
-        !Object.hasOwn(ANALYSIS_STAGES, progress.stage)) return;
-    setAnalysisProgress((current) => current?.requestId === request.id &&
-      ANALYSIS_STAGES[progress.stage].order > ANALYSIS_STAGES[current.stage].order
-      ? { ...current, stage: progress.stage } : current);
-  }), []);
-  useEffect(() => () => {
-    const request = analysisRequest.current;
-    if (request) { void window.desktop?.cancelAnalysis(request.id).catch(() => undefined); request.controller.abort(); }
-  }, []);
+  useEffect(() => { onDirtyChange(dirty); return () => onDirtyChange(false); }, [dirty, onDirtyChange]);
+  useEffect(() => { if (!loading) onSelectionChange(selectedId); }, [loading, selectedId, onSelectionChange]);
+  useEffect(() => {
+    if (loading) return;
+    let active = true;
+    const receive = () => { if (!active) return;
+    for (const job of jobs.snapshot()) {
+      if (job.kind !== "plan" || jobRunning(job) || handledResults.current.has(job.requestId)) continue;
+      handledResults.current.add(job.requestId);
+      const plan = job.result?.plan;
+      if (plan) {
+        setPlans((current) => current.map((item) => item.id === plan.id && item.updatedAt <= plan.updatedAt ? plan : item)
+          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
+        if (selectedId === plan.id && (!selectedPlan || selectedPlan.updatedAt <= plan.updatedAt)) {
+          setDraft(inputFromPlan(plan)); setSavedDraft(inputFromPlan(plan)); setLastCurrentOverview(plan.currentOverview);
+        }
+      }
+      if (selectedId === job.id) {
+        setError(job.error);
+        setNotice(job.status === "succeeded" ? "Analysis saved." : job.status === "cancelled" ? "Analysis cancelled." : "");
+      }
+    } };
+    const unsubscribe = jobs.subscribe(receive);
+    // Replay results that finished while this page was closed or loading.
+    queueMicrotask(receive);
+    return () => { active = false; unsubscribe(); };
+  }, [jobs, loading, selectedId, selectedPlan]);
 
   useEffect(() => {
     void Promise.all([
@@ -129,8 +147,9 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
     ])
       .then(([{ plans, lastCurrentOverview }, { resumes }]) => {
         setPlans(plans); setResumes(resumes); setLastCurrentOverview(lastCurrentOverview || "");
-        if (plans[0]) {
-        setSelectedId(plans[0].id); setDraft(inputFromPlan(plans[0])); setSavedDraft(inputFromPlan(plans[0]));
+        const initial = plans.find((plan) => plan.id === initialSelection.current) || plans[0];
+        if (initial) {
+        setSelectedId(initial.id); setDraft(inputFromPlan(initial)); setSavedDraft(inputFromPlan(initial));
         } else { setDraft(emptyPlan(lastCurrentOverview)); setSavedDraft(emptyPlan(lastCurrentOverview)); }
       })
       .catch((cause) => setError(errorText(cause)))
@@ -141,6 +160,8 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
     `${plan.title} ${plan.company} ${plan.listingUrl}`.toLowerCase().includes(filter.toLowerCase())), [plans, filter]);
 
   function update<K extends keyof PlanInput>(key: K, value: PlanInput[K]) {
+    if (analyzing) return;
+    if (selectedId) jobs.dismiss({ kind: "plan", id: selectedId });
     setDraft((current) => {
       if (key === "listingUrl" && value !== current.listingUrl) {
         listingController.current?.abort();
@@ -154,7 +175,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   }
 
   function choose(plan: Plan | null) {
-    if (busy) return;
+    if (navigatingBusy) return;
     if (dirty && !window.confirm("Discard unsaved changes to this plan?")) return;
     listingController.current?.abort();
     setSelectedId(plan?.id || null);
@@ -162,7 +183,9 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
     setDraft(plan ? inputFromPlan(plan) : emptyPlan(lastCurrentOverview));
     setSavedDraft(plan ? inputFromPlan(plan) : emptyPlan(lastCurrentOverview));
     setResumeFile(null); if (resumeInput.current) resumeInput.current.value = "";
-    setError(""); setNotice("");
+    const job = plan ? jobs.get({ kind: "plan", id: plan.id }) : undefined;
+    setError(job?.error || "");
+    setNotice(job?.status === "succeeded" ? "Analysis saved." : job?.status === "cancelled" ? "Analysis cancelled." : "");
   }
 
   const readListing = useCallback(async (url: string) => {
@@ -205,6 +228,8 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   useEffect(() => () => listingController.current?.abort(), []);
 
   async function save(value = draft): Promise<Plan> {
+    if (selectedId && jobRunning(jobs.get({ kind: "plan", id: selectedId }))) throw new Error("Finish or cancel analysis before editing this plan.");
+    if (selectedId) jobs.dismiss({ kind: "plan", id: selectedId });
     setSaving(true); setError("");
     try {
       try {
@@ -245,50 +270,35 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   }
 
   async function analyze() {
-    if (busy || !canAnalyze || analysisRequest.current) return;
+    if (busy || !canAnalyze) return;
     setError(""); setNotice("");
-    const request = { id: crypto.randomUUID(), controller: new AbortController() };
-    analysisRequest.current = request;
+    setPreparing(true);
     try {
       const saved = dirty || !selectedId ? await save() : selectedPlan;
-      request.controller.signal.throwIfAborted();
       if (!saved) throw new Error("Save this plan before analyzing it.");
-      const authorization = await analysisFlow.prepare({ kind: "plan", id: saved.id });
-      if (!authorization) return;
-      request.controller.signal.throwIfAborted();
-      setAnalyzing(true);
       setNotice("");
-      setAnalysisProgress({ requestId: request.id, stage: "preparing", startedAt: performance.now() });
-      const { plan } = await readJson<{ plan: Plan }>(await fetch(`/api/plans/${saved.id}/analyze`, {
-        method: "POST", headers: { "X-Zebby-Analysis-ID": request.id, ...(authorization.quoteId ? { "X-Zebby-Credit-Quote": authorization.quoteId } : {}) }, signal: request.controller.signal }));
-      request.controller.signal.throwIfAborted();
-      setPlans((current) => [plan, ...current.filter((item) => item.id !== plan.id)]
-        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
-      setDraft(inputFromPlan(plan)); setSavedDraft(inputFromPlan(plan));
-      setLastCurrentOverview(plan.currentOverview);
-      setNotice("Analysis saved.");
-    } catch (cause) {
-      if (request.controller.signal.aborted) setNotice("Analysis cancelled.");
-      else setError(errorText(cause));
-    } finally { analysisRequest.current = null; setAnalyzing(false); setCancelling(false); setAnalysisProgress(null); }
+      const modelLabel = analysisProvider === "ollama" ? ollamaModel || "Ollama" : analysisProvider === "builtin"
+        ? builtInModel?.name || "Local model" : onlineModel(analysisProvider === "credits" ? analysisFlow.state.credits.model
+          : analysisProvider === "anthropic" ? analysisFlow.state.anthropicModel : analysisFlow.state.openaiModel).name;
+      void jobs.start({ kind: "plan", id: saved.id }, { modelLabel,
+        prepare: () => analysisFlow.prepare({ kind: "plan", id: saved.id }) });
+    } catch (cause) { setError(errorText(cause)); }
+    finally { setPreparing(false); }
   }
 
   async function cancelAnalysis() {
-    const request = analysisRequest.current;
-    if (!request || cancelling) return;
-    setCancelling(true);
-    try {
-      if (!window.desktop || await window.desktop.cancelAnalysis(request.id)) request.controller.abort();
-    } catch { setError("Could not cancel analysis. Try again."); }
-    finally { setCancelling(false); }
+    if (!selectedId) return;
+    try { await jobs.cancel({ kind: "plan", id: selectedId }); }
+    catch (cause) { setError(errorText(cause)); }
   }
 
   async function remove() {
-    if (!selectedId || !window.confirm("Delete this saved plan?")) return;
+    if (!selectedId || analyzing || !window.confirm("Delete this saved plan?")) return;
     setError("");
     try {
       const response = await fetch(`/api/plans/${selectedId}`, { method: "DELETE" });
       if (!response.ok) await readJson(response);
+      jobs.dismiss({ kind: "plan", id: selectedId });
       const remaining = plans.filter((item) => item.id !== selectedId);
       setPlans(remaining);
       const next = remaining[0] || null;
@@ -304,9 +314,9 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
     <div className="workspace-toolbar">
       <span className="workspace-context plan-context">{plans.length} saved {plans.length === 1 ? "plan" : "plans"}</span>
       <button className="button button-secondary plan-rail-toggle" type="button" data-command="search-toggle"
-        aria-expanded={planListExpanded} aria-controls="saved-plan-list" disabled={busy}
+        aria-expanded={planListExpanded} aria-controls="saved-plan-list" disabled={navigatingBusy}
         onClick={() => setPlanListExpanded((value) => !value)}><FileText size={16} aria-hidden="true" /> Saved plans ({plans.length})</button>
-      <button className="button button-primary" type="button" data-command="new" onClick={() => choose(null)} disabled={busy}>
+      <button className="button button-primary" type="button" data-command="new" onClick={() => choose(null)} disabled={navigatingBusy}>
         <Plus size={18} aria-hidden="true" /> New plan
       </button>
     </div>
@@ -323,8 +333,9 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
         {!loading && plans.length > 0 && visiblePlans.length === 0 && <p className="rail-note">No plans match this search.</p>}
         <div className="plan-items">{visiblePlans.map((plan) => <button key={plan.id} type="button"
           className={`plan-item ${selectedId === plan.id ? "selected" : ""}`}
-          onClick={() => choose(plan)} disabled={busy} aria-current={selectedId === plan.id ? "page" : undefined}>
-          <strong>{plan.title || "Untitled role"}</strong><span>{plan.company || new URL(plan.listingUrl).hostname}</span>
+          onClick={() => choose(plan)} disabled={navigatingBusy} aria-current={selectedId === plan.id ? "page" : undefined}>
+          <strong>{plan.title || "Untitled role"}{jobRunning(jobs.get({ kind: "plan", id: plan.id })) &&
+            <LoaderCircle size={13} className="spin plan-item-progress" aria-label="Analysis in progress" />}</strong><span>{plan.company || new URL(plan.listingUrl).hostname}</span>
           <small>Edited {formatUpdated(plan.updatedAt)}{plan.keywords.length ? ` · ${plan.keywords.length} keywords` : ""}</small>
         </button>)}</div>
       </aside>
@@ -391,7 +402,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
             </button>
             {analyzing && <button className="button button-secondary" type="button" onClick={() => void cancelAnalysis()}
               disabled={cancelling || analysisProgress?.stage === "saving"}>Cancel</button>}
-            <small>{analysisProvider === "ollama" ? (ollamaModel || "Ollama") : analysisProvider === "builtin"
+            <small>{analyzing && analysisProgress?.modelLabel ? analysisProgress.modelLabel : analysisProvider === "ollama" ? (ollamaModel || "Ollama") : analysisProvider === "builtin"
               ? (builtInModel?.name || "Local model") : onlineModel(analysisProvider === "credits" ? analysisFlow.state.credits.model
                 : analysisProvider === "anthropic" ? analysisFlow.state.anthropicModel : analysisFlow.state.openaiModel).name}</small>
           </div>
@@ -588,7 +599,7 @@ export default function App() {
   const appearance = state?.appearance;
   const [tab, setTab] = useState<Tab>("plan");
   const [dirtyPlan, setDirtyPlan] = useState(false);
-  const [analysisRunning, setAnalysisRunning] = useState(false);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [databaseVersion, setDatabaseVersion] = useState(0);
   const [sidebarSaving, setSidebarSaving] = useState(false);
   const [shellError, setShellError] = useState("");
@@ -598,11 +609,10 @@ export default function App() {
     if (loaded) void window.desktop!.confirmUpdateLoaded().catch(() => { /* Main process records cleanup errors. */ });
   }, [loaded]);
   const navigate = useCallback((target: Tab) => {
-    if (analysisRunning) return false;
     if (target !== "plan" && dirtyPlan && !window.confirm("Discard unsaved changes to this plan?")) return false;
     setTab(target);
     return true;
-  }, [dirtyPlan, analysisRunning]);
+  }, [dirtyPlan]);
 
   async function toggleSidebar() {
     if (!state || sidebarSaving) return;
@@ -639,7 +649,7 @@ export default function App() {
   useEffect(() => {
     void window.desktop!.state().then(setState);
     const removeChanged = window.desktop!.onDatabaseChanged((next) => {
-      setState(next); setDatabaseVersion((current) => current + 1); setTab("plan");
+      setState(next); setDatabaseVersion((current) => current + 1); setSelectedPlanId(null); setTab("plan");
     });
     const removeNavigate = window.desktop!.onNavigate((target) => {
       if (target === "plan" || target === "applications" || target === "settings") navigate(target);
@@ -670,7 +680,7 @@ export default function App() {
   }, [appearance]);
 
   if (!state) return <div className="desktop-loading"><LoaderCircle className="spin" size={24} /> Opening workspace...</div>;
-  return <AnalysisFlowProvider state={state} onState={setState}><div className={`desktop-shell ${state.platform === "darwin" ? "platform-mac" : "platform-windows"}${state.sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+  return <AnalysisFlowProvider state={state} onState={setState}><BackgroundAnalysisProvider key={databaseVersion}><div className={`desktop-shell ${state.platform === "darwin" ? "platform-mac" : "platform-windows"}${state.sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
     <header className="desktop-titlebar" aria-label="Window title bar">
       <div className="titlebar-sidebar" aria-hidden="true" />
       <div className="titlebar-caption">Zebby</div>
@@ -682,9 +692,9 @@ export default function App() {
         title={state.sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}>
         <img className="brand-mark" src="./icon.png" alt="" /></button></div>
       <nav id="desktop-navigation" className="sidebar-nav" aria-label="Workspace">
-        <NavigationButton kind="plan" label="Plan" selected={tab === "plan"} collapsed={state.sidebarCollapsed} onActivate={() => navigate("plan")} disabled={analysisRunning} />
-        <NavigationButton kind="applications" label="Applications" selected={tab === "applications"} collapsed={state.sidebarCollapsed} onActivate={() => navigate("applications")} disabled={analysisRunning} />
-        <NavigationButton kind="settings" label="Settings" selected={tab === "settings"} collapsed={state.sidebarCollapsed} onActivate={() => navigate("settings")} disabled={analysisRunning} />
+        <NavigationButton kind="plan" label="Plan" selected={tab === "plan"} collapsed={state.sidebarCollapsed} onActivate={() => navigate("plan")} />
+        <NavigationButton kind="applications" label="Applications" selected={tab === "applications"} collapsed={state.sidebarCollapsed} onActivate={() => navigate("applications")} />
+        <NavigationButton kind="settings" label="Settings" selected={tab === "settings"} collapsed={state.sidebarCollapsed} onActivate={() => navigate("settings")} />
       </nav>
       {(state.updates.available || state.credits.wallet?.purchased || state.filePath && !state.sidebarCollapsed) && <div className="sidebar-footer">
         <SidebarCredits />
@@ -708,8 +718,8 @@ export default function App() {
           model.id === state.builtInModelId && model.status === "ready") &&
           (!LOCAL_MODELS.find((model) => model.id === state.builtInModelId)?.license ||
             state.acceptedModelTerms?.includes(state.builtInModelId)))}
-        onDirtyChange={setDirtyPlan} onAnalysisChange={setAnalysisRunning} />
+        onDirtyChange={setDirtyPlan} initialSelectedId={selectedPlanId} onSelectionChange={setSelectedPlanId} />
       : tab === "applications" ? <ApplicationDashboard key={databaseVersion} />
       : <SettingsView state={state} onState={setState} onUpdate={() => void applyUpdate()} onCheckUpdates={checkUpdates} updateWorking={updateWorking} />}</div>
-  </div></AnalysisFlowProvider>;
+  </div></BackgroundAnalysisProvider></AnalysisFlowProvider>;
 }

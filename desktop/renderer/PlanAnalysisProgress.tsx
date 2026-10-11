@@ -3,7 +3,7 @@ import { ANALYSIS_STAGES, type AnalysisStage } from "../../shared/analysis-progr
 
 export default function PlanAnalysisProgress({ stage, startedAt }: { stage: AnalysisStage; startedAt: number }) {
   const [frame, setFrame] = useState<{ current: AnalysisStage; previous: AnalysisStage | null }>({ current: stage, previous: null });
-  const [seconds, setSeconds] = useState(0);
+  const [seconds, setSeconds] = useState(() => Math.max(0, Math.floor((performance.now() - startedAt) / 1000)));
   if (frame.current !== stage) setFrame({ current: stage, previous: frame.current });
 
   useEffect(() => {
@@ -21,6 +21,8 @@ export default function PlanAnalysisProgress({ stage, startedAt }: { stage: Anal
     <span className="visually-hidden" role="status" aria-label="Analyzing role" aria-live="polite" aria-atomic="true">
       {ANALYSIS_STAGES[stage].label}
     </span>
+    <span className="plan-progress-time" aria-hidden="true" title="Time elapsed">{elapsed}</span>
+    <span className="plan-progress-separator" aria-hidden="true">·</span>
     <span className="plan-progress-roller" aria-hidden="true">
       {frame.previous && <span key={`out-${frame.current}`} className="plan-progress-label is-leaving">
         {ANALYSIS_STAGES[frame.previous].label}
@@ -29,6 +31,5 @@ export default function PlanAnalysisProgress({ stage, startedAt }: { stage: Anal
         {ANALYSIS_STAGES[frame.current].label}
       </span>
     </span>
-    <span className="plan-progress-time" aria-hidden="true" title="Time elapsed">{elapsed}</span>
   </div>;
 }

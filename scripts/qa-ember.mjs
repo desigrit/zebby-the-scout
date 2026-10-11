@@ -248,8 +248,12 @@ try {
   await page.getByRole("button", { name: "Analyze", exact: true }).click(); await waitForRequest();
   assert.equal(await input.isDisabled(), true);
   assert.equal(await page.getByRole("button", { name: "Copy keyword 1", exact: true }).isDisabled(), true);
-  await page.waitForFunction(() => [...document.querySelectorAll(".sidebar-nav button")].every((button) => button.disabled));
-  assert.equal(await nav.getByRole("button", { name: "Settings", exact: true }).isDisabled(), true);
+  assert.equal(await nav.getByRole("button", { name: "Settings", exact: true }).isDisabled(), false);
+  await nav.getByRole("button", { name: "Settings", exact: true }).click();
+  await nav.getByRole("button", { name: "Plan", exact: true }).click();
+  await page.getByRole("button", { name: "Analysis in progress", exact: true }).waitFor();
+  assert.equal(await input.isDisabled(), true);
+  assert.equal(await app.evaluate(() => globalThis.__emberQA.aborted), 0);
   await capture("plan-analysis-running");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByText("Analysis cancelled.", { exact: true }).waitFor();

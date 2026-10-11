@@ -492,3 +492,7 @@ Plan progress occupies a stable 22px line, 7px below Analyze. Real analysis phas
 - Don't put a sidebar wordmark or database filename in the title region, or draw HTML window controls.
 - Don't communicate hiring status, match strength, or job importance through color alone.
 - Don't apply Windows scrollbar styling to Mac or replace the unchanged zebra artwork.
+
+## Background analysis, 2.3.2
+
+Requests belong to the workspace rather than the active page. Protect only the analyzed record, keep navigation available, and show a small spinner in its saved-plan row. Elapsed time precedes the rolling status, separated by a middle dot. Returning to a running plan retains its timer and stage. Native macOS clipboard shortcuts and field context menus work without adding an application Edit menu.

@@ -1,5 +1,11 @@
 # Plan
 
+## 2.3.2 background analysis
+
+Analysis requests belong to the workspace and are keyed by saved record. Page navigation and saved-plan selection stay available. Inputs and result editing are locked only on the record being analyzed; Cancel is available until saving starts. A small spinner identifies running saved plans. Returning to a plan restores its progress and elapsed time. Completion must never replace another plan's draft.
+
+The progress line orders elapsed time, a middle dot, then the existing rolling status. Ember colors, native typography, reserved line height and reduced-motion behavior stay intact. API setup dialog dismissal restores focus after the record lock is released. Headless checks cover navigation, concurrent records, completed background results and unchanged drafts; native clipboard behavior is verified by release CI on macOS.
+
 ## Surface strategy
 
 TASK: Prepare truthful resume priorities for a posting, understand the resume match, and save an editable plan.

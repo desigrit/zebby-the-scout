@@ -333,7 +333,7 @@ test("PostgreSQL ledger and service integration", async (t) => {
     });
     await t.test("malformed model output and provider failures refund the hold", async () => {
       const previous = await wallet(); failProvider = true;
-      await assert.rejects(analyze((await newQuote()).id), /could not complete/); failProvider = false;
+      await assert.rejects(analyze((await newQuote()).id), /service error/); failProvider = false;
       providerResult = { ...plan, score: 101 }; await assert.rejects(analyze((await newQuote()).id)); providerResult = plan;
       assert.equal((await wallet()).balance, previous.balance); assert.equal((await wallet()).reserved, 0);
     });

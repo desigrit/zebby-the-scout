@@ -4,12 +4,16 @@ import { ANALYSIS_STAGES, type AnalysisProgress, type AnalysisStage, type Report
 // handler. Carry a request ID through IPC and use one signal for inference and
 // the final persistence check instead.
 export class AnalysisRequests {
-  private active = new Map<string, { controller: AbortController; committing: boolean }>();
+  private active = new Map<string, { controller: AbortController; committing: boolean; source?: string }>();
   private cancelled = new Map<string, number>();
   private finished = new Map<string, number>();
   private readonly onProgress?: (progress: AnalysisProgress) => void;
   constructor(onProgress?: (progress: AnalysisProgress) => void) { this.onProgress = onProgress; }
   get busy() { return this.active.size > 0; }
+  isAnalyzing(source: string) { return [...this.active.values()].some((request) => request.source === source); }
+  assertEditable(source: string) {
+    if (this.isAnalyzing(source)) throw new Error("Finish or cancel analysis before editing this listing.");
+  }
 
   cancel(id: string) {
     this.validate(id);
@@ -25,14 +29,15 @@ export class AnalysisRequests {
   }
 
   async run<T>(id: string, work: (signal: AbortSignal, commit: <V>(persist: () => Promise<V>) => Promise<V>,
-    progress: ReportAnalysisProgress) => Promise<T>): Promise<T> {
+    progress: ReportAnalysisProgress) => Promise<T>, source?: string): Promise<T> {
     this.validate(id);
     this.prune();
     if (this.active.has(id)) throw new Error("This analysis is already running.");
     if (this.finished.has(id)) throw new Error("This analysis has already finished.");
+    if (source && this.isAnalyzing(source)) throw new Error("This listing is already being analyzed.");
     const controller = new AbortController();
     if (this.cancelled.delete(id)) controller.abort(new DOMException("Analysis cancelled.", "AbortError"));
-    const request = { controller, committing: false };
+    const request = { controller, committing: false, source };
     this.active.set(id, request);
     let stage: AnalysisStage | undefined;
     const progress: ReportAnalysisProgress = (next) => {

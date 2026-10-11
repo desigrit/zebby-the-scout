@@ -42,7 +42,13 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
   useEffect(() => {
     const element = dialog.current; if (!element) return;
     if (dialogOpen && !element.open) element.showModal();
-    else if (!dialogOpen && element.open) { element.close(); opener.current?.focus(); }
+    else if (!dialogOpen && element.open) {
+      element.close();
+      // The authorizing job releases its record lock after prepare resolves.
+      // Restore focus after that render, when the Analyze button is enabled.
+      const frame = requestAnimationFrame(() => { if (opener.current?.isConnected) opener.current.focus(); });
+      return () => cancelAnimationFrame(frame);
+    }
   }, [dialogOpen]);
   useEffect(() => { return () => { pending.current?.resolve(null); pending.current = null; }; }, []);
   useEffect(() => {

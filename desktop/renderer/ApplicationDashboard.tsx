@@ -27,6 +27,8 @@ import { parseLocations } from "../../lib/locations";
 import { pasteJobDescription } from "../../lib/job-text-paste";
 import LocationEditor from "./LocationEditor";
 import { useAnalysisFlow } from "./AnalysisFlow";
+import { useBackgroundAnalysis } from "./BackgroundAnalysis";
+import { jobRunning } from "./analysis-jobs";
 import { applicationActivity } from "../../lib/application-activity";
 import ApplicationActivity from "./ApplicationActivity";
 import MatchProgressRing from "./MatchProgressRing";
@@ -149,10 +151,10 @@ export default function ApplicationDashboard() {
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [savingStatusId, setSavingStatusId] = useState<string | null>(null);
-  const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(() => new Set());
-  const analysisRequestsRef = useRef(new Set<string>());
-  const analysisControllers = useRef(new Map<string, { id: string; controller: AbortController }>());
-  const [cancellingIds, setCancellingIds] = useState<Set<string>>(() => new Set());
+  const { jobs, snapshot: analysisJobs } = useBackgroundAnalysis();
+  const analyzingIds = new Set(analysisJobs.filter((job) => job.kind === "match" && jobRunning(job)).map((job) => job.id));
+  const cancellingIds = new Set(analysisJobs.filter((job) => job.kind === "match" && (job.cancelling || job.stage === "saving")).map((job) => job.id));
+  const handledResults = useRef(new Set<string>());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const inspectorId = useId();
@@ -179,11 +181,22 @@ export default function ApplicationDashboard() {
   const deleteDialogRef = useRef<HTMLDialogElement>(null);
   const notesDialogRef = useRef<HTMLDialogElement>(null);
   useEffect(() => {
-    const requests = analysisControllers.current;
-    return () => { for (const request of requests.values()) {
-      void window.desktop?.cancelAnalysis(request.id).catch(() => undefined); request.controller.abort();
+    if (loading) return;
+    let active = true;
+    const receive = () => { if (!active) return;
+    for (const job of jobs.snapshot()) {
+      if (job.kind !== "match" || jobRunning(job) || handledResults.current.has(job.requestId)) continue;
+      handledResults.current.add(job.requestId);
+      const application = job.result?.application;
+      if (application) setApplications((current) => current.map((item) => item.id === application.id &&
+        item.updatedAt <= application.updatedAt ? application : item));
+      setNotice(job.status === "succeeded" ? "Match saved." : job.status === "cancelled" ? "Analysis cancelled." : "");
+      setActionError(job.error ? job.automatic ? `Application saved, but match analysis needs attention: ${job.error}` : job.error : "");
     } };
-  }, []);
+    const unsubscribe = jobs.subscribe(receive);
+    queueMicrotask(receive);
+    return () => { active = false; unsubscribe(); };
+  }, [jobs, loading]);
 
   useEffect(() => {
     const dialog = deleteDialogRef.current;
@@ -420,7 +433,8 @@ export default function ApplicationDashboard() {
   }
 
   function openEditForm(item: Application) {
-    if (analysisRequestsRef.current.has(item.id)) return;
+    if (jobRunning(jobs.get({ kind: "match", id: item.id }))) return;
+    jobs.dismiss({ kind: "match", id: item.id });
     lastTriggerRef.current = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
@@ -455,6 +469,8 @@ export default function ApplicationDashboard() {
 
   async function saveApplication(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (editingId && jobRunning(jobs.get({ kind: "match", id: editingId }))) return;
+    if (editingId) jobs.dismiss({ kind: "match", id: editingId });
     const matchStrength = form.matchStrength.trim() === "" ? null : Number(form.matchStrength);
     if (matchStrength !== null && (!Number.isInteger(matchStrength) || matchStrength < 0 || matchStrength > 100)) {
       setActionError("Enter a match score from 0 to 100.");
@@ -530,7 +546,8 @@ export default function ApplicationDashboard() {
   }
 
   async function updateStatus(item: Application, status: ApplicationStatus) {
-    if (analysisRequestsRef.current.has(item.id) || item.status === status) return;
+    if (jobRunning(jobs.get({ kind: "match", id: item.id })) || item.status === status) return;
+    jobs.dismiss({ kind: "match", id: item.id });
     setSavingStatusId(item.id);
     setActionError("");
     try {
@@ -556,56 +573,27 @@ export default function ApplicationDashboard() {
 
   async function analyzeMatch(item: Application, automatic = false) {
     if (automatic && !analysisFlow.canAutoAnalyze()) return;
-    if (analysisRequestsRef.current.has(item.id)) return;
-    analysisRequestsRef.current.add(item.id);
-    const request = { id: crypto.randomUUID(), controller: new AbortController() };
-    analysisControllers.current.set(item.id, request);
     setActionError("");
     if (!automatic) setNotice("");
-    try {
-      const authorization = automatic ? {} : await analysisFlow.prepare({ kind: "match", id: item.id });
-      if (!authorization) return;
-      request.controller.signal.throwIfAborted();
-      setAnalyzingIds((current) => new Set(current).add(item.id));
-      const { application } = await readJson<{ application: Application }>(
-        await fetch(`/api/applications/${encodeURIComponent(item.id)}/analyze`, {
-          method: "POST", headers: { "X-Zebby-Analysis-ID": request.id,
-            ...(authorization.quoteId ? { "X-Zebby-Credit-Quote": authorization.quoteId } : {}) }, signal: request.controller.signal }),
-      );
-      request.controller.signal.throwIfAborted();
-      setApplications((current) => current.map((existing) => existing.id === item.id ? application : existing));
-      setNotice("Match saved.");
-    } catch (error) {
-      if (request.controller.signal.aborted) { setNotice("Analysis cancelled."); return; }
-      const message = error instanceof Error ? error.message : "Match analysis could not be completed.";
-      setActionError(automatic ? `Application saved, but match analysis needs attention: ${message}` : message);
-    } finally {
-      analysisRequestsRef.current.delete(item.id);
-      analysisControllers.current.delete(item.id);
-      setAnalyzingIds((current) => { const next = new Set(current); next.delete(item.id); return next; });
-      setCancellingIds((current) => { const next = new Set(current); next.delete(item.id); return next; });
-    }
+    void jobs.start({ kind: "match", id: item.id }, { automatic,
+      prepare: () => automatic ? Promise.resolve({}) : analysisFlow.prepare({ kind: "match", id: item.id }) });
   }
 
   async function cancelMatch(item: Application) {
-    const request = analysisControllers.current.get(item.id);
-    if (!request || cancellingIds.has(item.id)) return;
-    setCancellingIds((current) => new Set(current).add(item.id));
-    try {
-      if (!window.desktop || await window.desktop.cancelAnalysis(request.id)) request.controller.abort();
-    } catch { setActionError("Could not cancel analysis. Try again."); }
-    finally { setCancellingIds((current) => { const next = new Set(current); next.delete(item.id); return next; }); }
+    try { await jobs.cancel({ kind: "match", id: item.id }); }
+    catch (cause) { setActionError(cause instanceof Error ? cause.message : "Could not cancel analysis. Try again."); }
   }
 
   function openNotes(item: Application) {
-    if (analysisRequestsRef.current.has(item.id)) return;
+    if (jobRunning(jobs.get({ kind: "match", id: item.id }))) return;
+    jobs.dismiss({ kind: "match", id: item.id });
     setViewingNotes(item);
     setNotesDraft(item.notes || "");
     setNotesError("");
   }
 
   async function saveNotes() {
-    if (!viewingNotes) return;
+    if (!viewingNotes || jobRunning(jobs.get({ kind: "match", id: viewingNotes.id }))) return;
     setSavingNotes(true);
     setNotesError("");
     try {
@@ -621,7 +609,7 @@ export default function ApplicationDashboard() {
   }
 
   async function deleteApplication(item: Application) {
-    if (analysisRequestsRef.current.has(item.id)) return;
+    if (jobRunning(jobs.get({ kind: "match", id: item.id }))) return;
     setDeletingId(item.id);
     setActionError("");
     try {
@@ -629,6 +617,7 @@ export default function ApplicationDashboard() {
         method: "DELETE",
       });
       if (!response.ok) await readJson(response);
+      jobs.dismiss({ kind: "match", id: item.id });
       setApplications((current) => current.filter((existing) => existing.id !== item.id));
       setConfirmingDelete(null);
       setNotice("Application deleted.");
