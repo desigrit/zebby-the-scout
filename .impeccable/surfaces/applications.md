@@ -16,6 +16,8 @@ CONSTRAINTS: Preserve every optional form field, listing extraction, resume uplo
 
 ## Direction contract
 
+Offer received is the fifth status, with a blue wash and text in both themes and blue segments in the activity chart. Offers remain in conversation and participate in existing company/status counts. A successful transition into this status plays one three-second canvas burst of striped paper, blue/coral accents and a few tiny Zebby medallions. It never intercepts input, plays sound, or replays on opening an existing offer. Failed writes do not celebrate. Reduce Motion keeps the blue status and congratulations message; hiding or leaving the page stops the animation. Existing SQLite files accept the status without a schema migration.
+
 MODE: Operate.
 
 THESIS: Keep the search's activity visible while a compact selectable ledger connects each role to its full details.
@@ -36,9 +38,9 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
 ## Application activity contract
 
-The chart covers 30 consecutive applied dates ending today. Each bar's height represents that day's total applications; its proportional segments represent their current Applied, Heard back, Interview scheduled and Rejected statuses. Changing a status updates the original applied day's stack and preserves its total and height. Records without an applied date remain outside the chart.
+The chart covers 30 consecutive applied dates ending today. Each bar's height represents that day's total applications; its proportional segments represent their current Applied, Heard back, Interview scheduled, Rejected and Offer received statuses. Changing a status updates the original applied day's stack and preserves its total and height. Records without an applied date remain outside the chart.
 
-Applied uses muted neutral fill, Heard back uses the incumbent ochre chart color, interviews use green and rejections use muted red, with appearance-specific fills. These are local chart roles within Ember. Hover or keyboard focus shows the date and total; populated days also show the status names and exact counts for all four statuses. Accessible day names include the date, total and every nonzero status count, so the breakdown is available without color. The chart has no visible legend.
+Applied uses muted neutral fill, Heard back uses the incumbent ochre chart color, interviews use green, rejections use muted red and offers use blue, with appearance-specific fills. These are local chart roles within Ember. Hover or keyboard focus shows the date and total; populated days also show the status names and exact counts for all five statuses. Accessible day names include the date, total and every nonzero status count, so the breakdown is available without color. The chart has no visible legend.
 
 One day is in the Tab sequence. Left and Right move focus between days; Home and End focus the first and last day. Escape dismisses the tooltip, and a new hover or focus restores it. Tooltips are clamped to the chart's horizontal bounds before paint and repositioned when data or chart width changes. The chart stays attached above totals and filters in wide, narrow and scaled layouts.
 

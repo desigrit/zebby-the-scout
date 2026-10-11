@@ -151,11 +151,16 @@ test("desktop SQLite file stores applications, resumes, and plans across reopen"
     assert.equal(editedPlan.matchNotes, "");
     assert.equal(store.status.dirty, false);
     assert.deepEqual(await readdir(store.backupsPath).catch(() => []), [], "Ordinary saves do not create recurring backups.");
+    const offer = await store.saveApplication({ ...edited, status: "Offer received" }, application.id);
+    assert.equal(offer.status, "Offer received");
+    assert.equal(offer.notes, edited.notes);
+    assert.equal(offer.resumeId, edited.resumeId);
     store.close();
 
     store = new DesktopStore(path.join(root, "computer-b"));
     await store.open(file);
     assert.equal(store.listApplications()[0].resumeName, "PM Resume.pdf");
+    assert.equal(store.listApplications().find((item) => item.id === application.id).status, "Offer received");
     assert.equal(store.listApplications().length, 2);
     assert.equal(store.listPlans()[0].keywords[0], "Customer research");
     assert.equal(store.listPlans()[0].resumeId, resume.id);

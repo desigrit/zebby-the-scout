@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { ServiceConfig } from "./config.ts";
-import { CREDIT_PACKS, CREDIT_MODELS, EFFORT_LEVELS, PRICE_VERSION, NANODOLLARS_PER_CREDIT, creditPack, creditModel, onlineModel,
+import { CREDIT_PACKS, CREDIT_MODELS, CREDIT_THINKING_LEVELS, PRICE_VERSION, NANODOLLARS_PER_CREDIT, creditPack, creditModel, onlineModel,
   maximumCost, usageCost, validateOnlineThinking } from "../shared/online-models.ts";
 import { planInstructions, planSchema, matchInstructions, matchSchema } from "../desktop/analysis-contracts.ts";
 import { onlineAnalysis } from "../desktop/online-analysis.ts";
@@ -135,7 +135,7 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
       return { status: session.status === "expired" ? "expired" : "pending" };
     }
     if (method === "POST" && path === "/v1/quotes") {
-      const value = z.object({ model: z.string(), kind: kindSchema, thinkingLevel: z.enum(EFFORT_LEVELS).default("high"), input: z.unknown() }).strict().parse(body);
+      const value = z.object({ model: z.string(), kind: kindSchema, thinkingLevel: z.enum(CREDIT_THINKING_LEVELS).default("high"), input: z.unknown() }).strict().parse(body);
       const model = configuredModel(value.model), input = validateInput(value.input, value.kind);
       const thinkingLevel = validateOnlineThinking(model, value.thinkingLevel);
       const instructions = value.kind === "plan" ? planInstructions : matchInstructions;

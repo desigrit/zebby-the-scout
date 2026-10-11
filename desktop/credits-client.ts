@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { needsServiceWakeup, waitForCreditsService } from "./credits-service-ready.ts";
-import { creditModel, DEFAULT_CREDIT_MODEL, EFFORT_LEVELS, validateOnlineThinking, type AnalysisSource, type CreditQuote, type CreditsState, type Wallet, type AnalysisKind } from "../shared/online-models.ts";
+import { creditModel, DEFAULT_CREDIT_MODEL, CREDIT_THINKING_LEVELS, validateOnlineThinking, type AnalysisSource, type CreditQuote, type CreditsState, type Wallet, type AnalysisKind } from "../shared/online-models.ts";
 import { deviceNameSchema, deviceTokenSchema, guestSessionSchema, pairingCodeSchema, pairingSchema, recoveryCodeSchema,
   walletAccessSchema, type WalletAccess, type WalletPairing } from "../shared/wallet-access.ts";
 const integer = z.number().int().safe();
@@ -368,7 +368,7 @@ export class CreditsClient {
   }
   async quote(kind: AnalysisKind, input: unknown, model: string, thinkingLevel?: string): Promise<CreditQuote> {
     const level = validateOnlineThinking(creditModel(model), thinkingLevel);
-    const quote = z.object({ id: z.string().uuid(), model: z.string(), thinkingLevel: z.enum(EFFORT_LEVELS), maximum: integer.positive(), expiresAt: z.string() })
+    const quote = z.object({ id: z.string().uuid(), model: z.string(), thinkingLevel: z.enum(CREDIT_THINKING_LEVELS), maximum: integer.positive(), expiresAt: z.string() })
       .parse(await this.request("/v1/quotes", { kind, input, model, thinkingLevel: level }));
     if (quote.model !== model || quote.thinkingLevel !== level) throw new Error("The service returned a different model or thinking level. Request a fresh quote.");
     return quote;

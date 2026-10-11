@@ -3,6 +3,7 @@ export const APPLICATION_STATUSES = [
   "Heard back",
   "Interview scheduled",
   "Rejected",
+  "Offer received",
 ] as const;
 
 export const MAX_APPLICATION_NOTES_CHARS = 200_000;

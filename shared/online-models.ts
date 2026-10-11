@@ -6,6 +6,8 @@ export const PRICE_VERSION = "2026-10-10-thinking";
 export const DEFAULT_CREDIT_MODEL = "gpt-6.1-sol";
 export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
 export type EffortLevel = typeof EFFORT_LEVELS[number];
+export const CREDIT_THINKING_LEVELS = ["off", ...EFFORT_LEVELS] as const;
+export type CreditThinkingLevel = typeof CREDIT_THINKING_LEVELS[number];
 export type OnlineThinkingLevel = EffortLevel | "off" | "on";
 // One credit represents $0.001 of provider usage. Costs use integer nanodollars.
 export const NANODOLLARS_PER_CREDIT = 1_000_000;
@@ -19,11 +21,15 @@ export const ONLINE_MODELS = [
 ] as const;
 export type OnlineModel = typeof ONLINE_MODELS[number];
 // Newest generation first within each provider. Same-release families retain a stable order.
-export const CREDIT_MODELS = ONLINE_MODELS.filter((model) => model.id === DEFAULT_CREDIT_MODEL || model.id === "gpt-6-astra");
-export const CREDIT_ESTIMATE = { model: DEFAULT_CREDIT_MODEL, thinkingLevel: "high", input: 20000, output: 8000 } as const;
-export const CREDIT_ESTIMATE_DESCRIPTION = "Estimates assume GPT-6.1 Sol at High, 20,000 input tokens charged as cache writes, and 8,000 output tokens including thinking. Actual usage varies. You confirm the maximum before each analysis.";
-function estimatedAnalyses(credits: number) {
-  const model = onlineModel(CREDIT_ESTIMATE.model);
+export const CREDIT_MODELS = ONLINE_MODELS.filter((model) => model.provider === "openai");
+// Rounded text baseline from a local audit of saved Plans. Provider reasoning was
+// not retained, so keep the existing total output allowance as an explicit estimate.
+export const CREDIT_ESTIMATE = { model: DEFAULT_CREDIT_MODEL, thinkingLevel: "high", input: 3600,
+  visibleOutput: 500, thinkingAllowance: 7500, output: 8000 } as const;
+export const CREDIT_ESTIMATE_MODELS = [DEFAULT_CREDIT_MODEL, "gpt-6-luna"] as const;
+export const CREDIT_ESTIMATE_DESCRIPTION = "Both High estimates use a sample Plan with 3,600 input tokens and about 500 result tokens, plus an estimated 7,500-token thinking allowance. Input is priced as cache writes. Actual usage varies; thinking usage has not been measured.";
+export function estimatedAnalyses(credits: number, modelId: string = CREDIT_ESTIMATE.model) {
+  const model = creditModel(modelId);
   const estimate = usageCost(model, { input: 0, cached: 0, cacheWrite: CREDIT_ESTIMATE.input, output: CREDIT_ESTIMATE.output });
   return Math.floor(credits * NANODOLLARS_PER_CREDIT / estimate);
 }
@@ -41,7 +47,7 @@ export function onlineModel(id: string): OnlineModel {
 }
 export function creditModel(id: string): OnlineModel {
   const model = CREDIT_MODELS.find((item) => item.id === id);
-  if (!model) throw new Error("Choose GPT-6.1 Sol or GPT-6 Astra for Zebby credits.");
+  if (!model) throw new Error("Choose GPT-6.1 Sol, GPT-6 Luna or GPT-6 Astra for Zebby credits.");
   return model;
 }
 export function onlineThinking(model: OnlineModel) {
@@ -95,6 +101,6 @@ export type Wallet = { balance: number; reserved: number; used: number; purchase
   recent: { id: string; model: string; kind: string; cost: number; createdAt: string }[] };
 export type CreditsState = { available: boolean; signedIn: boolean; email: string; wallet: Wallet | null;
   stale: boolean; error: string; model: string; access: WalletAccess | null; recoverySaved: boolean; pendingConnection: boolean };
-export type CreditQuote = { id: string; model: string; thinkingLevel?: EffortLevel; maximum: number; expiresAt: string; recovery?: boolean; pending?: boolean; cost?: number };
+export type CreditQuote = { id: string; model: string; thinkingLevel?: CreditThinkingLevel; maximum: number; expiresAt: string; recovery?: boolean; pending?: boolean; cost?: number };
 export type AnalysisSource = { kind: AnalysisKind; id: string };
 export function quoteNeedsCredits(quote: CreditQuote, available: number) { return !quote.recovery && available < quote.maximum; }

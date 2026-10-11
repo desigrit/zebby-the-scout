@@ -12,7 +12,8 @@ html[data-theme="dark"] {
   --focus-ring: rgba(240,172,145,.2); --button-ink: #24201e;
   --selection-bg: #785344; --selection-ink: #fff5ec; --scroll-thumb: #a69b92;
 }
-html[data-theme="dark"] .application-activity { --activity-applied: #a69b92; --activity-interview: #80b593; --activity-rejected: #d58d81; }
+html[data-theme="dark"] .application-activity { --activity-applied: #a69b92; --activity-interview: #80b593; --activity-rejected: #d58d81; --activity-offer: #78b2ef; }
+.offer-confetti { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 60; }
 .desktop-shell { --sidebar-width: 210px; --brand-inset: 26px; --sidebar-motion: 280ms cubic-bezier(.16, 1, .3, 1); --titlebar-height: 44px; display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); grid-template-rows: var(--titlebar-height) minmax(0, 1fr); height: 100%; transition: grid-template-columns var(--sidebar-motion); }
 .desktop-shell.sidebar-collapsed { --sidebar-width: 96px; --brand-inset: 25px; }
 .platform-windows { font-family: "Segoe UI Variable", "Segoe UI", Arial, sans-serif; }
@@ -322,6 +323,7 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .model-download-progress::-webkit-progress-value { background: var(--accent); }
 .local-model-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .model-transfer-action.settings-action.button { border: 0; background: transparent; color: var(--ink-soft); }
+.model-transfer-action.settings-action.button svg { stroke-width: 1.25; }
 .model-transfer-action.settings-action.button:hover:not(:disabled) { background: var(--surface-hover); color: var(--ink); }
 .model-transfer-action[data-download-action="stop"]:hover:not(:disabled) { color: var(--accent); background: var(--accent-wash); }
 .model-license { margin: 14px 0; }
@@ -443,10 +445,9 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .credit-pack-badge { display: block; min-height: 18px; color: var(--accent); font-size: 11px; font-weight: 650; }
 .credit-pack-price { font-size: 32px; font-weight: 650; line-height: 1.2; letter-spacing: -.02em; }
 .credit-pack-count { font-size: 14px; font-weight: 600; }
+.credit-pack-estimates { display: grid; gap: 10px; }
+.credit-estimate-model { white-space: nowrap; }
 .credit-pack small { font-size: 12px; color: var(--ink-soft); line-height: 1.6; }
-.credit-pack-selection { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: auto; padding-top: 14px; font-size: 12px; color: var(--ink-soft); }
-.credit-pack.selected .credit-pack-selection { color: var(--accent); font-weight: 650; }
-.credit-account { color: var(--ink-soft); font-size: 12px; overflow-wrap: anywhere; }
 .credit-checkout-state { display: grid; justify-items: center; gap: 14px; padding: 18px 0; text-align: center; }
 .credit-checkout-state > svg { color: var(--accent); }
 .credit-checkout-state p { margin: 0; line-height: 1.5; }
@@ -603,6 +604,7 @@ html[data-theme="dark"] .button-secondary { background: var(--field); }
 html[data-theme="dark"] .status-select[data-status="Heard back"] { color: #f0d7a7; background: #55472b; }
 html[data-theme="dark"] .status-select[data-status="Interview scheduled"] { color: #b9e3c4; background: #2d4a38; }
 html[data-theme="dark"] .status-select[data-status="Rejected"] { color: #f1beb3; background: #513832; }
+html[data-theme="dark"] .status-select[data-status="Offer received"] { color: #b2d7ff; background: #283e57; }
 html[data-theme="dark"] .form-error { background: #4c302a; color: #f5b3a6; }
 html[data-theme="dark"] .notice { background: transparent; color: var(--ink-soft); }
 html[data-theme="dark"] .duplicate-warning { background: #4b3920; border-color: #8e7037; color: #f2d5a2; }

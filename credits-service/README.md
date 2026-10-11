@@ -1,6 +1,6 @@
 # Zebby credits service
 
-Official Zebby builds connect to `https://zebby-credits.onrender.com`. Credits support GPT-6.1 Sol and GPT-6 Astra. Users can also bring their own OpenAI or Anthropic API key, use an Ollama server, or download a local model. Those methods do not need this service. Custom builds set the public `ZEBBY_CREDITS_SERVICE_URL` when building the desktop app. Wallet access requires OS secure storage.
+Official Zebby builds connect to `https://zebby-credits.onrender.com`. Credits support GPT-6.1 Sol, GPT-6 Luna and GPT-6 Astra. Users can also bring their own OpenAI or Anthropic API key, use an Ollama server, or download a local model. Those methods do not need this service. Custom builds set the public `ZEBBY_CREDITS_SERVICE_URL` when building the desktop app. Wallet access requires OS secure storage.
 
 Every analysis method works without a Zebby signup or sign-in screen. The first credit purchase silently creates a guest wallet. Each computer keeps its own encrypted access credential, and the service owns the shared balance. Opening a SQLite database on another computer does not connect its credit wallet.
 
@@ -12,12 +12,14 @@ If you already ran an earlier schema, run the complete updated [schema.sql](sche
 
 For the 2.2.0 update, run [20261010_analysis_thinking.sql](migrations/20261010_analysis_thinking.sql) in Supabase SQL Editor **before deploying the service**. It adds only the quote's thinking-level column and is safe to run again. Wallets, balances, purchases, saved results and application databases are preserved. No new environment variables or Stripe changes are required for this update.
 
+For Luna support, then run [20261010_credit_luna.sql](migrations/20261010_credit_luna.sql) **before deploying the updated service and desktop app**. It permits Luna's Off thinking option without changing existing quotes, wallets or balances, and is safe to run again. Fresh installations can use the complete schema instead. Luna uses the existing OpenAI service key; no Stripe or environment changes are needed. Confirm that the key's project can access Luna before inviting users.
+
 ## What you need
 
 - A Supabase project for PostgreSQL.
 - A Stripe account, starting in a test sandbox.
 - A Node 22 host or a Docker web service with HTTPS. Render is a straightforward starting point; the included Dockerfile can also run on Azure Container Apps.
-- Your own OpenAI and Anthropic API accounts for the models you offer through credits. Keep those keys on the service host.
+- A funded OpenAI API account with access to the three credit models. Keep its key on the service host. Personal Anthropic keys are billed to each user's account and do not require a funded service account.
 
 Do not paste secrets into chat, GitHub, the SQLite database, or desktop build variables. The only desktop build variable is the public service URL.
 
@@ -106,20 +108,20 @@ The checked-in Node tests use an isolated PostgreSQL engine and mocked network r
 
 ## Packs and estimates
 
-| Price | Credits | About this many analyses using GPT-6.1 Sol at High |
-| --- | ---: | ---: |
-| $5 | 500 | 3 |
-| $20 | 3,000 | 23 |
-| $50 | 8,000 | 61 |
-| $100 | 16,000 | 123 |
+| Price | Credits | About this many with GPT-6.1 Sol (High) | About this many with GPT-6 Luna (High) |
+| --- | ---: | ---: | ---: |
+| $5 | 500 | 5 | 112 |
+| $20 | 3,000 | 33 | 674 |
+| $50 | 8,000 | 89 | 1,797 |
+| $100 | 16,000 | 179 | 3,595 |
 
 Before an analysis, Zebby shows its maximum credit cost. The service reserves that amount, charges for actual reported token usage, including thinking, and returns unused credits to the wallet. Cancelled, failed and invalid analyses release their reservations.
 
 If a reply is lost after settlement, Zebby retains the original request ID and can recover the result without another charge. Recovery metadata, without resume or job text, is saved in encrypted local settings when secure storage is available. Main clears it only after the result is saved to SQLite. A pending result can be recovered after restarting on that computer within the server's 24-hour result retention window. Changing wallets rejects obsolete replies and prevents an older wallet's reply from replacing the current one.
 
-Counts assume GPT-6.1 Sol at High with 20,000 input tokens and 8,000 output tokens including thinking, with all input charged as cache writes. This example costs 130 credits at the published rates checked on October 10, 2026. Counts are rounded down to whole analyses. They are illustrative, not measured average counts or guarantees. High does not imply a fixed token count. Cache hits, different job lengths, reasoning effort and model choice change usage. The catalog is in [online-models.ts](../shared/online-models.ts). Sources: [OpenAI Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [OpenAI Astra](https://developers.openai.com/api/docs/models/gpt-6-astra), [OpenAI reasoning](https://developers.openai.com/api/docs/guides/reasoning), and [OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching).
+Both counts use a rounded sample Plan baseline of 3,600 input tokens and 500 visible result tokens, plus an estimated 7,500-token thinking allowance. The sample's historical reasoning usage was not recorded. The total output allowance remains 8,000 tokens, with all input charged as cache writes. At the published rates checked on October 10, 2026, this example costs 89 credits using GPT-6.1 Sol or 4.45 credits using GPT-6 Luna. Counts divide pack credits by the corresponding example cost and round down. They are estimates, not measured averages or guarantees. High does not imply a fixed token count or equal usage between models. Cache hits, job length, reasoning effort and model choice change usage. A remaining balance below the next maximum quote requires a top-up, even if it could cover the estimated final cost. The catalog is in [online-models.ts](../shared/online-models.ts). Sources: [OpenAI Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [OpenAI Luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [OpenAI Astra](https://developers.openai.com/api/docs/models/gpt-6-astra), [OpenAI reasoning](https://developers.openai.com/api/docs/guides/reasoning), and [OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching).
 
-Thinking levels are Low, Medium, High, Extra high and Maximum, with High selected by default. Quotes bind both model and thinking level; changing either requires a new quote. Output limits include reasoning and final answer tokens: Low allows 6,000 for Plan or 3,000 for match; Medium 16,000; High 24,000; Extra high 40,000; Maximum 64,000. These are maximum allowances, not expected usage. High and above allow eight minutes for the provider response, with cancellation available. The quote shown before analysis uses the full configured output limit; settlement charges actual usage.
+Thinking levels are Low, Medium, High, Extra high and Maximum, with High selected by default. Luna also supports Off; Sol and Astra do not. Quotes bind both model and thinking level; changing either requires a new quote. Output limits include reasoning and final answer tokens: Off and Low allow 6,000 for Plan or 3,000 for match; Medium 16,000; High 24,000; Extra high 40,000; Maximum 64,000. These are maximum allowances, not expected usage. High and above allow eight minutes for the provider response, with cancellation available. The quote shown before analysis uses the full configured output limit; settlement charges actual usage.
 
 Provider retention and data-sharing settings must match the privacy terms you publish for users. Online analysis sends job and CV content to the selected provider; API keys and payment credentials stay on the service host.
 

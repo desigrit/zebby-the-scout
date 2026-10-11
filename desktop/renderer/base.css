@@ -111,6 +111,7 @@ a { color: inherit; text-underline-offset: 3px; }
 .activity-segment[data-status="Heard back"], .activity-swatch[data-status="Heard back"] { background: var(--activity-heard-back); }
 .activity-segment[data-status="Interview scheduled"], .activity-swatch[data-status="Interview scheduled"] { background: var(--activity-interview); }
 .activity-segment[data-status="Rejected"], .activity-swatch[data-status="Rejected"] { background: var(--activity-rejected); }
+.activity-segment[data-status="Offer received"], .activity-swatch[data-status="Offer received"] { background: var(--activity-offer, #397dbe); }
 .activity-day:focus-visible { outline-width: 2px; outline-offset: 4px; }
 .activity-tooltip { position: absolute; z-index: 2; top: calc(100% + 9px); right: 0; display: flex; flex-direction: column; gap: 1px; min-width: 108px; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--paper); color: var(--ink-soft); font-size: 11px; text-align: center; white-space: nowrap; opacity: 0; visibility: hidden; box-shadow: 0 4px 12px rgba(20,36,24,.12); }
 .activity-tooltip::before { content: ""; position: absolute; inset: -10px 0 auto; height: 10px; }
@@ -310,6 +311,7 @@ a { color: inherit; text-underline-offset: 3px; }
 .status-select[data-status="Heard back"] { color: #855d1e; background: #fcf0d8; }
 .status-select[data-status="Interview scheduled"] { color: #1f674d; background: #e0f3e7; }
 .status-select[data-status="Rejected"] { color: #9a4a3c; background: #fae9e5; }
+.status-select[data-status="Offer received"] { color: #205a9a; background: #e5effc; }
 .status-select:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; box-shadow: none; }
 .row-actions { display: flex; justify-content: flex-end; gap: 1px; }
 .row-actions button { position: relative; }

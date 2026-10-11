@@ -30,6 +30,7 @@ import { useAnalysisFlow } from "./AnalysisFlow";
 import { applicationActivity } from "../../lib/application-activity";
 import ApplicationActivity from "./ApplicationActivity";
 import MatchProgressRing from "./MatchProgressRing";
+import OfferCelebration from "./OfferCelebration";
 
 type FormState = Omit<ApplicationInput, "matchStrength"> & { matchStrength: string };
 function localToday() {
@@ -135,6 +136,8 @@ export default function ApplicationDashboard() {
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
   const [notice, setNotice] = useState("");
+  const [offerCelebration, setOfferCelebration] = useState(0);
+  const finishOfferCelebration = useCallback(() => setOfferCelebration(0), []);
   const [query, setQuery] = useState("");
   const [companyFilter, setCompanyFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("All statuses");
@@ -277,7 +280,7 @@ export default function ApplicationDashboard() {
         (item) => Boolean(item.appliedDate) && new Date(item.appliedDate + "T12:00:00") >= weekStart,
       ).length,
       inConversation: applications.filter(
-        (item) => item.status === "Heard back" || item.status === "Interview scheduled",
+        (item) => item.status === "Heard back" || item.status === "Interview scheduled" || item.status === "Offer received",
       ).length,
       interviews: applications.filter((item) => item.status === "Interview scheduled").length,
       averageMatch: (() => {
@@ -511,7 +514,10 @@ export default function ApplicationDashboard() {
       setSelectedId(saved.application.id);
       lookupControllerRef.current?.abort();
       setEditingId(null);
-      setNotice(editingId ? "Application updated." : "Application added.");
+      if (saved.application.status === "Offer received" && applications.find((item) => item.id === editingId)?.status !== "Offer received") {
+        setOfferCelebration((current) => current + 1);
+        setNotice("Offer received. Congratulations!");
+      } else setNotice(editingId ? "Application updated." : "Application added.");
       restoreFocus();
       if (saved.application.resumeId && saved.application.matchStrength === null) {
         void analyzeMatch(saved.application, true);
@@ -524,7 +530,7 @@ export default function ApplicationDashboard() {
   }
 
   async function updateStatus(item: Application, status: ApplicationStatus) {
-    if (analysisRequestsRef.current.has(item.id)) return;
+    if (analysisRequestsRef.current.has(item.id) || item.status === status) return;
     setSavingStatusId(item.id);
     setActionError("");
     try {
@@ -537,7 +543,10 @@ export default function ApplicationDashboard() {
       setApplications((current) =>
         current.map((existing) => (existing.id === item.id ? saved.application : existing)),
       );
-      setNotice("Status updated.");
+      if (saved.application.status === "Offer received" && item.status !== "Offer received") {
+        setOfferCelebration((current) => current + 1);
+        setNotice("Offer received. Congratulations!");
+      } else setNotice("Status updated.");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Status could not be updated.");
     } finally {
@@ -713,6 +722,7 @@ export default function ApplicationDashboard() {
 
   return (
     <div className={`desktop-dashboard${formOpen ? " form-open" : ""}`}>
+      {offerCelebration > 0 && <OfferCelebration key={offerCelebration} onComplete={finishOfferCelebration} />}
       <main className="main-content" aria-label="Applications">
         <div className="workspace-toolbar">
           <span className="workspace-context">{applications.length} saved {applications.length === 1 ? "application" : "applications"}</span>

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { createHmac, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
-import { CREDIT_PACKS, CREDIT_ESTIMATE, CREDIT_MODELS, NANODOLLARS_PER_CREDIT, onlineModel, usageCost, maximumCost, outputLimit, quoteNeedsCredits } from "../shared/online-models.ts";
+import { CREDIT_PACKS, CREDIT_ESTIMATE, CREDIT_MODELS, NANODOLLARS_PER_CREDIT, estimatedAnalyses, onlineModel, usageCost, maximumCost, outputLimit, quoteNeedsCredits } from "../shared/online-models.ts";
 import { onlineAnalysis } from "../desktop/online-analysis.ts";
 import { CreditsClient } from "../desktop/credits-client.ts";
 import { createService } from "../credits-service/service.ts";
@@ -41,14 +41,23 @@ function signature(event, secret = config.stripeWebhookSecret, timestamp = Math.
   const raw = Buffer.from(JSON.stringify(event));
   return { raw, signature: `t=${timestamp},v1=${createHmac("sha256", secret).update(timestamp + ".").update(raw).digest("hex")}` };
 }
-test("credit pack counts use Sol High with explicitly estimated thinking tokens", () => {
+test("credit pack counts use the sampled Plan baseline with separate estimated thinking tokens", () => {
   const example = usageCost(onlineModel(CREDIT_ESTIMATE.model), { input: 0, cached: 0, cacheWrite: CREDIT_ESTIMATE.input, output: CREDIT_ESTIMATE.output });
-  assert.equal(example / NANODOLLARS_PER_CREDIT, 130);
-  assert.deepEqual(CREDIT_PACKS.map((pack) => pack.analyses), [3, 23, 61, 123]);
-  assert.deepEqual(CREDIT_MODELS.map((model) => model.id), ["gpt-6.1-sol", "gpt-6-astra"]);
+  assert.equal(CREDIT_ESTIMATE.input, 3600);
+  assert.equal(CREDIT_ESTIMATE.visibleOutput, 500);
+  assert.equal(CREDIT_ESTIMATE.output, CREDIT_ESTIMATE.visibleOutput + CREDIT_ESTIMATE.thinkingAllowance);
+  assert.equal(example / NANODOLLARS_PER_CREDIT, 89);
+  assert.deepEqual(CREDIT_PACKS.map((pack) => pack.analyses), [5, 33, 89, 179]);
+  assert.deepEqual(CREDIT_MODELS.map((model) => model.id), ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"]);
+  const lunaExample = usageCost(onlineModel("gpt-6-luna"), { input: 0, cached: 0, cacheWrite: CREDIT_ESTIMATE.input, output: CREDIT_ESTIMATE.output });
+  assert.equal(lunaExample / NANODOLLARS_PER_CREDIT, 4.45);
+  assert.deepEqual(CREDIT_PACKS.map((pack) => estimatedAnalyses(pack.credits, "gpt-6-luna")), [112, 674, 1797, 3595]);
   for (const pack of CREDIT_PACKS) {
     assert.ok(pack.analyses * example <= pack.credits * NANODOLLARS_PER_CREDIT);
     assert.ok(pack.credits * NANODOLLARS_PER_CREDIT - pack.analyses * example < example);
+    const lunaCount = estimatedAnalyses(pack.credits, "gpt-6-luna");
+    assert.ok(lunaCount * lunaExample <= pack.credits * NANODOLLARS_PER_CREDIT);
+    assert.ok(pack.credits * NANODOLLARS_PER_CREDIT - lunaCount * lunaExample < lunaExample);
   }
   assert.equal(usageCost(onlineModel("gpt-6-astra"), { input: 20000, cached: 0, output: 6000 }) / NANODOLLARS_PER_CREDIT, 500);
   assert.equal(usageCost(onlineModel("gpt-6-luna"), { input: 100, cached: 50, output: 10 }), 10500);
@@ -179,7 +188,7 @@ test("PostgreSQL ledger and service integration", async (t) => {
     const keys = Object.keys(data), placeholders = keys.map((key, i) => `${key} => $${i + 1}`).join(",");
     const { rows } = await db.query(`select public.zebby_${name}(${placeholders}) as result`, Object.values(data)); return rows[0].result;
   }
-  let providerCalls = 0, failProvider = false, abortProvider = false, providerResult = plan, lastProviderRequest;
+  let providerCalls = 0, failProvider = false, abortProvider = false, providerResult = plan, lastProviderRequest, expectedModel = "gpt-6.1-sol";
   const fetcher = async (target, options = {}) => {
     const url = new URL(target);
     if (url.hostname === "database.example") {
@@ -213,7 +222,7 @@ test("PostgreSQL ledger and service integration", async (t) => {
       return Response.json({ status: "open" });
     }
     assert.equal(url.hostname, "api.openai.com"); providerCalls++;
-    const request = JSON.parse(options.body); lastProviderRequest = request; assert.equal(request.model, "gpt-6.1-sol"); assert.equal(request.store, false);
+    const request = JSON.parse(options.body); lastProviderRequest = request; assert.equal(request.model, expectedModel); assert.equal(request.store, false);
     if (abortProvider) { await new Promise((_, reject) => { options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }); }); }
     if (failProvider) return Response.json({ error: { message: "private resume content" } }, { status: 500 });
     return Response.json({ status: "completed", output: [{ content: [{ type: "output_text", text: JSON.stringify(providerResult) }] }],
@@ -246,15 +255,23 @@ test("PostgreSQL ledger and service integration", async (t) => {
       assert.equal(high.thinkingLevel, "high"); assert.ok(high.maximum > low.maximum);
       const stored = (await db.query("select thinking_level from zebby_quotes where id=$1", [high.id])).rows[0];
       assert.equal(stored.thinking_level, "high");
-      assert.deepEqual((await handle("GET", "/v1/catalog")).models.map((model) => model.id), ["gpt-6.1-sol", "gpt-6-astra"]);
-      for (const model of ["gpt-6-luna", "claude-sonnet-5-5"]) await assert.rejects(handle("POST", "/v1/quotes", { model, kind: "plan", input }));
+      assert.deepEqual((await handle("GET", "/v1/catalog")).models.map((model) => model.id), ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"]);
+      for (const model of ["unknown-model", "claude-sonnet-5-5"]) await assert.rejects(handle("POST", "/v1/quotes", { model, kind: "plan", input }));
       await assert.rejects(newQuote("off"));
+      await assert.rejects(handle("POST", "/v1/quotes", { model: "gpt-6-astra", thinkingLevel: "off", kind: "plan", input }));
       await assert.rejects(handle("POST", "/v1/analysis", { quoteId: high.id, requestId: randomUUID(), input, thinkingLevel: "max" }));
       assert.equal(providerCalls, calls); assert.equal((await wallet()).reserved, 0);
       // Apply the additive migration twice to an existing quote without losing it.
       const migration = await readFile(new URL("../credits-service/migrations/20261010_analysis_thinking.sql", import.meta.url), "utf8");
       await db.exec(migration); await db.exec(migration);
       assert.equal((await db.query("select thinking_level from zebby_quotes where id=$1", [high.id])).rows[0].thinking_level, "high");
+      // Reproduce the previous constraint, then upgrade twice without changing quotes or wallets.
+      await db.exec("alter table zebby_quotes drop constraint zebby_quotes_thinking_level_check; alter table zebby_quotes add constraint zebby_quotes_thinking_level_check check(thinking_level in ('low','medium','high','xhigh','max'));");
+      const beforeQuotes = (await db.query("select * from zebby_quotes order by id")).rows, beforeWallet = await wallet();
+      const lunaMigration = await readFile(new URL("../credits-service/migrations/20261010_credit_luna.sql", import.meta.url), "utf8");
+      await db.exec(lunaMigration); await db.exec(lunaMigration);
+      assert.deepEqual((await db.query("select * from zebby_quotes order by id")).rows, beforeQuotes);
+      assert.deepEqual(await wallet(), beforeWallet);
     });
     await t.test("quotes bind ownership and content, and duplicate analysis charges once", async () => {
       const quote = await newQuote(), id = randomUUID();
@@ -289,6 +306,30 @@ test("PostgreSQL ledger and service integration", async (t) => {
       assert.equal(JSON.parse(stored).pending[0].requestId, originalId); assert.equal(providerCalls, calls + 1);
       await restarted.acknowledge(quote.id); assert.equal(JSON.parse(stored).pending.length, 0);
       assert.equal((await wallet()).used, before + 100 * NANODOLLARS_PER_CREDIT);
+    });
+    await t.test("Luna High and Off pass through desktop quotes and charge only Luna usage", async () => {
+      const client = new CreditsClient(config.publicUrl, { save: async () => {}, onChange() {}, fetcher: async (url, options) => {
+        assert.equal(new URL(url).pathname, "/v1/quotes");
+        return Response.json(await handle("POST", "/v1/quotes", JSON.parse(options.body)));
+      } });
+      client.restore(JSON.stringify({ url: config.publicUrl, session: { access: "owner", refresh: "fixture", expires: Date.now() + 3600000, email: "peer@example.com", id: userId } }));
+      expectedModel = "gpt-6-luna";
+      try {
+        let highMaximum;
+        for (const level of ["high", "off"]) {
+          const before = await wallet(), quote = await client.quote("plan", input, expectedModel, level);
+          assert.equal(quote.thinkingLevel, level);
+          if (level === "high") highMaximum = quote.maximum; else assert.ok(quote.maximum < highMaximum);
+          const response = await analyze(quote.id);
+          assert.equal(lastProviderRequest.model, "gpt-6-luna");
+          assert.equal(lastProviderRequest.reasoning.effort, level === "off" ? "none" : "high");
+          assert.equal(lastProviderRequest.max_output_tokens, outputLimit("plan", level));
+          assert.equal(response.result.score, plan.score);
+          assert.equal(response.wallet.used - before.used, 5 * NANODOLLARS_PER_CREDIT);
+          assert.equal(response.wallet.balance, before.balance - 5 * NANODOLLARS_PER_CREDIT);
+          assert.equal(response.wallet.reserved, 0);
+        }
+      } finally { expectedModel = "gpt-6.1-sol"; }
     });
     await t.test("malformed model output and provider failures refund the hold", async () => {
       const previous = await wallet(); failProvider = true;

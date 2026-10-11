@@ -137,6 +137,7 @@ try {
     }
   }
   async function assertSettingsActions() {
+    await settleSidebar();
     const actions = await page.locator('.settings-page button:not(.settings-link):not([role="switch"]):not([role="radio"]):visible').evaluateAll((buttons) => buttons.map((button) => {
       const style = getComputedStyle(button), icon = button.querySelector('svg');
       return { label: button.getAttribute('aria-label') || button.innerText, shared: button.classList.contains('settings-action'),
@@ -158,7 +159,7 @@ try {
     })));
     assert.ok(rows.length >= 2);
     assert.equal(rows.some(row => row.overflow), false, 'Quiet rows fit the available width');
-    assert.ok(rows.every(row => Math.abs(row.label - rows[0].label) <= 1), 'Preference labels align');
+    assert.ok(rows.every(row => Math.abs(row.label - rows[0].label) <= 1), `Preference labels align: ${JSON.stringify(rows)}`);
     assert.equal(await page.locator('.analysis-configuration').getByText(/Job and resume text go to|receives job and resume content/).count(), 0);
   }
   async function assertActivityTooltipBounds() {
@@ -368,6 +369,7 @@ try {
     };
   }, { initialState: state, licenseVersions: Object.fromEntries(LOCAL_MODELS.filter((model) => model.license)
     .map((model) => [model.id, model.license.version])) });
+  let failNextStatusSave = false;
   await page.route("**/api/**", async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     const method = route.request().method();
@@ -407,6 +409,8 @@ try {
       applications = applications.map((item) => item.id === id ? { ...item, notes: route.request().postDataJSON().notes } : item);
       data = { application: applications.find((item) => item.id === id) };
     } else if (pathname.startsWith("/api/applications/") && method === "PATCH") {
+      if (failNextStatusSave) { failNextStatusSave = false;
+        await route.fulfill({ status: 500, json: { error: "Could not save status." } }); return; }
       const id = pathname.split("/")[3];
       const input = route.request().postDataJSON();
       applications = applications.map((item) => item.id === id ? { ...item, ...input, notes: item.notes } : item);
@@ -664,6 +668,33 @@ try {
   const statusDay = page.locator('.activity-day[data-date="2026-09-29"]');
   const originalBarHeight = await statusDay.locator('.activity-bar').evaluate(element => element.getBoundingClientRect().height);
   const firstStatus = firstRow.getByRole('combobox', { name: 'Status for Senior Product Manager at Expedia Group', exact: true });
+  assert.equal(await firstStatus.locator('option').count(), 5);
+  failNextStatusSave = true;
+  await firstStatus.selectOption('Offer received');
+  await page.getByText('Could not save status.', { exact: true }).waitFor();
+  assert.equal(await firstStatus.inputValue(), 'Applied');
+  assert.equal(await page.locator('.offer-confetti').count(), 0, 'Failed status saves never celebrate');
+  await firstStatus.selectOption('Offer received');
+  await page.locator('.offer-confetti').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('.offer-confetti').evaluate(element => getComputedStyle(element).pointerEvents), 'none');
+  assert.equal(await firstStatus.evaluate(element => getComputedStyle(element).color), 'rgb(32, 90, 154)');
+  await page.waitForFunction(() => document.querySelector('.activity-segment[data-status="Offer received"]')?.dataset.count === '1');
+  await page.waitForTimeout(650);
+  await captureSettings('applications-offer-windows-light.png', false);
+  await page.locator('.offer-confetti').waitFor({ state: 'detached', timeout: 3500 });
+  await firstStatus.selectOption('Offer received');
+  assert.equal(await page.locator('.offer-confetti').count(), 0, 'Reselecting an existing offer does not replay confetti');
+  const statusFilter = page.getByRole('combobox', { name: 'Filter by status', exact: true });
+  assert.equal(await statusFilter.getByRole('option', { name: 'Offer received (1)', exact: true }).count(), 1);
+  await statusFilter.selectOption('Offer received');
+  assert.equal(await table.locator('.application-row').count(), 1);
+  await statusFilter.selectOption('All statuses');
+  await firstStatus.selectOption('Applied');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await firstStatus.selectOption('Offer received');
+  await page.getByText('Offer received. Congratulations!', { exact: true }).waitFor();
+  assert.equal(await page.locator('.offer-confetti').isVisible(), false, 'Reduced motion retains success feedback without flying particles');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
   for (const status of ['Heard back', 'Interview scheduled', 'Rejected']) {
     await firstStatus.selectOption(status);
     await page.waitForFunction((status) => document.querySelector(`.activity-day[data-date="2026-09-29"] .activity-segment[data-status="${status}"]`)?.dataset.count === '1', status);
@@ -1090,17 +1121,17 @@ try {
   await page.evaluate(() => { window.creditQA.warmupMode = "pending"; });
   await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).click();
   const pricingDialog = page.getByRole("dialog", { name: "A little fuel for your next move", exact: true });
-  await pricingDialog.getByRole("radio", { name: /^\$5\b/ }).waitFor();
+  await pricingDialog.getByRole("radio", { name: /\$5\b/ }).waitFor();
   assert.equal(await page.evaluate(() => window.creditQA.warmups), 1);
   assert.equal(await page.evaluate(() => window.creditQA.checkouts.length), 0);
-  assert.equal(await pricingDialog.getByRole("button", { name: "Continue, $20", exact: true }).isEnabled(), true);
+  assert.equal(await pricingDialog.getByRole("button", { name: "Continue, $5", exact: true }).isEnabled(), true);
   await pricingDialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await pricingDialog.waitFor({ state: "hidden" });
   await page.evaluate(() => { window.creditQA.finishWarmup(); window.creditQA.finishWarmup = null; window.creditQA.warmupMode = "error"; });
   await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).click();
-  await pricingDialog.getByRole("radio", { name: /^\$5\b/ }).waitFor();
+  await pricingDialog.getByRole("radio", { name: /\$5\b/ }).waitFor();
   assert.equal(await pricingDialog.getByRole("alert").count(), 0);
-  assert.equal(await pricingDialog.getByRole("button", { name: "Continue, $20", exact: true }).isEnabled(), true);
+  assert.equal(await pricingDialog.getByRole("button", { name: "Continue, $5", exact: true }).isEnabled(), true);
   await pricingDialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await pricingDialog.waitFor({ state: "hidden" });
   await page.evaluate(() => { window.creditQA.warmupMode = "ready"; });
@@ -1157,7 +1188,7 @@ try {
   assert.equal(await analysisDialog.getByRole("radio").count(), 4);
   assert.equal(await analysisDialog.getByRole("combobox").count(), 0);
   assert.match(await analysisDialog.innerText(), /Choose your model after purchasing credits/);
-  assert.equal(await analysisDialog.getByRole("button", { name: "Continue, $20", exact: true }).isEnabled(), true);
+  assert.equal(await analysisDialog.getByRole("button", { name: "Continue, $5", exact: true }).isEnabled(), true);
   assert.doesNotMatch(await analysisDialog.innerText(), /Paid credits are not|not connected yet/);
   await assertFullTextRows(analysisDialog.locator(".analysis-intro, .analysis-dialog-body > p.settings-help"));
   await captureSettings("credits-packs-windows-light.png", false);
@@ -1170,7 +1201,7 @@ try {
   assert.equal(await analysisDialog.evaluate(element => element.scrollWidth > element.clientWidth), false);
   await assertFullTextRows(analysisDialog.locator(".analysis-intro, .analysis-dialog-body > p.settings-help"));
   await captureSettings("credits-packs-mac-dark-narrow.png", false);
-  await analysisDialog.getByRole("button", { name: "Continue, $20", exact: true }).click();
+  await analysisDialog.getByRole("button", { name: "Continue, $5", exact: true }).click();
   await analysisDialog.getByRole("alert").filter({ hasText: "Could not reach the credits service. Try again." }).waitFor();
   await analysisDialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await analysisDialog.waitFor({ state: "hidden" });
@@ -1180,7 +1211,7 @@ try {
   await analyze.click();
   await analysisDialog.getByRole("radio", { name: /Buy credits/ }).check();
   await analysisDialog.getByRole("button", { name: "Continue", exact: true }).click();
-  await analysisDialog.getByRole("radio", { name: /^\$5\b/ }).check();
+  await analysisDialog.getByRole("radio", { name: /\$5\b/ }).check();
   await analysisDialog.getByRole("button", { name: "Continue, $5", exact: true }).click();
   await analysisDialog.getByText("Test checkout. No real payment is taken.", { exact: true }).waitFor();
   assert.equal(await analysisDialog.getByRole("textbox").count(), 0);
@@ -1189,7 +1220,9 @@ try {
   await analysisDialog.getByRole("button", { name: "Check payment", exact: true }).click();
   await analysisDialog.getByRole("heading", { name: "Your credits are ready", exact: true }).waitFor();
   const paidModel = analysisDialog.getByRole("combobox", { name: "Model", exact: true });
-  assert.equal(await paidModel.locator("option").count(), 2);
+  assert.deepEqual(await paidModel.locator("option").evaluateAll(options => options.map(option => option.value)), ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"]);
+  await paidModel.selectOption("gpt-6-luna");
+  await analysisDialog.getByRole('radiogroup', { name: 'Thinking level', exact: true }).getByRole('radio', { name: 'Off', exact: true }).click();
   await paidModel.selectOption("gpt-6-astra");
   await analysisDialog.getByRole('radiogroup', { name: 'Thinking level', exact: true }).getByRole('radio', { name: 'High', exact: true }).click();
   await page.evaluate(() => { window.creditQA.cancelRecovery = true; });

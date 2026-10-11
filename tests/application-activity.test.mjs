@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { applicationActivity } from "../lib/application-activity.ts";
 import { APPLICATION_STATUSES } from "../lib/application-types.ts";
 
-const emptyStatuses = () => ({ Applied: 0, "Heard back": 0, "Interview scheduled": 0, Rejected: 0 });
+const emptyStatuses = () => ({ Applied: 0, "Heard back": 0, "Interview scheduled": 0, Rejected: 0, "Offer received": 0 });
 
 test("30-day activity includes today, groups applications by applied date, and ignores dates outside the range", () => {
   const days = applicationActivity([
@@ -40,11 +40,11 @@ test("each day's stack contains the current statuses of roles applied on that da
     { appliedDate: "2026-10-11", status: "Heard back" },
     { appliedDate: "", status: "Applied" },
   ], "2026-10-10");
-  assert.deepEqual(days.at(-2), { date: "2026-10-09", count: 5,
-    statuses: { Applied: 1, "Heard back": 1, "Interview scheduled": 1, Rejected: 2 } });
+  assert.deepEqual(days.at(-2), { date: "2026-10-09", count: 6,
+    statuses: { Applied: 1, "Heard back": 1, "Interview scheduled": 1, Rejected: 2, "Offer received": 1 } });
   assert.deepEqual(days.at(-1), { date: "2026-10-10", count: 1,
     statuses: { ...emptyStatuses(), "Interview scheduled": 1 } });
-  assert.equal(days.reduce((sum, day) => sum + day.count, 0), 6);
+  assert.equal(days.reduce((sum, day) => sum + day.count, 0), 7);
   assert.ok(days.every((day) => Object.values(day.statuses).reduce((sum, count) => sum + count, 0) === day.count));
 });
 

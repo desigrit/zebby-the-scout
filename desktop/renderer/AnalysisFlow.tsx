@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, Check, ChevronRight, Coins, Download, ExternalLink, KeyRound, LoaderCircle, RefreshCw, Server, X } from "lucide-react";
 import type { DesktopState } from "../bridge";
-import { CREDIT_PACKS, CREDIT_ESTIMATE_DESCRIPTION, formatCredits, onlineModel, quoteNeedsCredits, type AnalysisProvider, type AnalysisSource, type CreditQuote } from "../../shared/online-models";
+import { CREDIT_PACKS, CREDIT_ESTIMATE_MODELS, CREDIT_ESTIMATE_DESCRIPTION, estimatedAnalyses, formatCredits, onlineModel, quoteNeedsCredits, type AnalysisProvider, type AnalysisSource, type CreditQuote } from "../../shared/online-models";
 import { AnalysisSettings, providerReady } from "./AnalysisSettings";
 import { OnlineModelControls } from "./ThinkingSettings";
 import { thinkingLabel } from "../../shared/thinking";
@@ -26,7 +26,7 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
   const current = useRef(state);
   useLayoutEffect(() => { current.current = state; }, [state]);
   const [scene, setScene] = useState<Scene>(null), [method, setMethod] = useState<AnalysisProvider>("ollama");
-  const [pack, setPack] = useState("regular"), [recoveryNotice, setRecoveryNotice] = useState("");
+  const [pack, setPack] = useState("starter"), [recoveryNotice, setRecoveryNotice] = useState("");
   const [working, setWorking] = useState(false), [error, setError] = useState(""), [quote, setQuote] = useState<CreditQuote | null>(null);
   const [checkout, setCheckout] = useState<{ id: string; mode: "test" | "live" } | null>(null);
   const [checkoutExpired, setCheckoutExpired] = useState(false);
@@ -144,13 +144,13 @@ export function AnalysisFlowProvider({ state, onState, children }: { state: Desk
           <fieldset className="credit-packs"><legend className="visually-hidden">Credit pack</legend>
             {CREDIT_PACKS.map((item) => <label key={item.id} className={`credit-pack ${pack === item.id ? "selected" : ""}`}>
               <input type="radio" name="credit-pack" value={item.id} checked={pack === item.id} onChange={() => setPack(item.id)} />
-              <span className="credit-pack-badge">{item.id === "regular" ? "Suggested start" : ""}</span>
+              <span className="credit-pack-badge">{item.id === "starter" ? "Suggested start" : ""}</span>
               <strong className="credit-pack-price">${item.dollars}</strong><span className="credit-pack-count">{item.credits.toLocaleString()} credits</span>
-              <small title={CREDIT_ESTIMATE_DESCRIPTION}>About {item.analyses.toLocaleString()} analyses using GPT-6.1 Sol at High</small>
-              <span className="credit-pack-selection">{pack === item.id ? <><Check size={16} />Selected</> : "Select"}</span>
+              <span className="credit-pack-estimates" title={CREDIT_ESTIMATE_DESCRIPTION}>
+                {CREDIT_ESTIMATE_MODELS.map((model) => <small key={model}>About {estimatedAnalyses(item.credits, model).toLocaleString()} analyses using <span className="credit-estimate-model">{onlineModel(model).name} (High)</span></small>)}
+              </span>
             </label>)}
-          </fieldset><p className="settings-help">Prices in USD. {CREDIT_ESTIMATE_DESCRIPTION}</p>
-          {state.credits.signedIn && <p className="credit-account">Credits will be added to your connected wallet.</p>}
+          </fieldset><p className="settings-help">Prices in USD. Estimates use a sample Plan plus a thinking allowance. Usage varies by job and model. Each analysis requires enough credits for its maximum quote.</p>
           {!state.credits.signedIn && <p className="settings-help">Already have credits? Restore or connect this computer in Settings.</p>}
           {!state.canSaveApiKey && <p className="form-error">Secure storage is unavailable. Restore access to Windows secure storage or Mac Keychain to buy credits.</p>}
         </>}

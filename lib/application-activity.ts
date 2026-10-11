@@ -3,7 +3,7 @@ import { APPLICATION_STATUSES, type Application, type ApplicationStatus } from "
 export type ApplicationDay = { date: string; count: number; statuses: Record<ApplicationStatus, number> };
 
 function emptyStatuses(): ApplicationDay["statuses"] {
-  return { Applied: 0, "Heard back": 0, "Interview scheduled": 0, Rejected: 0 };
+  return Object.fromEntries(APPLICATION_STATUSES.map((status) => [status, 0])) as ApplicationDay["statuses"];
 }
 
 export function applicationActivity(applications: Pick<Application, "appliedDate" | "status">[], today: string): ApplicationDay[] {
