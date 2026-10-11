@@ -407,6 +407,7 @@ try {
       const response = await original(url, options);
       if (/\/api\/plans\/[^/]+\/analyze$/.test(String(url))) {
         window.__heldAnalysisSignal = options.signal;
+        window.__heldAnalysisId = new Headers(options.headers).get("X-Zebby-Analysis-ID");
         window.__analysisResponseHeld = true;
         await new Promise((resolve) => { window.__deliverAnalysis = resolve; });
       }
@@ -416,8 +417,9 @@ try {
   await page.getByRole("button", { name: "Analyze", exact: true }).click(); await waitForRequest(); await finish();
   await page.waitForFunction(() => window.__analysisResponseHeld === true);
   assert.equal((await api("/api/plans")).plans[0].matchStrength, 85);
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  await page.waitForTimeout(150);
+  await page.waitForFunction(() => document.querySelector(".plan-analysis-progress")?.dataset.stage === "saving");
+  assert.equal(await page.getByRole("button", { name: "Cancel", exact: true }).isDisabled(), true);
+  assert.equal(await page.evaluate(() => window.desktop.cancelAnalysis(window.__heldAnalysisId)), false);
   assert.equal(await page.evaluate(() => window.__heldAnalysisSignal.aborted), false);
   assert.equal(await page.getByRole("status", { name: "Analyzing role" }).count(), 1);
   assert.equal(await page.getByText("Analysis cancelled.", { exact: true }).count(), 0);
