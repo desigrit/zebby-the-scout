@@ -1,17 +1,18 @@
 # Zebby screenshots
 
-These 1550 by 850 screenshots show Zebby 1.6.7 with synthetic sample data in a hidden native Windows Electron run. Provider outputs and clipboard are mocked. No real user database, profile, resume, credentials, or model was used. Displayed local sample paths are synthetic.
+These captures show the compiled Zebby 2.2.2 renderer with synthetic applications, CV text, analysis results and a masked demo key. The activity chart contains 64 applications with varied daily totals and mixed statuses.
 
-| Page | Light image and source capture | Dark image and source capture |
+| View | Light | Dark |
 | --- | --- | --- |
-| Plan | [plan.png](plan.png), from `plan-light-results.png` | [plan-dark.png](plan-dark.png), from `plan-dark-results.png` |
-| Applications | [applications.png](applications.png), from `applications-light.png` | [applications-dark.png](applications-dark.png), from `applications-dark.png` |
-| Settings | [settings.png](settings.png), from `settings-ollama-light.png` | [settings-dark.png](settings-dark.png), from `settings-ollama-dark.png` |
+| Applications | [applications.png](applications.png) | [applications-dark.png](applications-dark.png) |
+| Plan results | [plan.png](plan.png) | [plan-dark.png](plan-dark.png) |
+| Your own API key | [settings.png](settings.png) | [settings-dark.png](settings-dark.png) |
+| Credit packs | [credits.png](credits.png) | [credits-dark.png](credits-dark.png) |
 
-## Provenance
+## Capture details
 
-All source captures are under `work/score-disclosure-and-screenshots/native/captures/`. The UI working tree used for capture was identical to source commit [`6dcb4fe30c8a671d7b19b5d19ab7db3484b0a39f`](https://github.com/desigrit/zebby-the-scout/commit/6dcb4fe30c8a671d7b19b5d19ab7db3484b0a39f).
+The renderer source matches [824415a](https://github.com/desigrit/zebby-the-scout/commit/824415a918c14235c0caba91a58f16227dab6439). Headless Chromium uses Windows CSS, mocked API responses and a mocked desktop bridge. Workspace frames are 1550 by 960 pixels; the credit images capture the purchase dialog itself at 930 by 560 pixels. Plan is scrolled to its analysis results.
 
-Each public image copies its complete source frame without cropping or pixel edits. Source origin is embedded in the PNG, and the documentation proof verifies exact decoded pixel equality after embedding. Public filenames remain stable for existing links.
+No desktop app, personal database, profile, CV, API key, model inference or payment was used. These are renderer captures, with no claim of physical Mac appearance.
 
-These images provide native Windows screenshot evidence. Physical macOS visual review is not claimed.
+Each PNG includes embedded source provenance. Images retain the captured UI pixels. The GitHub profile covers place the same Applications capture inside a branded HTML composition and link to the full frame.

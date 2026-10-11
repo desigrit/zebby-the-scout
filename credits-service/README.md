@@ -1,8 +1,6 @@
 # Zebby credits service
 
-The desktop purchase flow is implemented. Zebby 2.2.0 connects to the service at `https://zebby-credits.onrender.com`, with Stripe live payments and server-side provider credentials configured. Zebby credits offers GPT-6.1 Sol and GPT-6 Astra. Personal OpenAI and Anthropic API keys remain available as separate desktop methods. Custom builds need `ZEBBY_CREDITS_SERVICE_URL` compiled into the desktop main process. Secure storage is required for wallet access.
-
-The hosted checks verified service health, guest wallet access, an unpaid live Checkout session, and webhook signature handling. The unpaid session was expired, and no credits were granted. All three OpenAI models completed a synthetic structured response; all three offered Claude models were listed by the Anthropic API. A completed customer payment, receipt delivery, and funded Claude inference remain separate checks.
+Official Zebby builds connect to `https://zebby-credits.onrender.com`. Credits support GPT-6.1 Sol and GPT-6 Astra. Users can also bring their own OpenAI or Anthropic API key, use an Ollama server, or download a local model. Those methods do not need this service. Custom builds set the public `ZEBBY_CREDITS_SERVICE_URL` when building the desktop app. Wallet access requires OS secure storage.
 
 Every analysis method works without a Zebby signup or sign-in screen. The first credit purchase silently creates a guest wallet. Each computer keeps its own encrypted access credential, and the service owns the shared balance. Opening a SQLite database on another computer does not connect its credit wallet.
 
@@ -12,7 +10,7 @@ You still need Stripe, Supabase PostgreSQL, an HTTPS service host, and your prov
 
 If you already ran an earlier schema, run the complete updated [schema.sql](schema.sql) again. It adds device, recovery, and pairing tables without clearing wallets, purchases, usage, or application databases. Deploy the new service and build the matching desktop release. Existing encrypted email-based sessions can migrate to a guest device credential while keeping the same ledger identity and balance.
 
-For the 2.2.0 update, run [20261010_analysis_thinking.sql](migrations/20261010_analysis_thinking.sql) in Supabase SQL Editor **before deploying the service**. It adds only the quote's thinking-level column and is safe to run again. Wallets, balances, purchases, saved results and application databases are preserved. The existing hosted project was migrated on October 10, 2026; no new environment variables or Stripe changes are required for this update.
+For the 2.2.0 update, run [20261010_analysis_thinking.sql](migrations/20261010_analysis_thinking.sql) in Supabase SQL Editor **before deploying the service**. It adds only the quote's thinking-level column and is safe to run again. Wallets, balances, purchases, saved results and application databases are preserved. No new environment variables or Stripe changes are required for this update.
 
 ## What you need
 
@@ -64,7 +62,7 @@ For Render:
 4. Leave the Docker command empty. The Dockerfile supplies the start command. Set the health check path to `/health`.
 5. Add the environment variables listed in [environment.example](environment.example). Under **Environment → Edit → More options → Import from .env**, paste the private file and choose **Add variables**. Remove duplicate rows before saving. Use Environment Variables, rather than Secret Files. Use an HTTPS origin without a path for `ZEBBY_PUBLIC_SERVICE_URL`.
 6. Render assigns an `onrender.com` hostname. Set `ZEBBY_PUBLIC_SERVICE_URL` to that HTTPS origin. Now create the Stripe webhook destination from step 2 and add its real `STRIPE_WEBHOOK_SECRET`. If the first deployment started before these values were ready, finish the environment settings and select **Manual Deploy → Deploy latest commit**.
-7. Add real provider keys to `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`. In OpenAI's project API Keys page, use a restricted key with **List models: Read** and **Responses (/v1/responses): Write**. Leave other capabilities at None. In Claude Console, create an ordinary API key scoped to the intended workspace, rather than an Admin API key. The current Zebby deployment uses keys with no expiration. A provider without a key remains unavailable. Both accounts need their own API funding, including during Stripe sandbox tests.
+7. Add real provider keys to `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`. In OpenAI's project API Keys page, use a restricted key with **List models: Read** and **Responses (/v1/responses): Write**. Leave other capabilities at None. In Claude Console, create an ordinary API key scoped to the intended workspace, rather than an Admin API key. A provider without a key remains unavailable. Both accounts need their own API funding, including during Stripe sandbox tests.
 8. Keep `ZEBBY_ALLOW_LIVE_PAYMENTS=false`. Connect the Stripe webhook from step 2 and deploy again after setting its secret.
 9. Visit `https://YOUR-SERVICE/health`. It should return `{"ok":true,"mode":"test"}`.
 
@@ -115,7 +113,7 @@ The checked-in Node tests use an isolated PostgreSQL engine and mocked network r
 | $50 | 8,000 | 61 |
 | $100 | 16,000 | 123 |
 
-One credit represents $0.001 of underlying provider usage. Fractional credits are retained internally as integer nanodollars. Per-analysis quotes reserve a conservative maximum from the submitted text and output limit, including OpenAI cache writes and long-context rates. Settlement charges actual reported input, cached input, cache writes, and output usage, including billed reasoning tokens; unused holds return to the wallet. Cancelled, failed, and invalid analyses release their holds. Provider costs incurred on those failures are absorbed by Zebby.
+Before an analysis, Zebby shows its maximum credit cost. The service reserves that amount, charges for actual reported token usage, including thinking, and returns unused credits to the wallet. Cancelled, failed and invalid analyses release their reservations.
 
 If a reply is lost after settlement, Zebby retains the original request ID and can recover the result without another charge. Recovery metadata, without resume or job text, is saved in encrypted local settings when secure storage is available. Main clears it only after the result is saved to SQLite. A pending result can be recovered after restarting on that computer within the server's 24-hour result retention window. Changing wallets rejects obsolete replies and prevents an older wallet's reply from replacing the current one.
 
@@ -123,16 +121,7 @@ Counts assume GPT-6.1 Sol at High with 20,000 input tokens and 8,000 output toke
 
 Thinking levels are Low, Medium, High, Extra high and Maximum, with High selected by default. Quotes bind both model and thinking level; changing either requires a new quote. Output limits include reasoning and final answer tokens: Low allows 6,000 for Plan or 3,000 for match; Medium 16,000; High 24,000; Extra high 40,000; Maximum 64,000. These are maximum allowances, not expected usage. High and above allow eight minutes for the provider response, with cancellation available. The quote shown before analysis uses the full configured output limit; settlement charges actual usage.
 
-OpenAI's complimentary data-sharing allowance applies automatically to eligible usage in the sharing-enabled project that owns a personal API key. It does not increase the user's Zebby credit balance or alter paid deductions. Eligible traffic on the owner's server key can reduce provider overhead. Before inviting other users, choose sharing settings appropriate for their resume and job content. [OpenAI's data-sharing terms](https://help.openai.com/en/articles/10306912-sharing-feedback-evaluation-and-fine-tuning-data-and-api-inputs-and-outputs-with-openai) list the eligible model groups and limits.
-
-| Price | Maximum provider budget | Stripe assumption | Operating reserve assumption | Retained under these assumptions |
-| --- | ---: | ---: | ---: | ---: |
-| $5 | $0.50 | $0.45 | $0.25 | $3.80, 76.0% |
-| $20 | $3.00 | $0.88 | $1.00 | $15.12, 75.6% |
-| $50 | $8.00 | $1.75 | $2.50 | $37.75, 75.5% |
-| $100 | $16.00 | $3.20 | $5.00 | $75.80, 75.8% |
-
-These use US domestic card fees of 2.9% plus $0.30 and a provisional 5% operating reserve. They do not guarantee 75% net profit. Confirm your Stripe fees, email and hosting bills, failed-analysis costs, taxes, refunds, and support costs before setting final live prices. [Stripe pricing](https://stripe.com/pricing) lists payment fees.
+Provider retention and data-sharing settings must match the privacy terms you publish for users. Online analysis sends job and CV content to the selected provider; API keys and payment credentials stay on the service host.
 
 ## Before switching to live payments
 
@@ -140,7 +129,7 @@ Verify that your provider accounts can access every offered model. No provider f
 
 Configure your business details and payouts in Stripe, publish your purchase/refund and privacy terms, and confirm the applicable tax handling. The initial Checkout integration charges the pack amount only; it does not add automatic tax or tax-inclusive accounting. Test first with a small audience and measure actual usage and overhead.
 
-Then replace the Stripe test key and webhook secret with their live equivalents and explicitly set `ZEBBY_ALLOW_LIVE_PAYMENTS=true`. A restricted live key begins `rk_live_`; a standard live secret key begins `sk_live_`. Both must match the selected payment mode. Create a live webhook destination with the same five events listed above. Use a separate Supabase project or audit the ledger before enabling live payments so test balances cannot become live spendable credits. The service rejects events whose test/live mode differs from its configuration. Zebby's initial hosted ledger was checked for existing wallets, purchases and balances before live configuration, and was empty.
+Then replace the Stripe test key and webhook secret with their live equivalents and explicitly set `ZEBBY_ALLOW_LIVE_PAYMENTS=true`. A restricted live key begins `rk_live_`; a standard live secret key begins `sk_live_`. Both must match the selected payment mode. Create a live webhook destination with the same five events listed above. Use a separate Supabase project or audit the ledger before enabling live payments so test balances cannot become live spendable credits. The service rejects events whose test/live mode differs from its configuration.
 
 ## Verification commands
 
