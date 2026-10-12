@@ -13,7 +13,7 @@ export class LocalResponseWatchdog {
   private readonly stallMs: number;
   constructor(firstTokenMs: number, stallMs: number) {
     this.stallMs = stallMs;
-    this.arm(firstTokenMs, "The local model did not start responding in time. Try again or choose a smaller model.");
+    this.arm(firstTokenMs, "Analysis timed out before the model responded. Try a faster model.");
   }
   private arm(milliseconds: number, message: string) {
     clearTimeout(this.timer);
@@ -22,7 +22,7 @@ export class LocalResponseWatchdog {
   }
   progress() {
     if (!this.controller.signal.aborted) this.arm(this.stallMs,
-      "The local model stopped responding. Try again or choose a smaller model.");
+      "Analysis stalled while the model was responding. Try again or choose a faster model.");
   }
   dispose() { clearTimeout(this.timer); }
 }

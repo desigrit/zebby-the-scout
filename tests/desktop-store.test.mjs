@@ -115,7 +115,7 @@ test("moving a Plan to Applied preserves its data and analysis, prevents duplica
       "snapshotSource", "resumeId", "matchStrength", "matchNotes", "matchAnalyzedAt"]) assert.deepEqual(application[key], analyzed[key], key);
     assert.equal(application.jobDescription, analyzed.description);
     assert.ok(application.notes.includes(analyzed.description));
-    assert.ok(application.notes.includes(analyzed.snapshotText));
+    assert.equal(application.notes, analyzed.description, "The edited description is the source of truth; the original archive stays in its own stored field.");
     assert.equal(application.resumeName, resume.filename);
     assert.equal(application.status, "Applied");
     const now = new Date();

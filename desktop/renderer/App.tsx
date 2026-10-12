@@ -3,6 +3,9 @@ import { ArrowRight, ArrowUpRight, Check, FileText, FolderOpen,
   LoaderCircle, Monitor, Moon, Plus, RefreshCw, RotateCw, Search, Sparkles, Sun, Trash2 } from "lucide-react";
 import ApplicationDashboard from "./ApplicationDashboard";
 import LocationEditor from "./LocationEditor";
+import ResumePicker from "./ResumePicker";
+import AnalysisErrorBanner from "./AnalysisErrorBanner";
+import { ErrorBanner, SavedFeedbackProvider, useSavedFeedback } from "./WorkspaceFeedback";
 import { pasteJobDescription } from "../../lib/job-text-paste";
 import type { DesktopState } from "../bridge";
 import type { Plan, PlanInput } from "../store";
@@ -59,6 +62,10 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   initialSelectedId: string | null; onSelectionChange: (id: string | null) => void;
   onApplied: (application: Application, created: boolean) => void;
 }) {
+  const savedFeedback = useSavedFeedback();
+  const retryAction = useRef<() => void>(() => undefined);
+  const [listingMessage, setListingMessage] = useState("");
+  const descriptionInput = useRef<HTMLTextAreaElement>(null);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [resumeFile, setResumeFile] = useState<File | null>(null);
@@ -85,7 +92,6 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   const builtInModel = LOCAL_MODELS.find((model) => model.id === builtInModelId);
 
   const listingController = useRef<AbortController | null>(null);
-  const resumeInput = useRef<HTMLInputElement | null>(null);
   const dirty = JSON.stringify(draft) !== JSON.stringify(savedDraft) || Boolean(resumeFile);
   const navigatingBusy = reading || saving || preparing || moving;
   const busy = navigatingBusy || analyzing;
@@ -107,12 +113,9 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
     ? selectedPlan.overviewRationale : "";
   const overviewUnchanged = draft.overview.trim().replace(/\s+/g, " ") ===
     draft.currentOverview.trim().replace(/\s+/g, " ");
-  const canAnalyze = Boolean(draft.listingUrl && draft.currentOverview.trim() &&
+  const canAnalyze = Boolean(draft.listingUrl &&
     (draft.resumeId || resumeFile) &&
-    Math.max(draft.description.trim().length, draft.snapshotText?.trim().length || 0) >= 100);
-  const missing = [!draft.listingUrl && "a job link",
-    Math.max(draft.description.trim().length, draft.snapshotText?.trim().length || 0) < 100 && "job text (100+ characters)",
-    !draft.currentOverview.trim() && "your resume overview", !(draft.resumeId || resumeFile) && "a resume"].filter(Boolean);
+    draft.description.trim().length >= 100);
 
   useEffect(() => { onDirtyChange(dirty); return () => onDirtyChange(false); }, [dirty, onDirtyChange]);
   useEffect(() => { if (!loading) onSelectionChange(selectedId); }, [loading, selectedId, onSelectionChange]);
@@ -133,16 +136,24 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
       }
       if (selectedId === job.id) {
         setError(job.error);
-        setNotice(job.status === "succeeded" ? "Analysis saved." : job.status === "cancelled" ? "Analysis cancelled." : "");
+        setNotice("");
+        if (job.status === "succeeded") savedFeedback();
+        if (job.error) retryAction.current = () => {
+          setError("");
+          void jobs.start({ kind: "plan", id: job.id }, { modelLabel: job.modelLabel,
+            prepare: (signal) => analysisFlow.prepare({ kind: "plan", id: job.id }, signal) });
+        };
       }
     } };
     const unsubscribe = jobs.subscribe(receive);
     // Replay results that finished while this page was closed or loading.
     queueMicrotask(receive);
     return () => { active = false; unsubscribe(); };
-  }, [jobs, loading, selectedId, selectedPlan]);
+  }, [jobs, loading, selectedId, selectedPlan, savedFeedback, analysisFlow]);
 
-  useEffect(() => {
+  const loadPlans = useCallback(() => {
+    setLoading(true); setError("");
+    retryAction.current = loadPlans;
     void Promise.all([
       fetch("/api/plans", { cache: "no-store" }).then((response) => readJson<{ plans: Plan[]; lastCurrentOverview: string }>(response)),
       fetch("/api/resumes", { cache: "no-store" }).then((response) => readJson<{ resumes: Resume[] }>(response)),
@@ -157,6 +168,13 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
       .catch((cause) => setError(errorText(cause)))
       .finally(() => setLoading(false));
   }, []);
+  useEffect(() => { loadPlans(); }, [loadPlans]);
+
+  useEffect(() => {
+    if (listingMessage !== "Details added") return;
+    const timer = setTimeout(() => setListingMessage(""), 2400);
+    return () => clearTimeout(timer);
+  }, [listingMessage]);
 
   const visiblePlans = useMemo(() => plans.filter((plan) =>
     `${plan.title} ${plan.company} ${plan.listingUrl}`.toLowerCase().includes(filter.toLowerCase())), [plans, filter]);
@@ -184,10 +202,11 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
     setPlanListExpanded(false);
     setDraft(plan ? inputFromPlan(plan) : emptyPlan(lastCurrentOverview));
     setSavedDraft(plan ? inputFromPlan(plan) : emptyPlan(lastCurrentOverview));
-    setResumeFile(null); if (resumeInput.current) resumeInput.current.value = "";
+    setResumeFile(null);
     const job = plan ? jobs.get({ kind: "plan", id: plan.id }) : undefined;
     setError(job?.error || "");
-    setNotice(job?.status === "succeeded" ? "Analysis saved." : job?.status === "cancelled" ? "Analysis cancelled." : "");
+    setNotice(""); setListingMessage("");
+    if (job?.error) retryAction.current = () => void analyze();
   }
 
   const readListing = useCallback(async (url: string) => {
@@ -195,7 +214,8 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
     listingController.current?.abort();
     const controller = new AbortController();
     listingController.current = controller;
-    setReading(true); setError(""); setNotice("");
+    retryAction.current = () => void readListing(url);
+    setReading(true); setError(""); setNotice(""); setListingMessage("");
     try {
       const { details, text } = await readJson<{ details: {
         company: string; title: string; team: string; locations: string;
@@ -210,7 +230,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
         snapshotText: current.snapshotSource === "page" && current.snapshotText ? current.snapshotText : text || current.snapshotText,
         snapshotSource: text ? "page" : current.snapshotSource,
       }) : current);
-      setNotice(text ? "Listing text added to this draft." : "The site did not share the job text. Paste the description below.");
+      setListingMessage(text ? "Details added" : "Could not get the job description. Paste it below.");
     } catch (cause) {
       if (controller.signal.aborted) return;
       setError(`${errorText(cause)} You can paste the job description below.`);
@@ -232,6 +252,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   async function save(value = draft): Promise<Plan> {
     if (selectedId && jobRunning(jobs.get({ kind: "plan", id: selectedId }))) throw new Error("Finish or cancel analysis before editing this plan.");
     if (selectedId) jobs.dismiss({ kind: "plan", id: selectedId });
+    retryAction.current = () => { void save().catch((cause) => setError(errorText(cause))); };
     setSaving(true); setError("");
     try {
       try {
@@ -248,7 +269,6 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
         nextValue = { ...value, resumeId: resume.id };
         setDraft(nextValue);
         setResumeFile(null);
-        if (resumeInput.current) resumeInput.current.value = "";
       }
       const response = await fetch(selectedId ? `/api/plans/${selectedId}` : "/api/plans", {
         method: selectedId ? "PUT" : "POST", headers: { "Content-Type": "application/json" },
@@ -259,7 +279,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
       setSelectedId(plan.id); setDraft(inputFromPlan(plan)); setSavedDraft(inputFromPlan(plan));
       setLastCurrentOverview(plan.currentOverview);
-      setNotice("Plan saved.");
+      savedFeedback();
       return plan;
     } finally { setSaving(false); }
   }
@@ -273,10 +293,12 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
 
   async function moveToApplied() {
     if (busy) return;
+    retryAction.current = () => void moveToApplied();
     setMoving(true); setError(""); setNotice("");
     try {
       const saved = dirty || !selectedId ? await save() : selectedPlan;
       if (!saved) throw new Error("Save this plan before moving it to Applied.");
+      retryAction.current = () => void moveToApplied();
       setNotice("");
       const { application, created } = await readJson<{ application: Application; created: boolean }>(
         await fetch(`/api/plans/${saved.id}/apply`, { method: "POST", headers: { "Content-Type": "application/json" },
@@ -290,6 +312,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   async function analyze() {
     if (busy || !canAnalyze) return;
     setError(""); setNotice("");
+    retryAction.current = () => void analyze();
     setPreparing(true);
     try {
       const saved = dirty || !selectedId ? await save() : selectedPlan;
@@ -298,6 +321,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
       const modelLabel = analysisProvider === "ollama" ? ollamaModel || "Ollama" : analysisProvider === "builtin"
         ? builtInModel?.name || "Local model" : onlineModel(analysisProvider === "credits" ? analysisFlow.state.credits.model
           : analysisProvider === "anthropic" ? analysisFlow.state.anthropicModel : analysisFlow.state.openaiModel).name;
+      retryAction.current = () => void analyze();
       void jobs.start({ kind: "plan", id: saved.id }, { modelLabel,
         prepare: (signal) => analysisFlow.prepare({ kind: "plan", id: saved.id }, signal) });
     } catch (cause) { setError(errorText(cause)); }
@@ -306,12 +330,14 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
 
   async function cancelAnalysis() {
     if (!selectedId) return;
+    retryAction.current = () => void cancelAnalysis();
     try { await jobs.cancel({ kind: "plan", id: selectedId }); }
     catch (cause) { setError(errorText(cause)); }
   }
 
   async function remove() {
     if (!selectedId || analyzing || !window.confirm("Delete this saved plan?")) return;
+    retryAction.current = () => void remove();
     setError("");
     try {
       const response = await fetch(`/api/plans/${selectedId}`, { method: "DELETE" });
@@ -323,14 +349,13 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
       setSelectedId(next?.id || null);
       setDraft(next ? inputFromPlan(next) : emptyPlan(lastCurrentOverview));
       setSavedDraft(next ? inputFromPlan(next) : emptyPlan(lastCurrentOverview));
-      setResumeFile(null); if (resumeInput.current) resumeInput.current.value = "";
+      setResumeFile(null);
       setNotice("Plan deleted.");
     } catch (cause) { setError(errorText(cause)); }
   }
 
   return <main className="desktop-main plan-page" aria-label="Plan">
     <div className="workspace-toolbar">
-      <span className="workspace-context plan-context">{plans.length} saved {plans.length === 1 ? "plan" : "plans"}</span>
       <button className="button button-secondary plan-rail-toggle" type="button" data-command="search-toggle"
         aria-expanded={planListExpanded} aria-controls="saved-plan-list" disabled={navigatingBusy}
         onClick={() => setPlanListExpanded((value) => !value)}><FileText size={16} aria-hidden="true" /> Saved plans ({plans.length})</button>
@@ -353,18 +378,18 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
           className={`plan-item ${selectedId === plan.id ? "selected" : ""}`}
           onClick={() => choose(plan)} disabled={navigatingBusy} aria-current={selectedId === plan.id ? "page" : undefined}>
           <strong>{plan.title || "Untitled role"}{jobRunning(jobs.get({ kind: "plan", id: plan.id })) &&
-            <LoaderCircle size={13} className="spin plan-item-progress" aria-label="Analysis in progress" />}</strong><span>{plan.company || new URL(plan.listingUrl).hostname}</span>
-          <small>Edited {formatUpdated(plan.updatedAt)}{plan.keywords.length ? ` · ${plan.keywords.length} keywords` : ""}</small>
+            <LoaderCircle size={13} className="spin plan-item-progress" aria-label="Analysis in progress" />}</strong>
+          <span className="plan-item-meta"><span>{plan.company || new URL(plan.listingUrl).hostname}</span><small>Edited {formatUpdated(plan.updatedAt)}</small></span>
         </button>)}</div>
       </aside>
 
       <form className="plan-editor" onSubmit={saveClick}>
         <div className="plan-editor-head"><div><h2>{draft.title || "New plan"}</h2>
           {(draft.company || draft.team) && <p>{[draft.company, draft.team].filter(Boolean).join(" · ")}</p>}</div>
-          <span className={`save-state ${dirty ? "unsaved" : ""}`}>{dirty ? "Unsaved changes" : selectedId ? "Saved" : "New"}</span>
+          <span className={`save-state ${dirty ? "unsaved" : ""}`}>{dirty ? "Unsaved changes" : ""}</span>
         </div>
         <div className="plan-document-scroll">
-        {error && <p className="form-error" role="alert">{error}</p>}
+        <AnalysisErrorBanner message={error} retry={() => retryAction.current()} busy={busy} />
         {notice && <p className="notice" role="status">{notice}</p>}
         <div className="plan-document">
         <div className="plan-inputs">
@@ -374,43 +399,33 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
             <input type="url" value={draft.listingUrl} onChange={(event) => update("listingUrl", event.target.value)}
               aria-labelledby="plan-listing-label" placeholder="https://..." required maxLength={2000} />
             <button className="button button-secondary" type="button" onClick={() => void readListing(draft.listingUrl)}
-              disabled={!draft.listingUrl || busy}>{reading ? <LoaderCircle className="spin" size={16} /> : <ArrowRight size={16} />} Read listing</button>
+              disabled={!draft.listingUrl || busy}>{reading ? <LoaderCircle className="spin" size={16} /> : <ArrowRight size={16} />} Fill from link</button>
           </div></label>
+          {listingMessage === "Details added" && <span className="listing-feedback" role="status">Details added</span>}
           <div className="plan-meta-grid">
             <label className="field"><span>Company</span><input value={draft.company} onChange={(event) => update("company", event.target.value)} placeholder="Company name" /></label>
             <label className="field"><span>Job title</span><input value={draft.title} onChange={(event) => update("title", event.target.value)} placeholder="Product Manager" /></label>
             <label className="field"><span>Team</span><input value={draft.team} onChange={(event) => update("team", event.target.value)} placeholder="If listed" /></label>
             <LocationEditor value={draft.locations} onChange={(value) => update("locations", value)} />
           </div>
-          <label className="field"><span>Job description</span><textarea className="description-area" value={draft.description}
+          <label className="field"><span>Job description</span><textarea ref={descriptionInput} className="description-area" value={draft.description}
             onChange={(event) => update("description", event.target.value)}
             onPaste={(event) => pasteJobDescription(event, (value) => update("description", value))}
             placeholder="Paste job description" maxLength={80000} /></label>
-          {draft.snapshotText && <details className="snapshot-panel"><summary>Saved listing copy <span>{draft.snapshotSource === "page" ? "Captured from link" : "Saved from description"}</span></summary>
-            <p>The original copy is kept when you edit the description.</p>
-            <pre>{draft.snapshotText}</pre></details>}
+          {listingMessage && listingMessage !== "Details added" && !draft.description.trim() && <p className="listing-feedback" role="status">
+            {listingMessage} <button className="text-action" type="button" onClick={() => descriptionInput.current?.focus()}>Paste description</button></p>}
         </fieldset>
         <div className="plan-section cv-section">
           <fieldset className="plan-fields" disabled={analyzing || saving || moving}>
-          <div className="plan-section-heading"><h3>Your CV</h3></div>
-          <label className="field"><span id="current-cv-overview-label">Current resume overview</span>
+          <div className="plan-section-heading"><h3>Your resume</h3></div>
+          <label className="field"><span id="current-cv-overview-label">Current summary</span>
             <textarea className="current-overview-area" value={draft.currentOverview}
-              aria-labelledby="current-cv-overview-label" aria-describedby="current-cv-overview-help"
+              aria-labelledby="current-cv-overview-label"
               onChange={(event) => update("currentOverview", event.target.value)}
-              placeholder="Paste your resume overview" maxLength={20000} />
-            <small id="current-cv-overview-help">Your last saved overview is filled in for new plans.</small></label>
-          <label className="field"><span>Resume for this role</span>
-            <select value={resumeFile ? "" : draft.resumeId}
-              onChange={(event) => { setResumeFile(null); if (resumeInput.current) resumeInput.current.value = "";
-                update("resumeId", event.target.value); }}>
-              <option value="">Choose a saved resume</option>
-              {resumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.filename}</option>)}
-            </select></label>
-          <label className="field plan-upload"><span>Or upload a new resume</span>
-            <input ref={resumeInput} type="file" accept=".pdf,.docx,.doc"
-              onChange={(event) => { const file = event.target.files?.[0] || null;
-                setResumeFile(file); if (file) update("resumeId", ""); }} />
-            <small>{resumeFile ? `${resumeFile.name}, ready to save.` : "PDF, DOCX, or DOC. Up to 10 MB."}</small></label>
+              placeholder="Paste your resume summary" maxLength={20000} />
+          </label>
+          <ResumePicker resumes={resumes} value={draft.resumeId} file={resumeFile} disabled={busy}
+            onSelect={(value) => update("resumeId", value)} onFile={setResumeFile} />
           </fieldset>
           <div className="plan-analyze-actions">
             <button className="button button-primary analysis-button" type="button" onClick={() => void analyze()}
@@ -427,37 +442,36 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
           <div className="plan-progress-slot">
             {analyzing && analysisProgress && <PlanAnalysisProgress key={analysisProgress.requestId}
               stage={analysisProgress.stage} startedAt={analysisProgress.startedAt} />}
+            {!analyzing && !canAnalyze && <p className="analysis-requirements">Add a job link, job description (100+ characters), and a resume to analyze.</p>}
           </div>
           {analysisProvider === "builtin" && builtInReady && builtInModel?.basic && <p className="analysis-hint">
             Compact mode uses basic keyword coverage and limited overview suggestions.</p>}
-          {!canAnalyze && <p className="analysis-requirements">Add {missing.join(", ")} to analyze.</p>}
         </div>
         </div>
         <fieldset className="plan-section analysis-section" disabled={analyzing || saving || moving}>
           <div className="plan-section-heading"><h3>Resume direction</h3></div>
           <div className="match-result" aria-busy={analyzing}><span>Resume match</span>
             <div className="match-result-value">
-              <strong>{matchStrength === null ? "Not analyzed" : `${matchStrength}%`}</strong>
+              {matchStrength === null ? <span className="unscored-badge">Not analyzed</span> : <strong>{matchStrength}%</strong>}
               {matchStrength !== null && <span className="score-track" aria-hidden="true"><span style={{ width: `${matchStrength}%` }} /></span>}
               {hasAnalysis && <button className="match-refresh" type="button" aria-label="Refresh analysis" title="Refresh analysis"
                 onClick={() => void analyze()} disabled={busy || !canAnalyze}><RefreshCw size={16} aria-hidden="true" /></button>}
             </div>
             {!analyzing && matchStrength !== null && <details className="match-why">
-              <summary>Why</summary>
-              <p>{matchNotes || "Refresh analysis to add an explanation for this saved score."}</p>
+              <summary>Why this score</summary>
+              {matchNotes ? <p>{matchNotes}</p> : <p>Analyze again to add an explanation. <button className="text-action" type="button" disabled={busy || !canAnalyze} onClick={() => void analyze()}>Add explanation</button></p>}
             </details>}
           </div>
-          <p className="job-importance-hint">Estimated job importance. Each rating is independent.</p>
           <div className="analysis-grid">
             <PlanRecommendations kind="keywords" values={draft.keywords} importance={keywordImportance} busy={busy}
               onChange={(value) => update("keywords", value)} />
             <PlanRecommendations kind="themes" values={draft.themes} importance={themeImportance} busy={busy}
               onChange={(value) => update("themes", value)} />
           </div>
-          <label className="field"><span>Suggested resume overview</span>
+          <label className="field"><span>Suggested edits - Resume summary</span>
             <textarea className="overview-area" value={draft.overview}
               onChange={(event) => update("overview", event.target.value)}
-              placeholder="Your tailored overview will appear here." /></label>
+              placeholder="Your tailored summary will appear here." /></label>
           {overviewRationale && <div className="overview-rationale">
             <strong>{overviewUnchanged ? "No wording changes" : "What changed"}</strong>
             <p>{overviewRationale}</p>
@@ -468,7 +482,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
             ? `Job text, your overview, and extracted resume text are sent to ${ollamaModel || "your selected model"} on your Ollama server.`
             : analysisProvider === "credits" ? "Job text, your overview, and resume text are sent to Zebby and your selected online provider. Credits cover actual model usage."
             : `Job text, your overview, and ${analysisProvider === "openai" ? "the selected resume" : "resume text"} are sent to ${analysisProvider === "openai" ? "OpenAI" : "Anthropic"}. Usage is billed to your API account.`}</p>
-            <p>Importance reflects job priorities, not resume coverage or a measured ATS score.</p></details>
+</details>
         </fieldset>
         </div>
         </div>
@@ -493,11 +507,14 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
 function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking }: { state: DesktopState; onState: (value: DesktopState) => void;
   onUpdate: () => void; onCheckUpdates: () => Promise<void>; updateWorking: boolean }) {
   const { openCredits } = useAnalysisFlow();
+  const savedFeedback = useSavedFeedback();
+  const retryAction = useRef<() => void>(() => undefined);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
   async function choose(kind: "open" | "create") {
+    retryAction.current = () => void choose(kind);
     setWorking(true); setError(""); setNotice("");
     try { const result = await window.desktop!.chooseDatabase(kind);
       if (result) { onState(result); setNotice(kind === "create" ? "New database created." : "Database opened."); }
@@ -506,13 +523,15 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking 
   }
 
   async function retry() {
+    retryAction.current = () => void retry();
     setWorking(true); setError("");
-    try { onState(await window.desktop!.retrySync()); setNotice("Changes saved to the selected database."); }
+    try { onState(await window.desktop!.retrySync()); setNotice(""); savedFeedback(); }
     catch (cause) { setError(errorText(cause)); }
     finally { setWorking(false); }
   }
 
   async function changeAppearance(value: DesktopState["appearance"]) {
+    retryAction.current = () => void changeAppearance(value);
     setWorking(true); setError(""); setNotice("");
     onState({ ...state, appearance: value });
     try { onState(await window.desktop!.setAppearance(value)); }
@@ -521,6 +540,7 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking 
   }
 
   async function openLogs() {
+    retryAction.current = () => void openLogs();
     setWorking(true); setError(""); setNotice("");
     try { await window.desktop!.openLogs(); }
     catch (cause) { setError(errorText(cause)); }
@@ -528,19 +548,21 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking 
   }
 
   async function checkUpdates() {
+    retryAction.current = () => void checkUpdates();
+    setError("");
     try { await onCheckUpdates(); }
     catch (cause) { setError(errorText(cause)); }
   }
 
   return <main className="desktop-main settings-page" aria-label="Settings">
-    {error && <p className="form-error" role="alert">{error}</p>}
+    <ErrorBanner message={error} retry={() => retryAction.current()} busy={working} />
     {notice && <p className="notice" role="status">{notice}</p>}
     <section className="settings-section" aria-labelledby="database-settings">
       <div className="settings-section-heading"><h2 id="database-settings">Database</h2></div>
       <div className="settings-content">
         <div className="database-location"><span>Current file</span><strong>{state.filename || "No database selected"}</strong>
           {state.filePath && <code title={state.filePath}>{state.filePath}</code>}</div>
-        {state.dirty && <p className="sync-warning">The latest changes are still on this computer. Retry the save before switching devices.</p>}
+        {state.dirty && <p className="sync-warning">Changes have not reached {state.filename || "your database file"}. Retry the save before switching computers.</p>}
         <div className="settings-actions"><SettingsAction icon={FolderOpen} onClick={() => void choose("open")} disabled={working}>Open database</SettingsAction>
           <SettingsAction icon={Plus} data-command="new" onClick={() => void choose("create")} disabled={working}>Create new database</SettingsAction>
           {state.dirty && <SettingsAction variant="primary" icon={RotateCw} onClick={() => void retry()} disabled={working}>Retry save</SettingsAction>}
@@ -579,17 +601,15 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking 
       <div className="settings-section-heading"><h2 id="updates-settings">Updates</h2><p>Zebby {state.updates.currentVersion}</p></div>
       <div className="settings-content">
         <div className="settings-actions">
-          <SettingsAction icon={RefreshCw} busy={state.updates.checking} onClick={() => void checkUpdates()}
-            disabled={state.updates.checking || !["idle", "error"].includes(state.updates.download.phase)}>
-            Check for updates</SettingsAction>
-          <UpdateButton updates={state.updates} working={updateWorking} onClick={onUpdate} settings />
+          {!state.updates.available && !state.updates.error && <SettingsAction icon={RefreshCw} busy={state.updates.checking}
+            onClick={() => void checkUpdates()} disabled={state.updates.checking}>Check for updates</SettingsAction>}
+          {!state.updates.download.error && <UpdateButton updates={state.updates} working={updateWorking} onClick={onUpdate} settings />}
         </div>
-        <p className="settings-help" role="status">{state.updates.checking ? "Checking GitHub for a new release."
-          : state.updates.available ? `Version ${state.updates.available.version} is available.`
-          : state.updates.error ? "Update check unavailable." : state.updates.checkedAt ? "You have the latest version." : "Checks GitHub when Zebby opens."}</p>
+        {!state.updates.available && !state.updates.error && state.updates.checkedAt && !state.updates.checking && <p className="settings-help" role="status">Up to date</p>}
         {state.updates.available && <a className="settings-link" href={state.updates.available.releaseUrl} target="_blank" rel="noopener noreferrer">
           Release notes <ArrowUpRight size={15} aria-hidden="true" /></a>}
-        {(state.updates.error || state.updates.download.error) && <p className="form-error" role="alert">{state.updates.download.error || state.updates.error}</p>}
+        <ErrorBanner message={state.updates.download.error || (state.updates.error ? "Could not check for updates." : "")}
+          retry={state.updates.download.error ? onUpdate : () => void checkUpdates()} busy={updateWorking || state.updates.checking} />
       </div>
     </section>
   </main>;
@@ -597,8 +617,10 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking 
 
 function Welcome({ state, onState }: { state: DesktopState; onState: (value: DesktopState) => void }) {
   const [error, setError] = useState(state.startupError);
+  const retryAction = useRef<() => void>(() => undefined);
   const [working, setWorking] = useState(false);
   async function choose(kind: "open" | "create") {
+    retryAction.current = () => void choose(kind);
     setWorking(true); setError("");
     try { const result = await window.desktop!.chooseDatabase(kind); if (result) onState(result); }
     catch (cause) { setError(errorText(cause)); }
@@ -607,7 +629,7 @@ function Welcome({ state, onState }: { state: DesktopState; onState: (value: Des
   return <main className="welcome-page"><img className="welcome-graphic" src="./icon.png" alt="" />
     <div className="welcome-copy"><h1>Your search, in one place.</h1>
       <p>Plan for the roles you want, then track every application and resume you send.</p></div>
-    {error && <p className="form-error" role="alert">{error}</p>}
+    <ErrorBanner message={error} retry={() => retryAction.current()} busy={working} />
     <div className="welcome-actions"><button className="button button-primary" onClick={() => void choose("create")} disabled={working}>
       <Plus size={18} aria-hidden="true" /> Create database</button>
       <button className="button button-secondary" onClick={() => void choose("open")} disabled={working}>
@@ -628,6 +650,7 @@ export default function App() {
   const [databaseVersion, setDatabaseVersion] = useState(0);
   const [sidebarSaving, setSidebarSaving] = useState(false);
   const [shellError, setShellError] = useState("");
+  const shellRetry = useRef<() => void>(() => undefined);
   const [updateWorking, setUpdateWorking] = useState(false);
   const loaded = state !== null;
   useEffect(() => {
@@ -641,6 +664,7 @@ export default function App() {
 
   async function toggleSidebar() {
     if (!state || sidebarSaving) return;
+    shellRetry.current = () => void toggleSidebar();
     const collapsed = !state.sidebarCollapsed;
     setShellError(""); setSidebarSaving(true);
     setState((current) => current ? { ...current, sidebarCollapsed: collapsed } : current);
@@ -653,6 +677,7 @@ export default function App() {
 
   async function applyUpdate() {
     if (!state || updateWorking) return;
+    shellRetry.current = () => void applyUpdate();
     const restart = state.updates.download.phase === "ready";
     if (restart && document.querySelector('[role="dialog"], .desktop-dashboard .editor')) {
       setShellError("Finish editing the open form or dialog before updating."); return;
@@ -705,7 +730,7 @@ export default function App() {
   }, [appearance]);
 
   if (!state) return <div className="desktop-loading"><LoaderCircle className="spin" size={24} /> Opening workspace...</div>;
-  return <AnalysisFlowProvider state={state} onState={setState}><BackgroundAnalysisProvider key={databaseVersion}><div className={`desktop-shell ${state.platform === "darwin" ? "platform-mac" : "platform-windows"}${state.sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+  return <SavedFeedbackProvider><AnalysisFlowProvider state={state} onState={setState} onOpenSettings={() => { if (navigate("settings")) requestAnimationFrame(() => document.getElementById("ai-settings")?.scrollIntoView({ block: "start" })); }}><BackgroundAnalysisProvider key={databaseVersion}><div className={`desktop-shell ${state.platform === "darwin" ? "platform-mac" : "platform-windows"}${state.sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
     <header className="desktop-titlebar" aria-label="Window title bar">
       <div className="titlebar-sidebar" aria-hidden="true" />
       <div className="titlebar-caption">Zebby</div>
@@ -731,7 +756,9 @@ export default function App() {
       </div>}
     </aside>
     <div className="desktop-workspace" inert={updateWorking && state.updates.download.phase === "ready" || state.updates.download.phase === "installing"}>
-      {shellError && <div className="workspace-warning" role="alert">{shellError}</div>}
+      <ErrorBanner message={shellError} className="workspace-warning" retry={() => shellRetry.current()} busy={updateWorking || sidebarSaving} />
+      {state.dirty && tab !== "settings" && <div className="workspace-warning" role="alert"><span>Changes have not reached {state.filename || "your database file"}.</span>
+        <button type="button" onClick={() => navigate("settings")}>Retry save in Settings</button></div>}
       {state.startupError && <div className="workspace-warning" role="alert">
         <span>The previous database is unavailable. This workspace is stored locally.</span>
         <button type="button" onClick={() => navigate("settings")}>Open Settings</button>
@@ -751,5 +778,5 @@ export default function App() {
         }} />
       : tab === "applications" ? <ApplicationDashboard key={databaseVersion} initialSelection={applicationSelection} />
       : <SettingsView state={state} onState={setState} onUpdate={() => void applyUpdate()} onCheckUpdates={checkUpdates} updateWorking={updateWorking} />}</div>
-  </div></BackgroundAnalysisProvider></AnalysisFlowProvider>;
+  </div></BackgroundAnalysisProvider></AnalysisFlowProvider></SavedFeedbackProvider>;
 }

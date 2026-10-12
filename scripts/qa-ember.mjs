@@ -177,8 +177,11 @@ try {
       const summary = row.querySelector(".application-row-summary"), main = row.querySelector(".application-row-main");
       const controls = [main, date, match, summary.querySelector(".status-select"), summary.querySelector(".row-actions")];
       const boxes = controls.map((element) => element.getBoundingClientRect());
-      const gaps = boxes.slice(1).map((box, index) => box.left - boxes[index].right);
-      const mid = boxes[0].top + boxes[0].height / 2;
+      const stacked = boxes[0].bottom <= boxes[1].top;
+      const aligned = stacked ? controls.slice(1) : controls;
+      const alignedBoxes = stacked ? boxes.slice(1) : boxes;
+      const gaps = alignedBoxes.slice(1).map((box, index) => box.left - alignedBoxes[index].right);
+      const mid = alignedBoxes[0].top + alignedBoxes[0].height / 2;
       const buttons = [...summary.querySelectorAll(".row-actions > button")];
       const meta = main.querySelector(".application-row-meta").getBoundingClientRect();
       const heading = main.querySelector(".application-row-select").getBoundingClientRect();
@@ -186,8 +189,9 @@ try {
       const expanded = row.querySelector(".application-row-locations:not([hidden])")?.getBoundingClientRect();
       const multiple = main.querySelector(".location-summary .location-caption");
       return { dateFirst: date.tagName === "TIME", matchSecond: match.classList.contains("match-control"), gaps,
-        lineOffset: Math.max(...[...controls, ...buttons].map((element) => { const b = element.getBoundingClientRect(); return Math.abs(b.top + b.height / 2 - mid); })),
-        actionCount: buttons.length, twoRows: heading.bottom < meta.top && heading.height < 26,
+        lineOffset: Math.max(...[...aligned, ...buttons].map((element) => { const b = element.getBoundingClientRect(); return Math.abs(b.top + b.height / 2 - mid); })),
+        stacked, titleWidth: boxes[0].width / summary.clientWidth,
+        actionCount: buttons.length, twoRows: heading.bottom < meta.top && (stacked || heading.height < 26),
         metadataOffset: location && listing ? Math.abs(location.top + location.height / 2 - listing.top - listing.height / 2) : 0,
         metadataBelow: meta.top > heading.bottom, expandedBelow: !expanded || expanded.top > summary.getBoundingClientRect().bottom,
         multipleReadable: !multiple || row.closest(".application-list").clientWidth > 800 ||
@@ -198,7 +202,9 @@ try {
     assert.ok(geometry.length, `${label}: rows available`);
     for (const row of geometry) {
       assert.equal(row.dateFirst && row.matchSecond, true);
-      assert.ok(row.gaps.every((gap) => gap >= 7) && Math.max(...row.gaps) - Math.min(...row.gaps) <= 1, `${label}: evenly separated groups ${JSON.stringify(row)}`);
+      assert.ok(row.gaps.every((gap) => gap >= 7), `${label}: separated groups ${JSON.stringify(row)}`);
+      if (!row.stacked) assert.ok(Math.max(...row.gaps) - Math.min(...row.gaps) <= 1, `${label}: evenly separated groups ${JSON.stringify(row)}`);
+      else assert.ok(row.titleWidth > .9, `${label}: compact rows give the role identity the full width`);
       if (row.width >= 850) assert.ok(row.gaps[1] > 64, `${label}: date/match separation exceeds the rejected footer`);
       assert.ok(row.lineOffset <= 1, `${label}: date, match, status and all actions vertically center on the two-line job block`);
       assert.equal(row.actionCount, 3); assert.equal(row.twoRows && row.metadataBelow && row.expandedBelow, true);
@@ -238,7 +244,7 @@ try {
   assert.equal(await page.locator(".plan-inputs").evaluate((e) => getComputedStyle(e).gridTemplateColumns.split(" ").length), 2);
   assert.equal(await page.getByRole("button", { name: "Analyze", exact: true }).evaluate((e) => e.getBoundingClientRect().bottom < innerHeight), true);
   assert.equal(await page.getByRole("button", { name: "Save plan", exact: true }).evaluate((e) => e.getBoundingClientRect().bottom < innerHeight), true);
-  const input = page.getByRole("textbox", { name: "Current resume overview", exact: true });
+  const input = page.getByRole("textbox", { name: "Current summary", exact: true });
   const initial = await input.inputValue();
   await input.focus(); await page.keyboard.press("End"); await page.keyboard.type("!"); await page.keyboard.press("Control+z");
   assert.equal(await input.inputValue(), initial); checks.push("Native editing Undo preserves the controlled overview");
@@ -256,7 +262,9 @@ try {
   assert.equal(await app.evaluate(() => globalThis.__emberQA.aborted), 0);
   await capture("plan-analysis-running");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  await page.getByText("Analysis cancelled.", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Analyze", exact: true }).waitFor();
+  assert.equal(await input.isDisabled(), false);
+  assert.equal(await page.getByText("Analysis cancelled.", { exact: true }).count(), 0);
   assert.equal(JSON.stringify((await api("/api/plans")).plans[0]), beforePlan);
   assert.equal(await app.evaluate(() => globalThis.__emberQA.aborted), 1); checks.push("Plan cancellation aborts Ollama and leaves the full saved record unchanged");
   await page.locator(".analysis-section").evaluate((e) => {
@@ -273,7 +281,7 @@ try {
       available: paragraph.parentElement.getBoundingClientRect().width,
       overflow: paragraph.scrollWidth > paragraph.clientWidth,
     })));
-    assert.equal(measurements.length, 3);
+    assert.equal(measurements.length, 2);
     assert.ok(measurements.every(({ width, available, overflow }) => Math.abs(width - available) <= 1 && !overflow), `${label}: ${JSON.stringify(measurements)}`);
     await page.locator(".plan-document-scroll").evaluate((element) => element.scrollTo(0, element.scrollHeight));
   }
@@ -334,7 +342,7 @@ try {
   checks.push("Score explanation starts collapsed, toggles with mouse/Enter, and resets for another job or reopened pane");
   await pane.getByRole("button", { name: "Close details", exact: true }).click();
   await second.getByRole("button", { name: /^Notes for/ }).click();
-  await page.getByRole("dialog", { name: "Application notes" }).waitFor();
+  await page.getByRole("dialog", { name: "Notes", exact: true }).waitFor();
   assert.equal(await pane.count(), 0);
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await selector.click(); await pane.waitFor();
@@ -351,7 +359,9 @@ try {
   await assertRowMetrics("Match analysis running");
   await capture("application-analysis-running");
   await row.getByRole("button", { name: /^Cancel match analysis/ }).click();
-  await page.getByText("Analysis cancelled.", { exact: true }).waitFor();
+  await refresh.waitFor();
+  assert.equal(await row.locator("select").isDisabled(), false);
+  assert.equal(await page.getByText("Analysis cancelled.", { exact: true }).count(), 0);
   assert.equal(JSON.stringify((await api("/api/applications")).applications.find((a) => a.id === appBefore.id)), JSON.stringify(appBefore));
   checks.push("Application cancellation protects row controls and keeps prior analysis");
   await row.locator("select").focus(); await page.keyboard.press("Tab"); await page.keyboard.press("Shift+Tab");
@@ -403,7 +413,10 @@ try {
   await nav.getByRole("button", { name: "Plan", exact: true }).click();
   const beforeOpenai = JSON.stringify((await api("/api/plans")).plans[0]);
   await page.getByRole("button", { name: "Analyze", exact: true }).click(); await waitForRequest();
-  await page.getByRole("button", { name: "Cancel", exact: true }).click(); await page.getByText("Analysis cancelled.", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Analyze", exact: true }).waitFor();
+  assert.equal(await input.isDisabled(), false);
+  assert.equal(await page.getByText("Analysis cancelled.", { exact: true }).count(), 0);
   assert.equal(JSON.stringify((await api("/api/plans")).plans[0]), beforeOpenai); checks.push("Plan cancellation also aborts OpenAI");
   await page.evaluate(() => {
     const original = window.fetch;
@@ -429,7 +442,7 @@ try {
   assert.equal(await page.getByText("Analysis cancelled.", { exact: true }).count(), 0);
   await page.evaluate(() => window.__deliverAnalysis());
   checks.push("Cancel after persistence keeps response delivery and UI consistent");
-  await page.getByText("Analysis saved.", { exact: true }).waitFor();
+  await page.locator(".workspace-save-feedback").getByText("Saved", { exact: true }).waitFor();
   assert.equal((await api("/api/plans")).plans[0].matchStrength, 85); checks.push("Successful analysis still saves all structured results");
   const planToApply = (await api("/api/plans")).plans[0];
   const appliedBefore = (await api("/api/applications")).applications.length;
@@ -514,12 +527,12 @@ try {
     assert.ok(await page.getByLabel(label, { exact: label !== "Job description" }).count(), `${label} stays in the full form`);
   }
   await page.getByLabel("Date applied", { exact: true }).fill("");
-  await page.keyboard.press("Control+s"); await page.getByText("Application added.", { exact: true }).waitFor();
+  await page.keyboard.press("Control+s"); await page.locator(".workspace-save-feedback").getByText("Saved", { exact: true }).waitFor();
   assert.equal((await api("/api/applications")).applications.length, appliedBefore + 1); checks.push("New and Save shortcuts, and saving a blank optional application");
   const blank = page.locator(".application-row").filter({ has: page.getByRole("button", { name: "View details for untitled role at unknown company", exact: true }) });
   assert.equal(await blank.locator(".application-applied-date").getAttribute("datetime"), null);
   assert.match(await blank.locator(".application-applied-date").innerText(), /Not set/);
-  assert.match(await blank.locator(".application-row-metrics .match-control").innerText(), /Not scored/);
+  assert.match(await blank.locator(".application-row-metrics .match-control").innerText(), /Not analyzed/);
   await page.keyboard.press("Control+f"); assert.equal(await page.evaluate(() => document.activeElement.dataset.command), "search");
   await page.getByRole("textbox", { name: "Search applications", exact: true }).fill("Northstar");
   assert.match(await page.locator(".section-toolbar p").innerText(), /12 of 37/); checks.push("Search and filtered counts");

@@ -51,6 +51,5 @@ export default function LocationEditor({ value, onChange }: { value: string; onC
       </div> : <button ref={addButtonRef} className="location-add" type="button" aria-label="Add location"
         onClick={() => setAdding(true)}><Plus size={15} aria-hidden="true" /> Add location</button>}
     </div>
-    {!locations.length && !adding && <small>Add each location listed in the posting, if any.</small>}
   </div>;
 }

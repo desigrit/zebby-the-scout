@@ -4,18 +4,20 @@ import { formatCredits, onlineModel } from "../../shared/online-models";
 import { creditUsage } from "../../shared/credit-usage";
 import type { WalletPairing } from "../../shared/wallet-access";
 import SettingsAction from "./SettingsAction";
+import { ErrorBanner } from "./WorkspaceFeedback";
 import { useAnalysisFlow } from "./AnalysisFlow";
 
 export function CreditsSettings() {
   const { state, updateState } = useAnalysisFlow();
   const credits = state.credits, wallet = credits.wallet;
   const usage = wallet ? creditUsage(wallet) : null;
-  const hasCredits = credits.signedIn && Boolean(wallet && (wallet.purchased || wallet.balance || wallet.used));
+  const hasCredits = Boolean(wallet && (wallet.purchased || wallet.balance || wallet.used));
   const [helpOpen, setHelpOpen] = useState(false);
   const helpDialog = useRef<HTMLDialogElement | null>(null), helpOpener = useRef<HTMLButtonElement | null>(null);
   const [error, setError] = useState(""), [notice, setNotice] = useState(""), [working, setWorking] = useState(false);
   const [editor, setEditor] = useState<"restore" | "connect" | null>(null), [code, setCode] = useState("");
   const [pairing, setPairing] = useState<WalletPairing | null>(null), [remaining, setRemaining] = useState(0), [copied, setCopied] = useState(false);
+  const retryAction = useRef<(() => void) | null>(null);
   const pairedDevices = useRef(new Set<string>());
   const opener = useRef<HTMLButtonElement | null>(null), input = useRef<HTMLInputElement | null>(null);
   const restoreFocus = useRef(false);
@@ -58,6 +60,7 @@ export function CreditsSettings() {
     return () => { active = false; clearInterval(timer); };
   }, [pairing, pairingActive, updateState]);
   async function action(operation: () => Promise<void>) {
+    retryAction.current = () => void action(operation);
     setWorking(true); setError(""); setNotice("");
     try { await operation(); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Could not update wallet access."); }
@@ -83,7 +86,7 @@ export function CreditsSettings() {
   const displayCode = pairing?.code.replace(/(.{4})(.{4})/, "$1-$2") || "";
   const roundedPercent = usage ? Math.round(usage.percentRemaining) : 0;
   const percentLabel = usage && usage.percentRemaining > 0 && roundedPercent === 0 ? "<1% left" : `${roundedPercent}% left`;
-  const feedback = <>{(error || credits.error) && <p className="form-error" role="alert">{error || credits.error}</p>}
+  const feedback = <><ErrorBanner message={credits.pendingConnection ? "" : error || credits.error} retry={() => error && retryAction.current ? retryAction.current() : void action(refreshBalance)} busy={working} />
     {notice && <p className="notice" role="status">{notice}</p>}</>;
   return <section className="settings-section" aria-labelledby="credits-settings">
     <div className="settings-section-heading"><h2 id="credits-settings">Credits</h2></div>
@@ -98,21 +101,21 @@ export function CreditsSettings() {
             aria-valuenow={Number(usage.percentRemaining.toFixed(2))} aria-valuetext={`${formatCredits(usage.available)} credits available, ${formatCredits(wallet.used)} used${wallet.reserved ? `, ${formatCredits(wallet.reserved)} reserved for running analysis` : ""}`}>
             <span style={{ width: `${usage.percentRemaining}%` }} /></div>
         </div>
-        {credits.stale && <p className="settings-help">Saved balance. Refresh to update.</p>}
+        {credits.stale && <p className="settings-help">Last updated {new Date(wallet.updatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>}
         {!!wallet.reserved && <p className="settings-help">{formatCredits(wallet.reserved)} credits reserved for running analysis.</p>}
-      </> : credits.signedIn && !wallet ? <div className="credit-wallet-loading">
+      </> : credits.pendingConnection ? null : credits.signedIn && !wallet ? <div className="credit-wallet-loading">
         {!credits.stale && !credits.error ? <span role="status"><LoaderCircle size={16} className="spin" aria-hidden="true" />Loading credits</span>
           : <p className="settings-help">Could not load your credits.</p>}
         <SettingsAction icon={RefreshCw} busy={working} disabled={!usable} onClick={() => void action(refreshBalance)}>Refresh balance</SettingsAction>
       </div> : <p className="settings-help credit-empty">No credits found. Buy a pack or restore your existing credits.</p>}
-      {credits.pendingConnection && <div className="credit-connection-pending"><p className="settings-help" role="status">Connection interrupted. Refresh to finish.</p>
-        {!hasCredits && !(credits.signedIn && !wallet) && <SettingsAction icon={RefreshCw} busy={working} disabled={!usable} onClick={() => void action(refreshBalance)}>Refresh balance</SettingsAction>}</div>}
+      {credits.pendingConnection && <div className="credit-connection-pending"><p className="settings-help" role="status">Connection interrupted.</p>
+        <SettingsAction icon={RefreshCw} busy={working} disabled={!usable} onClick={() => void action(refreshBalance)}>Retry connection</SettingsAction></div>}
       <div className="credit-settings-links">
         <div className="credit-restore-links"><button className="settings-link" type="button" disabled={!usable || working || pairingActive}
           onClick={(event) => openEditor("restore", event.currentTarget)}>Restore credits</button><span aria-hidden="true">|</span>
           <button className="settings-link" type="button" disabled={!usable || working || pairingActive}
             onClick={(event) => openEditor("connect", event.currentTarget)}>Connect this computer</button></div>
-        <button ref={helpOpener} className="settings-link" type="button" disabled={working} onClick={() => setHelpOpen(true)}>Learn more</button>
+        <button ref={helpOpener} className="settings-link" type="button" disabled={working} onClick={() => setHelpOpen(true)}>{hasCredits ? "Manage credits" : "Learn more"}</button>
       </div>
       {editor && <form className="credit-connect-form" onSubmit={(event) => { event.preventDefault(); void action(async () => {
         const result = await window.desktop!.connectCreditWallet(editor, code); updateState(result.state);
@@ -129,25 +132,26 @@ export function CreditsSettings() {
       {!helpOpen && feedback}
       <dialog ref={helpDialog} className="analysis-dialog credit-help-dialog" aria-labelledby="credit-help-title"
         onCancel={(event) => { event.preventDefault(); if (!working) setHelpOpen(false); }} onClose={() => setHelpOpen(false)}>
-        <header className="analysis-dialog-header"><h2 id="credit-help-title">About credits</h2>
+        <header className="analysis-dialog-header"><h2 id="credit-help-title">{hasCredits ? "Credits and devices" : "About credits"}</h2>
           <SettingsAction className="analysis-dialog-close" icon={X} iconOnly disabled={working} aria-label="Close credit help" title="Close"
             onClick={() => setHelpOpen(false)} /></header>
         <div className="analysis-dialog-body">
+          {hasCredits && <details className="credit-how"><summary>How credits work</summary><p>Credits pay for online analysis. Computers connected to this wallet share the same balance. Keep a recovery code so you can restore access.</p></details>}
           <section className="credit-help-topic"><h3>Restore credits</h3>
             <p>Use your saved recovery code to recover your credit balance after reinstalling Zebby or replacing a computer.</p>
             {hasCredits && <><SettingsAction icon={ShieldCheck} disabled={!usable || working} onClick={() => void action(() => saveRecovery())}>Save recovery code</SettingsAction>
               {credits.access?.hasRecoveryCode && <details className="credit-recovery-options"><summary>Replace recovery code</summary><p className="settings-help">The new code replaces the previous one. Connected computers keep access.</p>
                 <SettingsAction icon={RefreshCw} disabled={!usable || working} onClick={() => void action(() => saveRecovery(true))}>Create new recovery code</SettingsAction></details>}</>}
           </section>
-          <section className="credit-help-topic"><h3>Connect this computer</h3>
-            <p>Enter a pairing code from Zebby on your other computer to share the same balance. Codes expire after 10 minutes and work once.</p>
+          <section className="credit-help-topic"><h3>{hasCredits ? "Connect another computer" : "Connect this computer"}</h3>
+            <p>{hasCredits ? "Create a code here, then enter it on your other computer to share this balance." : "Enter a pairing code from Zebby on your connected computer to share its balance."} Codes expire after 10 minutes and work once.</p>
             {hasCredits && <SettingsAction icon={Monitor} disabled={!usable || working || Boolean(pairing)} onClick={() => void action(startPairing)}>Connect another computer</SettingsAction>}
             {pairing && <div className="credit-pairing-panel" aria-labelledby="credit-pairing-title">
               <div className="credit-pairing-heading"><strong id="credit-pairing-title">Enter this code on your other computer</strong>
                 <SettingsAction icon={X} iconOnly disabled={working} aria-label="Cancel pairing" title="Cancel pairing" onClick={() => void action(async () => {
                   await window.desktop!.cancelCreditPairing(); setPairing(null); setRemaining(0); setCopied(false);
                 })} /></div>
-              <p className="settings-help">Open Settings, Credits, then Connect this computer.</p>
+              <p className="settings-help">On your other computer, open Settings, Credits, then Connect this computer.</p>
               <div className="credit-pairing-code"><output aria-label="Pairing code">{displayCode}</output>
                 <SettingsAction icon={copied ? Check : Copy} disabled={working || remaining <= 0} onClick={() => void action(async () => {
                   await navigator.clipboard.writeText(displayCode); setCopied(true);

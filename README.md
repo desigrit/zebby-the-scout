@@ -10,18 +10,22 @@ I wanted a simple place to prepare for jobs and remember which CV went where. I 
 
 Windows x64 and ARM64 · Apple Silicon Mac · No signup
 
-![Zebby Applications, showing varied daily activity, stacked application statuses and the selected role's details](docs/screenshots/applications.png?v=2.3.0)
+![Zebby Applications, showing varied daily activity, stacked application statuses and the selected role's details](docs/screenshots/applications.png?v=2.3.8)
 
-<sub>Zebby 2.3.0 with sample applications and analysis results.</sub>
+<sub>Current Zebby screens with sample applications and analysis results.</sub>
 
 ## From a listing to an application
 
-- **Plan:** save a posting, add your CV and overview, then review ATS keywords, resume themes, a match score and suggested wording. Move a plan to Applied with its details and existing score, without another analysis.
+[![Zebby screens: OOBE, Plan mode, New application, Applications stats and Settings, connected by arrows.](docs/screenshots/screen-flow-overview.png)](docs/screenshots/screen-flow.png)
+
+<sub>[Explore the full-resolution flow](docs/screenshots/screen-flow.png) · [Browse individual screens](docs/screenshots/README.md)</sub>
+
+- **Plan:** save a posting, add your resume and current summary, then review ATS keywords, resume themes, a match score and suggested edits. **Move to Applied** carries the details and existing score into Applications, without another analysis.
 - **Applications:** track companies, roles, dates, locations, resumes, notes and statuses. Filter the list, see daily activity by status, and celebrate an offer with Zebby confetti.
-- **Saved listings:** keep descriptions for later, even after the posting closes. Paste a copy when a site blocks extraction.
+- **Job descriptions:** keep the extracted or pasted description, and edit it as needed. It stays available after the posting closes.
 - **Your files:** keep plans, applications and uploaded resumes together in a SQLite file you choose.
 
-![Zebby Plan, showing individual keyword and theme importance, a resume match score and a suggested overview](docs/screenshots/plan.png?v=2.3.0)
+![Zebby Plan, showing individual keyword and theme importance, a resume match score and suggested summary edits](docs/screenshots/plan.png?v=2.3.8)
 
 Keyword and theme percentages estimate importance to the job. Review AI suggestions before updating your CV.
 
@@ -38,15 +42,15 @@ Keyword and theme percentages estimate importance to the job. Review AI suggesti
 
 Choose your provider, model and supported thinking level. Keys stay on this computer.
 
-![Zebby Analysis settings with OpenAI selected, a masked demo key and supported thinking levels](docs/screenshots/settings.png?v=2.3.0)
+![Zebby Analysis settings with OpenAI selected, a masked demo key and supported thinking levels](docs/screenshots/settings.png?v=2.3.8)
 
 </details>
 
 ### Optional Zebby credits
 
-Choose a pack in Settings and pay in your browser. Pick your model after purchase. Zebby shows the maximum credit cost before each analysis and charges for actual usage.
+Choose a pack and pay in your browser. Choose your model and thinking level in Settings, then click Analyze to begin. Zebby charges for actual model usage.
 
-![Zebby's credit purchase dialog with the $5 suggested start and illustrative Sol High and Luna High analysis counts](docs/screenshots/credits.png?v=2.3.0)
+![Zebby's credit purchase dialog with the $5 suggested start and illustrative Sol High and Luna High analysis counts](docs/screenshots/credits.png?v=2.3.8)
 
 Save your recovery code to restore credits later, or connect another computer to the same wallet.
 
@@ -61,13 +65,13 @@ Zebby checks for updates and offers **Restart to update** when a verified downlo
 <details>
 <summary>Dark mode</summary>
 
-![Zebby's dark Applications workspace with varied daily totals and stacked statuses](docs/screenshots/applications-dark.png?v=2.3.0)
+![Zebby's dark Applications workspace with varied daily totals and stacked statuses](docs/screenshots/applications-dark.png?v=2.3.8)
 
-![Zebby's dark Plan workspace with keyword and theme importance](docs/screenshots/plan-dark.png?v=2.3.0)
+![Zebby's dark Plan workspace with keyword and theme importance](docs/screenshots/plan-dark.png?v=2.3.8)
 
-![Zebby's dark Settings with a masked demo API key](docs/screenshots/settings-dark.png?v=2.3.0)
+![Zebby's dark Settings with a masked demo API key](docs/screenshots/settings-dark.png?v=2.3.8)
 
-![Zebby's dark credit purchase dialog](docs/screenshots/credits-dark.png?v=2.3.0)
+![Zebby's dark credit purchase dialog](docs/screenshots/credits-dark.png?v=2.3.8)
 
 </details>
 

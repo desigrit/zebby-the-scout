@@ -60,7 +60,7 @@ test("first-token and stalled-generation deadlines cancel the reader and release
       await Promise.all([rejected, delay(80)]);
       assert.equal(cancelled, true);
       assert.equal(watchdog.controller.signal.aborted, true);
-      assert.match(watchdog.controller.signal.reason.message, withToken ? /stopped responding/ : /did not start/);
+      assert.match(watchdog.controller.signal.reason.message, withToken ? /stalled/ : /timed out/);
     } finally { watchdog.dispose(); }
   }
 });

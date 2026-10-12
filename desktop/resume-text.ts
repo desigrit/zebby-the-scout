@@ -25,7 +25,7 @@ export async function extractResumeText(filename: string, data: Uint8Array): Pro
     .split("\n").map((line) => line.replace(/[\t ]+/g, " ").trim())
     .filter(Boolean).join("\n").trim();
   if (!cleaned) {
-    throw new Error("This resume has no readable text. For scanned PDFs, use a text-based file or OpenAI analysis.");
+    throw new Error("Could not read text from this resume. Try a text-based PDF or Word file.");
   }
   return cleaned.slice(0, 60_000);
 }

@@ -3,6 +3,7 @@ import { serviceConfig } from "./config.ts";
 import { createService, ServiceError } from "./service.ts";
 import { ZodError } from "zod";
 import { clientAddress } from "./client-address.ts";
+import { OnlineAnalysisError } from "../desktop/online-response.ts";
 const config = serviceConfig(), service = createService(config);
 const server = createServer(async (request, response) => {
   response.setHeader("Cache-Control", "no-store"); response.setHeader("X-Content-Type-Options", "nosniff");
@@ -30,10 +31,11 @@ const server = createServer(async (request, response) => {
     if (response.destroyed) return;
     response.statusCode = error instanceof ServiceError ? error.status : error instanceof ZodError || error instanceof SyntaxError ? 400 : 503;
     response.setHeader("Content-Type", "application/json");
-    response.end(JSON.stringify({ error: error instanceof ServiceError ? error.message : response.statusCode === 400
+    response.end(JSON.stringify({ error: error instanceof ServiceError || error instanceof OnlineAnalysisError ? error.message : response.statusCode === 400
       ? "Check the supplied information and try again." : "Analysis or payment is temporarily unavailable. Try again shortly." }));
     // Never log request bodies, resumes, auth codes, tokens, or provider responses.
-    if (response.statusCode === 503) console.error("Credits request failed", { path: request.url?.split("?")[0], type: error instanceof Error ? error.name : "unknown" });
+    if (response.statusCode === 503) console.error("Credits request failed", { path: request.url?.split("?")[0], type: error instanceof Error ? error.name : "unknown",
+      ...(error instanceof OnlineAnalysisError ? { diagnostic: error.diagnostic } : {}) });
   }
 });
 server.requestTimeout = 30000; server.headersTimeout = 15000;

@@ -259,17 +259,15 @@ async function quoteAnalysis(source: AnalysisSource) {
   if (source.kind === "plan") {
     const plan = store.getPlan(source.id), resume = plan?.resumeId && store.getResume(plan.resumeId);
     if (!plan || !resume) throw new Error("Save the plan with a resume before analyzing it.");
-    const description = [plan.description.trim(), plan.snapshotText.trim()].find((item) => item.length >= 100) || "";
-    if (!description || !plan.currentOverview.trim()) throw new Error("Add the job description and your current resume overview.");
+    const description = plan.description.trim();
+    if (description.length < 100) throw new Error("Add a job description with at least 100 characters.");
     input = { url: plan.listingUrl, company: plan.company, title: plan.title, team: plan.team, locations: plan.locations,
       jobDescription: description, currentCvOverview: plan.currentOverview, resumeText: await extractResumeText(resume.resume.filename, resume.data) };
   } else {
     const item = store.listApplications().find((value) => value.id === source.id), resume = item?.resumeId && store.getResume(item.resumeId);
     if (!item || !resume) throw new Error("Add a resume before analyzing the match.");
-    const related = item.listingUrl ? store.findPlanByListingUrl(item.listingUrl) : undefined;
-    const description = [item.jobDescription.trim(), item.snapshotText.trim(), related?.description.trim() || "", related?.snapshotText.trim() || ""]
-      .find((value) => value.length >= 80);
-    if (!description) throw new Error("Add the job description before analyzing the match.");
+    const description = item.jobDescription.trim();
+    if (description.length < 80) throw new Error("Add a job description with at least 80 characters before analyzing the match.");
     input = { resumeText: await extractResumeText(resume.resume.filename, resume.data), company: item.company,
       title: item.title, jobDescription: description.slice(0, 80000) };
   }
@@ -321,14 +319,12 @@ async function analyzePlan(id: string, signal: AbortSignal, commit: <T>(persist:
   const selected = selectedAnalysis();
   const plan = store.getPlan(id);
   if (!plan) throw new Error("Plan not found.");
-  if (!plan.currentOverview.trim()) throw new Error("Add your current resume overview to analyze this plan.");
   if (!plan.resumeId) throw new Error("Choose a resume for this plan before analyzing it.");
   const resume = store.getResume(plan.resumeId);
   if (!resume) throw new Error("The selected resume could not be found.");
-  const description = [plan.description.trim(), plan.snapshotText.trim()]
-    .find((item) => item.length >= 100) || plan.description.trim() || plan.snapshotText.trim();
+  const description = plan.description.trim();
   if (description.length < 100) {
-    throw new Error("Add the job description before analyzing this plan.");
+    throw new Error("Add a job description with at least 100 characters.");
   }
   const job = { url: plan.listingUrl, company: plan.company, title: plan.title, team: plan.team,
     locations: plan.locations, jobDescription: description, currentCvOverview: plan.currentOverview };
@@ -372,16 +368,11 @@ async function analyzeApplicationMatch(id: string, signal: AbortSignal, commit: 
   if (!application.resumeId) throw new Error("Add a resume to this application, then analyze the match.");
   const resume = store.getResume(application.resumeId);
   if (!resume) throw new Error("The selected resume could not be found.");
-  const relatedPlan = application.listingUrl ? store.findPlanByListingUrl(application.listingUrl) : undefined;
-  const descriptions = [application.jobDescription.trim(), application.snapshotText.trim(),
-    relatedPlan?.description.trim() || "", relatedPlan?.snapshotText.trim() || ""];
-  let description = descriptions.find((item) => item.length >= 80) || descriptions.find(Boolean) || "";
-  if (description.length < 80 && application.listingUrl) {
-    try { description = (await fetchJobPosting(application.listingUrl)).text.trim(); }
-    catch { /* Some job boards block automated reading. */ }
-  }
+  // The editable description is authoritative. Never silently replace user edits
+  // with an older archive, another Plan, or a newly fetched page during analysis.
+  const description = application.jobDescription.trim();
   if (description.length < 80) {
-    throw new Error("Add the job description in this application or its matching Plan, then analyze the match.");
+    throw new Error("Add a job description with at least 80 characters before analyzing the match.");
   }
   const input = selected.provider !== "openai"
     ? { resumeText: await extractResumeText(resume.resume.filename, resume.data),
@@ -445,7 +436,8 @@ async function handleApi(request: Request, pathname: string): Promise<Response> 
         const extension = file.name.split(".").pop()?.toLowerCase() || "";
         const allowed: Record<string, string> = { pdf: "application/pdf", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", doc: "application/msword" };
         if (!allowed[extension]) return jsonError("Upload a PDF, DOCX, or DOC file.");
-        if (!file.size || file.size > 10 * 1024 * 1024) return jsonError("Resume files must be between 1 byte and 10 MB.");
+        if (!file.size) return jsonError("This file is empty. Choose another resume.");
+        if (file.size > 10 * 1024 * 1024) return jsonError("Choose a resume under 10 MB.");
         const filename = file.name.replace(/[\r\n\\/]/g, " ").trim().slice(0, 180);
         if (!filename) return jsonError("Give the resume file a name.");
         return Response.json({ resume: await store.addResume(filename, allowed[extension], new Uint8Array(await file.arrayBuffer())) }, { status: 201 });

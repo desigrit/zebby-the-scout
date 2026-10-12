@@ -456,7 +456,12 @@ export class DesktopStore {
 
   async saveApplication(value: unknown, id?: string): Promise<Application> {
     const parsed = applicationInputSchema.safeParse(value);
-    if (!parsed.success) throw new Error("Check the application fields and try again.");
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0], field = String(issue.path[0] || "application");
+      const names: Record<string, string> = { listingUrl: "job listing link", appliedDate: "date applied", resumeId: "resume",
+        matchStrength: "match strength", jobDescription: "job description", snapshotText: "job description" };
+      throw new Error(`Check the ${names[field] || field} and try again.`);
+    }
     const item: ApplicationInput = { ...parsed.data, team: parsed.data.team || "", locations: parsed.data.locations || "",
       jobDescription: normalizeJobText(parsed.data.jobDescription), snapshotText: normalizeJobText(parsed.data.snapshotText),
       notes: normalizeJobText(parsed.data.notes) };
@@ -675,13 +680,13 @@ export class DesktopStore {
       const applicationId = randomUUID();
       const now = new Date();
       const appliedDate = new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
-      const description = plan.description || plan.snapshotText;
+      const description = plan.description;
       db.prepare(`INSERT INTO applications (id, company, title, team, locations, listing_url,
         job_description, notes, snapshot_text, snapshot_captured_at, snapshot_source, applied_date,
         match_strength, match_notes, match_analyzed_at, resume_id, status, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         applicationId, plan.company, plan.title, plan.team, plan.locations, plan.listingUrl,
-        description, notesWithListing(description, plan.snapshotText), plan.snapshotText, plan.snapshotCapturedAt,
+        description, description, plan.snapshotText, plan.snapshotCapturedAt,
         plan.snapshotSource, appliedDate, plan.matchStrength, plan.matchNotes, plan.matchAnalyzedAt,
         plan.resumeId || null, "Applied", now.toISOString(), now.toISOString());
       // Keep the Plan and its keywords, themes, importance values and overview intact.

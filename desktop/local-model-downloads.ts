@@ -221,7 +221,7 @@ export class LocalModelDownloads {
       }
     }
     signal.throwIfAborted();
-    if ((await stat(partial)).size !== model.bytes) throw new Error("The download stopped early. Choose Retry download to continue.");
+    if ((await stat(partial)).size !== model.bytes) throw new Error("The download stopped early. Resume to continue.");
     this.update(model.id, { status: "verifying", downloadedBytes: model.bytes });
     if (await hashModelFile(partial, signal) !== model.sha256) {
       await unlink(partial); this.update(model.id, { downloadedBytes: 0 });

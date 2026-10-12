@@ -315,7 +315,6 @@ a { color: inherit; text-underline-offset: 3px; }
 .status-select:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; box-shadow: none; }
 .row-actions { display: flex; justify-content: flex-end; gap: 1px; }
 .row-actions button { position: relative; }
-.notes-indicator { position: absolute; right: 4px; top: 4px; width: 5px; height: 5px; border-radius: 50%; background: #2d8864; }
 .empty-state, .state-panel { min-height: 280px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 36px 24px; background: var(--paper); border: 1px solid var(--line); border-radius: 11px; }
 .empty-icon { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 12px; background: var(--surface-selected); color: var(--ink-soft); margin-bottom: 16px; }
 .empty-state h3 { margin: 0; font-size: 21px; letter-spacing: -.02em; }

@@ -1,31 +1,36 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
-import { RotateCw } from "lucide-react";
+import { Info } from "lucide-react";
 import type { DesktopState } from "../bridge";
 import { LOCAL_MODELS } from "../local-model-catalog";
 import { CREDIT_MODELS, ONLINE_MODELS, type AnalysisProvider } from "../../shared/online-models";
 import { localThinkingCapability, onlineThinkingCapability, selectedThinking, thinkingKey, type ThinkingCapability } from "../../shared/thinking";
-import SettingsAction from "./SettingsAction";
+import { ErrorBanner } from "./WorkspaceFeedback";
 
 export type ChangeAnalysisState = (state: DesktopState) => void | Promise<void>;
 type OnlineProvider = "openai" | "anthropic" | "credits";
 export function OnlineModelSelect({ state, onState, provider, disabled = false, onBusy }: {
   state: DesktopState; onState: ChangeAnalysisState; provider: OnlineProvider; disabled?: boolean; onBusy?: (busy: boolean) => void }) {
   const [error, setError] = useState(""), [working, setWorking] = useState(false);
+  const retryModel = useRef("");
   const value = provider === "credits" ? state.credits.model : provider === "openai" ? state.openaiModel : state.anthropicModel;
   const models = provider === "credits" ? CREDIT_MODELS : ONLINE_MODELS.filter((model) => model.provider === provider);
+  async function changeModel(model: string) {
+    retryModel.current = model; setWorking(true); onBusy?.(true); setError("");
+    try { await onState(await window.desktop!.setOnlineModel(provider, model)); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Could not save the model. Try again."); }
+    finally { setWorking(false); onBusy?.(false); }
+  }
   return <div className="analysis-model-control"><label className="field"><span>Model</span><select value={value} disabled={disabled || working}
-    onChange={async (event) => { setWorking(true); onBusy?.(true); setError("");
-      try { await onState(await window.desktop!.setOnlineModel(provider, event.target.value)); }
-      catch (cause) { setError(cause instanceof Error ? cause.message : "Could not save the model. Try again."); }
-      finally { setWorking(false); onBusy?.(false); } }}>
+    onChange={(event) => void changeModel(event.target.value)}>
     {models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
-  </select></label>{error && <p className="form-error" role="alert">{error}</p>}</div>;
+  </select></label><ErrorBanner message={error} retry={() => void changeModel(retryModel.current)} busy={working || disabled} /></div>;
 }
 export function ThinkingSelect({ state, onState, provider, model, disabled = false, onBusy, quiet = false }: {
   state: DesktopState; onState: ChangeAnalysisState; provider: AnalysisProvider; model: string; disabled?: boolean; onBusy?: (busy: boolean) => void; quiet?: boolean }) {
   const [remote, setRemote] = useState<ThinkingCapability | null>(null), [checking, setChecking] = useState(provider === "ollama" && Boolean(model));
   const [working, setWorking] = useState(false), [error, setError] = useState(""), [attempt, setAttempt] = useState(0);
   const controls = useRef<HTMLDivElement>(null), restoreFocus = useRef(false), inFlight = useRef(false);
+  const failedLevel = useRef<string | null>(null);
   useLayoutEffect(() => {
     if (working || disabled || !restoreFocus.current) return;
     restoreFocus.current = false;
@@ -49,6 +54,7 @@ export function ThinkingSelect({ state, onState, provider, model, disabled = fal
   const title = "More thinking can take longer and use more tokens.";
   async function change(level: string) {
     if (inFlight.current || disabled || !supported) return;
+    failedLevel.current = level;
     inFlight.current = true; restoreFocus.current = true; setWorking(true); onBusy?.(true); setError("");
     try { await onState(await window.desktop!.setThinkingLevel({ provider, model, level })); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Could not save thinking level. Try again."); }
@@ -62,22 +68,26 @@ export function ThinkingSelect({ state, onState, provider, model, disabled = fal
       (current + (["ArrowLeft", "ArrowUp"].includes(event.key) ? -1 : 1) + count) % count;
     void change(capability.options[next].value);
   }
-  const retry = provider === "ollama" && error && <SettingsAction icon={RotateCw} iconOnly busy={checking} disabled={disabled || working}
-    aria-label="Retry thinking levels" title="Retry thinking levels" onClick={() => { setError(""); setRemote(null); setChecking(true); setAttempt((value) => value + 1); }} />;
-  if (!supported) return error ? <div className="analysis-thinking-error"><p className="form-error" role="alert">{error}</p>{retry}</div> : null;
+  const retry = () => {
+    if (failedLevel.current !== null && supported) { void change(failedLevel.current); return; }
+    setError(""); setRemote(null); setChecking(true); setAttempt((value) => value + 1);
+  };
+  if (!supported) return error ? <div className="analysis-thinking-error"><ErrorBanner message={error} retry={retry} busy={disabled || working || checking} /></div> : null;
   const binary = capability!.options.length === 2 && capability!.options.some((item) => item.value === "off") && capability!.options.some((item) => item.value === "on");
   const control = <div className="analysis-thinking-control" ref={controls}>
-    {!quiet && <span className="thinking-control-label">Thinking</span>}
-    {binary ? <div className="thinking-switch-row"><button type="button" role="switch" aria-label="Thinking" aria-checked={value === "on"}
+    {!quiet && <span className="thinking-control-label">{binary ? "Extended thinking" : "Thinking"}</span>}
+    {binary ? <div className="thinking-switch-row"><button type="button" role="switch" aria-label="Extended thinking" aria-checked={value === "on"}
       className="thinking-switch" title={title} disabled={disabled || working} onClick={() => void change(value === "on" ? "off" : "on")} /><span>{value === "on" ? "On" : "Off"}</span></div>
       : <div className="thinking-segments" role="radiogroup" aria-label="Thinking level" title={title}>
         {capability!.options.map((item) => <button type="button" role="radio" aria-checked={value === item.value} key={item.value}
           tabIndex={value === item.value ? 0 : -1} disabled={disabled || working} onKeyDown={navigate}
           onClick={() => void change(item.value)}>{item.label}</button>)}
       </div>}
-    {error && <div className="analysis-thinking-error"><p className="form-error" role="alert">{error}</p>{retry}</div>}
+    <details className="thinking-help"><summary><Info size={12} aria-hidden="true" />About thinking</summary>
+      <p>More reasoning can take longer and use more tokens. It does not guarantee a better result.</p></details>
+    <ErrorBanner message={error} retry={retry} busy={disabled || working || checking} />
   </div>;
-  return quiet ? <div className="analysis-setting-row"><span className="analysis-setting-label">Thinking</span>{control}</div> : control;
+  return quiet ? <div className="analysis-setting-row"><span className="analysis-setting-label">{binary ? "Extended thinking" : "Thinking"}</span>{control}</div> : control;
 }
 export function OnlineModelControls({ state, onState, provider, disabled = false, onBusy }: {
   state: DesktopState; onState: ChangeAnalysisState; provider: OnlineProvider; disabled?: boolean; onBusy?: (busy: boolean) => void }) {

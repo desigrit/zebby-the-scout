@@ -7,10 +7,10 @@ type ProviderPayload = { status?: string; stop_reason?: string; output?: { conte
     cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number } } };
 
 export async function onlineAnalysis(options: { model: string; key: string; instructions: string; input: unknown;
-  name: string; schema: Record<string, unknown>; kind: AnalysisKind; thinkingLevel?: string; signal?: AbortSignal; fetcher?: typeof fetch }) {
+  name: string; schema: Record<string, unknown>; kind: AnalysisKind; thinkingLevel?: string; signal?: AbortSignal; fetcher?: typeof fetch; billingOwner?: "user" | "zebby" }) {
   const model = onlineModel(options.model);
   const thinkingLevel = validateOnlineThinking(model, options.thinkingLevel);
-  if (!options.key) throw new Error(`Add a ${model.provider === "openai" ? "OpenAI" : "Anthropic"} API key in Settings.`);
+  if (!options.key) throw new Error(`Add an ${model.provider === "openai" ? "OpenAI" : "Anthropic"} API key in Settings.`);
   const send = options.fetcher || fetch;
   const deadline = ["high", "xhigh", "max"].includes(thinkingLevel) ? 480000 : 180000;
   const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(deadline)]) : AbortSignal.timeout(deadline);
@@ -41,11 +41,11 @@ export async function onlineAnalysis(options: { model: string; key: string; inst
   try { payload = await response.json() as ProviderPayload; }
   catch {
     options.signal?.throwIfAborted();
-    if (!response.ok) throw providerFailure(provider, model.id, thinkingLevel, response, null);
+    if (!response.ok) throw providerFailure(provider, model.id, thinkingLevel, response, null, options.billingOwner);
     if (signal.aborted) throw new Error(`${provider} timed out. Try again or choose a lower thinking level.`);
     throw new Error(`${provider} returned an unreadable response. Try again.`);
   }
-  if (!response.ok) throw providerFailure(provider, model.id, thinkingLevel, response, payload);
+  if (!response.ok) throw providerFailure(provider, model.id, thinkingLevel, response, payload, options.billingOwner);
   if (!payload || typeof payload !== "object") throw new Error(`${provider} returned an unreadable response. Try again.`);
   if (isOpenAI && payload.status !== "completed" || !isOpenAI && payload.stop_reason !== "end_turn") {
     throw new Error("The model did not finish its response. No result was saved.");

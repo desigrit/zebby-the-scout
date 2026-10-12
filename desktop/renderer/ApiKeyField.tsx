@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, RotateCw, Trash2 } from "lucide-react";
 import type { DesktopState } from "../bridge";
 import type { ChangeAnalysisState } from "./ThinkingSettings";
 import SettingsAction from "./SettingsAction";
@@ -12,6 +12,7 @@ export default function ApiKeyField({ state, onState, provider, disabled, onBusy
   const [editing, setEditing] = useState(false), [draft, setDraft] = useState(""), [working, setWorking] = useState(false), [error, setError] = useState("");
   const input = useRef<HTMLInputElement>(null), change = useRef<HTMLButtonElement>(null), restoreFocus = useRef(false);
   const editor = useRef<HTMLFormElement>(null), inFlight = useRef(false);
+  const lastAttempt = useRef("");
   useEffect(() => { onPendingChange?.(working || Boolean(draft.trim())); }, [working, draft, onPendingChange]);
   useEffect(() => () => onPendingChange?.(false), [onPendingChange]);
   useLayoutEffect(() => {
@@ -22,12 +23,16 @@ export default function ApiKeyField({ state, onState, provider, disabled, onBusy
   function cancel() { setDraft(""); setError(""); restoreFocus.current = true; setEditing(false); }
   async function save(value: string) {
     if (inFlight.current || disabled) return;
+    lastAttempt.current = value;
+    if (value && (!value.startsWith(provider === "anthropic" ? "sk-ant-" : "sk-") || /\s/.test(value))) {
+      setError(`Enter a valid ${provider === "anthropic" ? "Anthropic" : "OpenAI"} API key.`); return;
+    }
     inFlight.current = true;
     setWorking(true); onBusy(true); setError("");
     try {
       const next = await (provider === "openai" ? window.desktop!.setApiKey(value) : window.desktop!.setAnthropicKey(value));
       setDraft(""); restoreFocus.current = true; setEditing(false); await onState(next);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not save the key. Try again."); }
+    } catch { setError(value ? "Could not save this key." : "Could not remove this key."); }
     finally { inFlight.current = false; setWorking(false); onBusy(false); }
   }
   return <div className="analysis-key-control">
@@ -46,10 +51,13 @@ export default function ApiKeyField({ state, onState, provider, disabled, onBusy
         onKeyDown={(event) => { if (event.key === "Escape" && editing && !working) { event.preventDefault(); cancel(); } }}>
         <label className="field"><span>{hasKey ? "New API key" : "API key"}</span><input ref={input} type="password" value={draft}
           autoComplete="off" spellCheck={false} maxLength={500} disabled={disabled || working}
+          aria-invalid={Boolean(error)}
           onChange={(event) => { setDraft(event.target.value); setError(""); }} placeholder={provider === "openai" ? "sk-…" : "sk-ant-…"} /></label>
         {hasKey && <div className="key-editor-actions"><SettingsAction className="settings-action-slim" disabled={disabled || working} onClick={cancel}>Cancel</SettingsAction></div>}
       </form>}
-    {error && <p className="form-error" role="alert"><span>{error}</span>{(editing || !hasKey) && <> <span>Press Enter to retry.</span></>}</p>}
+    {error && <p className="key-error" role="alert"><span>{error}</span>
+      {!error.startsWith("Enter a valid") && <button className="banner-retry" type="button" disabled={working || disabled}
+        onClick={() => void save(editing || !hasKey ? draft.trim() : lastAttempt.current)}><RotateCw size={14} strokeWidth={1.5} aria-hidden="true" />Retry</button>}</p>}
     {!state.canSaveApiKey && <p className="settings-help">Secure storage is unavailable. Your key stays for this session only.</p>}
   </div>;
 }

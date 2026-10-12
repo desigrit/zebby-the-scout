@@ -1,18 +1,30 @@
-# Zebby screenshots
+# A tour of Zebby
 
-These captures show the compiled Zebby 2.3.0 renderer with synthetic applications, CV text, analysis results and a masked demo key. The activity chart contains 64 applications with varied daily totals and all five statuses, including Offer received.
+[![Zebby screen flows](screen-flow-overview.png)](screen-flow.png)
 
-| View | Light | Dark |
+[Open the full flow, 5556 × 2660](screen-flow.png)
+
+Start with a Plan, or record an application directly. Move to Applied keeps the existing match score and resume, with no repeat analysis. Settings is available whenever you want to change analysis methods.
+
+| Screen | Light | Dark |
 | --- | --- | --- |
-| Applications | [applications.png](applications.png) | [applications-dark.png](applications-dark.png) |
-| Plan results | [plan.png](plan.png) | [plan-dark.png](plan-dark.png) |
-| Your own API key | [settings.png](settings.png) | [settings-dark.png](settings-dark.png) |
-| Credit packs | [credits.png](credits.png) | [credits-dark.png](credits-dark.png) |
+| OOBE | [Create or open a database](startup.png) | |
+| Plan inputs | [Job description and resume](plan-input.png) | |
+| Plan mode | [Priorities and summary edits](plan.png) | [Dark](plan-dark.png) |
+| Move to Applied | [Save and move a plan](move-to-applied.png) | |
+| New application | [Add a role directly](new-application.png) | |
+| Applications stats | [Activity and role details](applications.png) | [Dark](applications-dark.png) |
+| Settings | [Bring your own key](settings.png) | [Dark](settings-dark.png) |
+| Local server | [Test the connection](settings-server.png) | |
+| Downloaded models | [Model and storage controls](settings-models.png) | |
+| Zebby credits | [Choose a pack](credits.png) | [Dark](credits-dark.png) |
 
-## Capture details
+## About these images
 
-The renderer source matches [f62a545](https://github.com/desigrit/zebby-the-scout/commit/f62a545f40340b1e52ba71c7792856bf1b15b723). Headless Chromium uses Windows CSS, mocked API responses and a mocked desktop bridge. Workspace frames are 1550 by 960 pixels; the credit images capture the purchase dialog itself at 930 by 548 pixels. Plan is scrolled to its analysis results.
+Captured from the updated 2.3.7 renderer on October 12, 2026, with sample applications, resume text, analysis results and a masked demo key. The activity chart uses varied daily totals and all five hiring statuses. Screenshots show source changes that may be newer than the latest installer.
 
-No desktop app, personal database, profile, CV, API key, model inference or payment was used. These are renderer captures, with no claim of physical Mac appearance.
+Workspace captures are 3100 × 1920 pixels, rendered at twice the logical resolution. The purchase images capture the dialog itself. The flow uses five equally sized screens with simple connecting arrows.
 
-Each PNG includes embedded source provenance. Images retain the captured UI pixels.
+Headless Chromium uses Windows styling and simulated app services. No personal database, API key, model inference or payment was used. These captures do not claim physical Mac validation.
+
+The diagram is composed by [build-screen-flow.mjs](../../scripts/build-screen-flow.mjs). Screenshot pixels are retained; the surrounding flow annotations are documentation.

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Copy, Plus, X } from "lucide-react";
+import { ErrorBanner } from "./WorkspaceFeedback";
 
 export default function PlanRecommendations({ kind, values, importance, busy, onChange }: {
   kind: "keywords" | "themes"; values: string[]; importance: Array<number | null>;
@@ -9,6 +10,7 @@ export default function PlanRecommendations({ kind, values, importance, busy, on
   const focusNewRow = useRef(false);
   const [copied, setCopied] = useState<{ index: number; text: string } | null>(null);
   const [copyError, setCopyError] = useState("");
+  const retryCopy = useRef<() => void>(() => undefined);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const keyword = kind === "keywords";
   const noun = keyword ? "keyword" : "theme";
@@ -16,6 +18,7 @@ export default function PlanRecommendations({ kind, values, importance, busy, on
   useEffect(() => () => clearTimeout(copyTimer.current), []);
 
   async function copy(text: string, index: number) {
+    retryCopy.current = () => void copy(text, index);
     setCopied(null); setCopyError(""); clearTimeout(copyTimer.current);
     try {
       await navigator.clipboard.writeText(text);
@@ -33,9 +36,10 @@ export default function PlanRecommendations({ kind, values, importance, busy, on
 
   return <section className={`recommendations recommendations-${kind}`} aria-label={keyword ? "Core ATS keywords" : "Core resume themes"}>
     <div className="recommendations-head"><div><h4>{keyword ? "Core ATS keywords" : "Core resume themes"}</h4>
-      <small>{count} {keyword ? "keywords" : "themes"}</small></div></div>
+      </div></div>
+    <div className="recommendations-columns"><small>{count} {keyword ? "keywords" : "themes"}</small><small className="importance-column">Importance</small></div>
     <span className="visually-hidden" role="status">{copied ? `Copied ${noun} ${copied.index + 1}` : ""}</span>
-    {copyError && <p className="form-error" role="alert">{copyError}</p>}
+    <ErrorBanner message={copyError} retry={() => retryCopy.current()} busy={busy} />
     <div className="recommendations-list" ref={root}>
       {values.length === 0 && <p className="recommendations-empty">Analyze to find {keyword ? "key terms" : "resume priorities"}.</p>}
       {values.map((text, index) => <div className="recommendation-row" key={index}>
@@ -44,7 +48,6 @@ export default function PlanRecommendations({ kind, values, importance, busy, on
           : <textarea value={text} aria-label={`Core resume theme ${index + 1}`} placeholder="Experience a strong CV should demonstrate"
             rows={2} maxLength={1000} disabled={busy} onChange={(event) => onChange(values.map((value, i) => i === index ? event.target.value : value))} />}
         <span className={`recommendation-importance ${importance[index] == null ? "unrated" : ""}`}
-          title={importance[index] == null ? "Refresh analysis to estimate this item's importance." : `Estimated importance to the job: ${importance[index]}%`}
           aria-label={importance[index] == null ? "Importance unrated" : `${importance[index]}% importance to the job`}>
           {importance[index] == null ? "Unrated" : `${importance[index]}%`}</span>
         <button className="recommendation-copy" type="button" disabled={busy || !text.trim()}

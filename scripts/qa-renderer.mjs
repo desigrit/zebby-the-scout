@@ -86,22 +86,28 @@ try {
       const summary = row.querySelector(".application-row-summary"), main = row.querySelector(".application-row-main");
       const controls = [main, date, match, summary.querySelector(".status-select"), summary.querySelector(".row-actions")];
       const boxes = controls.map((element) => element.getBoundingClientRect());
-      const gaps = boxes.slice(1).map((box, index) => box.left - boxes[index].right);
-      const mid = boxes[0].top + boxes[0].height / 2;
+      const stacked = boxes[0].bottom <= boxes[1].top;
+      const aligned = stacked ? controls.slice(1) : controls;
+      const alignedBoxes = stacked ? boxes.slice(1) : boxes;
+      const gaps = alignedBoxes.slice(1).map((box, index) => box.left - alignedBoxes[index].right);
+      const mid = alignedBoxes[0].top + alignedBoxes[0].height / 2;
       const buttons = [...summary.querySelectorAll(".row-actions > button")];
       const meta = main.querySelector(".application-row-meta").getBoundingClientRect();
       const heading = main.querySelector(".application-row-select").getBoundingClientRect();
       const location = main.querySelector(".role-context")?.getBoundingClientRect(), listing = main.querySelector(".listing-link")?.getBoundingClientRect();
       return { dateFirst: date.tagName === "TIME", matchSecond: match.classList.contains("match-control"), gaps,
-        lineOffset: Math.max(...[...controls, ...buttons].map((element) => { const b = element.getBoundingClientRect(); return Math.abs(b.top + b.height / 2 - mid); })),
-        actionCount: buttons.length, twoRows: heading.bottom < meta.top && heading.height < 26,
+        lineOffset: Math.max(...[...aligned, ...buttons].map((element) => { const b = element.getBoundingClientRect(); return Math.abs(b.top + b.height / 2 - mid); })),
+        stacked, titleWidth: boxes[0].width / summary.clientWidth,
+        actionCount: buttons.length, twoRows: heading.bottom < meta.top && (stacked || heading.height < 26),
         metadataOffset: location && listing ? Math.abs(location.top + location.height / 2 - listing.top - listing.height / 2) : 0,
         width: summary.clientWidth, overflow: row.scrollWidth > row.clientWidth };
     }));
     assert.ok(geometry.length);
     for (const row of geometry) {
       assert.equal(row.dateFirst && row.matchSecond, true);
-      assert.ok(row.gaps.every((gap) => gap >= 7) && Math.max(...row.gaps) - Math.min(...row.gaps) <= 1, `Evenly separated groups ${JSON.stringify(row)}`);
+      assert.ok(row.gaps.every((gap) => gap >= 7), `Separated groups ${JSON.stringify(row)}`);
+      if (!row.stacked) assert.ok(Math.max(...row.gaps) - Math.min(...row.gaps) <= 1, `Evenly separated groups ${JSON.stringify(row)}`);
+      else assert.ok(row.titleWidth > .9, 'Compact rows give the role identity the full width');
       if (row.width >= 850) assert.ok(row.gaps[1] > 64);
       assert.ok(row.lineOffset <= 1, "Date, match, status and all actions vertically center on the job block");
       assert.equal(row.actionCount, 3); assert.equal(row.twoRows, true); assert.ok(row.metadataOffset <= 1, JSON.stringify(row));
@@ -349,12 +355,12 @@ try {
       setOllamaConfig: async ({ url, model }) => { initialState.ollamaUrl = url; initialState.ollamaModel = model; return snapshot(); },
       setApiKey: async (key) => {
         window.modelQA.keySaveAttempts++;
-        if (window.modelQA.failKeySave) throw new Error("Synthetic key save failure. Try again.");
+        if (window.modelQA.failKeySave) throw new Error("Could not save this key.");
         initialState.hasApiKey = Boolean(key); initialState.apiKeyHint = key ? "sk-••••••••" + key.slice(-4) : ""; return snapshot();
       },
       setAnthropicKey: async (key) => {
         window.modelQA.keySaveAttempts++;
-        if (window.modelQA.failKeySave) throw new Error("Synthetic key save failure. Try again.");
+        if (window.modelQA.failKeySave) throw new Error("Could not save this key.");
         initialState.hasAnthropicKey = Boolean(key); initialState.anthropicKeyHint = key ? "sk-ant-••••••••" + key.slice(-4) : ""; return snapshot();
       },
       setAppearance: async (appearance) => { initialState.appearance = appearance; return snapshot(); },
@@ -552,13 +558,13 @@ try {
     page.locator('.match-why summary'), page.getByRole('button', { name: 'Analyze', exact: true })]) {
     assert.equal(await control.evaluate(element => getComputedStyle(element).cursor), "default");
   }
-  assert.equal(await page.getByRole('textbox', { name: 'Current resume overview', exact: true }).evaluate(element => getComputedStyle(element).cursor), "text");
+  assert.equal(await page.getByRole('textbox', { name: 'Current summary', exact: true }).evaluate(element => getComputedStyle(element).cursor), "text");
   await page.locator(".match-why summary").click();
-  assert.match(await page.locator(".match-why").innerText(), /Refresh analysis to add an explanation/);
+  assert.equal(await page.locator(".match-why").getByRole("button", { name: "Add explanation", exact: true }).count(), 1);
   assert.equal(await page.locator(".cv-section").getByRole("button", { name: "Analyze", exact: true }).count(), 1);
   assert.equal(await page.locator(".analysis-section").getByRole("button", { name: "Analyze", exact: true }).count(), 0);
   const analyzePosition = await page.locator(".cv-section").evaluate((element) =>
-    element.querySelector(".plan-analyze-actions").getBoundingClientRect().top >= element.querySelector(".plan-upload").getBoundingClientRect().bottom);
+    element.querySelector(".plan-analyze-actions").getBoundingClientRect().top >= element.querySelector(".resume-field").getBoundingClientRect().bottom);
   assert.equal(analyzePosition, true);
   const progressSlotHeight = await page.locator('.plan-progress-slot').evaluate(element => element.getBoundingClientRect().height);
   await page.getByRole("button", { name: "Analyze", exact: true }).click();
@@ -612,21 +618,21 @@ try {
   await nav.getByRole('button', { name: 'Plan', exact: true }).click();
   await page.getByRole('status', { name: 'Analyzing role' }).waitFor();
   assert.equal(await announcedProgress.innerText(), 'Thinking');
-  assert.equal(await page.getByLabel('Current resume overview', { exact: true }).isDisabled(), true);
+  assert.equal(await page.getByLabel('Current summary', { exact: true }).isDisabled(), true);
   assert.ok(await planProgress.locator('.plan-progress-time').innerText() >= activeTimer);
   assert.deepEqual(await page.evaluate(() => window.analysisQA.cancelled), []);
   const runningPlan = await page.locator('.plan-item[aria-current="page"] strong').innerText();
   await page.getByRole('button', { name: 'New plan', exact: true }).click();
   const secondOverview = 'A new draft remains editable while another role is analyzed.';
-  await page.getByLabel('Current resume overview', { exact: true }).fill(secondOverview);
+  await page.getByLabel('Current summary', { exact: true }).fill(secondOverview);
   await reportPlanProgress('generating');
-  assert.equal(await page.getByLabel('Current resume overview', { exact: true }).inputValue(), secondOverview);
+  assert.equal(await page.getByLabel('Current summary', { exact: true }).inputValue(), secondOverview);
   assert.equal(await planProgress.count(), 0);
   page.once('dialog', dialog => dialog.accept());
   await page.locator('.plan-item').filter({ has: page.locator('strong').filter({ hasText: runningPlan }) }).click();
   await page.getByRole('status', { name: 'Analyzing role' }).waitFor();
   assert.equal(await announcedProgress.innerText(), 'Generating results');
-  assert.equal(await page.getByLabel('Current resume overview', { exact: true }).isDisabled(), true);
+  assert.equal(await page.getByLabel('Current summary', { exact: true }).isDisabled(), true);
   await page.setViewportSize({ width: 790, height: 850 });
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark'; document.documentElement.dataset.platform = 'darwin'; });
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -657,7 +663,8 @@ try {
   const cancelledRequestId = analysisRequestIds.get(planAnalysisPath);
   await reportPlanProgress('waiting');
   await page.locator('.plan-analyze-actions').getByRole('button', { name: 'Cancel', exact: true }).click();
-  await page.getByText('Analysis cancelled.', { exact: true }).waitFor();
+  await page.waitForFunction(() => !document.querySelector('.plan-analysis-progress'));
+  assert.equal(await page.getByText('Analysis cancelled.', { exact: true }).count(), 0);
   assert.equal(await planProgress.count(), 0);
   assert.match(await page.locator('.match-result').innerText(), /86%/);
   await completeAnalysis(planAnalysisPath);
@@ -680,7 +687,7 @@ try {
   await page.waitForFunction(() => document.querySelector('.plan-analysis-progress')?.dataset.stage === 'generating');
   assert.ok(await page.locator('.plan-progress-label').count() <= 2);
   await completeAnalysis(planAnalysisPath);
-  await page.getByText('Analysis saved.', { exact: true }).waitFor();
+  await page.locator('.workspace-save-feedback').getByText('Saved', { exact: true }).waitFor();
   assert.equal(await planProgress.count(), 0);
   await page.locator(".match-why summary").focus();
   await page.keyboard.press("Enter");
@@ -718,11 +725,12 @@ try {
   await page.evaluate(() => { window.controlsQA.failCopy = false; });
   await page.getByRole("button", { name: "Copy theme 1", exact: true }).click();
   assert.equal(await page.getByRole("alert").filter({ hasText: "Could not copy." }).count(), 0);
-  assert.equal(await page.getByText("Estimated job importance.", { exact: false }).count(), 1);
+  assert.equal(await page.getByText("Estimated job importance.", { exact: false }).count(), 0);
+  assert.equal(await page.locator('.importance-column').getByText('Importance', { exact: true }).count(), 2);
   assert.equal(await page.locator(".brand-mark").evaluate((element) => element.complete && element.naturalWidth > 0), true);
   await captureSettings("plan-windows-light.png");
   if (captureImages) await page.locator(".cv-section").screenshot({ path: path.join(output, "plan-cv-actions-light.png") });
-  const overviewBeforeCollapse = await page.getByRole("textbox", { name: "Current resume overview", exact: true }).inputValue();
+  const overviewBeforeCollapse = await page.getByRole("textbox", { name: "Current summary", exact: true }).inputValue();
   await page.getByRole("button", { name: "Collapse navigation", exact: true }).focus();
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => document.querySelector(".sidebar-toggle")?.getAttribute("aria-expanded") === "false" && !document.querySelector(".sidebar-toggle")?.disabled);
@@ -731,7 +739,7 @@ try {
   assert.equal(await nav.getByRole("button", { name: "Plan", exact: true }).isVisible(), true);
   assert.equal(await page.locator(".desktop-sidebar").evaluate((element) => element.getBoundingClientRect().width), 96);
   assert.equal(await page.locator(".titlebar-sidebar").evaluate((element) => element.getBoundingClientRect().width), 96);
-  assert.equal(await page.getByRole("textbox", { name: "Current resume overview", exact: true }).inputValue(), overviewBeforeCollapse);
+  assert.equal(await page.getByRole("textbox", { name: "Current summary", exact: true }).inputValue(), overviewBeforeCollapse);
   assert.equal(await page.evaluate(async () => (await window.desktop.state()).sidebarCollapsed), true);
   assert.equal(await page.locator(".sidebar-database").count(), 0);
   await captureSettings("plan-windows-collapsed-light.png");
@@ -753,7 +761,7 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   await page.setViewportSize({ width: 1550, height: 850 });
   // Percentages survive CV edits but become unknown when the job or term changes.
-  const currentOverview = page.getByRole("textbox", { name: "Current resume overview", exact: true });
+  const currentOverview = page.getByRole("textbox", { name: "Current summary", exact: true });
   const originalOverview = await currentOverview.inputValue();
   await currentOverview.fill("I lead product teams and measure customer outcomes.");
   assert.equal(await page.locator(".match-why").count(), 0);
@@ -781,7 +789,7 @@ try {
   await currentOverview.fill("I lead discovery and turn evidence into clear product decisions.");
   await page.getByRole("textbox", { name: "Job listing link", exact: true }).fill("https://example.org/new-role");
   await page.getByRole("button", { name: "Save plan", exact: true }).click();
-  await page.getByText("Plan saved.", { exact: true }).waitFor();
+  await page.locator(".workspace-save-feedback").getByText("Saved", { exact: true }).waitFor();
   await page.getByRole("button", { name: "New plan", exact: true }).click();
   assert.equal(await currentOverview.inputValue(), lastCurrentOverview);
   assert.equal(lastCurrentOverview, "I lead discovery and turn evidence into clear product decisions.");
@@ -816,7 +824,7 @@ try {
   await captureSettings("plan-move-mac-dark.png", false);
   await page.setViewportSize({ width: 1550, height: 850 });
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; document.documentElement.dataset.platform = "win32"; });
-  await page.getByRole("textbox", { name: "Suggested resume overview", exact: true }).fill("An edited overview to preserve.");
+  await page.getByRole("textbox", { name: "Suggested edits - Resume summary", exact: true }).fill("An edited overview to preserve.");
   const moveRequests = [], recordMoveRequest = request => moveRequests.push(new URL(request.url()).pathname);
   const quoteCountBeforeMove = await page.evaluate(() => window.creditQA.quoteRequests.length);
   page.on("request", recordMoveRequest);
@@ -824,7 +832,7 @@ try {
   await moveButton.click();
   await page.getByText("The database could not be saved. Try again.", { exact: true }).waitFor();
   assert.equal(await moveButton.isEnabled(), true);
-  assert.equal(await page.getByRole("textbox", { name: "Suggested resume overview", exact: true }).inputValue(), "An edited overview to preserve.");
+  assert.equal(await page.getByRole("textbox", { name: "Suggested edits - Resume summary", exact: true }).inputValue(), "An edited overview to preserve.");
   await moveButton.click();
   await page.getByText("Moved to Applied.", { exact: true }).waitFor();
   await page.locator(".application-row.selected").getByText(movePlan.title, { exact: true }).waitFor();
@@ -930,15 +938,15 @@ try {
   await assertLocationKeyboard(page.locator(".editor .location-editor"), "Windows Applications");
   await page.getByLabel("Team", { exact: true }).fill("Search & Recommendations");
   await table.getByRole("button", { name: "Notes for Senior Product Manager at Expedia Group" }).click();
-  const notes = page.getByRole("dialog", { name: "Application notes" }).getByRole("textbox", { name: "Notes" });
+  const notes = page.getByRole("dialog", { name: "Notes" }).getByRole("textbox", { name: "Notes" });
   assert.equal(await notes.inputValue(), description);
   await notes.fill(`${description}\n\nRecruiter: Sam`);
   await captureSettings("notes.png", false);
   await page.getByRole("button", { name: "Save notes" }).click();
-  await page.getByText("Notes saved.").waitFor();
+  await page.locator(".workspace-save-feedback").getByText("Saved", { exact: true }).waitFor();
   assert.equal(applications[0].notes, `${description}\n\nRecruiter: Sam`);
   await page.getByRole("button", { name: "Save changes" }).click();
-  await page.getByText("Application updated.").waitFor();
+  await page.locator('.workspace-save-feedback').getByText('Saved', { exact: true }).waitFor();
   assert.equal(applications[0].notes, `${description}\n\nRecruiter: Sam`);
   await table.getByRole("button", { name: "Refresh match for Senior Product Manager at Expedia Group" }).click();
   await table.getByRole("status", { name: "Analyzing resume match" }).first().waitFor();
@@ -1024,7 +1032,7 @@ try {
   await page.getByRole('combobox', { name: 'Model', exact: true }).selectOption('qwen3:8b');
   await page.getByRole('combobox', { name: 'Model', exact: true }).selectOption('qwen3.8:27b');
   assert.equal(await page.evaluate(() => window.desktop.state().then(state => state.ollamaModel)), 'qwen3.8:27b');
-  await page.getByRole('switch', { name: 'Thinking', exact: true }).click();
+  await page.getByRole('switch', { name: 'Extended thinking', exact: true }).click();
   await captureSettings('settings-actions-server-windows-light.png', false);
   await provider.selectOption("builtin");
   const localModel = page.getByRole("combobox", { name: "Local model", exact: true });
@@ -1033,10 +1041,10 @@ try {
   assert.equal(await page.getByRole("button", { name: /Delete SmolLM2/ }).count(), 0);
   await localModel.selectOption("smollm2-360m");
   await page.getByRole('status').filter({ hasText: 'Downloading' }).waitFor();
-  assert.equal(await page.getByRole('switch', { name: 'Thinking', exact: true }).count(), 0);
+  assert.equal(await page.getByRole('switch', { name: 'Extended thinking', exact: true }).count(), 0);
   assert.equal(await page.getByRole('radiogroup', { name: 'Thinking level', exact: true }).count(), 0);
   await page.evaluate(() => window.modelQA.update("smollm2-360m", { downloadedBytes: 81000000 }));
-  await page.getByText("30%", { exact: true }).waitFor();
+  await page.getByText("81 MB / 271 MB", { exact: true }).waitFor();
   assert.equal(await page.locator('.local-model-picker .model-size-badge').innerText(), '271 MB');
   await assertSettingsActions();
   const progress = page.getByRole("progressbar", { name: "SmolLM2 360M download progress" });
@@ -1046,7 +1054,7 @@ try {
   assert.equal(await pauseDownload.innerText(), '');
   assert.equal(await pauseDownload.evaluate(element => getComputedStyle(element).borderWidth), '0px');
   await pauseDownload.click();
-  await page.getByText("Download paused", { exact: true }).waitFor();
+  await page.getByText("Paused", { exact: true }).waitFor();
   const resumeDownload = page.getByRole('button', { name: 'Resume SmolLM2 360M download', exact: true });
   await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Resume SmolLM2 360M download');
   assert.equal(await resumeDownload.evaluate(element => element === document.activeElement), true);
@@ -1062,9 +1070,9 @@ try {
   assert.deepEqual(await page.evaluate(() => window.modelQA.stopRequests), ['smollm2-360m']);
   await page.getByRole('button', { name: 'Download model', exact: true }).click();
   await page.evaluate(() => window.modelQA.update("smollm2-360m", { status: "verifying", downloadedBytes: 270590880 }));
-  await page.getByText("Checking download", { exact: true }).waitFor();
+  await page.getByText("Verifying", { exact: true }).waitFor();
   await page.evaluate(() => window.modelQA.update("smollm2-360m", { status: "ready" }));
-  await page.getByText("Ready on this computer", { exact: true }).waitFor();
+  await page.getByText("Installed", { exact: true }).waitFor();
   assert.equal(await progress.count(), 0);
   await page.locator('.local-model-library > summary').click();
   // Transfer actions stay on the unselected library model, then return to the
@@ -1087,7 +1095,7 @@ try {
   await captureSettings('analysis-library-stopped-focus-windows-light.png', false);
   const deleteModel = page.getByRole("button", { name: "Remove SmolLM2 360M", exact: true });
   await deleteModel.click(); // Simulated native Cancel result.
-  assert.equal(await page.getByText("Ready on this computer", { exact: true }).count(), 1);
+  assert.equal(await page.getByText("Installed", { exact: true }).count(), 1);
   await provider.selectOption("openai");
   await page.getByRole("textbox", { name: "API key", exact: true }).waitFor();
   await page.getByRole('textbox', { name: 'API key', exact: true }).fill('sk-fixture-only');
@@ -1129,8 +1137,8 @@ try {
   await changeKey.click(); await newKey.fill('sk-replacement-fixture');
   await page.evaluate(() => { window.modelQA.failKeySave = true; });
   await newKey.press('Enter');
-  await page.getByRole('alert').getByText('Synthetic key save failure. Try again.', { exact: true }).waitFor();
-  assert.equal(await page.getByRole('alert').getByText('Press Enter to retry.', { exact: true }).isVisible(), true);
+  await page.getByRole('alert').getByText('Could not save this key.', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('alert').getByRole('button', { name: 'Retry', exact: true }).isVisible(), true);
   assert.equal(await newKey.inputValue(), 'sk-replacement-fixture');
   assert.equal(await page.evaluate(() => window.desktop.state().then(state => state.apiKeyHint)), 'sk-••••••••only');
   await captureSettings('analysis-key-error-windows-light.png', false);
@@ -1165,7 +1173,7 @@ try {
   await page.getByRole('button', { name: 'Remove key', exact: true }).waitFor();
   await assertSettingsActions();
   await analysisModel.selectOption('claude-haiku-4-5-20251001');
-  const binaryThinking = page.getByRole('switch', { name: 'Thinking', exact: true });
+  const binaryThinking = page.getByRole('switch', { name: 'Extended thinking', exact: true });
   await binaryThinking.waitFor();
   assert.equal(await thinking.count(), 0);
   await binaryThinking.click(); await analysisModel.selectOption('claude-sonnet-5-5');
@@ -1178,8 +1186,8 @@ try {
   assert.equal(await page.getByRole("textbox", { name: "Server URL", exact: true }).inputValue(), "http://localhost:11434");
   assert.equal(await page.getByRole("combobox", { name: "Model", exact: true }).inputValue(), "qwen3.8:27b");
   await provider.selectOption("builtin");
-  await page.getByText("Ready on this computer", { exact: true }).waitFor();
-  assert.equal(await page.getByText("Ready on this computer", { exact: true }).count(), 1);
+  await page.getByText("Installed", { exact: true }).waitFor();
+  assert.equal(await page.getByText("Installed", { exact: true }).count(), 1);
   await captureSettings("settings-windows-ready.png");
   await nav.getByRole("button", { name: "Plan", exact: true }).click();
   await page.getByText("Compact mode uses basic keyword coverage and limited overview suggestions.").waitFor();
@@ -1236,7 +1244,7 @@ try {
     await page.getByRole('status').filter({ hasText: 'Downloading' }).waitFor();
     await page.evaluate(({ id, bytes }) => window.modelQA.update(id, { status: "ready", downloadedBytes: bytes }),
       { id, bytes: LOCAL_MODELS.find((model) => model.id === id).bytes });
-    await page.getByText("Ready on this computer", { exact: true }).waitFor();
+    await page.getByText("Installed", { exact: true }).waitFor();
     assert.equal(await page.getByRole("button", { name: "Agree and download", exact: true }).count(), 0);
     await nav.getByRole("button", { name: "Plan", exact: true }).click();
     assert.equal(await page.locator(".plan-analyze-actions small").innerText(), LOCAL_MODELS.find((model) => model.id === id).name);
@@ -1297,7 +1305,7 @@ try {
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
   await assertLocationKeyboard(page.locator(".location-editor"), "Mac Plan");
   await page.getByRole("button", { name: "Save plan", exact: true }).click();
-  await page.locator(".save-state").filter({ hasText: "Saved" }).waitFor();
+  await page.locator(".workspace-save-feedback").getByText("Saved", { exact: true }).waitFor();
   // All payment and guest-wallet traffic below uses the synthetic desktop bridge.
   // These checks send no email, open no checkout, and request no provider inference.
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
@@ -1322,7 +1330,7 @@ try {
   await page.evaluate(() => { window.modelQA.setPlatform("darwin"); document.documentElement.dataset.platform = "darwin"; document.documentElement.dataset.theme = "dark"; });
   await captureSettings("credits-empty-mac-dark-narrow.png", false);
   await emptyCredits.getByRole("button", { name: "Learn more", exact: true }).click();
-  const creditHelp = page.getByRole("dialog", { name: "About credits", exact: true });
+  const creditHelp = page.locator(".credit-help-dialog");
   await creditHelp.getByRole("heading", { name: "Restore credits", exact: true }).waitFor();
   assert.match(await creditHelp.innerText(), /saved recovery code/);
   assert.match(await creditHelp.innerText(), /expire after 10 minutes and work once/);
@@ -1338,14 +1346,14 @@ try {
   await pricingDialog.getByRole("radio", { name: /\$5\b/ }).waitFor();
   assert.equal(await page.evaluate(() => window.creditQA.warmups), 1);
   assert.equal(await page.evaluate(() => window.creditQA.checkouts.length), 0);
-  assert.equal(await pricingDialog.getByRole("button", { name: "Continue, $5", exact: true }).isEnabled(), true);
+  assert.equal(await pricingDialog.getByRole("button", { name: "Continue to checkout · $5", exact: true }).isEnabled(), true);
   await pricingDialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await pricingDialog.waitFor({ state: "hidden" });
   await page.evaluate(() => { window.creditQA.finishWarmup(); window.creditQA.finishWarmup = null; window.creditQA.warmupMode = "error"; });
   await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).click();
   await pricingDialog.getByRole("radio", { name: /\$5\b/ }).waitFor();
   assert.equal(await pricingDialog.getByRole("alert").count(), 0);
-  assert.equal(await pricingDialog.getByRole("button", { name: "Continue, $5", exact: true }).isEnabled(), true);
+  assert.equal(await pricingDialog.getByRole("button", { name: "Continue to checkout · $5", exact: true }).isEnabled(), true);
   await pricingDialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await pricingDialog.waitFor({ state: "hidden" });
   await page.evaluate(() => { window.creditQA.warmupMode = "ready"; });
@@ -1354,7 +1362,7 @@ try {
   const analyze = page.getByRole("button", { name: "Analyze", exact: true });
   const analysisDialog = page.getByRole("dialog");
   await analyze.click();
-  await analysisDialog.getByRole("heading", { name: "How would you like to analyze?", exact: true }).waitFor();
+  await analysisDialog.getByRole("heading", { name: "Choose how to analyze", exact: true }).waitFor();
   assert.equal(await analysisDialog.getByRole("radio").count(), 5);
   // Setup must not analyze with an old key while its replacement is unsaved or failed.
   await analysisDialog.getByRole("radio", { name: /^OpenAI API key/ }).check();
@@ -1374,7 +1382,7 @@ try {
   assert.equal(await setupContinue.isEnabled(), false);
   await page.evaluate(() => { window.modelQA.failKeySave = true; });
   await setupReplacement.press("Enter");
-  await analysisDialog.getByRole("alert").getByText("Synthetic key save failure. Try again.", { exact: true }).waitFor();
+  await analysisDialog.getByRole("alert").getByText("Could not save this key.", { exact: true }).waitFor();
   assert.equal(await setupContinue.isEnabled(), false);
   await analysisDialog.locator(".api-key-editor").getByRole("button", { name: "Cancel", exact: true }).click();
   await analysisDialog.getByRole("button", { name: "Change key", exact: true }).waitFor();
@@ -1386,23 +1394,24 @@ try {
   await setupKey.waitFor();
   await analysisDialog.getByRole("button", { name: "Close", exact: true }).click();
   await analysisDialog.waitFor({ state: "hidden" }); await analyze.click();
-  await analysisDialog.getByRole("heading", { name: "How would you like to analyze?", exact: true }).waitFor();
-  for (const name of ["Local server", "Download a model", "OpenAI API key", "Anthropic API key", "Buy credits"]) {
+  await analysisDialog.getByRole("heading", { name: "Choose how to analyze", exact: true }).waitFor();
+  for (const name of ["Local server", "Download a model", "OpenAI API key", "Anthropic API key", "Buy Zebby credits"]) {
     assert.equal(await analysisDialog.getByRole("radio", { name: new RegExp(name) }).count(), 1);
   }
   await page.setViewportSize({ width: 1550, height: 850 });
   await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32";
     document.documentElement.dataset.theme = "light"; });
   await captureSettings("credits-choice-windows-light.png", false);
+  await analysisDialog.getByRole("radio", { name: /^Local server/ }).check();
   const warmupsBeforeChoice = await page.evaluate(() => window.creditQA.warmups);
-  await analysisDialog.getByRole("radio", { name: /Buy credits/ }).check();
+  await analysisDialog.getByRole("radio", { name: /Buy Zebby credits/ }).check();
   assert.equal(await page.evaluate(() => window.creditQA.warmups), warmupsBeforeChoice + 1);
   assert.equal(await page.evaluate(() => window.creditQA.checkouts.length), 0);
   await analysisDialog.getByRole("button", { name: "Continue", exact: true }).click();
   assert.equal(await analysisDialog.getByRole("radio").count(), 4);
   assert.equal(await analysisDialog.getByRole("combobox").count(), 0);
-  assert.match(await analysisDialog.innerText(), /Choose your model after purchasing credits/);
-  assert.equal(await analysisDialog.getByRole("button", { name: "Continue, $5", exact: true }).isEnabled(), true);
+  assert.match(await analysisDialog.innerText(), /Choose or change your model in Settings after purchase/);
+  assert.equal(await analysisDialog.getByRole("button", { name: "Continue to checkout · $5", exact: true }).isEnabled(), true);
   assert.doesNotMatch(await analysisDialog.innerText(), /Paid credits are not|not connected yet/);
   await assertFullTextRows(analysisDialog.locator(".analysis-intro, .analysis-dialog-body > p.settings-help"));
   await captureSettings("credits-packs-windows-light.png", false);
@@ -1415,7 +1424,7 @@ try {
   assert.equal(await analysisDialog.evaluate(element => element.scrollWidth > element.clientWidth), false);
   await assertFullTextRows(analysisDialog.locator(".analysis-intro, .analysis-dialog-body > p.settings-help"));
   await captureSettings("credits-packs-mac-dark-narrow.png", false);
-  await analysisDialog.getByRole("button", { name: "Continue, $5", exact: true }).click();
+  await analysisDialog.getByRole("button", { name: "Continue to checkout · $5", exact: true }).click();
   await analysisDialog.getByRole("alert").filter({ hasText: "Could not reach the credits service. Try again." }).waitFor();
   await analysisDialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await analysisDialog.waitFor({ state: "hidden" });
@@ -1424,10 +1433,10 @@ try {
   assert.equal(await page.evaluate(() => window.creditQA.checkouts.length), 0);
   await page.evaluate(() => window.creditQA.update({ available: true }));
   await analyze.click();
-  await analysisDialog.getByRole("radio", { name: /Buy credits/ }).check();
+  await analysisDialog.getByRole("radio", { name: /Buy Zebby credits/ }).check();
   await analysisDialog.getByRole("button", { name: "Continue", exact: true }).click();
   await analysisDialog.getByRole("radio", { name: /\$5\b/ }).check();
-  await analysisDialog.getByRole("button", { name: "Continue, $5", exact: true }).click();
+  await analysisDialog.getByRole("button", { name: "Continue to checkout · $5", exact: true }).click();
   await analysisDialog.getByText("Test checkout. No real payment is taken.", { exact: true }).waitFor();
   assert.equal(await analysisDialog.getByRole("textbox").count(), 0);
   assert.equal(await analysisDialog.getByRole("combobox").count(), 0);
@@ -1446,7 +1455,7 @@ try {
   await page.evaluate(() => { window.creditQA.cancelRecovery = false; });
   await analysisDialog.getByRole("button", { name: "Save recovery code", exact: true }).click();
   await analysisDialog.getByText("Recovery code saved.", { exact: true }).waitFor();
-  await analysisDialog.getByRole("button", { name: "Continue to analysis", exact: true }).click();
+  await analysisDialog.getByRole("button", { name: /^Analyze with GPT/ }).click();
   await page.waitForFunction(() => window.creditQA.quoteRequests.length > 0);
   const paidPlanSource = await page.evaluate(() => window.creditQA.quoteRequests.at(-1).source);
   const paidPlanPath = `/api/plans/${paidPlanSource.id}/analyze`;
@@ -1523,7 +1532,7 @@ try {
   assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).count(), 1);
   assert.equal(await creditsSettings.getByRole("button", { name: "Buy credits", exact: true }).count(), 0);
   assert.equal(await creditsSettings.getByRole("button", { name: "Sign out", exact: true }).count(), 0);
-  await creditsSettings.getByRole("button", { name: "Learn more", exact: true }).click();
+  await creditsSettings.getByRole("button", { name: "Manage credits", exact: true }).click();
   await creditsSettings.getByRole("button", { name: "Connect another computer", exact: true }).click();
   await creditsSettings.getByLabel("Pairing code", { exact: true }).waitFor();
   await creditsSettings.getByRole("button", { name: "Copy code", exact: true }).click();
@@ -1544,7 +1553,7 @@ try {
   await pairInput.fill("ABCD-2345"); await pairInput.press("Enter");
   await creditsSettings.getByText("Computer connected.", { exact: true }).waitFor();
   assert.equal(await creditsSettings.getByRole("button", { name: "Connect this computer", exact: true }).evaluate(element => element === document.activeElement), true);
-  await creditsSettings.getByRole("button", { name: "Learn more", exact: true }).click();
+  await creditsSettings.getByRole("button", { name: "Manage credits", exact: true }).click();
   await creditsSettings.getByText("Connected computers (2)", { exact: true }).click();
   await creditsSettings.getByText("Mac laptop", { exact: true }).waitFor();
   await creditsSettings.getByRole("button", { name: "Disconnect", exact: true }).click();
@@ -1601,7 +1610,7 @@ try {
   await paidSettingsModel.selectOption("gpt-6-astra");
   await page.setViewportSize({ width: 1550, height: 850 });
   await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32"; document.documentElement.dataset.theme = "light"; });
-  await creditsSettings.getByRole("button", { name: "Learn more", exact: true }).click();
+  await creditsSettings.getByRole("button", { name: "Manage credits", exact: true }).click();
   await assertSettingsActions();
   await captureSettings("credits-help-windows-light.png", false);
   await creditHelp.getByRole("button", { name: "Close credit help", exact: true }).click();
@@ -1611,19 +1620,20 @@ try {
     window.creditQA.update({ signedIn: false, pendingConnection: true, wallet: null, access: null, error: "Connection interrupted. Retry when online." });
   });
   await page.waitForFunction(() => window.creditQA.failedResumes > 0);
-  await creditsSettings.getByText("Connection interrupted. Refresh to finish.", { exact: true }).waitFor();
+  await creditsSettings.getByText("Connection interrupted.", { exact: true }).waitFor();
+  assert.equal(await creditsSettings.getByText(/No credits found/).count(), 0);
   await creditsSettings.scrollIntoViewIfNeeded();
   await captureSettings("credits-wallet-pending-windows-light.png", false);
   await page.setViewportSize({ width: 790, height: 850 });
   await page.evaluate(() => { window.modelQA.setPlatform("darwin"); document.documentElement.dataset.platform = "darwin"; document.documentElement.dataset.theme = "dark"; });
   await creditsSettings.scrollIntoViewIfNeeded();
   await captureSettings("credits-wallet-pending-mac-dark-narrow.png", false);
-  await creditsSettings.getByRole("button", { name: "Refresh balance", exact: true }).click();
-  await creditsSettings.getByRole("alert").filter({ hasText: "Connection interrupted" }).waitFor();
-  assert.equal(await creditsSettings.getByRole("button", { name: "Refresh balance", exact: true }).isEnabled(), true);
+  await creditsSettings.getByRole("button", { name: "Retry connection", exact: true }).click();
+  assert.equal(await creditsSettings.getByRole("alert").count(), 0);
+  assert.equal(await creditsSettings.getByRole("button", { name: "Retry connection", exact: true }).isEnabled(), true);
   await page.evaluate(() => { window.creditQA.resumeMode = "complete"; });
-  await creditsSettings.getByRole("button", { name: "Refresh balance", exact: true }).click();
-  await page.waitForFunction(() => !document.querySelector(".credit-settings-content")?.textContent.includes("Refresh to finish"));
+  await creditsSettings.getByRole("button", { name: "Retry connection", exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector(".credit-connection-pending"));
   assert.equal(await creditsSettings.getByRole("alert").count(), 0);
   await paidSettingsModel.waitFor();
   assert.deepEqual(await page.evaluate(() => window.creditQA.checkouts), ["starter"]);
@@ -1636,7 +1646,7 @@ try {
   // Updates are available in both navigation modes and Settings, without opening an installer during QA.
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole('button', { name: 'Check for updates', exact: true }).click();
-  await page.getByText('You have the latest version.', { exact: true }).waitFor();
+  await page.getByText('Up to date', { exact: true }).waitFor();
   await page.evaluate(() => window.modelQA.updateState({ available: { version: '2.0.0', size: 100, sha256: 'a'.repeat(64),
     installerUrl: 'https://github.com/desigrit/zebby-the-scout/releases/download/v2.0.0/Zebby-2.0.0-mac-arm64.dmg',
     releaseUrl: 'https://github.com/desigrit/zebby-the-scout/releases/tag/v2.0.0' } }));
@@ -1670,12 +1680,12 @@ try {
   await page.getByRole('button', { name: 'Close form', exact: true }).click();
   await nav.getByRole('button', { name: 'Plan', exact: true }).click();
   await page.getByRole('textbox', { name: 'Core ATS keyword 1', exact: true }).waitFor();
-  await page.getByRole('textbox', { name: 'Current resume overview', exact: true }).fill('Unsaved update guard fixture');
+  await page.getByRole('textbox', { name: 'Current summary', exact: true }).fill('Unsaved update guard fixture');
   await page.locator('.save-state.unsaved').waitFor();
   page.once('dialog', dialog => dialog.dismiss());
   await page.locator('.desktop-sidebar').getByRole('button', { name: 'Restart to update', exact: true }).click();
   assert.equal(await page.evaluate(() => window.modelQA.installRequests), 1);
-  assert.equal(await page.getByRole('textbox', { name: 'Current resume overview', exact: true }).inputValue(), 'Unsaved update guard fixture');
+  assert.equal(await page.getByRole('textbox', { name: 'Current summary', exact: true }).inputValue(), 'Unsaved update guard fixture');
   page.once('dialog', dialog => dialog.accept());
   await page.locator('.desktop-sidebar').getByRole('button', { name: 'Restart to update', exact: true }).click();
   await page.getByRole('button', { name: 'Restarting', exact: true }).waitFor();

@@ -160,7 +160,7 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
         signal.throwIfAborted();
         const response = await onlineAnalysis({ model: model.id, key: providerKey(model.id), kind,
           instructions: kind === "plan" ? planInstructions : matchInstructions, schema: kind === "plan" ? planSchema : matchSchema,
-          name: kind === "plan" ? "resume_plan" : "resume_match", input, thinkingLevel, signal, fetcher: send });
+          name: kind === "plan" ? "resume_plan" : "resume_match", input, thinkingLevel, signal, fetcher: send, billingOwner: "zebby" });
         signal.throwIfAborted();
         const result = validateResult(response.result, kind), cost = usageCost(model, response.usage);
         const settled = await rpc<RunRow>("finish", { p_user: account.id, p_id: value.requestId, p_cost: cost, p_result: result, p_success: true });

@@ -110,7 +110,7 @@ export class LocalModelEngine {
     const memory = await availableModelMemory();
     this.diagnostic(`Local model memory check (${id}, available ${memory}, required ${model.minimumFreeMemory})`);
     if (memory < model.minimumFreeMemory) {
-      throw new Error(`${model.name} needs more available memory. Close other apps or choose a smaller built-in model.`);
+      throw new Error(`Not enough memory to run ${model.name}. Close other apps or choose a smaller model.`);
     }
     const root = path.resolve(this.options.runtimeFolder);
     const manifest = await readFile(path.join(root, "runtime.json"), "utf8")
@@ -194,7 +194,7 @@ export class LocalModelEngine {
       if (!tokenResponse.ok || !Array.isArray(tokenData.tokens)) throw new Error("The local model could not read this request. Try again.");
       if (tokenData.tokens.length + maxTokens + 256 > getLocalModel(id).context) {
         this.diagnostic(`Local model context exceeded (${id}, ${tokenData.tokens.length} input tokens, ${maxTokens} output budget, limit ${getLocalModel(id).context})`);
-        throw new Error("This posting and resume exceed the selected model's context. Choose a larger model or use your configured Ollama or OpenAI provider.");
+        throw new Error("This model cannot fit all the job and resume text. Choose a model with a longer context window or shorten the description.");
       }
       const watchdog = new LocalResponseWatchdog(this.options.timeouts?.firstTokenMs ?? (getLocalModel(id).tier === "Medium" || getLocalModel(id).tier === "Larger" ? 300_000 : 180_000),
         this.options.timeouts?.stallMs ?? 60_000);
@@ -218,7 +218,7 @@ export class LocalModelEngine {
         const choice = payload.choices?.[0];
         if (choice?.finish_reason !== "stop" || !choice.message?.content) {
           this.diagnostic(`Local model response incomplete (${id}, finish ${choice?.finish_reason || "missing"})`);
-          throw new Error("The local analysis was incomplete. Try again or choose a larger model.");
+          throw new Error("The model did not finish its answer. Try less thinking or another model. No new result was saved.");
         }
         let analysis: unknown;
         try { analysis = JSON.parse(choice.message.content); }
@@ -244,7 +244,7 @@ export class LocalModelEngine {
           ? "The local model took too long to respond. Try again or choose a smaller model." : error.message, { cause: error });
       }
       if (error instanceof TypeError && error.message === "fetch failed") {
-        throw new Error("The connection to the local model stopped. Try again or choose another model.", { cause: error });
+        throw new Error("Connection to the local model was lost. Try again.", { cause: error });
       }
       throw error;
     });

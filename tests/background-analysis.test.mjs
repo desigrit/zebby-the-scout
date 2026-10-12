@@ -140,3 +140,19 @@ test("provider errors distinguish format, account, limits and outages without ex
     assert.doesNotMatch(`${error.message} ${error.diagnostic}`, /PRIVATE|sensitive-key/);
   }
 });
+
+test("Zebby-credit provider billing failures direct recovery to Zebby, while own-key failures keep API billing advice", () => {
+  for (const status of [401, 402, 403]) {
+    const response = new Response(null, { status });
+    const body = { error: { type: "authentication_error", message: "PRIVATE SERVICE KEY" } };
+    const credits = providerFailure("OpenAI", "gpt-6.1-sol", "high", response, body, "zebby");
+    assert.match(credits.message, /unavailable through Zebby credits/);
+    assert.doesNotMatch(credits.message, /Replace it|your API account|PRIVATE/);
+    assert.match(credits.diagnostic, new RegExp(`status=${status}`));
+  }
+  const ownKey = providerFailure("OpenAI", "gpt-6.1-sol", "high", new Response(null, { status: 402 }), {});
+  assert.match(ownKey.message, /Billing in your API account/);
+  const limited = providerFailure("OpenAI", "gpt-6.1-sol", "high", new Response(null, { status: 429 }), {}, "zebby");
+  assert.match(limited.message, /Wait and try again/);
+  assert.doesNotMatch(limited.message, /your API limits/);
+});

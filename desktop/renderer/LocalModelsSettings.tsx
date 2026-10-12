@@ -3,33 +3,41 @@ import { useRef, useState } from "react";
 import { formatModelBytes, LOCAL_MODELS, type LocalModel, type LocalModelStatus } from "../local-model-catalog";
 import type { DesktopState } from "../bridge";
 import SettingsAction from "./SettingsAction";
+import { ErrorBanner } from "./WorkspaceFeedback";
 import type { ChangeAnalysisState } from "./ThinkingSettings";
 
 export function LocalModelSelect({ state, onState, disabled = false, onBusy }: { state: DesktopState; onState: ChangeAnalysisState;
   disabled?: boolean; onBusy?: (busy: boolean) => void }) {
   const [working, setWorking] = useState(false), [error, setError] = useState("");
+  const retryModel = useRef("");
   const selected = LOCAL_MODELS.find((item) => item.id === state.builtInModelId);
+  const installed = state.localModels.some((item) => item.id === selected?.id && item.status === "ready");
+  async function selectModel(id: string) {
+    if (!id) return;
+    retryModel.current = id; setWorking(true); onBusy?.(true); setError("");
+    try { await onState(await window.desktop!.selectLocalModel(id)); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Could not select the model. Try again."); }
+    finally { setWorking(false); onBusy?.(false); }
+  }
   return <div className="analysis-model-control"><label className="field local-model-field"><span>Local model</span>
     <div className={`local-model-picker${selected ? " has-size" : ""}`}>
-      <select value={state.builtInModelId || ""} disabled={disabled || working} aria-label="Local model" aria-describedby="local-download-help"
-        onChange={async (event) => { if (!event.target.value) return; setWorking(true); onBusy?.(true); setError("");
-          try { await onState(await window.desktop!.selectLocalModel(event.target.value)); }
-          catch (cause) { setError(cause instanceof Error ? cause.message : "Could not select the model. Try again."); }
-          finally { setWorking(false); onBusy?.(false); } }}>
+      <select value={state.builtInModelId || ""} disabled={disabled || working} aria-label="Local model" aria-describedby={!installed ? "local-download-help" : undefined}
+        onChange={(event) => void selectModel(event.target.value)}>
         <option value="" disabled>Choose a model</option>
         {[...LOCAL_MODELS].sort((a, b) => b.released.localeCompare(a.released)).map((model) => <option value={model.id} key={model.id}>
           {model.name}
         </option>)}
       </select>
       {selected && <span className="model-size-badge" aria-label={`Download size: ${formatModelBytes(selected.bytes)}`}>{formatModelBytes(selected.bytes)}</span>}
-    </div></label>{error && <p className="form-error" role="alert">{error}</p>}</div>;
+    </div></label>{!installed && <p id="local-download-help" className="model-download-help">Choosing a model starts its download.</p>}
+    <ErrorBanner message={error} retry={() => void selectModel(retryModel.current)} busy={disabled || working} /></div>;
 }
 
 function downloadState(status: LocalModelStatus) {
-  if (status.status === "ready") return "Ready on this computer";
-  if (status.status === "verifying") return "Checking download";
-  if (status.status === "paused") return "Download paused";
-  if (status.status === "error") return "Download needs attention";
+  if (status.status === "ready") return "Installed";
+  if (status.status === "verifying") return "Verifying";
+  if (status.status === "paused") return "Paused";
+  if (status.status === "error") return "Download interrupted";
   if (status.status === "downloading") return "Downloading";
   return "Not downloaded";
 }
@@ -38,6 +46,7 @@ export default function LocalModelsSettings({ state, onState, hideSelector = fal
   state: DesktopState; onState: ChangeAnalysisState; hideSelector?: boolean }) {
   const [working, setWorking] = useState(false), [error, setError] = useState("");
   const inFlight = useRef(false), statusElement = useRef<HTMLDivElement>(null), modelsElement = useRef<HTMLDivElement>(null);
+  const retryAction = useRef<() => void>(() => undefined);
   const selected = LOCAL_MODELS.find((model) => model.id === state.builtInModelId);
   const statuses = state.localModels || [];
   const current = selected ? statuses.find((item) => item.id === selected.id) || {
@@ -50,6 +59,7 @@ export default function LocalModelsSettings({ state, onState, hideSelector = fal
 
   async function run(action: () => Promise<DesktopState>, focus?: { modelId: string; action: string; inLibrary: boolean }) {
     if (inFlight.current) return;
+    retryAction.current = () => void run(action, focus);
     inFlight.current = true; setWorking(true); setError("");
     try { await onState(await action()); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "The model action failed. Try again."); }
@@ -94,21 +104,25 @@ export default function LocalModelsSettings({ state, onState, hideSelector = fal
       value={status.downloadedBytes} max={model.bytes} aria-label={`${model.name} download progress`} />;
   }
 
+  async function openFolder() {
+    retryAction.current = () => void openFolder(); setError("");
+    try { const message = await window.desktop!.openModelFolder(); if (message) setError(message); }
+    catch { setError("Could not open the model folder."); }
+  }
+
   return <div className="local-model-settings" ref={modelsElement}>
     {!hideSelector && <LocalModelSelect state={state} onState={onState} disabled={working} />}
-    <span id="local-download-help" className="visually-hidden">Selecting a model downloads it to this computer. Some models require agreement to their terms.</span>
     {selected && current && <>
       <div className="selected-model-status" ref={statusElement} tabIndex={-1} aria-label={`${selected.name} download status`}>
         <div className="model-download-status"><span role="status">
           {current.status === "ready" ? <Check size={15} aria-hidden="true" /> : <Cpu size={15} aria-hidden="true" />}
           {selected.license && !state.acceptedModelTerms?.includes(selected.id) ? "Review model terms to continue" : downloadState(current)}
-          {current.status === "downloading" && <span className="model-download-bytes">{Math.round(current.downloadedBytes / selected.bytes * 100)}%</span>}
         </span>
-          {["paused", "error", "verifying"].includes(current.status) && <span className="model-download-bytes">{formatModelBytes(current.downloadedBytes)} / {formatModelBytes(selected.bytes)}</span>}
+          {["downloading", "paused", "error", "verifying"].includes(current.status) && <span className="model-download-bytes">{formatModelBytes(current.downloadedBytes)} / {formatModelBytes(selected.bytes)}</span>}
         </div>{controls(selected, current)}
       </div>
       {progress(selected, current)}
-      {current.error && <p className="model-download-error" role="alert">{current.error}</p>}
+      {current.error && <p className="model-download-error" role="alert">{current.error.replace("Choose Retry download to continue.", "Resume to continue.")}</p>}
       <details className="selected-model-about" key={selected.id} open={selected.license && !state.acceptedModelTerms?.includes(selected.id) || undefined}>
         <summary>{selected.license && !state.acceptedModelTerms?.includes(selected.id) ? "Model terms" : "About this model"}</summary>
         <p className="model-description">{selected.description}</p>
@@ -119,16 +133,16 @@ export default function LocalModelsSettings({ state, onState, hideSelector = fal
         </p>{!state.acceptedModelTerms?.includes(selected.id) && <p className="settings-help">Choosing {current.status === "ready" ? "Agree and use" : "Agree and download"} accepts these terms and any linked use restrictions.</p>}</div>}
       </details>
     </>}
-    {error && <p className="model-download-error" role="alert">{error}</p>}
+    <ErrorBanner className="model-download-error" message={error} retry={() => retryAction.current()} busy={working} />
     <details className="local-model-library">
-      <summary><span>Models on this computer</span><span className="model-library-summary">{readyCount} downloaded · {formatModelBytes(usedBytes)}<ChevronDown size={16} aria-hidden="true" /></span></summary>
+      <summary><span>Downloaded models</span><span className="model-library-summary">{readyCount} installed · {formatModelBytes(usedBytes)} used<ChevronDown size={16} aria-hidden="true" /></span></summary>
       {stored.length ? <ul>{stored.map((status) => {
         const model = LOCAL_MODELS.find((item) => item.id === status.id);
         if (!model) return null;
         return <li key={status.id} data-model-id={model.id}><Cpu size={18} className="model-file-icon" aria-hidden="true" />
           <div className="local-model-library-info"><div className="model-file-title"><strong>{model.name}</strong>
-            {model.id === selected?.id && <span className="model-selected-badge">Selected</span>}</div>
-            <span>{status.status === "ready" ? "On this computer" : `${downloadState(status)} · ${formatModelBytes(status.downloadedBytes)} downloaded`}</span>
+            {model.id === selected?.id && <span className="model-selected-badge">Current</span>}</div>
+            {status.status !== "ready" && <span>{downloadState(status)} · {formatModelBytes(status.downloadedBytes)} / {formatModelBytes(model.bytes)}</span>}
             {model.id !== selected?.id && progress(model, status)}</div>
           <div className="model-file-actions"><span className="model-size-badge">{formatModelBytes(model.bytes)}</span>
             {status.status === "ready" ? <>
@@ -139,10 +153,7 @@ export default function LocalModelsSettings({ state, onState, hideSelector = fal
             </> : model.id === selected?.id ? null : controls(model, status, true)}
           </div></li>;
       })}</ul> : <p className="settings-help model-library-empty">No models downloaded. Choose a model above to start.</p>}
-      <div className="model-storage-footer"><button className="settings-link" type="button" onClick={() => {
-        void window.desktop!.openModelFolder().then((message) => { if (message) setError(message); })
-          .catch(() => setError("Could not open the model folder."));
-      }}><FolderOpen size={15} aria-hidden="true" /> Open model folder</button>
+      <div className="model-storage-footer"><button className="settings-link" type="button" onClick={() => void openFolder()}><FolderOpen size={15} aria-hidden="true" /> Open model folder</button>
         <details className="analysis-sharing model-storage-help"><summary>Storage and privacy</summary>
           <p>Models stay in Zebby&apos;s data folder through updates.
             {state.platform === "darwin" ? " Delete models here before removing Zebby from your Mac." : " Uninstalling Zebby removes these downloads."}</p></details>

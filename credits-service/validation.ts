@@ -9,9 +9,7 @@ const match = z.object({ score: z.number().int().min(0).max(100), explanation: z
 const plan = match.extend({ keywords: z.array(recommendation.extend({ text: z.string().min(1).max(200) })).min(6).max(20),
   themes: z.array(recommendation).min(5).max(6), overview: z.string().min(1).max(16000), overviewRationale: z.string().min(1).max(8000) });
 export function validateInput(value: unknown, kind: AnalysisKind) {
-  const input = analysisInput.parse(value);
-  if (kind === "plan" && !input.currentCvOverview.trim()) throw new Error("Add your current CV overview.");
-  return input;
+  return (kind === "plan" ? analysisInput.extend({ jobDescription: z.string().trim().min(100).max(80000) }) : analysisInput).parse(value);
 }
 export function validateResult(value: unknown, kind: AnalysisKind) {
   const result = (kind === "plan" ? plan : match).parse(value);

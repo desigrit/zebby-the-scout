@@ -11,7 +11,6 @@ import {
   RefreshCw,
   Search,
   Trash2,
-  Upload,
   X,
 } from "lucide-react";
 import {
@@ -23,10 +22,14 @@ import {
   type Resume,
 } from "../../lib/application-types";
 import type { JobDetails } from "../../lib/job-details";
+import type { Plan } from "../store";
 import { parseLocations } from "../../lib/locations";
 import { normalizedListingUrl } from "../../lib/listing-url";
 import { pasteJobDescription } from "../../lib/job-text-paste";
 import LocationEditor from "./LocationEditor";
+import ResumePicker from "./ResumePicker";
+import AnalysisErrorBanner from "./AnalysisErrorBanner";
+import { ErrorBanner, useSavedFeedback } from "./WorkspaceFeedback";
 import { useAnalysisFlow } from "./AnalysisFlow";
 import { useBackgroundAnalysis } from "./BackgroundAnalysis";
 import { jobRunning } from "./analysis-jobs";
@@ -120,8 +123,12 @@ function LocationSummary({ value, expanded, disclosureId, onToggle }: {
 
 export default function ApplicationDashboard({ initialSelection }: { initialSelection?: { id: string; notice: string } | null }) {
   const analysisFlow = useAnalysisFlow();
+  const savedFeedback = useSavedFeedback();
+  const retryAction = useRef<() => void>(() => undefined);
+  const descriptionInput = useRef<HTMLTextAreaElement>(null);
   const [applications, setApplications] = useState<Application[]>([]);
   const [resumes, setResumes] = useState<Resume[]>([]);
+  const [savedPlans, setSavedPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
@@ -154,6 +161,7 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
   const [expandedLocationIds, setExpandedLocationIds] = useState<Set<string>>(() => new Set());
   const layoutRef = useRef<HTMLDivElement>(null);
   const [confirmingDelete, setConfirmingDelete] = useState<Application | null>(null);
+  const [deleteError, setDeleteError] = useState("");
   const [viewingNotes, setViewingNotes] = useState<Application | null>(null);
   const [notesDraft, setNotesDraft] = useState("");
   const [savingNotes, setSavingNotes] = useState(false);
@@ -164,7 +172,6 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
   const addButtonRef = useRef<HTMLButtonElement>(null);
   const lastTriggerRef = useRef<HTMLElement | null>(null);
   const shouldRestoreFocusRef = useRef(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const lookupControllerRef = useRef<AbortController | null>(null);
   const lastLookupUrlRef = useRef("");
   const lastAutofillRef = useRef<Partial<JobDetails>>({});
@@ -181,13 +188,18 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
       const application = job.result?.application;
       if (application) setApplications((current) => current.map((item) => item.id === application.id &&
         item.updatedAt <= application.updatedAt ? application : item));
-      setNotice(job.status === "succeeded" ? "Match saved." : job.status === "cancelled" ? "Analysis cancelled." : "");
+      setNotice("");
+      if (job.status === "succeeded") savedFeedback();
+      if (job.error) retryAction.current = () => {
+        setActionError("");
+        void jobs.start({ kind: "match", id: job.id }, { prepare: (signal) => analysisFlow.prepare({ kind: "match", id: job.id }, signal) });
+      };
       setActionError(job.error ? job.automatic ? `Application saved, but match analysis needs attention: ${job.error}` : job.error : "");
     } };
     const unsubscribe = jobs.subscribe(receive);
     queueMicrotask(receive);
     return () => { active = false; unsubscribe(); };
-  }, [jobs, loading]);
+  }, [jobs, loading, savedFeedback, analysisFlow]);
 
   useEffect(() => {
     const dialog = deleteDialogRef.current;
@@ -242,16 +254,19 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
     setLoading(true);
     setLoadError("");
     try {
-      const [applicationData, resumeData] = await Promise.all([
+      const [applicationData, resumeData, planData] = await Promise.all([
         fetch("/api/applications", { cache: "no-store" }).then((response) =>
           readJson<{ applications: Application[] }>(response),
         ),
         fetch("/api/resumes", { cache: "no-store" }).then((response) =>
           readJson<{ resumes: Resume[] }>(response),
         ),
+        fetch("/api/plans", { cache: "no-store" }).then((response) =>
+          readJson<{ plans: Plan[] }>(response)).catch(() => ({ plans: [] })),
       ]);
       setApplications(applicationData.applications);
       setResumes(resumeData.resumes);
+      setSavedPlans(planData.plans);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Your data could not be loaded.");
     } finally {
@@ -341,6 +356,10 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
       normalizedListingUrl(item.listingUrl) === normalized) || null;
   }, [applications, editingId, form.listingUrl]);
 
+  const matchingPlan = useMemo(() => form.listingUrl.trim() ? savedPlans.find((plan) =>
+    plan.description.trim() && normalizedListingUrl(plan.listingUrl) === normalizedListingUrl(form.listingUrl)) : undefined,
+  [savedPlans, form.listingUrl]);
+
   function restoreFocus() {
     shouldRestoreFocusRef.current = true;
   }
@@ -380,14 +399,7 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
         }
         return next;
       });
-      const fields = [
-        details.company && "company", details.title && "job title",
-        details.team && "team", details.locations && "locations",
-      ].filter(Boolean);
-      setLookupMessage(text
-        ? `Listing text added to this draft.${fields.length ? ` Found ${fields.join(", ")}.` : ""}`
-        : fields.length ? `Found ${fields.join(", ")}, but no job text. Paste it below to keep a copy.`
-          : "The site did not share listing details. Paste the description below to keep a copy.");
+      setLookupMessage(text ? "Details added" : "Could not get the job description. Paste it below.");
     } catch (error) {
       if (controller.signal.aborted) return;
       setLookupMessage(error instanceof Error ? error.message : "Could not read this listing. Fill the fields manually.");
@@ -404,6 +416,12 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
     const timer = window.setTimeout(() => void lookupJobDetails(form.listingUrl), 600);
     return () => window.clearTimeout(timer);
   }, [formOpen, editingId, form.listingUrl, lookupJobDetails]);
+
+  useEffect(() => {
+    if (lookupMessage !== "Details added") return;
+    const timer = window.setTimeout(() => setLookupMessage(""), 2400);
+    return () => window.clearTimeout(timer);
+  }, [lookupMessage]);
 
   function updateListingUrl(value: string) {
     lookupControllerRef.current?.abort();
@@ -457,7 +475,6 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
     setEditingId(null);
     setResumeFile(null);
     setActionError("");
-    if (fileInputRef.current) fileInputRef.current.value = "";
     restoreFocus();
   }
 
@@ -465,8 +482,9 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
     setForm((current) => ({ ...current, [key]: value }));
   }
 
-  async function saveApplication(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function saveApplication(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    retryAction.current = () => void saveApplication();
     if (editingId && jobRunning(jobs.get({ kind: "match", id: editingId }))) return;
     if (editingId) jobs.dismiss({ kind: "match", id: editingId });
     const matchStrength = form.matchStrength.trim() === "" ? null : Number(form.matchStrength);
@@ -490,8 +508,7 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
         setResumes((current) => [uploaded.resume, ...current]);
         setForm((current) => ({ ...current, resumeId }));
         setResumeFile(null);
-        if (fileInputRef.current) fileInputRef.current.value = "";
-      }
+          }
 
       const payload: ApplicationInput = {
         company: form.company.trim(),
@@ -531,9 +548,9 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
       if (saved.application.status === "Offer received" && applications.find((item) => item.id === editingId)?.status !== "Offer received") {
         setOfferCelebration((current) => current + 1);
         setNotice("Offer received. Congratulations!");
-      } else setNotice(editingId ? "Application updated." : "Application added.");
+      } else { setNotice(""); savedFeedback(); }
       restoreFocus();
-      if (saved.application.resumeId && saved.application.matchStrength === null) {
+      if (saved.application.resumeId && saved.application.jobDescription.trim().length >= 80 && saved.application.matchStrength === null) {
         void analyzeMatch(saved.application, true);
       }
     } catch (error) {
@@ -546,6 +563,7 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
   async function updateStatus(item: Application, status: ApplicationStatus) {
     if (jobRunning(jobs.get({ kind: "match", id: item.id })) || item.status === status) return;
     jobs.dismiss({ kind: "match", id: item.id });
+    retryAction.current = () => void updateStatus(item, status);
     setSavingStatusId(item.id);
     setActionError("");
     try {
@@ -561,7 +579,7 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
       if (saved.application.status === "Offer received" && item.status !== "Offer received") {
         setOfferCelebration((current) => current + 1);
         setNotice("Offer received. Congratulations!");
-      } else setNotice("Status updated.");
+      } else { setNotice(""); savedFeedback(); }
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Status could not be updated.");
     } finally {
@@ -578,6 +596,8 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
   }
 
   async function cancelMatch(item: Application) {
+    retryAction.current = () => void cancelMatch(item);
+    setActionError("");
     try { await jobs.cancel({ kind: "match", id: item.id }); }
     catch (cause) { setActionError(cause instanceof Error ? cause.message : "Could not cancel analysis. Try again."); }
   }
@@ -601,7 +621,7 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
         }));
       setApplications((current) => current.map((item) => item.id === application.id ? application : item));
       setViewingNotes(null);
-      setNotice("Notes saved.");
+      setNotice(""); savedFeedback();
     } catch (error) { setNotesError(error instanceof Error ? error.message : "Notes could not be saved."); }
     finally { setSavingNotes(false); }
   }
@@ -609,7 +629,7 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
   async function deleteApplication(item: Application) {
     if (jobRunning(jobs.get({ kind: "match", id: item.id }))) return;
     setDeletingId(item.id);
-    setActionError("");
+    setDeleteError("");
     try {
       const response = await fetch("/api/applications/" + encodeURIComponent(item.id), {
         method: "DELETE",
@@ -620,7 +640,7 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
       setConfirmingDelete(null);
       setNotice("Application deleted.");
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Application could not be deleted.");
+      setDeleteError(error instanceof Error ? error.message : "Application could not be deleted.");
     } finally {
       setDeletingId(null);
     }
@@ -633,10 +653,10 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
         <button className="match-refresh" type="button" onClick={() => void cancelMatch(item)}
           disabled={cancellingIds.has(item.id)} title="Cancel analysis"
           aria-label={`Cancel match analysis for ${item.title || "untitled role"} at ${item.company || "unknown company"}`}><X size={15} aria-hidden="true" /></button></>
-      : <>{item.matchStrength === null ? <span className="cell-empty">Not scored</span> :
+      : <>{item.matchStrength === null ? <span className="cell-empty">Not analyzed</span> :
         <span className={"match-score " + matchTone(item.matchStrength)}>
           <strong>{item.matchStrength}%</strong><span className="score-track" aria-hidden="true"><span style={{ width: `${item.matchStrength}%` }} /></span></span>}
-        {item.resumeId && <button className="match-refresh" type="button"
+        {item.resumeId && item.jobDescription.trim().length >= 80 && <button className="match-refresh" type="button"
           disabled={formOpen && editingId === item.id}
           aria-label={`${item.matchStrength === null ? "Analyze" : "Refresh"} match for ${item.title || "untitled role"} at ${item.company || "unknown company"}`}
           title={item.matchStrength === null ? "Analyze match" : "Refresh match"} onClick={() => void analyzeMatch(item)}><RefreshCw size={14} aria-hidden="true" /></button>}</>}
@@ -653,22 +673,28 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
     </select>;
   }
 
+  async function downloadResume(item: Application) {
+    retryAction.current = () => void downloadResume(item);
+    setActionError("");
+    try { await window.desktop!.downloadResume(item.resumeId); }
+    catch { setActionError("Could not save the resume. Try again."); }
+  }
+
   function resumeLink(item: Application) {
     return item.resumeId ? <a className="resume-link" title={`Save a copy of ${item.resumeName}`}
       aria-label={`Save a copy of ${item.resumeName}`} href={`/api/resumes/${encodeURIComponent(item.resumeId)}`}
-      onClick={window.desktop ? (event) => { event.preventDefault(); void window.desktop?.downloadResume(item.resumeId)
-        .catch(() => setActionError("Could not save the resume. Try again.")); } : undefined}>
+      onClick={window.desktop ? (event) => { event.preventDefault(); void downloadResume(item); } : undefined}>
       <FileText size={16} aria-hidden="true" /><span>{item.resumeName}</span></a> : <span className="cell-empty">No resume selected</span>;
   }
 
   function rowActions(item: Application) {
     return <span className="row-actions">
       <button type="button" aria-label={`Notes for ${item.title} at ${item.company}`} title="Notes" disabled={analyzingIds.has(item.id)}
-        onClick={() => openNotes(item)}><NotebookPen size={17} aria-hidden="true" />{item.notes && <span className="notes-indicator" />}</button>
+        onClick={() => openNotes(item)}><NotebookPen size={17} aria-hidden="true" /></button>
       <button type="button" aria-label={`Edit ${item.title} at ${item.company}`} title="Edit" disabled={analyzingIds.has(item.id)}
         onClick={() => openEditForm(item)}><Pencil size={17} aria-hidden="true" /></button>
       <button type="button" aria-label={`Delete ${item.title} at ${item.company}`} title="Delete" disabled={analyzingIds.has(item.id)}
-        onClick={() => setConfirmingDelete(item)}><Trash2 size={17} aria-hidden="true" /></button>
+        onClick={() => { setDeleteError(""); setConfirmingDelete(item); }}><Trash2 size={17} aria-hidden="true" /></button>
     </span>;
   }
 
@@ -689,9 +715,12 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
         <div><dt>Applied</dt><dd>{formatDate(item.appliedDate)}</dd></div>
         <div><dt>Match</dt><dd>{matchControl(item)}</dd></div>
       </dl>
-      {!item.resumeId && <p className="match-help">Add a resume and job text to analyze.</p>}
+      {item.matchStrength === null && (!item.resumeId || item.jobDescription.trim().length < 80) && <div className="match-help">
+        {!item.resumeId && <button type="button" className="text-action" onClick={() => { openEditForm(item); requestAnimationFrame(() => formRef.current?.querySelector<HTMLSelectElement>(".resume-field select")?.focus()); }}>Add resume</button>}
+        {item.jobDescription.trim().length < 80 && <button type="button" className="text-action" onClick={() => { openEditForm(item); requestAnimationFrame(() => descriptionInput.current?.focus()); }}>Add job description</button>}
+      </div>}
       {item.matchStrength !== null && <details className="inspector-why" key={item.id}><summary>Why this score</summary>
-        <p>{item.matchNotes || "Refresh the match to add an explanation."}</p></details>}
+        {item.matchNotes ? <p>{item.matchNotes}</p> : <p>Analyze again to add an explanation. <button className="text-action" type="button" disabled={analyzingIds.has(item.id) || !item.resumeId || item.jobDescription.trim().length < 80} onClick={() => void analyzeMatch(item)}>Add explanation</button></p>}</details>}
       {item.team && <section className="inspector-section"><h4>Team</h4><p>{item.team}</p></section>}
       {item.locations && <section className="inspector-section"><h4>Locations</h4>
         <div className="inspector-locations">{parseLocations(item.locations).map((place) => <span key={place}>{place}</span>)}</div></section>}
@@ -712,14 +741,13 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
       {offerCelebration > 0 && <OfferCelebration key={offerCelebration} onComplete={finishOfferCelebration} />}
       <main className="main-content" aria-label="Applications">
         <div className="workspace-toolbar">
-          <span className="workspace-context">{applications.length} saved {applications.length === 1 ? "application" : "applications"}</span>
           <button ref={addButtonRef} className="button button-primary" type="button" data-command="new" onClick={openNewForm}>
             <Plus size={18} aria-hidden="true" />
             Add application
           </button>
         </div>
 
-        <div className="application-overview">
+        {applications.length > 0 && <div className="application-overview">
           <ApplicationActivity days={activity} />
           <section className="stats-band" aria-label="Application statistics">
           <div className="stat-item"><span>Applications</span><strong>{stats.total}</strong></div>
@@ -728,14 +756,14 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
           <div className="stat-item"><span>Interviews</span><strong>{stats.interviews}</strong></div>
           <div className="stat-item"><span>Average match</span><strong>{stats.averageMatch === null ? "No score" : `${stats.averageMatch}%`}</strong></div>
           </section>
-        </div>
+        </div>}
 
         {formOpen && (
           <section className="editor" ref={formRef} aria-labelledby="form-title">
             <div className="editor-head">
               <div>
                 <h2 id="form-title">{editingId ? "Edit application" : "Add an application"}</h2>
-                <p>Leave any detail blank. Start with a link if you have one.</p>
+                <p>All fields optional</p>
               </div>
               <button className="icon-button" type="button" aria-label="Close form" onClick={closeForm}>
                 <X size={20} aria-hidden="true" />
@@ -754,18 +782,16 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
                       onChange={(event) => updateListingUrl(event.target.value)}
                       placeholder="https://..."
                       maxLength={2000}
-                      aria-describedby="listing-help"
                     />
                     <button className="button button-secondary" type="button" onClick={() => void lookupJobDetails(form.listingUrl, true)} disabled={!form.listingUrl.trim() || lookingUp}>
                       {lookingUp ? "Reading..." : "Fill from link"}
                     </button>
                   </div>
-                  <small id="listing-help">Reads available details and adds the job text to this draft.</small>
-                  {lookupMessage && <p className="lookup-message" role="status">{lookupMessage}</p>}
+                  {lookupMessage === "Details added" && <p className="lookup-message" role="status">Details added</p>}
                   {duplicateApplication && <div className="duplicate-warning" role="status">
-                    <strong>This listing is already saved.</strong>
+                    <strong>Already added</strong>
                     <span>{duplicateApplication.title || "Untitled role"}{duplicateApplication.company ? ` at ${duplicateApplication.company}` : ""}</span>
-                    <button type="button" onClick={() => openEditForm(duplicateApplication)}>Edit existing application</button>
+                    <button type="button" onClick={() => openEditForm(duplicateApplication)}>Open application</button>
                   </div>}
                 </div>
                 <label className="field">
@@ -791,7 +817,7 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
                     <input aria-label="Match strength" type="number" min="0" max="100" step="1" value={form.matchStrength} onChange={(event) => updateField("matchStrength", event.target.value)} placeholder="Score later" />
                     <span>%</span>
                   </span>
-                  <small>Calculated after saving with a resume and job text. Or enter your own score.</small>
+                  <small>{analysisFlow.state.analysisProvider === "credits" ? "Analyze the match after saving, or enter a score." : analysisFlow.canAutoAnalyze() ? "Calculated after saving when a resume and job description are included." : "Set up analysis in Settings, or enter a score."}</small>
                 </label>
                 <label className="field">
                   <span>Status</span>
@@ -799,42 +825,25 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
                     {APPLICATION_STATUSES.map((status) => <option key={status}>{status}</option>)}
                   </select>
                 </label>
-                <div className="field resume-field">
-                  <label htmlFor="saved-resume">Resume used</label>
-                  <select id="saved-resume" value={form.resumeId} onChange={(event) => updateField("resumeId", event.target.value)} disabled={resumes.length === 0}>
-                    <option value="">No resume selected</option>
-                    {resumes.map((resume) => <option key={resume.id} value={resume.id}>{resume.filename}</option>)}
-                  </select>
-                  <button className="upload-control" type="button" onClick={() => fileInputRef.current?.click()}>
-                    <Upload size={17} aria-hidden="true" />
-                    <span>{resumeFile ? resumeFile.name : "Upload a new resume"}</span>
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    id="new-resume"
-                    className="visually-hidden"
-                    tabIndex={-1}
-                    aria-hidden="true"
-                    type="file"
-                    accept=".pdf,.docx,.doc"
-                    onChange={(event) => setResumeFile(event.target.files?.[0] || null)}
-                  />
-                  <small>PDF, DOCX, or DOC. Up to 10 MB.</small>
-                </div>
+                <ResumePicker resumes={resumes} value={form.resumeId} file={resumeFile} disabled={saving}
+                  onSelect={(value) => updateField("resumeId", value)} onFile={setResumeFile} />
                 <label className="field field-wide">
                   <span>Job description</span>
-                  <textarea className="application-description" value={form.jobDescription}
+                  <textarea ref={descriptionInput} className="application-description" value={form.jobDescription}
                     onChange={(event) => updateField("jobDescription", event.target.value)}
                     onPaste={(event) => pasteJobDescription(event, (value) => updateField("jobDescription", value))}
                     placeholder="Paste job description"
                     maxLength={80000} />
-                  <small>Needed for analysis (80+ characters). A Plan with the same link can supply it.</small>
+                  {matchingPlan && !form.jobDescription.trim() && <button type="button" className="text-action"
+                    onClick={() => updateField("jobDescription", matchingPlan.description)}>Use description from saved plan</button>}
+                  {lookupMessage && lookupMessage !== "Details added" && !form.jobDescription.trim() && <span className="listing-feedback" role="status">{lookupMessage}
+                    <button type="button" className="text-action" onClick={() => descriptionInput.current?.focus()}>Paste description</button></span>}
                 </label>
                 {editingId && applications.find((item) => item.id === editingId)?.matchNotes &&
                   <div className="field-wide match-explanation"><strong>Match analysis</strong>
                     <p>{applications.find((item) => item.id === editingId)?.matchNotes}</p></div>}
               </fieldset>
-              {actionError && <p className="form-error" role="alert">{actionError}</p>}
+              <ErrorBanner message={actionError} retry={() => retryAction.current()} busy={saving || Boolean(deletingId)} />
               <div className="form-actions">
                 <button className="button button-secondary" type="button" onClick={closeForm} disabled={saving}>Cancel</button>
                 <button className="button button-primary" type="submit" data-command="save" disabled={saving}>
@@ -850,7 +859,7 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
           <div className="section-toolbar">
             <div>
               <h2 id="applications-title" className="visually-hidden">Your roles</h2>
-              <p>{loading ? "Loading applications..." : `${visibleApplications.length} of ${applications.length} applications`}</p>
+              {(loading || query.trim() || companyFilter || statusFilter !== "All statuses") && <p>{loading ? "Loading applications..." : `${visibleApplications.length} of ${applications.length} applications`}</p>}
             </div>
             <div className="filters">
               <label className="search-field">
@@ -861,14 +870,14 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
               <label className="filter-field">
                 <span className="visually-hidden">Filter by company</span>
                 <select aria-label="Filter by company" value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)}>
-                  <option value="">All companies ({applications.length})</option>
+                  <option value="">All companies</option>
                   {companyCounts.map(([company, count]) => <option key={company} value={company}>{company} ({count})</option>)}
                 </select>
               </label>
               <label className="filter-field">
                 <span className="visually-hidden">Filter by status</span>
                 <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-                  <option value="All statuses">All statuses ({Object.values(statusCounts).reduce((sum, count) => sum + count, 0)})</option>
+                  <option value="All statuses">All statuses</option>
                   {APPLICATION_STATUSES.map((status) => <option key={status} value={status}>{status} ({statusCounts[status]})</option>)}
                 </select>
               </label>
@@ -876,7 +885,7 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
           </div>
 
           {notice && <p className="notice" role="status">{notice}</p>}
-          {!formOpen && actionError && <p className="form-error" role="alert">{actionError}</p>}
+          {!formOpen && <AnalysisErrorBanner message={actionError} retry={() => retryAction.current()} busy={saving || Boolean(deletingId)} />}
           {loadError && (
             <div className="state-panel" role="alert">
               <p>{loadError}</p>
@@ -895,7 +904,7 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
             </div>
           )}
           {!loadError && !loading && applications.length > 0 && visibleApplications.length === 0 && (
-            <div className="state-panel"><p>No applications match your search or filter.</p></div>
+            <div className="state-panel"><p>No matching applications</p><button className="button button-secondary" type="button" onClick={() => { setQuery(""); setCompanyFilter(""); setStatusFilter("All statuses"); }}>Clear filters</button></div>
           )}
           {!loadError && !loading && visibleApplications.length > 0 && (
             <div className={`applications-layout ${compact ? "compact" : "wide"} ${!inspectorOpen ? "inspector-closed" : ""}`} ref={layoutRef}>
@@ -957,14 +966,14 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
       <dialog ref={notesDialogRef} className="snapshot-dialog notes-dialog" aria-labelledby="notes-title"
         onClose={() => setViewingNotes(null)} onCancel={(event) => { if (savingNotes) event.preventDefault(); else setViewingNotes(null); }}>
         {viewingNotes && <>
-          <div className="snapshot-dialog-head"><div><h2 id="notes-title">Application notes</h2>
+          <div className="snapshot-dialog-head"><div><h2 id="notes-title">Notes</h2>
             <p>{viewingNotes.title || "Untitled role"}{viewingNotes.company ? ` at ${viewingNotes.company}` : ""}</p></div>
             <button className="icon-button" type="button" aria-label="Close notes" disabled={savingNotes} onClick={() => setViewingNotes(null)}><X size={19} /></button></div>
           <label className="notes-editor"><span className="visually-hidden">Notes</span>
             <textarea value={notesDraft} onChange={(event) => setNotesDraft(event.target.value)} maxLength={MAX_APPLICATION_NOTES_CHARS}
               onPaste={(event) => pasteJobDescription(event, setNotesDraft)}
               disabled={savingNotes} placeholder="Questions, contacts, interview details..." /></label>
-          {notesError && <p className="form-error" role="alert">{notesError}</p>}
+          <ErrorBanner message={notesError} retry={() => void saveNotes()} busy={savingNotes} />
           <div className="dialog-actions"><button className="button button-secondary" type="button" disabled={savingNotes} onClick={() => setViewingNotes(null)}>Cancel</button>
             <button className="button button-primary" type="button" disabled={savingNotes} onClick={() => void saveNotes()}>{savingNotes ? "Saving..." : "Save notes"}</button></div>
         </>}
@@ -974,8 +983,8 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
         {confirmingDelete && <>
           <div className="snapshot-dialog-head"><div><h2 id="delete-title">Delete application?</h2>
             <p>{confirmingDelete.title || "Untitled role"}{confirmingDelete.company ? ` at ${confirmingDelete.company}` : ""}</p></div></div>
-          <p className="confirm-copy">This removes the application and its notes from the database.</p>
-          {actionError && <p className="form-error" role="alert">{actionError}</p>}
+          <p className="confirm-copy">Delete this application and its notes?</p>
+          <ErrorBanner message={deleteError} retry={() => void deleteApplication(confirmingDelete)} busy={Boolean(deletingId)} />
           <div className="dialog-actions"><button className="button button-secondary" type="button" disabled={Boolean(deletingId)} onClick={() => setConfirmingDelete(null)}>Cancel</button>
             <button className="button button-danger" type="button" disabled={Boolean(deletingId)} onClick={() => void deleteApplication(confirmingDelete)}>{deletingId ? "Deleting..." : "Delete application"}</button></div>
         </>}

@@ -48,7 +48,7 @@ export class OnlineAnalysisError extends Error {
   constructor(message: string, diagnostic: string) { super(message); this.name = "OnlineAnalysisError"; this.diagnostic = diagnostic; }
 }
 
-export function providerFailure(provider: string, model: string, thinking: string, response: Response, payload: unknown) {
+export function providerFailure(provider: string, model: string, thinking: string, response: Response, payload: unknown, billingOwner: "user" | "zebby" = "user") {
   const body = payload && typeof payload === "object" ? payload as { error?: { message?: unknown; type?: unknown; code?: unknown }; request_id?: unknown } : {};
   const raw = typeof body.error?.message === "string" ? body.error.message.toLowerCase() : "";
   const status = response.status;
@@ -74,6 +74,10 @@ export function providerFailure(provider: string, model: string, thinking: strin
   } else if (status === 400 && /thinking|effort|budget_tokens|max_tokens/.test(raw)) {
     category = "thinking"; reason = "does not support this thinking configuration. Choose another thinking level or model.";
   } else { category = "request"; reason = "rejected the analysis request. Try another model or report the issue with your logs."; }
-  return new OnlineAnalysisError(`${provider} ${reason} (${status})`,
+  if (billingOwner === "zebby" && ["authentication", "billing", "permission"].includes(category)) {
+    reason = "is unavailable through Zebby credits. Try again later or report this issue to Zebby.";
+  }
+  if (billingOwner === "zebby" && category === "rate-limit") reason = "reached the current analysis limit. Wait and try again.";
+  return new OnlineAnalysisError(`${provider} ${reason}`,
     `provider=${provider}, model=${model}, thinking=${thinking}, status=${status}, category=${category}, type=${type}, request=${requestId}`);
 }
