@@ -1,6 +1,6 @@
 # Plan
 
-## 2.3.6 Move to Applied
+## 2.3.7 Move to Applied
 
 The footer groups secondary Save plan and primary Move to Applied, with a trailing ArrowRight icon. The new action saves pending edits, then creates an Applied application dated today from the saved Plan. Company, title, team, locations, listing link, working description, original snapshot and capture metadata, resume reference, match score, explanation and analysis timestamp carry over without any model or credit request. The original Plan and its recommendations stay available. Existing applications matched by normalized listing URL open without being overwritten. The action remains disabled while the selected Plan is being analyzed or saved, reports failures inline, and focuses the selected application after success. The footer wraps at narrow sizes using the existing Ember controls.
 

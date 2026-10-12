@@ -453,6 +453,11 @@ try {
   assert.deepEqual((await api("/api/plans")).plans.find(item => item.id === planToApply.id), planToApply);
   page.off("request", recordMoveRequest);
   checks.push("Move to Applied reuses the saved score, preserves the Plan and resume, and prevents duplicate applications without analysis");
+  // Restore the original synthetic fixture before the existing filter/count checks.
+  await page.evaluate(async (id) => {
+    const response = await fetch(`/api/applications/${id}`, { method: "DELETE" });
+    if (!response.ok) throw new Error("Could not remove the synthetic transferred application.");
+  }, movedApplication.id);
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption("builtin");
   await capture("settings-local-setup");
@@ -510,7 +515,7 @@ try {
   }
   await page.getByLabel("Date applied", { exact: true }).fill("");
   await page.keyboard.press("Control+s"); await page.getByText("Application added.", { exact: true }).waitFor();
-  assert.equal((await api("/api/applications")).applications.length, appliedBefore + 2); checks.push("New and Save shortcuts, and saving a blank optional application");
+  assert.equal((await api("/api/applications")).applications.length, appliedBefore + 1); checks.push("New and Save shortcuts, and saving a blank optional application");
   const blank = page.locator(".application-row").filter({ has: page.getByRole("button", { name: "View details for untitled role at unknown company", exact: true }) });
   assert.equal(await blank.locator(".application-applied-date").getAttribute("datetime"), null);
   assert.match(await blank.locator(".application-applied-date").innerText(), /Not set/);
