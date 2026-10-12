@@ -687,6 +687,9 @@ try {
   await page.waitForFunction(() => document.querySelector('.plan-analysis-progress')?.dataset.stage === 'generating');
   assert.ok(await page.locator('.plan-progress-label').count() <= 2);
   await completeAnalysis(planAnalysisPath);
+  // A previous save confirmation can still be visible while this request settles.
+  // Wait for this analysis to finish before asserting its feedback and unlocked UI.
+  await planProgress.waitFor({ state: 'hidden' });
   await page.locator('.workspace-save-feedback').getByText('Saved', { exact: true }).waitFor();
   assert.equal(await planProgress.count(), 0);
   await page.locator(".match-why summary").focus();
