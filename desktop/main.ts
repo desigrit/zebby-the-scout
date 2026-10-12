@@ -474,6 +474,14 @@ async function handleApi(request: Request, pathname: string): Promise<Response> 
         await captureListing(await request.json() as PlanInput, store.getPlan(planId) || undefined), planId) });
       if (method === "DELETE") { await store.deletePlan(planId); return new Response(null, { status: 204 }); }
     }
+    const applyPlanId = pathname.match(/^\/api\/plans\/([\da-f-]+)\/apply$/i)?.[1];
+    if (applyPlanId && method === "POST") {
+      analysisRequests.assertEditable(`plan:${applyPlanId}`);
+      const input = await request.json() as { expectedUpdatedAt?: unknown };
+      if (typeof input?.expectedUpdatedAt !== "string") return jsonError("Save this plan before moving it to Applied.");
+      const result = await store.applyPlan(applyPlanId, input.expectedUpdatedAt);
+      return Response.json(result, { status: result.created ? 201 : 200 });
+    }
     const analysisId = pathname.match(/^\/api\/plans\/([\da-f-]+)\/analyze$/i)?.[1];
     if (analysisId && method === "POST") return Response.json({ plan: await analysisRequests.run(
       request.headers.get("X-Zebby-Analysis-ID") || randomUUID(), (signal, commit, progress) => analyzePlan(analysisId, signal, commit,

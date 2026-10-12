@@ -6,7 +6,7 @@ import LocationEditor from "./LocationEditor";
 import { pasteJobDescription } from "../../lib/job-text-paste";
 import type { DesktopState } from "../bridge";
 import type { Plan, PlanInput } from "../store";
-import type { Resume } from "../../lib/application-types";
+import type { Application, Resume } from "../../lib/application-types";
 import { AnalysisSettings } from "./AnalysisSettings";
 import { AnalysisFlowProvider, SidebarCredits, useAnalysisFlow } from "./AnalysisFlow";
 import { CreditsSettings } from "./CreditsSettings";
@@ -52,11 +52,12 @@ function formatUpdated(value: string) {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(value));
 }
 
-function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady, onDirtyChange, initialSelectedId, onSelectionChange }: {
+function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady, onDirtyChange, initialSelectedId, onSelectionChange, onApplied }: {
   analysisProvider: DesktopState["analysisProvider"]; ollamaModel: string;
   builtInModelId: string; builtInReady: boolean;
   onDirtyChange: (dirty: boolean) => void;
   initialSelectedId: string | null; onSelectionChange: (id: string | null) => void;
+  onApplied: (application: Application, created: boolean) => void;
 }) {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [resumes, setResumes] = useState<Resume[]>([]);
@@ -70,6 +71,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   const [loading, setLoading] = useState(true);
   const [reading, setReading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [moving, setMoving] = useState(false);
   const { jobs } = useBackgroundAnalysis();
   const analysisProgress = selectedId ? jobs.get({ kind: "plan", id: selectedId }) : undefined;
   const analyzing = jobRunning(analysisProgress);
@@ -85,7 +87,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   const listingController = useRef<AbortController | null>(null);
   const resumeInput = useRef<HTMLInputElement | null>(null);
   const dirty = JSON.stringify(draft) !== JSON.stringify(savedDraft) || Boolean(resumeFile);
-  const navigatingBusy = reading || saving || preparing;
+  const navigatingBusy = reading || saving || preparing || moving;
   const busy = navigatingBusy || analyzing;
   const selectedPlan = plans.find((plan) => plan.id === selectedId);
   const hasAnalysis = Boolean(selectedPlan && (selectedPlan.matchAnalyzedAt || selectedPlan.keywords.length));
@@ -269,6 +271,22 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
     catch (cause) { setError(errorText(cause)); }
   }
 
+  async function moveToApplied() {
+    if (busy) return;
+    setMoving(true); setError(""); setNotice("");
+    try {
+      const saved = dirty || !selectedId ? await save() : selectedPlan;
+      if (!saved) throw new Error("Save this plan before moving it to Applied.");
+      setNotice("");
+      const { application, created } = await readJson<{ application: Application; created: boolean }>(
+        await fetch(`/api/plans/${saved.id}/apply`, { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ expectedUpdatedAt: saved.updatedAt }) }));
+      onDirtyChange(false);
+      onApplied(application, created);
+    } catch (cause) { setError(errorText(cause)); }
+    finally { setMoving(false); }
+  }
+
   async function analyze() {
     if (busy || !canAnalyze) return;
     setError(""); setNotice("");
@@ -350,7 +368,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
         {notice && <p className="notice" role="status">{notice}</p>}
         <div className="plan-document">
         <div className="plan-inputs">
-        <fieldset className="plan-section" disabled={analyzing || saving}>
+        <fieldset className="plan-section" disabled={analyzing || saving || moving}>
           <div className="plan-section-heading"><h3>Job posting</h3>{draft.listingUrl && <a href={draft.listingUrl} target="_blank" rel="noopener noreferrer">Open listing <ArrowUpRight size={14} aria-hidden="true" /></a>}</div>
           <label className="field"><span id="plan-listing-label">Job listing link</span><div className="listing-input-row">
             <input type="url" value={draft.listingUrl} onChange={(event) => update("listingUrl", event.target.value)}
@@ -373,7 +391,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
             <pre>{draft.snapshotText}</pre></details>}
         </fieldset>
         <div className="plan-section cv-section">
-          <fieldset className="plan-fields" disabled={analyzing || saving}>
+          <fieldset className="plan-fields" disabled={analyzing || saving || moving}>
           <div className="plan-section-heading"><h3>Your CV</h3></div>
           <label className="field"><span id="current-cv-overview-label">Current resume overview</span>
             <textarea className="current-overview-area" value={draft.currentOverview}
@@ -415,7 +433,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
           {!canAnalyze && <p className="analysis-requirements">Add {missing.join(", ")} to analyze.</p>}
         </div>
         </div>
-        <fieldset className="plan-section analysis-section" disabled={analyzing || saving}>
+        <fieldset className="plan-section analysis-section" disabled={analyzing || saving || moving}>
           <div className="plan-section-heading"><h3>Resume direction</h3></div>
           <div className="match-result" aria-busy={analyzing}><span>Resume match</span>
             <div className="match-result-value">
@@ -457,9 +475,15 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
         <div className="plan-actions">
           {selectedId && <button className="button-delete" type="button" onClick={() => void remove()} disabled={busy}>
             <Trash2 size={16} aria-hidden="true" /> Delete plan</button>}
-          <button className="button button-primary" type="submit" data-command="save" disabled={busy || !draft.listingUrl}>
-            {saving ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />} Save plan
-          </button>
+          <div className="plan-save-actions">
+            <button className="button button-secondary" type="submit" data-command="save" disabled={busy || !draft.listingUrl}>
+              {saving ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />} Save plan
+            </button>
+            <button className="button button-primary" type="button" disabled={busy || !draft.listingUrl}
+              onClick={() => void moveToApplied()}>
+              Move to Applied {moving ? <LoaderCircle className="spin" size={17} aria-hidden="true" /> : <ArrowRight size={17} aria-hidden="true" />}
+            </button>
+          </div>
         </div>
       </form>
     </div>
@@ -600,6 +624,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("plan");
   const [dirtyPlan, setDirtyPlan] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [applicationSelection, setApplicationSelection] = useState<{ id: string; notice: string } | null>(null);
   const [databaseVersion, setDatabaseVersion] = useState(0);
   const [sidebarSaving, setSidebarSaving] = useState(false);
   const [shellError, setShellError] = useState("");
@@ -610,7 +635,7 @@ export default function App() {
   }, [loaded]);
   const navigate = useCallback((target: Tab) => {
     if (target !== "plan" && dirtyPlan && !window.confirm("Discard unsaved changes to this plan?")) return false;
-    setTab(target);
+    setApplicationSelection(null); setTab(target);
     return true;
   }, [dirtyPlan]);
 
@@ -649,7 +674,7 @@ export default function App() {
   useEffect(() => {
     void window.desktop!.state().then(setState);
     const removeChanged = window.desktop!.onDatabaseChanged((next) => {
-      setState(next); setDatabaseVersion((current) => current + 1); setSelectedPlanId(null); setTab("plan");
+      setState(next); setDatabaseVersion((current) => current + 1); setSelectedPlanId(null); setApplicationSelection(null); setTab("plan");
     });
     const removeNavigate = window.desktop!.onNavigate((target) => {
       if (target === "plan" || target === "applications" || target === "settings") navigate(target);
@@ -718,8 +743,13 @@ export default function App() {
           model.id === state.builtInModelId && model.status === "ready") &&
           (!LOCAL_MODELS.find((model) => model.id === state.builtInModelId)?.license ||
             state.acceptedModelTerms?.includes(state.builtInModelId)))}
-        onDirtyChange={setDirtyPlan} initialSelectedId={selectedPlanId} onSelectionChange={setSelectedPlanId} />
-      : tab === "applications" ? <ApplicationDashboard key={databaseVersion} />
+        onDirtyChange={setDirtyPlan} initialSelectedId={selectedPlanId} onSelectionChange={setSelectedPlanId}
+        onApplied={(application, created) => {
+          setDirtyPlan(false);
+          setApplicationSelection({ id: application.id, notice: created ? "Moved to Applied." : "This job is already in Applications." });
+          setTab("applications");
+        }} />
+      : tab === "applications" ? <ApplicationDashboard key={databaseVersion} initialSelection={applicationSelection} />
       : <SettingsView state={state} onState={setState} onUpdate={() => void applyUpdate()} onCheckUpdates={checkUpdates} updateWorking={updateWorking} />}</div>
   </div></BackgroundAnalysisProvider></AnalysisFlowProvider>;
 }

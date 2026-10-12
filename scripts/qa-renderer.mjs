@@ -386,6 +386,7 @@ try {
     .map((model) => [model.id, model.license.version])) });
   let failNextStatusSave = false;
   let failNextPlanAnalysis = false;
+  let failNextPlanMove = false;
   await page.route("**/api/**", async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     const method = route.request().method();
@@ -400,6 +401,25 @@ try {
         matchAnalyzedAt: "", matchNotes: "", overviewRationale: "", updatedAt: "2026-09-30T20:00:00Z" };
       plans = [saved, ...plans]; lastCurrentOverview = saved.currentOverview;
       data = { plan: saved };
+    }
+    else if (pathname.endsWith("/apply") && method === "POST") {
+      if (failNextPlanMove) {
+        failNextPlanMove = false;
+        await route.fulfill({ status: 400, json: { error: "The database could not be saved. Try again." } }); return;
+      }
+      const saved = plans.find((item) => item.id === pathname.split("/")[3]);
+      assert.equal(route.request().postDataJSON().expectedUpdatedAt, saved.updatedAt);
+      const existing = applications.find((item) => item.listingUrl === saved.listingUrl);
+      const now = new Date();
+      const application = existing || { ...base, id: `application-from-${saved.id}`, company: saved.company,
+        title: saved.title, team: saved.team, locations: saved.locations, listingUrl: saved.listingUrl,
+        jobDescription: saved.description, notes: saved.description, snapshotText: saved.snapshotText,
+        snapshotSource: saved.snapshotSource, snapshotCapturedAt: saved.snapshotCapturedAt,
+        resumeId: saved.resumeId, resumeName: resume.filename, matchStrength: saved.matchStrength,
+        matchNotes: saved.matchNotes, matchAnalyzedAt: saved.matchAnalyzedAt, status: "Applied",
+        appliedDate: new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10) };
+      if (!existing) applications = [application, ...applications];
+      data = { application, created: !existing };
     }
     else if (pathname.endsWith("/analyze")) {
       if (route.request().headers()["x-zebby-credit-quote"]) paidAnalysisRequests.push({ pathname, quoteId: route.request().headers()["x-zebby-credit-quote"] });
@@ -546,6 +566,7 @@ try {
   assert.doesNotMatch(await page.locator(".match-result").innerText(), /Analyzing|Calculating/);
   assert.equal(await page.locator(".match-why").count(), 0);
   assert.equal(await page.getByRole("button", { name: "Analysis in progress", exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole("button", { name: "Move to Applied", exact: true }).isDisabled(), true);
   assert.equal(await page.getByRole("button", { name: "Copy keyword 1", exact: true }).isDisabled(), true);
   const planAnalysisPath = "/api/plans/plan-1/analyze";
   await waitForAnalysis(planAnalysisPath);
@@ -772,6 +793,54 @@ try {
   await page.getByRole("textbox", { name: "Core ATS keyword 1", exact: true }).waitFor();
   assert.equal(await page.locator(".recommendation-importance:not(.unrated)").count(), 0);
   plan = { ...plan, keywordImportance: savedPriority, themeImportance: [95, 92, 87, 81, 76] }; plans = plans.map((item) => item.id === plan.id ? plan : item);
+  await page.reload();
+  await page.getByRole("textbox", { name: "Core ATS keyword 1", exact: true }).waitFor();
+  // Moving a plan saves edits and opens the exact application without invoking analysis or credits.
+  const beforeMovePlans = [...plans], beforeMoveApplications = [...applications];
+  const movePlan = { ...plan, id: "plan-transfer", listingUrl: "https://example.org/roles/transfer",
+    title: "Transfer Product Manager", company: "Example Move" };
+  plans = [movePlan, ...plans];
+  await page.reload();
+  const moveButton = page.getByRole("button", { name: "Move to Applied", exact: true });
+  await moveButton.waitFor();
+  await page.setViewportSize({ width: 1550, height: 850 });
+  await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
+  const saveBounds = await page.getByRole("button", { name: "Save plan", exact: true }).boundingBox();
+  const moveBounds = await moveButton.boundingBox();
+  assert.ok(moveBounds.x > saveBounds.x + saveBounds.width);
+  assert.equal(moveBounds.y, saveBounds.y);
+  await captureSettings("plan-move-windows-light.png", false);
+  await page.setViewportSize({ width: 790, height: 850 });
+  await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; document.documentElement.dataset.platform = "darwin"; });
+  assert.equal(await page.locator(".plan-actions").evaluate(element => element.scrollWidth > element.clientWidth), false);
+  await captureSettings("plan-move-mac-dark.png", false);
+  await page.setViewportSize({ width: 1550, height: 850 });
+  await page.evaluate(() => { document.documentElement.dataset.theme = "light"; document.documentElement.dataset.platform = "win32"; });
+  await page.getByRole("textbox", { name: "Suggested resume overview", exact: true }).fill("An edited overview to preserve.");
+  const moveRequests = [], recordMoveRequest = request => moveRequests.push(new URL(request.url()).pathname);
+  const quoteCountBeforeMove = await page.evaluate(() => window.creditQA.quoteRequests.length);
+  page.on("request", recordMoveRequest);
+  failNextPlanMove = true;
+  await moveButton.click();
+  await page.getByText("The database could not be saved. Try again.", { exact: true }).waitFor();
+  assert.equal(await moveButton.isEnabled(), true);
+  assert.equal(await page.getByRole("textbox", { name: "Suggested resume overview", exact: true }).inputValue(), "An edited overview to preserve.");
+  await moveButton.click();
+  await page.getByText("Moved to Applied.", { exact: true }).waitFor();
+  await page.locator(".application-row.selected").getByText(movePlan.title, { exact: true }).waitFor();
+  const moved = applications.find((item) => item.listingUrl === movePlan.listingUrl);
+  assert.equal(moved.matchStrength, movePlan.matchStrength);
+  assert.equal(moved.matchNotes, movePlan.matchNotes);
+  assert.equal(plans.find((item) => item.id === movePlan.id).overview, "An edited overview to preserve.");
+  assert.equal(moveRequests.includes(`/api/plans/${movePlan.id}`), true, "Unsaved Plan edits are saved before moving.");
+  await nav.getByRole("button", { name: "Plan", exact: true }).click();
+  await moveButton.click();
+  await page.getByText("This job is already in Applications.", { exact: true }).waitFor();
+  assert.equal(applications.length, beforeMoveApplications.length + 1);
+  assert.equal(moveRequests.some(url => url.endsWith("/analyze")), false);
+  assert.equal(await page.evaluate(() => window.creditQA.quoteRequests.length), quoteCountBeforeMove);
+  page.off("request", recordMoveRequest);
+  plans = beforeMovePlans; applications = beforeMoveApplications;
   await page.reload();
   await page.getByRole("textbox", { name: "Core ATS keyword 1", exact: true }).waitFor();
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });

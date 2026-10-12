@@ -431,6 +431,28 @@ try {
   checks.push("Cancel after persistence keeps response delivery and UI consistent");
   await page.getByText("Analysis saved.", { exact: true }).waitFor();
   assert.equal((await api("/api/plans")).plans[0].matchStrength, 85); checks.push("Successful analysis still saves all structured results");
+  const planToApply = (await api("/api/plans")).plans[0];
+  const appliedBefore = (await api("/api/applications")).applications.length;
+  const moveAnalysisRequests = [], recordMoveRequest = request => {
+    if (/\/analyze$/.test(new URL(request.url()).pathname)) moveAnalysisRequests.push(request.url());
+  };
+  page.on("request", recordMoveRequest);
+  await page.getByRole("button", { name: "Move to Applied", exact: true }).click();
+  await page.getByText("Moved to Applied.", { exact: true }).waitFor();
+  const movedApplication = (await api("/api/applications")).applications.find(item => item.listingUrl === planToApply.listingUrl);
+  assert.equal(movedApplication.matchStrength, 85);
+  assert.equal(movedApplication.matchNotes, planToApply.matchNotes);
+  assert.equal(movedApplication.resumeId, planToApply.resumeId);
+  assert.equal(movedApplication.status, "Applied");
+  await page.locator(".application-row.selected").getByText(planToApply.title, { exact: true }).waitFor();
+  await nav.getByRole("button", { name: "Plan", exact: true }).click();
+  await page.getByRole("button", { name: "Move to Applied", exact: true }).click();
+  await page.getByText("This job is already in Applications.", { exact: true }).waitFor();
+  assert.equal((await api("/api/applications")).applications.length, appliedBefore + 1);
+  assert.deepEqual(moveAnalysisRequests, []);
+  assert.deepEqual((await api("/api/plans")).plans.find(item => item.id === planToApply.id), planToApply);
+  page.off("request", recordMoveRequest);
+  checks.push("Move to Applied reuses the saved score, preserves the Plan and resume, and prevents duplicate applications without analysis");
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption("builtin");
   await capture("settings-local-setup");
@@ -488,7 +510,7 @@ try {
   }
   await page.getByLabel("Date applied", { exact: true }).fill("");
   await page.keyboard.press("Control+s"); await page.getByText("Application added.", { exact: true }).waitFor();
-  assert.equal((await api("/api/applications")).applications.length, 37); checks.push("New and Save shortcuts, and saving a blank optional application");
+  assert.equal((await api("/api/applications")).applications.length, appliedBefore + 2); checks.push("New and Save shortcuts, and saving a blank optional application");
   const blank = page.locator(".application-row").filter({ has: page.getByRole("button", { name: "View details for untitled role at unknown company", exact: true }) });
   assert.equal(await blank.locator(".application-applied-date").getAttribute("datetime"), null);
   assert.match(await blank.locator(".application-applied-date").innerText(), /Not set/);

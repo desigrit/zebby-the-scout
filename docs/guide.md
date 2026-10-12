@@ -71,6 +71,8 @@ Expand **Models on this computer** to see downloaded and partial models, their s
 
 ## Plan
 
+**Move to Applied** sits to the right of **Save plan**. It saves current edits and opens the job in Applications with today's applied date, Applied status, the selected resume, job details, saved listing, match score and its explanation. It does not run an analysis or use credits. The saved Plan keeps its keywords, themes and tailored overview. A job already in Applications opens its existing record without changing its status, date, notes or score. You can also move an unscored plan; changes to the job or resume invalidate an older score, and the application stays unscored until you choose to analyze it.
+
 Paste a public HTTPS job listing link. The app automatically tries to fill available details and capture a readable text copy of the posting from supported job board APIs, structured job data, or visible page content. **Read listing** retries when needed. If a site blocks automatic reading, paste the description yourself. Headings, paragraphs, and bullets are retained as readable text when available. Save a separate plan for each posting. A separate **Saved listing copy** keeps the original text in the SQLite file for offline reference, even after you edit the working description. The automatic copy can include up to 80,000 characters of readable page text. It does not save the page's images, scripts, or full HTML.
 
 Paste your **Current CV Overview** and choose a saved resume or upload the one you plan to use for this role. Both are saved with the plan in the SQLite file. New plans start with your last saved overview, which follows the selected database between computers. Opening an existing plan keeps that plan's own overview.

@@ -8,6 +8,7 @@ import { applicationInputSchema } from "../lib/application-validation";
 import { MAX_APPLICATION_NOTES_CHARS } from "../lib/application-types";
 import type { Application, ApplicationInput, Resume } from "../lib/application-types";
 import { normalizeJobText } from "../lib/job-text";
+import { normalizedListingUrl } from "../lib/listing-url";
 import { importanceForTerms } from "./plan-importance";
 
 export type Plan = {
@@ -658,6 +659,35 @@ export class DesktopStore {
         ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(id);
     });
     return this.getPlan(id)!;
+  }
+
+  async applyPlan(id: string, expectedUpdatedAt: string): Promise<{ application: Application; created: boolean }> {
+    const result = await this.mutate((db) => {
+      const row = db.prepare("SELECT * FROM plans WHERE id = ?").get(id) as Row | undefined;
+      if (!row) throw new Error("Plan not found.");
+      const plan = mapPlan(row);
+      if (plan.updatedAt !== expectedUpdatedAt) throw new Error("This plan changed while saving. Reopen it and try again.");
+      // Check inside the write queue so retries and concurrent clicks cannot create duplicates.
+      const listing = normalizedListingUrl(plan.listingUrl);
+      const existing = (db.prepare("SELECT id, listing_url FROM applications").all() as Row[])
+        .find((item) => normalizedListingUrl(String(item.listing_url)) === listing);
+      if (existing) return { id: String(existing.id), created: false };
+      const applicationId = randomUUID();
+      const now = new Date();
+      const appliedDate = new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+      const description = plan.description || plan.snapshotText;
+      db.prepare(`INSERT INTO applications (id, company, title, team, locations, listing_url,
+        job_description, notes, snapshot_text, snapshot_captured_at, snapshot_source, applied_date,
+        match_strength, match_notes, match_analyzed_at, resume_id, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        applicationId, plan.company, plan.title, plan.team, plan.locations, plan.listingUrl,
+        description, notesWithListing(description, plan.snapshotText), plan.snapshotText, plan.snapshotCapturedAt,
+        plan.snapshotSource, appliedDate, plan.matchStrength, plan.matchNotes, plan.matchAnalyzedAt,
+        plan.resumeId || null, "Applied", now.toISOString(), now.toISOString());
+      // Keep the Plan and its keywords, themes, importance values and overview intact.
+      return { id: applicationId, created: true };
+    });
+    return { application: this.findApplication(result.id)!, created: result.created };
   }
 
   async deletePlan(id: string) {

@@ -24,6 +24,7 @@ import {
 } from "../../lib/application-types";
 import type { JobDetails } from "../../lib/job-details";
 import { parseLocations } from "../../lib/locations";
+import { normalizedListingUrl } from "../../lib/listing-url";
 import { pasteJobDescription } from "../../lib/job-text-paste";
 import LocationEditor from "./LocationEditor";
 import { useAnalysisFlow } from "./AnalysisFlow";
@@ -99,19 +100,6 @@ function matchTone(score: number) {
   return "low";
 }
 
-function normalizedListingUrl(value: string): string {
-  try {
-    const url = new URL(value.trim());
-    url.hash = "";
-    for (const key of [...url.searchParams.keys()]) {
-      if (/^(utm_.*|source|ref|referrer|gh_src)$/i.test(key)) url.searchParams.delete(key);
-    }
-    url.searchParams.sort();
-    url.pathname = url.pathname.replace(/\/$/, "");
-    return url.toString().replace(/\/$/, "");
-  } catch { return value.trim(); }
-}
-
 function LocationSummary({ value, expanded, disclosureId, onToggle }: {
   value: string; expanded: boolean; disclosureId: string; onToggle: () => void;
 }) {
@@ -130,14 +118,14 @@ function LocationSummary({ value, expanded, disclosureId, onToggle }: {
   </span>;
 }
 
-export default function ApplicationDashboard() {
+export default function ApplicationDashboard({ initialSelection }: { initialSelection?: { id: string; notice: string } | null }) {
   const analysisFlow = useAnalysisFlow();
   const [applications, setApplications] = useState<Application[]>([]);
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState(initialSelection?.notice || "");
   const [offerCelebration, setOfferCelebration] = useState(0);
   const finishOfferCelebration = useCallback(() => setOfferCelebration(0), []);
   const [query, setQuery] = useState("");
@@ -154,8 +142,11 @@ export default function ApplicationDashboard() {
   const { jobs, snapshot: analysisJobs } = useBackgroundAnalysis();
   const analyzingIds = new Set(analysisJobs.filter((job) => job.kind === "match" && jobRunning(job)).map((job) => job.id));
   const cancellingIds = new Set(analysisJobs.filter((job) => job.kind === "match" && (job.cancelling || job.stage === "saving")).map((job) => job.id));
-  const handledResults = useRef(new Set<string>());
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Fresh database results already include these jobs. Keep the transfer notice
+  // instead of replaying unrelated messages from earlier visits to Applications.
+  const handledResults = useRef(new Set<string>(initialSelection
+    ? analysisJobs.filter((job) => job.kind === "match" && !jobRunning(job)).map((job) => job.requestId) : []));
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelection?.id || null);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const inspectorId = useId();
   const [compact, setCompact] = useState(false);
@@ -281,6 +272,13 @@ export default function ApplicationDashboard() {
     const timer = window.setTimeout(() => void loadData(), 0);
     return () => window.clearTimeout(timer);
   }, [loadData]);
+
+  useEffect(() => {
+    if (loading || !initialSelection) return;
+    const row = layoutRef.current?.querySelector<HTMLButtonElement>(".application-row.selected .application-row-select");
+    row?.focus({ preventScroll: true });
+    row?.scrollIntoView({ block: "nearest" });
+  }, [loading, initialSelection]);
 
   const stats = useMemo(() => {
     const weekStart = new Date();

@@ -86,6 +86,72 @@ test("saved escaped listings display cleanly without rewriting archived data or 
   }
 });
 
+test("moving a Plan to Applied preserves its data and analysis, prevents duplicates, and survives reopen", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "zebby-apply-plan-test-"));
+  const file = path.join(root, "applications.sqlite");
+  let store;
+  try {
+    const bundle = path.join(root, "store.mjs");
+    await build({ entryPoints: [path.resolve("desktop/store.ts")], outfile: bundle,
+      bundle: true, platform: "node", format: "esm", target: "node22" });
+    const { DesktopStore } = await import(pathToFileURL(bundle).href);
+    store = new DesktopStore(path.join(root, "profile"));
+    await store.create(file);
+    const resume = await store.addResume("My CV.pdf", "application/pdf", new Uint8Array([37, 80, 68, 70]));
+    const plan = await store.savePlan({ listingUrl: "https://example.org/roles/pm?job=123&utm_source=email",
+      company: "Example", title: "Senior Product Manager", team: "Growth", locations: "Seattle, WA; Remote",
+      description: "Responsibilities\n• Lead discovery\n• Shape strategy", snapshotText: "Original posting\n• Lead discovery",
+      snapshotSource: "page", currentOverview: "I lead product discovery.", resumeId: resume.id,
+      keywords: ["Discovery"], themes: ["Shape strategy"], overview: "" });
+    const analyzed = await store.savePlanAnalysis(plan.id, plan.updatedAt, plan.keywords, plan.themes,
+      "I lead discovery and product strategy.", "Highlighted strategy.", 84, [92], [88], "Discovery is well supported; analytics is less clear.");
+    const [first, retry] = await Promise.all([store.applyPlan(plan.id, analyzed.updatedAt), store.applyPlan(plan.id, analyzed.updatedAt)]);
+    assert.equal(first.created, true);
+    assert.equal(retry.created, false);
+    assert.equal(first.application.id, retry.application.id);
+    assert.equal(store.listApplications().length, 1);
+    const application = first.application;
+    for (const key of ["company", "title", "team", "locations", "listingUrl", "snapshotText", "snapshotCapturedAt",
+      "snapshotSource", "resumeId", "matchStrength", "matchNotes", "matchAnalyzedAt"]) assert.deepEqual(application[key], analyzed[key], key);
+    assert.equal(application.jobDescription, analyzed.description);
+    assert.ok(application.notes.includes(analyzed.description));
+    assert.ok(application.notes.includes(analyzed.snapshotText));
+    assert.equal(application.resumeName, resume.filename);
+    assert.equal(application.status, "Applied");
+    const now = new Date();
+    assert.equal(application.appliedDate, new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10));
+    assert.deepEqual(store.getPlan(plan.id), analyzed, "Keep keywords, themes, importance, overview and source Plan intact.");
+    store.close();
+    await store.open(file);
+    assert.deepEqual(store.listApplications()[0], application);
+    assert.deepEqual([...store.getResume(resume.id).data], [37, 80, 68, 70]);
+
+    const withNotes = await store.saveApplicationNotes(application.id, "Recruiter notes to keep.");
+    const rejected = await store.saveApplication({ ...withNotes, status: "Rejected", appliedDate: "2026-01-12" }, application.id);
+    const duplicatePlan = await store.savePlan({ ...analyzed, listingUrl: "https://example.org/roles/pm/?job=123&utm_campaign=test#details" });
+    assert.deepEqual(await store.applyPlan(duplicatePlan.id, duplicatePlan.updatedAt), { application: rejected, created: false },
+      "A duplicate URL must open the existing record without overwriting status, notes, date or score.");
+    await assert.rejects(store.applyPlan(plan.id, "stale-version"), /changed while saving/);
+    assert.equal(store.listApplications().length, 1);
+
+    const zeroPlan = await store.savePlan({ ...analyzed, listingUrl: "https://example.org/roles/zero" });
+    const zeroScore = await store.savePlanAnalysis(zeroPlan.id, zeroPlan.updatedAt, [], [],
+      zeroPlan.currentOverview, "No evidence to add.", 0, [], [], "The resume does not show the required experience.");
+    assert.equal((await store.applyPlan(zeroScore.id, zeroScore.updatedAt)).application.matchStrength, 0);
+    const changed = await store.savePlan({ ...analyzed, listingUrl: "https://example.org/roles/changed", resumeId: "" }, plan.id);
+    const unscored = (await store.applyPlan(changed.id, changed.updatedAt)).application;
+    assert.equal(unscored.matchStrength, null, "Changed sources must not reuse a stale match.");
+    assert.equal(unscored.matchNotes, "");
+    assert.equal(unscored.matchAnalyzedAt, "");
+    assert.equal(unscored.resumeId, "", "A resume and analysis are optional.");
+    assert.equal(store.listResumes().length, 1, "Transferring a Plan reuses the resume rather than duplicating the file.");
+  } finally {
+    store?.close();
+    if (!path.resolve(root).startsWith(path.resolve(tmpdir()) + path.sep)) throw new Error("Unexpected test directory");
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("desktop SQLite file stores applications, resumes, and plans across reopen", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "pm-tracker-desktop-test-"));
   const bundle = path.join(root, "store.mjs");

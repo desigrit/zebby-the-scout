@@ -16,7 +16,7 @@ Windows x64 and ARM64 · Apple Silicon Mac · No signup
 
 ## From a listing to an application
 
-- **Plan:** save a posting, add your CV and overview, then review ATS keywords, resume themes, a match score and suggested wording. Keep several roles in progress.
+- **Plan:** save a posting, add your CV and overview, then review ATS keywords, resume themes, a match score and suggested wording. Move a plan to Applied with its details and existing score, without another analysis.
 - **Applications:** track companies, roles, dates, locations, resumes, notes and statuses. Filter the list, see daily activity by status, and celebrate an offer with Zebby confetti.
 - **Saved listings:** keep descriptions for later, even after the posting closes. Paste a copy when a site blocks extraction.
 - **Your files:** keep plans, applications and uploaded resumes together in a SQLite file you choose.
