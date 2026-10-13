@@ -46,14 +46,6 @@ Choose your provider, model and supported thinking level. Keys stay on this comp
 
 </details>
 
-### Optional Zebby credits
-
-Choose a pack and pay in your browser. Choose your model and thinking level in Settings, then click Analyze to begin. Zebby charges for actual model usage.
-
-![Zebby's credit purchase dialog with the $5 suggested start and illustrative Sol High and Luna High analysis counts](docs/screenshots/credits.png?v=2.3.8)
-
-Save your recovery code to restore credits later, or connect another computer to the same wallet.
-
 ## Keep your data with you
 
 Put your SQLite file in a cloud synced folder if you use more than one PC. **Quit Zebby and let syncing finish before switching computers.** Cloud drives cannot merge simultaneous database edits.
