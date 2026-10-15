@@ -10,7 +10,7 @@ I wanted a simple place to prepare for jobs and remember which CV went where. I 
 
 Windows x64 and ARM64 · Apple Silicon Mac · No signup
 
-![Zebby Applications, showing varied daily activity, stacked application statuses and the selected role's details](docs/screenshots/applications.png?v=2.3.8)
+[![Zebby's Plan and Applications screens, showing resume matching, ATS keywords and application tracking](docs/screenshots/zebby-collage.jpg)](docs/screenshots/zebby-collage.png)
 
 <sub>Current Zebby screens with sample applications and analysis results.</sub>
 
