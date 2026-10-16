@@ -141,8 +141,8 @@ try {
   await page.getByRole("button", { name: "Remove Bellevue, WA" }).waitFor();
   await page.getByRole("button", { name: "Remove Bellevue, WA" }).click();
   await page.getByRole("button", { name: "Add location", exact: true }).click();
-  await page.getByRole("textbox", { name: "New location" }).fill("Redmond, WA");
-  await page.getByRole("textbox", { name: "New location" }).press("Enter");
+  await page.getByRole("combobox", { name: "New location" }).fill("Redmond, WA");
+  await page.getByRole("combobox", { name: "New location" }).press("Enter");
   await page.locator("textarea.application-description").fill("");
   await page.evaluate(() => {
     const clipboard = new DataTransfer();

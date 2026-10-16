@@ -182,6 +182,11 @@ a { color: inherit; text-underline-offset: 3px; }
 .location-editor .location-add:hover { background: var(--canvas); }
 .location-add-input { display: inline-flex; align-items: center; gap: 3px; flex: 1; min-width: min(180px, 100%); }
 .field .location-add-input input { min-height: 29px; height: 29px; flex: 1; padding: 4px 7px; font-size: 12px; }
+.location-recents { position: fixed; z-index: 40; display: flex; flex-direction: column; overflow: hidden; padding: 5px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); color: var(--ink); box-shadow: 0 5px 20px rgb(0 0 0 / 12%); }
+.location-recents-heading { flex: none; padding: 7px 9px 6px; color: var(--ink-soft); font-size: 11px; font-weight: 600; }
+.location-recents-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.location-recent-option { display: block; width: 100%; padding: 8px 9px; border: 0; border-radius: 5px; background: transparent; color: inherit; font: inherit; font-size: 12px; line-height: 1.4; text-align: left; overflow-wrap: anywhere; cursor: default; }
+.location-recent-option[aria-selected="true"] { background: var(--accent-wash); color: var(--accent); }
 .field input, .field select, .field textarea {
   width: 100%;
   min-height: 43px;

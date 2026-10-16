@@ -9,6 +9,7 @@ import { MAX_APPLICATION_NOTES_CHARS } from "../lib/application-types";
 import type { Application, ApplicationInput, Resume } from "../lib/application-types";
 import { normalizeJobText } from "../lib/job-text";
 import { normalizedListingUrl } from "../lib/listing-url";
+import { parseLocations } from "../lib/locations";
 import { importanceForTerms } from "./plan-importance";
 
 export type Plan = {
@@ -446,6 +447,21 @@ export class DesktopStore {
   listApplications(): Application[] {
     return (this.requireDb().prepare(`SELECT a.*, r.filename AS resume_name FROM applications a
       LEFT JOIN resumes r ON r.id = a.resume_id ORDER BY a.applied_date DESC, a.created_at DESC`).all() as Row[]).map(mapApplication);
+  }
+
+  listRecentLocations(): string[] {
+    const locations = new Map<string, string>();
+    const rows = this.requireDb().prepare(`SELECT locations, updated_at, id FROM applications WHERE locations <> ''
+      UNION ALL SELECT locations, updated_at, id FROM plans WHERE locations <> ''
+      ORDER BY updated_at DESC, id ASC`).iterate();
+    for (const row of rows) {
+      for (const location of parseLocations(String(row.locations))) {
+        const key = location.toLocaleLowerCase();
+        if (!locations.has(key)) locations.set(key, location);
+        if (locations.size === 40) return [...locations.values()];
+      }
+    }
+    return [...locations.values()];
   }
 
   private findApplication(id: string): Application | null {

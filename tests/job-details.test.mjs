@@ -10,6 +10,7 @@ import {
   mergeJobDetails,
 } from "../lib/job-details.ts";
 import { descriptionFromHtml, descriptionText, formattedJobText } from "../lib/job-fetch.ts";
+import { parseLocations, serializeLocations } from "../lib/locations.ts";
 
 test("structured JobPosting keeps employer, team, and multiple locations", () => {
   const details = detailsFromStructuredData({
@@ -88,6 +89,91 @@ test("Greenhouse reads the public company and a department custom field", () => 
   assert.deepEqual(details, {
     company: "Northstar", title: "Group Product Manager", team: "Platform", locations: "London",
   });
+});
+
+test("Anthropic's Greenhouse billing role separates the title, team, and advertised cities", async () => {
+  // Public metadata from /anthropic/jobs/5434361008. The description is a short
+  // synthetic fixture rather than a copy of the full third-party job posting.
+  const details = detailsFromGreenhouse({
+    title: "Product Manager, Billing",
+    company_name: "Anthropic",
+    departments: [{ name: "Product Management, Support, & Operations" }],
+    location: { name: "San Francisco, CA | New York City, NY" },
+    offices: [{ name: "San Francisco, CA", location: "San Francisco, California, United States" }],
+    metadata: [{ name: "Location Type", value: "On-Site" }],
+    content: "<p>Location-based hybrid policy: Work from an office part of the week.</p>",
+  });
+  const expected = {
+    company: "Anthropic", title: "Product Manager", team: "Billing",
+    locations: "San Francisco, CA; New York City, NY",
+  };
+  assert.deepEqual(details, expected);
+
+  const html = await detailsFromHtml(`<title>Job Application for Product Manager, Billing at Anthropic</title>
+    <div class="job__title"><h1>Product Manager, Billing</h1>
+      <div class="job__location"><svg></svg><div>San Francisco, CA | New York City, NY</div></div>
+    </div><p>Location-based hybrid policy: Work from an office part of the week.</p>`);
+  assert.deepEqual(html, { ...expected, company: "" });
+  assert.deepEqual(mergeJobDetails(details, html), expected);
+  assert.deepEqual(parseLocations(details.locations), ["San Francisco, CA", "New York City, NY"]);
+});
+
+test("Greenhouse distinguishes a specific team from a broad department", () => {
+  assert.equal(detailsFromGreenhouse({
+    title: "Senior Product Manager, Billing",
+    metadata: [{ name: "Department", value: "Product Management" }],
+  }).team, "Billing");
+  const explicitTeam = detailsFromGreenhouse({
+    title: "Product Manager, Billing",
+    metadata: [{ name: "Department", value: "Product Management" }, { name: "Team", value: "Monetization" }],
+  });
+  assert.equal(explicitTeam.team, "Monetization");
+  assert.equal(explicitTeam.title, "Product Manager, Billing");
+  assert.equal(detailsFromGreenhouse({
+    title: "Product Manager",
+    departments: [{ name: "Product Management" }],
+    content: "<p>Team: Billing</p>",
+  }).team, "Billing");
+  assert.equal(detailsFromGreenhouse({
+    title: "Product Manager",
+    departments: [{ name: "Product Management" }],
+  }).team, "Product Management");
+});
+
+test("Greenhouse keeps advertised locations ahead of office metadata, with offices as fallback", () => {
+  const offices = [{ name: "San Francisco, CA" }, { name: "New York City, NY" }];
+  assert.equal(detailsFromGreenhouse({ location: { name: "Remote (United States)" }, offices }).locations,
+    "Remote (United States)");
+  assert.equal(detailsFromGreenhouse({ offices }).locations, "San Francisco, CA; New York City, NY");
+});
+
+test("a geographic or workplace title suffix does not replace a Greenhouse department", () => {
+  for (const suffix of ["San Francisco", "Remote", "Hybrid"]) {
+    const details = detailsFromGreenhouse({
+      title: `Product Manager, ${suffix}`,
+      departments: [{ name: "Product Management" }],
+      location: { name: "San Francisco, CA | New York City, NY" },
+    });
+    assert.equal(details.title, `Product Manager, ${suffix}`);
+    assert.equal(details.team, "Product Management");
+  }
+});
+
+test("location separators produce separate chips without splitting city and region commas", () => {
+  const value = "San Francisco, CA | New York City, NY; san francisco, ca\nLondon, United Kingdom | Remote";
+  const expected = ["San Francisco, CA", "New York City, NY", "London, United Kingdom", "Remote"];
+  assert.deepEqual(parseLocations(value), expected);
+  assert.equal(serializeLocations([value]), expected.join("; "));
+  assert.equal(detailsFromStructuredData({
+    "@type": "JobPosting", jobLocation: "San Francisco, CA &#124; New York City, NY",
+  }).locations, "San Francisco, CA; New York City, NY");
+});
+
+test("hyphenated policy text is not mistaken for a location or team label", () => {
+  assert.deepEqual(detailsFromDescription("Location-based hybrid policy: Office attendance is required.\nTeam-based collaboration"),
+    { team: "", locations: "" });
+  assert.deepEqual(detailsFromDescription("Team - Billing\nLocation - San Francisco, CA | New York City, NY"),
+    { team: "Billing", locations: "San Francisco, CA; New York City, NY" });
 });
 
 test("Ashby selects the pasted job rather than another opening on the board", () => {

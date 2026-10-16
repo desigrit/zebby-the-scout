@@ -6,6 +6,7 @@ import path from "node:path";
 import { chromium } from "playwright-core";
 import { LOCAL_MODELS } from "../desktop/local-model-catalog.ts";
 import { importanceForTerms } from "../desktop/plan-importance.ts";
+import { parseLocations } from "../lib/locations.ts";
 
 // Checks the compiled renderer with synthetic data in an invisible browser.
 // It does not launch Electron, read settings, or open an application database.
@@ -194,7 +195,38 @@ try {
   async function assertLocationKeyboard(editor, label) {
     const add = editor.getByRole("button", { name: "Add location", exact: true });
     await add.click();
-    const input = editor.getByRole("textbox", { name: "New location", exact: true });
+    const input = editor.getByRole("combobox", { name: "New location", exact: true });
+    const recents = page.getByRole("listbox", { name: "Recents", exact: true });
+    await recents.waitFor();
+    const popupBounds = await page.locator(".location-recents").boundingBox();
+    const viewport = page.viewportSize();
+    assert.ok(popupBounds.x >= 0 && popupBounds.y >= 0 && popupBounds.x + popupBounds.width <= viewport.width &&
+      popupBounds.y + popupBounds.height <= viewport.height, `${label}: suggestions fit inside the window`);
+    for (const location of await editor.locator(".location-chip > span").allTextContents()) {
+      assert.equal(await recents.getByRole("option", { name: location, exact: true }).count(), 0, `${label}: chosen locations stay out of Recents`);
+    }
+    await captureSettings(`locations-${label.startsWith("Windows") ? "windows" : "mac"}.png`, false);
+    if (label.startsWith("Mac")) {
+      await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
+      await captureSettings("locations-mac-dark.png", false);
+      await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
+    }
+    const keyboardLocation = await recents.getByRole("option").first().innerText();
+    await input.fill(keyboardLocation.toLowerCase());
+    assert.equal(await recents.getByRole("option").count(), 1, `${label}: case-insensitive filtering`);
+    await input.press("ArrowDown"); await input.press("Enter");
+    assert.equal(await editor.locator(".location-chip").filter({ hasText: keyboardLocation }).count(), 1);
+    assert.equal(await add.evaluate((element) => document.activeElement === element), true);
+    await page.keyboard.press("Enter"); await recents.waitFor();
+    assert.equal(await recents.getByRole("option", { name: keyboardLocation, exact: true }).count(), 0);
+    const pointerLocation = await recents.getByRole("option").first().innerText();
+    await recents.getByRole("option", { name: pointerLocation, exact: true }).click();
+    assert.equal(await editor.locator(".location-chip").filter({ hasText: pointerLocation }).count(), 1);
+    assert.equal(await add.evaluate((element) => document.activeElement === element), true);
+    for (const location of [keyboardLocation, pointerLocation]) {
+      await editor.getByRole("button", { name: `Remove ${location}`, exact: true }).click();
+    }
+    await add.click();
     for (const location of ["Portland, OR", "Austin, TX"]) {
       assert.equal(await input.evaluate((element) => document.activeElement === element), true, `${label}: input gets focus`);
       await input.fill(location); await input.press("Enter");
@@ -211,6 +243,9 @@ try {
     await editor.getByRole("button", { name: "Cancel adding location", exact: true }).click();
     assert.equal(await add.evaluate((element) => document.activeElement === element), true);
     for (const location of ["Portland, OR", "Austin, TX"]) await editor.getByRole("button", { name: `Remove ${location}`, exact: true }).click();
+    await add.click(); await recents.waitFor();
+    await input.press("Tab"); await page.keyboard.press("Tab");
+    assert.equal(await recents.count(), 0, `${label}: leaving the field dismisses suggestions`);
   }
   async function captureAnalysis(filename, docsFilename) {
     const viewport = page.viewportSize();
@@ -398,6 +433,8 @@ try {
     const method = route.request().method();
     let data;
     if (pathname === "/api/applications") data = { applications };
+    else if (pathname === "/api/locations/recent") data = { locations: parseLocations([...applications, ...plans]
+      .map((item) => item.locations).join("; ")) };
     else if (pathname === "/api/job-posting") data = { details: { company: "Example", title: "Product Manager", team: "", locations: "Remote" }, text: description };
     else if (pathname === "/api/resumes") data = { resumes: [resume] };
     else if (pathname === "/api/plans" && method === "GET") data = { plans, lastCurrentOverview };

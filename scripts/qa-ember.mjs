@@ -539,7 +539,7 @@ try {
   async function locationKeyboard(label) {
     const editor = page.locator(".location-editor"), add = editor.getByRole("button", { name: "Add location", exact: true });
     await add.click();
-    const input = editor.getByRole("textbox", { name: "New location", exact: true });
+    const input = editor.getByRole("combobox", { name: "New location", exact: true });
     for (const location of ["Portland, OR", "Austin, TX"]) {
       assert.equal(await input.evaluate((element) => document.activeElement === element), true);
       await input.fill(location); await input.press("Enter");

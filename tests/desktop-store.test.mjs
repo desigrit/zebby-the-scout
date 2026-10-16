@@ -8,6 +8,44 @@ import { DatabaseSync } from "node:sqlite";
 import { build } from "esbuild";
 import { escapeText } from "entities";
 
+test("recent locations combine saved plans and applications without writing or crossing databases", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "zebby-recent-locations-test-"));
+  const file = path.join(root, "applications.sqlite");
+  let store;
+  try {
+    const bundle = path.join(root, "store.mjs");
+    await build({ entryPoints: [path.resolve("desktop/store.ts")], outfile: bundle,
+      bundle: true, platform: "node", format: "esm", target: "node22" });
+    const { DesktopStore } = await import(pathToFileURL(bundle).href);
+    store = new DesktopStore(path.join(root, "profile"));
+    await store.create(file);
+    assert.deepEqual(store.listRecentLocations(), []);
+    const application = await store.saveApplication({ company: "Example", locations: "Seattle, WA | Remote; Toronto, ON" });
+    const plan = await store.savePlan({ listingUrl: "https://example.org/recent-locations", company: "Example", title: "Product Manager", team: "",
+      locations: "London, UK; seattle, wa; Remote", description: "", keywords: [], themes: [], overview: "", currentOverview: "" });
+    store.close();
+    const fixture = new DatabaseSync(file);
+    fixture.prepare("UPDATE applications SET updated_at = ? WHERE id = ?").run("2026-10-14T10:00:00Z", application.id);
+    fixture.prepare("UPDATE plans SET updated_at = ? WHERE id = ?").run("2026-10-15T10:00:00Z", plan.id);
+    fixture.close();
+    const beforeRead = await readFile(file);
+    await store.open(file);
+    assert.deepEqual(store.listRecentLocations(), ["London, UK", "seattle, wa", "Remote", "Toronto, ON"]);
+    assert.deepEqual(await readFile(file), beforeRead, "Reading Recents must not rewrite the source database");
+    await store.create(path.join(root, "other.sqlite"));
+    assert.deepEqual(store.listRecentLocations(), [], "Another database must not inherit location history");
+    for (let index = 0; index < 3; index++) {
+      await store.saveApplication({ locations: Array.from({ length: 20 }, (_, location) => `City ${index * 20 + location}`).join("; ") });
+    }
+    assert.equal(store.listRecentLocations().length, 40, "The suggestion list is bounded");
+    await store.open(file);
+    assert.deepEqual(store.listRecentLocations(), ["London, UK", "seattle, wa", "Remote", "Toronto, ON"], "Recents survive reopening");
+  } finally {
+    store?.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("saved escaped listings display cleanly without rewriting archived data or resetting scores", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "zebby-job-encoding-test-"));
   const file = path.join(root, "applications.sqlite");

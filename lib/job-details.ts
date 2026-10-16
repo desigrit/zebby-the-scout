@@ -1,5 +1,6 @@
 import { load } from "cheerio";
 import { decodeJobEntities, normalizeJobText } from "./job-text.ts";
+import { parseLocations, serializeLocations } from "./locations.ts";
 
 export type JobDetails = {
   company: string;
@@ -29,15 +30,8 @@ function named(value: unknown): string {
 }
 
 function joinedLocations(values: unknown[]): string {
-  const unique = new Set<string>();
-  const parts: string[] = [];
-  for (const value of values) {
-    const location = text(value);
-    if (!location || unique.has(location.toLowerCase())) continue;
-    unique.add(location.toLowerCase());
-    parts.push(location);
-  }
-  return parts.join("; ").slice(0, 500);
+  return serializeLocations(values.flatMap((value) => typeof value === "string"
+    ? parseLocations(decodeJobEntities(value)).map((location) => text(location)) : []));
 }
 
 export function detailsFromDescription(value: unknown): Pick<JobDetails, "team" | "locations"> {
@@ -49,12 +43,12 @@ export function detailsFromDescription(value: unknown): Pick<JobDetails, "team" 
   let locations = "";
   for (const line of lines) {
     if (!team) {
-      const match = line.match(/^(?:Team|Department|Business Unit)\s*[:\-]\s*(.{2,80})$/i);
+      const match = line.match(/^(?:Team|Department|Business Unit)(?:\s*:\s*|\s+-\s+)(.{2,80})$/i);
       if (match && !/[.!?]/.test(match[1])) team = text(match[1], 160);
     }
     if (!locations) {
-      const match = line.match(/^(?:Location|Locations|Office Location)\s*[:\-]\s*(.{2,200})$/i);
-      if (match) locations = text(match[1], 500);
+      const match = line.match(/^(?:Location|Locations|Office Location)(?:\s*:\s*|\s+-\s+)(.{2,200})$/i);
+      if (match) locations = joinedLocations([match[1]]);
     }
     if (team && locations) break;
   }
@@ -79,7 +73,7 @@ export function mergeJobDetails(primary: JobDetails, fallback: JobDetails): JobD
     company: primary.company || fallback.company,
     title: primary.title || fallback.title,
     team: primary.team || fallback.team,
-    locations: primary.locations || fallback.locations,
+    locations: joinedLocations([primary.locations || fallback.locations]),
   };
   return separateTitleAndTeam(merged);
 }
@@ -89,6 +83,8 @@ export function separateTitleAndTeam(details: JobDetails): JobDetails {
   if (!match) return details;
   const suffix = match[2].trim();
   if (/^(?:remote|hybrid|onsite|on-site|united states|usa|us|canada|uk|[a-z .]+,\s*[a-z]{2})$/i.test(suffix)) return details;
+  if (parseLocations(details.locations).some((location) =>
+    location.toLowerCase() === suffix.toLowerCase() || location.split(",")[0].trim().toLowerCase() === suffix.toLowerCase())) return details;
   if (details.team && details.team.toLowerCase() !== suffix.toLowerCase()) return details;
   return { ...details, title: match[1].trim(), team: details.team || suffix };
 }
@@ -152,18 +148,24 @@ export function detailsFromGreenhouse(value: unknown): JobDetails {
   const posting = record(value);
   const fromDescription = detailsFromDescription(posting.content);
   const metadata = Array.isArray(posting.metadata) ? posting.metadata.map(record) : [];
-  const teamField = metadata.find((field) => /^(team|department)$/i.test(text(field.name)));
+  const teamField = metadata.find((field) => /^team$/i.test(text(field.name)));
+  const departmentField = metadata.find((field) => /^department$/i.test(text(field.name)));
   const departments = Array.isArray(posting.departments) ? posting.departments.map(named) : [];
   const offices = Array.isArray(posting.offices)
     ? posting.offices.map((office) => text(record(office).location) || named(office))
     : [];
-  const locations = offices.filter(Boolean).length > 1 ? offices : [named(posting.location)];
-  return {
+  // The advertised location can include offices missing from the board's office
+  // metadata, or specify Remote despite the company having physical offices.
+  const advertisedLocation = named(posting.location);
+  const details = separateTitleAndTeam({
     company: text(posting.company_name, 120),
     title: text(posting.title, 160),
-    team: (text(teamField?.value) || departments[0] || fromDescription.team).slice(0, 160),
-    locations: joinedLocations(locations) || fromDescription.locations,
-  };
+    team: text(teamField?.value, 160),
+    locations: joinedLocations(advertisedLocation ? [advertisedLocation] : offices) || fromDescription.locations,
+  });
+  // A department is often a broad recruiting category. Use the role-specific
+  // title suffix first, while preserving an explicit Team custom field.
+  return { ...details, team: (details.team || fromDescription.team || text(departmentField?.value) || departments[0] || "").slice(0, 160) };
 }
 
 export function detailsFromAshby(value: unknown, listingUrl: URL): JobDetails {
@@ -229,14 +231,17 @@ export async function detailsFromHtml(html: string): Promise<JobDetails> {
   const pick = (...keys: string[]) => keys.map((key) => meta.get(key)).find(Boolean) || "";
   const siteName = text(pick("job:company", "company", "og:site_name", "application-name"), 120);
   const genericSites = /^(greenhouse|lever|ashby|linkedin|indeed|workday)$/i;
-  const pageHeading = text(pick("job:title", "og:title", "twitter:title") || pageTitle, 160);
+  const headerTitle = text($(".job__title h1, #header .app-title").first().text(), 160);
+  const headerLocations = $(".job__title .job__location, #header .location").toArray()
+    .map((element) => $(element).text());
+  const pageHeading = text(pick("job:title") || headerTitle || pick("og:title", "twitter:title") || pageTitle, 160);
   const genericHeading = /^(?:jobs?|careers?|open (?:roles|positions|jobs)|job openings|join our team|page not found)(?:\s*(?:[|:\-]|at)\s*.*)?$/i;
   const fromDescription = detailsFromDescription(html);
   const fallback: JobDetails = {
     company: genericSites.test(siteName) ? "" : siteName,
     title: genericHeading.test(pageHeading) ? "" : pageHeading,
     team: text(pick("job:team", "team", "job:department", "department"), 160) || fromDescription.team,
-    locations: text(pick("job:location", "job_location", "location"), 500) || fromDescription.locations,
+    locations: joinedLocations([pick("job:location", "job_location", "location")]) || joinedLocations(headerLocations) || fromDescription.locations,
   };
   return mergeJobDetails(structured, fallback);
 }

@@ -403,6 +403,9 @@ async function handleApi(request: Request, pathname: string): Promise<Response> 
   activeApiRequests++;
   if (method !== "GET") logEvent(`Request started (${method} ${pathname})`);
   try {
+    if (pathname === "/api/locations/recent" && method === "GET") {
+      return Response.json({ locations: store.listRecentLocations() });
+    }
     if (pathname === "/api/applications") {
       if (method === "GET") return Response.json({ applications: store.listApplications() });
       if (method === "POST") return Response.json({ application: await store.saveApplication(
