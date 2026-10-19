@@ -67,6 +67,12 @@ Zebby checks for updates and offers **Restart to update** when a verified downlo
 
 </details>
 
+## Android preview
+
+A native Android companion is being developed in this repository, using Kotlin and Jetpack Compose. It includes Plan, Applications, online analysis and explicit database transfer. Models that run directly on the phone come later.
+
+[Android setup, build and sync guide](android/README.md)
+
 ## Under the stripes
 
 Electron, React, TypeScript, SQLite and a native inference engine.
