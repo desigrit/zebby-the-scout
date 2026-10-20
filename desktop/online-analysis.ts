@@ -1,15 +1,19 @@
 import { onlineModel, outputLimit, validateOnlineThinking, type AnalysisKind, type TokenUsage } from "../shared/online-models.ts";
 import { anthropicSchema, providerFailure, validStructuredResult } from "./online-response.ts";
+import { openAIAnalysisInput } from "./openai-request.ts";
 type Content = { type: string; text?: string };
-type ProviderPayload = { status?: string; stop_reason?: string; output?: { content?: Content[] }[]; content?: Content[];
+type ProviderPayload = { status?: string; stop_reason?: string; incomplete_details?: { reason?: string }; output?: { content?: Content[] }[]; content?: Content[];
   usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
     cache_read_input_tokens?: number; cache_creation_input_tokens?: number;
     cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number } } };
 
 export async function onlineAnalysis(options: { model: string; key: string; instructions: string; input: unknown;
-  name: string; schema: Record<string, unknown>; kind: AnalysisKind; thinkingLevel?: string; signal?: AbortSignal; fetcher?: typeof fetch; billingOwner?: "user" | "zebby" }) {
+  name: string; schema: Record<string, unknown>; kind: AnalysisKind; thinkingLevel?: string; signal?: AbortSignal; fetcher?: typeof fetch; billingOwner?: "user" | "zebby";
+  maxOutputTokens?: number }) {
   const model = onlineModel(options.model);
   const thinkingLevel = validateOnlineThinking(model, options.thinkingLevel);
+  const maxOutputTokens = options.maxOutputTokens ?? outputLimit(options.kind, thinkingLevel);
+  if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens <= 0) throw new Error("Invalid analysis output budget.");
   if (!options.key) throw new Error(`Add an ${model.provider === "openai" ? "OpenAI" : "Anthropic"} API key in Settings.`);
   const send = options.fetcher || fetch;
   const deadline = ["high", "xhigh", "max"].includes(thinkingLevel) ? 480000 : 180000;
@@ -22,12 +26,9 @@ export async function onlineAnalysis(options: { model: string; key: string; inst
     method: "POST", signal, headers: isOpenAI ? { "Content-Type": "application/json", Authorization: `Bearer ${options.key}` }
       : { "Content-Type": "application/json", "x-api-key": options.key, "anthropic-version": "2023-06-01" },
     body: JSON.stringify(isOpenAI ? {
-      model: model.id, reasoning: { effort: thinkingLevel === "off" ? "none" : thinkingLevel }, store: false,
-      max_output_tokens: outputLimit(options.kind, thinkingLevel),
-      instructions: options.instructions, input: Array.isArray(options.input) ? options.input : JSON.stringify(options.input),
-      text: { format: { type: "json_schema", name: options.name, strict: true, schema: options.schema } },
+      ...openAIAnalysisInput(options), store: false, max_output_tokens: maxOutputTokens,
     } : {
-      model: model.id, max_tokens: outputLimit(options.kind, thinkingLevel), system: options.instructions,
+      model: model.id, max_tokens: maxOutputTokens, system: options.instructions,
       messages: [{ role: "user", content: JSON.stringify(options.input) }],
       thinking: haiku ? thinkingLevel === "on" ? { type: "enabled", budget_tokens: 4096 } : { type: "disabled" } : { type: "adaptive" },
       output_config: { ...(!haiku ? { effort: thinkingLevel } : {}), format: { type: "json_schema", schema: anthropicSchema(options.schema) } },
@@ -48,6 +49,9 @@ export async function onlineAnalysis(options: { model: string; key: string; inst
   if (!response.ok) throw providerFailure(provider, model.id, thinkingLevel, response, payload, options.billingOwner);
   if (!payload || typeof payload !== "object") throw new Error(`${provider} returned an unreadable response. Try again.`);
   if (isOpenAI && payload.status !== "completed" || !isOpenAI && payload.stop_reason !== "end_turn") {
+    if (options.billingOwner === "zebby" && (payload.incomplete_details?.reason === "max_output_tokens" || payload.stop_reason === "max_tokens")) {
+      throw new Error("The model reached this task's response limit before finishing. No credits were charged. Try again or use a shorter job description.");
+    }
     throw new Error("The model did not finish its response. No result was saved.");
   }
   const text = isOpenAI ? (payload.output || []).flatMap((item) => item.content || [])

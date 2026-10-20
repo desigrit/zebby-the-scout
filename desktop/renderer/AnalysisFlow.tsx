@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, Check, ChevronRight, Coins, Download, ExternalLink, KeyRound, LoaderCircle, Server, X } from "lucide-react";
 import type { DesktopState } from "../bridge";
-import { CREDIT_PACKS, CREDIT_ESTIMATE_MODELS, CREDIT_ESTIMATE_DESCRIPTION, estimatedAnalyses, formatCredits, onlineModel, quoteNeedsCredits, type AnalysisProvider, type AnalysisSource } from "../../shared/online-models";
+import { ASTRA_MODEL, ASTRA_PACK_MESSAGE, CREDIT_PACKS, CREDIT_ESTIMATE_MODELS, CREDIT_ESTIMATE_DESCRIPTION, creditReservationMessage, estimatedAnalyses, formatCredits, onlineModel, quoteNeedsCredits, type AnalysisProvider, type AnalysisSource } from "../../shared/online-models";
 import CreditAccessForm from "./CreditAccessForm";
 import { ErrorBanner } from "./WorkspaceFeedback";
 import { onlineThinkingCapability, selectedThinking, thinkingKey, thinkingLabel } from "../../shared/thinking";
@@ -9,7 +9,7 @@ import { creditUsage } from "../../shared/credit-usage";
 import { AnalysisSettings, providerReady } from "./AnalysisSettings";
 type Authorization = { quoteId?: string };
 type Flow = { prepare: (source: AnalysisSource, signal: AbortSignal) => Promise<Authorization | null>; canAutoAnalyze: () => boolean;
-  openCredits: () => void; openSettings: () => void; state: DesktopState; updateState: (state: DesktopState) => void };
+  openCredits: (pack?: "regular") => void; openSettings: () => void; state: DesktopState; updateState: (state: DesktopState) => void };
 const AnalysisContext = createContext<Flow | null>(null);
 export function useAnalysisFlow() { const flow = useContext(AnalysisContext); if (!flow) throw new Error("Analysis setup is unavailable."); return flow; }
 type Scene = "choose" | "setup" | "buy" | "checkout" | "ready" | "restore" | "connect" | null;
@@ -63,19 +63,30 @@ export function AnalysisFlowProvider({ state, onState, children, onOpenSettings 
   async function prepare(source: AnalysisSource, signal: AbortSignal): Promise<Authorization | null> {
     signal.throwIfAborted();
     const next = current.current;
+    let creditProblem = "", needsAstraPack = false;
     if (next.analysisProvider !== "credits" && providerReady(next)) return {};
     // Each ready request prepares independently, without opening a modal or
     // changing the saved model. Quotes still bind the source and spending cap.
     if (next.analysisProvider === "credits" && next.credits.signedIn) {
       const refreshed = await window.desktop!.refreshCredits();
       signal.throwIfAborted(); updateState(refreshed);
-      const quote = await window.desktop!.quoteCreditAnalysis(source);
+      // Ask for recovery first: a previously paid result must remain recoverable
+      // even after refunds change this wallet's model access.
+      const quote = await window.desktop!.quoteCreditAnalysis(source).catch((cause) => {
+        if (cause instanceof Error && cause.message === ASTRA_PACK_MESSAGE) {
+          needsAstraPack = true; creditProblem = ASTRA_PACK_MESSAGE; return null;
+        }
+        throw cause;
+      });
       signal.throwIfAborted();
-      if (quote.pending) throw new Error("Your previous analysis is still running. Try again shortly.");
-      const wallet = current.current.credits.wallet;
-      if (!quoteNeedsCredits(quote, wallet ? wallet.balance - wallet.reserved : 0)) {
-        if (Date.parse(quote.expiresAt) <= Date.now()) throw new Error("The analysis estimate expired. Click Analyze to try again.");
-        return { quoteId: quote.id };
+      if (quote) {
+        if (quote.pending) throw new Error("Your previous analysis is still running. Try again shortly.");
+        const wallet = current.current.credits.wallet, available = wallet ? wallet.balance - wallet.reserved : 0;
+        if (!quoteNeedsCredits(quote, available)) {
+          if (Date.parse(quote.expiresAt) <= Date.now()) throw new Error("The analysis estimate expired. Click Analyze to try again.");
+          return { quoteId: quote.id };
+        }
+        creditProblem = creditReservationMessage(quote, available);
       }
     }
     if (pending.current || scene) return null;
@@ -88,9 +99,10 @@ export function AnalysisFlowProvider({ state, onState, children, onOpenSettings 
       setHasPending(true);
       if (next.analysisProvider === "credits") {
         show("buy");
+        if (needsAstraPack) setPack("regular");
         if (next.credits.signedIn) {
           retryAction.current = () => void action(async () => { updateState(await window.desktop!.refreshCredits()); close({}); });
-          setError("Add credits to continue this analysis.");
+          setError(creditProblem);
         }
       }
       else { setMethod("credits"); show("choose"); }
@@ -144,7 +156,7 @@ export function AnalysisFlowProvider({ state, onState, children, onOpenSettings 
     : scene === "restore" ? "Restore credits" : scene === "connect" ? "Connect this computer"
     : scene === "checkout" ? "Finish checkout in your browser" : scene === "ready" ? "Your credits are ready" : "";
   const flow: Flow = { prepare, canAutoAnalyze: () => current.current.analysisProvider !== "credits" && providerReady(current.current),
-    openCredits: () => { if (!pending.current) show("buy"); }, openSettings, state, updateState };
+    openCredits: (preferredPack) => { if (!pending.current) { if (preferredPack) setPack(preferredPack); show("buy"); } }, openSettings, state, updateState };
   return <AnalysisContext.Provider value={flow}>{children}
     <dialog ref={dialog} className={`analysis-dialog ${scene === "buy" ? "analysis-dialog-pricing" : ""}`} aria-labelledby="analysis-dialog-title"
       onCancel={(event) => { event.preventDefault(); if (!working) close(); }} onClose={() => { if (scene) close(); }}>
@@ -164,7 +176,7 @@ export function AnalysisFlowProvider({ state, onState, children, onOpenSettings 
               <item.icon size={24} aria-hidden="true" /><span><strong>{item.title}</strong><small>{item.description}</small></span>
               {method === item.id && <Check size={17} className="method-check" aria-hidden="true" />}</label>)}
           </fieldset></>}
-        {scene === "setup" && <AnalysisSettings state={state} onState={updateState} provider={method} openCredits={() => show("buy")} onPendingChange={setSetupPending} />}
+        {scene === "setup" && <AnalysisSettings state={state} onState={updateState} provider={method} openCredits={(preferredPack) => { if (preferredPack) setPack(preferredPack); show("buy"); }} onPendingChange={setSetupPending} />}
         {scene === "buy" && <>
           <p className="analysis-intro">Choose or change your model in Settings after purchase.</p>
           <fieldset className="credit-packs"><legend className="visually-hidden">Credit pack</legend>
@@ -172,13 +184,16 @@ export function AnalysisFlowProvider({ state, onState, children, onOpenSettings 
               <input type="radio" name="credit-pack" value={item.id} checked={pack === item.id} onChange={() => setPack(item.id)} />
               <span className="credit-pack-badge">{item.id === "starter" ? "Suggested start" : ""}</span>
               <strong className="credit-pack-price">${item.dollars}</strong><span className="credit-pack-count">{item.credits.toLocaleString()} credits</span>
+              <span className="credit-pack-access">{item.astra ? "Unlocks GPT-6 Astra" : "Sol and Luna"}</span>
               <span className="credit-pack-estimates">
                 {CREDIT_ESTIMATE_MODELS.map((model) => <small key={model}><span className="credit-estimate-count">About {estimatedAnalyses(item.credits, model).toLocaleString()} analyses</span><span className="credit-estimate-model">{onlineModel(model).name} (High)</span></small>)}
+                {item.astra && <small><span className="credit-estimate-count">About {estimatedAnalyses(item.credits, ASTRA_MODEL).toLocaleString()} analyses</span><span className="credit-estimate-model">GPT-6 Astra (High)</span></small>}
               </span>
             </label>)}
           </fieldset><p className="settings-help">Prices in USD. Actual usage varies by job, model and thinking level.</p>
           <details className="credit-estimate-help"><summary>How estimates work</summary><p>{CREDIT_ESTIMATE_DESCRIPTION}</p>
-            <p>Enough credits for the maximum usage are reserved when analysis starts. Actual usage is charged, and unused reserved credits return to your balance.</p></details>
+            <p>Zebby counts the full input and reserves a task-specific response allowance, including thinking. Your model and thinking level stay as selected. Only actual usage is charged.</p>
+            <p>Astra stays available after a qualifying purchase. You can top up with any pack. A fully refunded or disputed purchase does not qualify.</p></details>
           {!state.credits.signedIn && <div className="credit-recover-links"><span>Already have credits?</span>
             <button className="settings-link" type="button" onClick={() => show("restore")}>Restore credits</button>
             <button className="settings-link" type="button" onClick={() => show("connect")}>Connect this computer</button></div>}
@@ -225,7 +240,7 @@ export function SidebarCredits() {
   const usage = `${formatCredits(used)} used of ${formatCredits(total)}`;
   const label = `Buy credits. ${formatCredits(used)} of ${formatCredits(total)} credits used, ${percent} remaining.${state.credits.stale ? " Last saved usage." : ""}`;
   return <div className="sidebar-credits">
-    <button className="sidebar-credit-button" type="button" aria-label={label} aria-haspopup="dialog" title={label} onClick={openCredits}>
+    <button className="sidebar-credit-button" type="button" aria-label={label} aria-haspopup="dialog" title={label} onClick={() => openCredits()}>
       <span className="sidebar-credit-summary" aria-hidden="true"><span className="sidebar-credit-amount">{usage}</span>
         <span className="sidebar-credit-percent"><span className="sidebar-credit-divider"> · </span>{percent}<span className="sidebar-credit-remaining"> left</span></span></span>
       <span className="sidebar-credit-track" aria-hidden="true"><span style={{ width: `${percentRemaining}%` }} /></span>

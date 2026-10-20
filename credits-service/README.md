@@ -2,6 +2,31 @@
 
 Official Zebby builds connect to `https://zebby-credits.onrender.com`. Credits support GPT-6.1 Sol, GPT-6 Luna and GPT-6 Astra. Users can also bring their own OpenAI or Anthropic API key, use an Ollama server, or download a local model. Those methods do not need this service. Custom builds set the public `ZEBBY_CREDITS_SERVICE_URL` when building the desktop app. Wallet access requires OS secure storage.
 
+A $20, $50 or $100 purchase unlocks Astra for that wallet. Existing paid purchases qualify, and access travels with wallet restoration and device pairing. Spending credits does not remove access; users can subsequently top up with any pack. Fully refunded and disputed purchases do not qualify. The $5 pack supports Sol and Luna without an Astra unlock. Personal API keys have no pack restriction.
+
+## Counted budgets update
+
+Before deploying this update, run [20261020_counted_budgets.sql](migrations/20261020_counted_budgets.sql) in Supabase SQL Editor. It adds token-count/output-limit fields to quotes and derives Astra access from purchases. It preserves wallets, balances, ledger entries and saved results. Repeating it is safe. Then deploy the service and build the desktop app. Existing clients also receive the new server reservation policy, but require an app update for the new pricing labels and clearer balance errors.
+
+No Stripe product, environment-variable or API-key replacement is required. The OpenAI service key must permit `POST /v1/responses/input_tokens` as well as response creation. Confirm this endpoint is allowed if the key is restricted.
+
+Quotes use OpenAI's [input token count endpoint](https://developers.openai.com/api/docs/guides/token-counting) with the same model, instructions, complete source, thinking configuration and JSON schema as generation. If counting fails, no quote or hold is created; Zebby asks the user to retry rather than guessing. Text and responses are never included in diagnostic logs.
+
+Credit generation uses the output ceiling stored with the quote. These limits include both reasoning and the visible result:
+
+| Thinking | Resume match | Full Plan |
+| --- | ---: | ---: |
+| Off (Luna) | 1,024 | 4,096 |
+| Low | 3,072 | 6,144 |
+| Medium | 6,144 | 8,192 |
+| High | 8,192 | 12,288 |
+| Extra high | 16,384 | 24,576 |
+| Maximum | 32,768 | 49,152 |
+
+Model and thinking selections are preserved. The limits do not shrink to fit a wallet's remaining balance, and source text is not truncated. They are initial task budgets, not a guarantee every request will finish. Incomplete or invalid results are not saved or charged to the wallet; their holds are released, with no automatic paid retry. Provider costs from unsuccessful requests can still apply. See OpenAI's [reasoning-token guidance](https://developers.openai.com/api/docs/guides/reasoning).
+
+Only provider-reported actual usage is settled after a valid result. Input reservations allow for cache-write pricing and long-context rates. Unused holds are released. There is no per-pack analysis-count limit: the numbers on pricing cards are usage illustrations.
+
 Every analysis method works without a Zebby signup or sign-in screen. The first credit purchase silently creates a guest wallet. Each computer keeps its own encrypted access credential, and the service owns the shared balance. Opening a SQLite database on another computer does not connect its credit wallet.
 
 ## What changed for guest credits
@@ -108,20 +133,20 @@ The checked-in Node tests use an isolated PostgreSQL engine and mocked network r
 
 ## Packs and estimates
 
-| Price | Credits | About this many with GPT-6.1 Sol (High) | About this many with GPT-6 Luna (High) |
-| --- | ---: | ---: | ---: |
-| $5 | 500 | 5 | 112 |
-| $20 | 3,000 | 33 | 674 |
-| $50 | 8,000 | 89 | 1,797 |
-| $100 | 16,000 | 179 | 3,595 |
+| Price | Credits | Sol (High) | Luna (High) | Astra (High) |
+| --- | ---: | ---: | ---: | ---: |
+| $5 | 500 | About 5 | About 112 | Requires an earlier qualifying purchase |
+| $20 | 3,000 | About 33 | About 674 | About 6 |
+| $50 | 8,000 | About 89 | About 1,797 | About 17 |
+| $100 | 16,000 | About 179 | About 3,595 | About 35 |
 
-Before an analysis, Zebby shows its maximum credit cost. The service reserves that amount, charges for actual reported token usage, including thinking, and returns unused credits to the wallet. Cancelled, failed and invalid analyses release their reservations.
+Analyze starts directly after Zebby prepares an internal quote. If funds are insufficient, the app shows the credits needed to start and the available balance. The service reserves the quote, charges for actual reported token usage, including thinking, and returns unused credits to the wallet. Cancelled, failed and invalid analyses release their reservations.
 
 If a reply is lost after settlement, Zebby retains the original request ID and can recover the result without another charge. Recovery metadata, without resume or job text, is saved in encrypted local settings when secure storage is available. Main clears it only after the result is saved to SQLite. A pending result can be recovered after restarting on that computer within the server's 24-hour result retention window. Changing wallets rejects obsolete replies and prevents an older wallet's reply from replacing the current one.
 
-Both counts use a rounded sample Plan baseline of 3,600 input tokens and 500 visible result tokens, plus an estimated 7,500-token thinking allowance. The sample's historical reasoning usage was not recorded. The total output allowance remains 8,000 tokens, with all input charged as cache writes. At the published rates checked on October 10, 2026, this example costs 89 credits using GPT-6.1 Sol or 4.45 credits using GPT-6 Luna. Counts divide pack credits by the corresponding example cost and round down. They are estimates, not measured averages or guarantees. High does not imply a fixed token count or equal usage between models. Cache hits, job length, reasoning effort and model choice change usage. A remaining balance below the next maximum quote requires a top-up, even if it could cover the estimated final cost. The catalog is in [online-models.ts](../shared/online-models.ts). Sources: [OpenAI Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [OpenAI Luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [OpenAI Astra](https://developers.openai.com/api/docs/models/gpt-6-astra), [OpenAI reasoning](https://developers.openai.com/api/docs/guides/reasoning), and [OpenAI prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching).
+The illustrations use a rounded sample Plan baseline of 3,600 input tokens and 500 visible result tokens, plus an estimated 7,500-token thinking allowance. The sample's historical reasoning usage was not recorded. The example uses 8,000 output tokens, with all input charged as cache writes. At Zebby's configured rates, this example costs 89 credits using GPT-6.1 Sol, 4.45 using GPT-6 Luna, or 445 using GPT-6 Astra. Counts divide pack credits by the corresponding example cost and round down. They are estimates, not measured averages or guarantees. High does not imply a fixed token count or equal usage between models. Cache hits, job length, reasoning effort and model choice change usage. A remaining balance below the next maximum quote requires a top-up, even if it could cover the estimated final cost. The catalog is in [online-models.ts](../shared/online-models.ts).
 
-Thinking levels are Low, Medium, High, Extra high and Maximum, with High selected by default. Luna also supports Off; Sol and Astra do not. Quotes bind both model and thinking level; changing either requires a new quote. Output limits include reasoning and final answer tokens: Off and Low allow 6,000 for Plan or 3,000 for match; Medium 16,000; High 24,000; Extra high 40,000; Maximum 64,000. These are maximum allowances, not expected usage. High and above allow eight minutes for the provider response, with cancellation available. The quote shown before analysis uses the full configured output limit; settlement charges actual usage.
+Thinking levels are Low, Medium, High, Extra high and Maximum, with High selected by default. Luna also supports Off; Sol and Astra do not. Quotes bind model, thinking level, counted input and output ceiling; changing those requires a new quote. The task budgets are listed above. High and above allow eight minutes for the provider response, with cancellation available.
 
 Provider retention and data-sharing settings must match the privacy terms you publish for users. Online analysis sends job and CV content to the selected provider; API keys and payment credentials stay on the service host.
 

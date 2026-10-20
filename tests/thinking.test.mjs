@@ -30,8 +30,8 @@ test("OpenAI thinking uses supported effort and includes reasoning in the output
   }
   assert.equal((await request("gpt-6-luna", "off")).body.reasoning.effort, "none");
   await assert.rejects(request("gpt-6-astra", "off"), /supported/);
-  assert.ok(maximumCost(onlineModel("gpt-6.1-sol"), 100, 100, "match", "high")
-    > maximumCost(onlineModel("gpt-6.1-sol"), 100, 100, "match", "low"));
+  assert.ok(maximumCost(onlineModel("gpt-6.1-sol"), 200, outputLimit("match", "high"))
+    > maximumCost(onlineModel("gpt-6.1-sol"), 200, outputLimit("match", "low")));
 });
 
 test("Claude uses adaptive effort for current models and manual On or Off for Haiku", async () => {

@@ -1,6 +1,6 @@
 # Analysis and credits
 
-Date: 2026-10-10
+Date: 2026-10-20
 
 ## Surface strategy
 
@@ -42,9 +42,15 @@ Paid credits use a guest wallet, with no email-code or signup step. Secure stora
 
 The paid native model dropdown offers GPT-6.1 Sol, GPT-6 Luna and GPT-6 Astra, enforced by the service catalog and quote validation. Each offers Low, Medium, High, Extra high and Maximum thinking, with High as default. Luna also offers Off, supported by the quote schema, desktop client and service. Personal-key methods retain their separate OpenAI and Anthropic catalogs. Legacy paid result recovery remains available for models removed from new purchases.
 
+The $20, $50 and $100 cards now include “Unlocks GPT-6 Astra” and a third High-effort illustration of about 6, 17 and 35 Astra analyses respectively. The $5 card says “Sol and Luna.” These additions retain the existing selection wash, outline, typography and spacing. Existing qualifying purchases unlock Astra for the wallet; future top-ups can use any pack. A fully refunded or disputed qualifying purchase no longer provides access unless another qualifying purchase remains.
+
+Until unlocked, the credits model selector labels Astra “GPT-6 Astra · Locked.” Selecting it opens the purchase dialog with $20 selected without changing the saved model or thinking level. This also works when Astra was already the saved model. Closing the dialog restores focus to the selector. The restriction does not apply to personal OpenAI keys.
+
 ## Quotes, recovery, and wallet
 
 Analyze starts immediately using saved model and thinking settings, with no review dialog. Each funded Plan or match request independently refreshes the wallet and prepares its quote internally. The quote binds both settings and source data and includes reasoning in its maximum output budget. Analysis cannot override effort in the request body. Insufficient funds opens Buy credits with a short explanation. Preparation errors stay inline with the listing, and an expired estimate asks the user to retry. The service reserves the maximum, charges reported actual usage and returns unused reserved credits. Cancel during preparation releases the listing immediately and prevents late quotes from starting a paid request. Failed or cancelled analyses release reservations.
+
+Quotes now use OpenAI's input-token count for the complete request, including instructions and the response schema, plus a task-specific output ceiling that includes reasoning. Model, effort and source content remain unchanged. A count failure stops preparation without a heuristic fallback or a reservation. An incomplete response at the output ceiling is rejected and the wallet reservation released. Insufficient-credit copy gives the required and available credit amounts rather than implying an analysis-count cap.
 
 A lost paid reply retains its request identity so the original result can be recovered without another charge. Clicking Analyze recovers a completed result directly. An unfinished prior run reports inline that it is still running and can be retried, without starting another paid run. Recovery remains available with zero or negative balance. Main clears recovery metadata only after local persistence. The server retention window is 24 hours; encrypted local settings retain restart recovery metadata when secure storage is available.
 
@@ -105,3 +111,9 @@ Zebby [2.1.0](https://github.com/desigrit/zebby-the-scout/releases/tag/v2.1.0) i
 The full scoped finish review at e78362edf08acaa4a64dac2dc0df424c302888b3 against baseline 3d35192c0b06f08e506546e4931227898cbd31ca returned disposition: ship with no material fixes. All 13 required captures were opened and valid, and source and QA corroborated the implementation. Supplied [CI 38046698808](https://github.com/desigrit/zebby-the-scout/actions/runs/38046698808) passed 157 Node tests, typecheck, lint, production build, full renderer flows and 18 native Windows checks. These gates were not rerun by the documenter.
 
 Synthetic renderer captures are component and theme previews with mixed platform overrides. Actual native Windows evidence is separate; physical Mac rendering, live Stripe/webhooks/provider service and Windows ARM hardware remain unverified. The [Settings handoff](settings.md#credits-and-chart-streamline-handoff-2026-10-10) records packaging status and the preserved incumbent system. No local GUI or personal data was accessed during documentation.
+
+## Counted budgets and Astra access verification, 2026-10-20
+
+Implemented in the isolated `codex/credit-reservations` worktree. All 89 focused credit, thinking, wallet and service tests passed, including isolated PGlite entitlement, reservation, refund and repeat-migration checks. TypeScript, affected-file lint, desktop and service builds, and the headless renderer checks passed. Synthetic captures were reviewed in wide Windows light and narrow Mac dark themes, including the already-selected locked Astra state. The renderer checks cover selecting locked Astra, the $20 purchase selection, preserving the current model, and restoring keyboard focus.
+
+No native app, personal database, real payment or provider analysis was used. The migration, hosted deployment and updated desktop release are pending; these checks do not establish live service readiness. The [service guide](../../credits-service/README.md) records rollout steps. Existing design-sidecar drift and the unset build path were left unchanged.

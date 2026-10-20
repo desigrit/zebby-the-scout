@@ -461,6 +461,7 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .credit-pack-badge { display: block; min-height: 18px; color: var(--accent); font-size: 11px; font-weight: 650; }
 .credit-pack-price { font-size: 32px; font-weight: 650; line-height: 1.2; letter-spacing: -.02em; }
 .credit-pack-count { font-size: 14px; font-weight: 600; }
+.credit-pack-access { font-size: 12px; color: var(--ink-soft); }
 .credit-pack-estimates { display: grid; gap: 10px; }
 .credit-estimate-model { white-space: nowrap; }
 .credit-pack small { font-size: 12px; color: var(--ink-soft); line-height: 1.6; }

@@ -2,28 +2,39 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from
 import { Info } from "lucide-react";
 import type { DesktopState } from "../bridge";
 import { LOCAL_MODELS } from "../local-model-catalog";
-import { CREDIT_MODELS, ONLINE_MODELS, type AnalysisProvider } from "../../shared/online-models";
+import { ASTRA_MODEL, ASTRA_PACK_MESSAGE, CREDIT_MODELS, ONLINE_MODELS, type AnalysisProvider } from "../../shared/online-models";
 import { localThinkingCapability, onlineThinkingCapability, selectedThinking, thinkingKey, type ThinkingCapability } from "../../shared/thinking";
 import { ErrorBanner } from "./WorkspaceFeedback";
 
 export type ChangeAnalysisState = (state: DesktopState) => void | Promise<void>;
 type OnlineProvider = "openai" | "anthropic" | "credits";
-export function OnlineModelSelect({ state, onState, provider, disabled = false, onBusy }: {
-  state: DesktopState; onState: ChangeAnalysisState; provider: OnlineProvider; disabled?: boolean; onBusy?: (busy: boolean) => void }) {
+export function OnlineModelSelect({ state, onState, provider, disabled = false, onBusy, onLockedModel }: {
+  state: DesktopState; onState: ChangeAnalysisState; provider: OnlineProvider; disabled?: boolean; onBusy?: (busy: boolean) => void;
+  onLockedModel?: () => void }) {
   const [error, setError] = useState(""), [working, setWorking] = useState(false);
   const retryModel = useRef("");
   const value = provider === "credits" ? state.credits.model : provider === "openai" ? state.openaiModel : state.anthropicModel;
   const models = provider === "credits" ? CREDIT_MODELS : ONLINE_MODELS.filter((model) => model.provider === provider);
+  const astraLocked = provider === "credits" && (!state.credits.wallet || state.credits.wallet.astraUnlocked === false);
+  // Keep an already-selected Astra visible, while letting it be selected again
+  // to open purchase. The placeholder never changes the saved model preference.
+  const displayedValue = astraLocked && value === ASTRA_MODEL ? "locked-astra" : value;
   async function changeModel(model: string) {
+    if (astraLocked && model === ASTRA_MODEL) {
+      if (onLockedModel) onLockedModel(); else setError(ASTRA_PACK_MESSAGE);
+      return;
+    }
     retryModel.current = model; setWorking(true); onBusy?.(true); setError("");
     try { await onState(await window.desktop!.setOnlineModel(provider, model)); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Could not save the model. Try again."); }
     finally { setWorking(false); onBusy?.(false); }
   }
-  return <div className="analysis-model-control"><label className="field"><span>Model</span><select value={value} disabled={disabled || working}
-    onChange={(event) => void changeModel(event.target.value)}>
-    {models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
-  </select></label><ErrorBanner message={error} retry={() => void changeModel(retryModel.current)} busy={working || disabled} /></div>;
+  return <div className="analysis-model-control"><label className="field"><span>Model</span><select value={displayedValue} disabled={disabled || working}
+    onChange={(event) => { const model = event.target.value; if (astraLocked && model === ASTRA_MODEL) event.currentTarget.value = displayedValue; void changeModel(model); }}>
+    {displayedValue === "locked-astra" && <option value="locked-astra" hidden>GPT-6 Astra · Locked</option>}
+    {models.map((model) => <option key={model.id} value={model.id}>{model.name}{astraLocked && model.id === ASTRA_MODEL ? " · Locked" : ""}</option>)}
+  </select></label>{astraLocked && <p className="settings-help">{ASTRA_PACK_MESSAGE}</p>}
+  <ErrorBanner message={error} retry={() => void changeModel(retryModel.current)} busy={working || disabled} /></div>;
 }
 export function ThinkingSelect({ state, onState, provider, model, disabled = false, onBusy, quiet = false }: {
   state: DesktopState; onState: ChangeAnalysisState; provider: AnalysisProvider; model: string; disabled?: boolean; onBusy?: (busy: boolean) => void; quiet?: boolean }) {

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { createHmac, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
-import { CREDIT_PACKS, CREDIT_ESTIMATE, CREDIT_MODELS, NANODOLLARS_PER_CREDIT, estimatedAnalyses, onlineModel, usageCost, maximumCost, outputLimit, quoteNeedsCredits } from "../shared/online-models.ts";
+import { CREDIT_PACKS, CREDIT_ESTIMATE, CREDIT_MODELS, NANODOLLARS_PER_CREDIT, estimatedAnalyses, onlineModel, usageCost, maximumCost, creditOutputLimit, quoteNeedsCredits } from "../shared/online-models.ts";
 import { onlineAnalysis } from "../desktop/online-analysis.ts";
 import { CreditsClient } from "../desktop/credits-client.ts";
 import { createService } from "../credits-service/service.ts";
@@ -89,14 +89,14 @@ test("OpenAI cache writes are charged once at the published rate", async () => {
     }) });
   assert.deepEqual(response.usage, { input: 800, cached: 100, cacheWrite: 200, output: 25 });
   assert.equal(usageCost(onlineModel("gpt-6-luna"), response.usage), 108500);
-  assert.ok(maximumCost(onlineModel("gpt-6-luna"), 1000, 0, "match") >= 108500);
+  assert.ok(maximumCost(onlineModel("gpt-6-luna"), 1000, 25) >= 108500);
 });
 
 test("OpenAI maximum quotes cover cache writes and long-context pricing", () => {
   const model = onlineModel("gpt-6-luna");
   assert.equal(usageCost(model, { input: 272000, cached: 0, output: 6000 }), 30200000);
   assert.equal(usageCost(model, { input: 272001, cached: 0, output: 6000 }), 58900200);
-  const bound = maximumCost(model, 268000, 0, "plan");
+  const bound = maximumCost(model, 280000, 6000);
   for (const usage of [
     { input: 0, cached: 0, cacheWrite: 280000, output: 6000 },
     { input: 140000, cached: 100000, cacheWrite: 140000, output: 6000 },
@@ -229,12 +229,14 @@ test("PostgreSQL ledger and service integration", async (t) => {
         return Response.json({ id: "cs_test_fixture", url: "https://checkout.stripe.com/c/pay/fixture" }); }
       return Response.json({ status: "open" });
     }
-    assert.equal(url.hostname, "api.openai.com"); providerCalls++;
+    assert.equal(url.hostname, "api.openai.com");
+    if (url.pathname === "/v1/responses/input_tokens") return Response.json({ object: "response.input_tokens", input_tokens: 20000 });
+    providerCalls++;
     const request = JSON.parse(options.body); lastProviderRequest = request; assert.equal(request.model, expectedModel); assert.equal(request.store, false);
     if (abortProvider) { await new Promise((_, reject) => { options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }); }); }
     if (failProvider) return Response.json({ error: { message: "private resume content" } }, { status: 500 });
     return Response.json({ status: "completed", output: [{ content: [{ type: "output_text", text: JSON.stringify(providerResult) }] }],
-      usage: { input_tokens: 20000, input_tokens_details: { cached_tokens: 0 }, output_tokens: 6000 } });
+      usage: { input_tokens: 20000, input_tokens_details: { cached_tokens: 0 }, output_tokens: Math.min(6000, request.max_output_tokens) } });
   };
   const service = createService(config, { fetcher }), controller = new AbortController();
   const handle = (method, path, value, token = "owner", signal = controller.signal) => service.handle(method, path, value, token, signal);
@@ -286,7 +288,7 @@ test("PostgreSQL ledger and service integration", async (t) => {
       await assert.rejects(analyze(quote.id, id, input, "other"), /fresh/);
       await assert.rejects(analyze(quote.id, id, { ...input, resumeText: input.resumeText + "invented" }));
       const response = await analyze(quote.id, id); assert.equal(response.result.score, 68); assert.equal(response.wallet.used, 100 * NANODOLLARS_PER_CREDIT);
-      assert.equal(lastProviderRequest.reasoning.effort, "low"); assert.equal(lastProviderRequest.max_output_tokens, outputLimit("plan", "low"));
+      assert.equal(lastProviderRequest.reasoning.effort, "low"); assert.equal(lastProviderRequest.max_output_tokens, creditOutputLimit("plan", "low"));
       assert.equal(response.wallet.reserved, 0); const calls = providerCalls;
       await analyze(quote.id, id); assert.equal(providerCalls, calls); assert.equal((await wallet()).used, 100 * NANODOLLARS_PER_CREDIT);
       await assert.rejects(analyze(quote.id));
@@ -331,10 +333,11 @@ test("PostgreSQL ledger and service integration", async (t) => {
           const response = await analyze(quote.id);
           assert.equal(lastProviderRequest.model, "gpt-6-luna");
           assert.equal(lastProviderRequest.reasoning.effort, level === "off" ? "none" : "high");
-          assert.equal(lastProviderRequest.max_output_tokens, outputLimit("plan", level));
+          assert.equal(lastProviderRequest.max_output_tokens, creditOutputLimit("plan", level));
           assert.equal(response.result.score, plan.score);
-          assert.equal(response.wallet.used - before.used, 5 * NANODOLLARS_PER_CREDIT);
-          assert.equal(response.wallet.balance, before.balance - 5 * NANODOLLARS_PER_CREDIT);
+          const cost = usageCost(onlineModel("gpt-6-luna"), { input: 20000, cached: 0, output: Math.min(6000, creditOutputLimit("plan", level)) });
+          assert.equal(response.wallet.used - before.used, cost);
+          assert.equal(response.wallet.balance, before.balance - cost);
           assert.equal(response.wallet.reserved, 0);
         }
       } finally { expectedModel = "gpt-6.1-sol"; }

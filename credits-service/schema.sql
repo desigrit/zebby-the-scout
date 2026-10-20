@@ -23,6 +23,8 @@ alter table public.zebby_quotes add column if not exists thinking_level text not
 alter table public.zebby_quotes drop constraint if exists zebby_quotes_thinking_level_check;
 alter table public.zebby_quotes add constraint zebby_quotes_thinking_level_check
   check(thinking_level in ('off','low','medium','high','xhigh','max'));
+alter table public.zebby_quotes add column if not exists input_tokens integer check(input_tokens > 0);
+alter table public.zebby_quotes add column if not exists output_limit integer check(output_limit > 0);
 create table if not exists public.zebby_runs (
   id uuid primary key, user_id uuid not null, quote_id uuid not null references public.zebby_quotes(id),
   model text not null, kind text not null, maximum bigint not null, cost bigint not null default 0,
@@ -192,7 +194,9 @@ begin
     'id',id,'model',model,'kind',kind,'cost',cost,'createdAt',created_at) item
     from zebby_runs where user_id=p_user and status='completed' order by created_at desc limit 10) r;
   return jsonb_build_object('balance',w.balance,'reserved',w.reserved,'used',w.used,'purchased',w.purchased,
-    'updatedAt',w.updated_at,'recent',recent);
+    'updatedAt',w.updated_at,'recent',recent,
+    'astraUnlocked',exists(select 1 from zebby_purchases where user_id=p_user and paid
+      and cents>=2000 and reversed<amount and not disputed));
 end $$;
 
 create or replace function public.zebby_reserve(p_user uuid,p_id uuid,p_quote uuid,p_hash text)
@@ -210,6 +214,10 @@ begin
   if not found or q.user_id<>p_user or q.content_hash<>p_hash then raise exception 'Invalid analysis quote'; end if;
   if q.expires_at<=now() or q.claimed_by is not null then raise exception 'Analysis quote expired or already used'; end if;
   if exists(select 1 from zebby_purchases where user_id=p_user and disputed) then raise exception 'Contact support about a disputed payment'; end if;
+  if q.model='gpt-6-astra' and not exists(select 1 from zebby_purchases where user_id=p_user
+    and paid and cents>=2000 and reversed<amount and not disputed) then
+    raise exception 'GPT-6 Astra is included with a $20, $50 or $100 pack';
+  end if;
   if w.balance-w.reserved<q.maximum then raise exception 'Not enough credits for this analysis'; end if;
   update zebby_quotes set claimed_by=p_id where id=p_quote;
   update zebby_wallets set reserved=reserved+q.maximum,updated_at=now() where user_id=p_user;

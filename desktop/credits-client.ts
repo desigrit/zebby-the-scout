@@ -6,6 +6,7 @@ import { deviceNameSchema, deviceTokenSchema, guestSessionSchema, pairingCodeSch
   walletAccessSchema, type WalletAccess, type WalletPairing } from "../shared/wallet-access.ts";
 const integer = z.number().int().safe();
 const walletSchema = z.object({ balance: integer, reserved: integer.nonnegative(), used: integer.nonnegative(),
+  astraUnlocked: z.boolean().optional(),
   purchased: integer.nonnegative(), updatedAt: z.string(), recent: z.array(z.object({ id: z.string().uuid(),
     model: z.string(), kind: z.string(), cost: integer.nonnegative(), createdAt: z.string() })).max(10) });
 const sessionSchema = z.object({ access_token: z.string().min(1).max(8192), refresh_token: z.string().min(1).max(8192),
@@ -368,7 +369,8 @@ export class CreditsClient {
   }
   async quote(kind: AnalysisKind, input: unknown, model: string, thinkingLevel?: string): Promise<CreditQuote> {
     const level = validateOnlineThinking(creditModel(model), thinkingLevel);
-    const quote = z.object({ id: z.string().uuid(), model: z.string(), thinkingLevel: z.enum(CREDIT_THINKING_LEVELS), maximum: integer.positive(), expiresAt: z.string() })
+    const quote = z.object({ id: z.string().uuid(), model: z.string(), thinkingLevel: z.enum(CREDIT_THINKING_LEVELS), maximum: integer.positive(), expiresAt: z.string(),
+      inputTokens: integer.positive().optional(), outputTokens: integer.positive().optional() })
       .parse(await this.request("/v1/quotes", { kind, input, model, thinkingLevel: level }));
     if (quote.model !== model || quote.thinkingLevel !== level) throw new Error("The service returned a different model or thinking level. Request a fresh quote.");
     return quote;

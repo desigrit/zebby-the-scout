@@ -1450,6 +1450,8 @@ try {
   await analysisDialog.getByRole("button", { name: "Continue", exact: true }).click();
   assert.equal(await analysisDialog.getByRole("radio").count(), 4);
   assert.equal(await analysisDialog.getByRole("combobox").count(), 0);
+  assert.equal(await analysisDialog.getByText("Unlocks GPT-6 Astra", { exact: true }).count(), 3);
+  assert.match(await analysisDialog.locator(".credit-pack").nth(1).innerText(), /About 6 analyses\s+GPT-6 Astra \(High\)/);
   assert.match(await analysisDialog.innerText(), /Choose or change your model in Settings after purchase/);
   assert.equal(await analysisDialog.getByRole("button", { name: "Continue to checkout · $5", exact: true }).isEnabled(), true);
   assert.doesNotMatch(await analysisDialog.innerText(), /Paid credits are not|not connected yet/);
@@ -1528,6 +1530,8 @@ try {
   await analyze.click();
   await analysisDialog.getByRole("heading", { name: "A little fuel for your next move", exact: true }).waitFor();
   assert.equal(paidAnalysisRequests.length, paidCallsBeforeCancel);
+  await analysisDialog.getByRole("alert").filter({ hasText: "needs 20 credits available to start. You have 10." }).waitFor();
+  await captureSettings("credits-counted-budget-error.png", false);
   await analysisDialog.getByRole("button", { name: "Cancel", exact: true }).click();
   // A paid result can be recovered for free even with no balance. An unfinished
   // prior run reports inline and cannot accidentally create a second charge.
@@ -1556,6 +1560,27 @@ try {
   const paidSettingsModel = settingsPage.getByRole("combobox", { name: "Model", exact: true });
   await paidSettingsModel.waitFor();
   assert.deepEqual(await paidSettingsModel.locator("option").evaluateAll(options => options.map(option => option.value)), ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"]);
+  await page.evaluate(() => window.creditQA.update({ wallet: { balance: 450000000, reserved: 0, used: 50000000, purchased: 500000000, recent: [], astraUnlocked: false } }));
+  await settingsPage.getByText("GPT-6 Astra is included with a $20, $50 or $100 pack.", { exact: true }).waitFor();
+  assert.equal(await paidSettingsModel.locator('option[value="gpt-6-astra"]').innerText(), "GPT-6 Astra · Locked");
+  await captureSettings("credits-astra-locked.png", false);
+  const savedModel = await paidSettingsModel.inputValue();
+  await paidSettingsModel.focus();
+  await paidSettingsModel.selectOption("gpt-6-astra");
+  await analysisDialog.getByRole("button", { name: "Continue to checkout · $20", exact: true }).waitFor();
+  assert.equal(await paidSettingsModel.inputValue(), savedModel);
+  await analysisDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await analysisDialog.waitFor({ state: "hidden" });
+  await page.waitForFunction(() => document.activeElement?.tagName === "SELECT");
+  await page.evaluate(() => window.creditQA.update({ model: "gpt-6-astra" }));
+  await page.waitForFunction(() => document.querySelector('select:has(option[value="locked-astra"])')?.value === "locked-astra");
+  await captureSettings("credits-astra-current-locked.png", false);
+  await paidSettingsModel.selectOption("gpt-6-astra");
+  await analysisDialog.getByRole("button", { name: "Continue to checkout · $20", exact: true }).waitFor();
+  await analysisDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await analysisDialog.waitFor({ state: "hidden" });
+  await page.evaluate(() => window.creditQA.update({ wallet: { balance: 3000000000, reserved: 0, used: 0, purchased: 3000000000, recent: [], astraUnlocked: true } }));
+  await page.waitForFunction(() => [...document.querySelectorAll("option")].some(option => option.value === "gpt-6-astra" && option.textContent === "GPT-6 Astra"));
   await paidSettingsModel.selectOption("gpt-6-luna");
   await settingsPage.getByRole("radiogroup", { name: "Thinking level", exact: true }).getByRole("radio", { name: "Off", exact: true }).click();
   await paidSettingsModel.selectOption("gpt-6-astra");
