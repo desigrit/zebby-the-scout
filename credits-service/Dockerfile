@@ -4,7 +4,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY credits-service ./credits-service
 COPY shared ./shared
-COPY desktop/online-analysis.ts desktop/analysis-contracts.ts ./desktop/
+COPY desktop/online-analysis.ts desktop/online-response.ts desktop/openai-request.ts desktop/analysis-contracts.ts ./desktop/
 COPY scripts/build-credits-service.mjs ./scripts/
 RUN node scripts/build-credits-service.mjs && npm prune --omit=dev --ignore-scripts
 FROM node:22-slim
