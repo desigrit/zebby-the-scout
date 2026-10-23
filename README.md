@@ -8,13 +8,9 @@ I wanted a simple place to prepare for jobs and remember which CV went where. I 
 
 **[Download Zebby](https://github.com/desigrit/zebby-the-scout/releases/latest)** · [Getting started](docs/guide.md#install) · [Report an issue](https://github.com/desigrit/zebby-the-scout/issues)
 
-Windows x64 and ARM64 · Apple Silicon Mac · No signup
-
 [![Zebby's Plan and Applications screens, showing resume matching, ATS keywords and application tracking](docs/screenshots/zebby-collage.jpg)](docs/screenshots/zebby-collage.png)
 
-<sub>Current Zebby screens with sample applications and analysis results.</sub>
-
-## From a listing to an application
+## What's included
 
 [![Zebby screens: OOBE, Plan mode, New application, Applications stats and Settings, connected by arrows.](docs/screenshots/screen-flow-overview.png)](docs/screenshots/screen-flow.png)
 
