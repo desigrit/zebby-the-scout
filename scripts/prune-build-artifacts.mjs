@@ -32,14 +32,22 @@ function github(args) {
   return result.stdout;
 }
 
+export function listGithubItems(endpoint, collection, fields, request = github) {
+  const items = [];
+  for (let page = 1; ; page += 1) {
+    // Keep each subprocess response bounded, even as build history grows.
+    const batch = JSON.parse(request([`${endpoint}?per_page=100&page=${page}`, "--jq", `[.${collection}[] | {${fields.join(",")}}]`]));
+    items.push(...batch);
+    if (batch.length < 100) return items;
+  }
+}
+
 function main() {
   const repository = process.env.GITHUB_REPOSITORY || "desigrit/zebby-the-scout";
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) throw new Error("Invalid repository name.");
   const prefix = `repos/${repository}/actions`;
-  const artifactPages = JSON.parse(github(["--paginate", "--slurp", `${prefix}/artifacts?per_page=100`]));
-  const runPages = JSON.parse(github(["--paginate", "--slurp", `${prefix}/runs?per_page=100`]));
-  const artifacts = artifactPages.flatMap((page) => page.artifacts);
-  const runs = runPages.flatMap((page) => page.workflow_runs);
+  const artifacts = listGithubItems(`${prefix}/artifacts`, "artifacts", ["id", "name", "workflow_run", "created_at", "expired", "size_in_bytes", "url"]);
+  const runs = listGithubItems(`${prefix}/runs`, "workflow_runs", ["id", "status"]);
   const plan = planArtifactCleanup(artifacts, runs);
   const report = { repository, applied: process.argv.includes("--apply"), beforeCount: artifacts.filter((artifact) => !artifact.expired).length, deleteCount: plan.remove.length, removeBytes: plan.remove.reduce((total, artifact) => total + artifact.size_in_bytes, 0), kept: plan.keep.map(({ id, name, size_in_bytes }) => ({ id, name, size_in_bytes })), deleted: [] };
   const reportIndex = process.argv.indexOf("--report");
