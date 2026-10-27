@@ -4,7 +4,7 @@
 
 **Plan roles. Track applications. Keep your CVs straight.**
 
-I built Zebby while organizing my own job search: reviewing roles, deciding what my resume needed, and remembering which version went where. I wanted something my peers could use without having to set up an AI toolchain. The zebra came along for moral support.
+I built Zebby while organizing my own job search: reviewing roles, deciding what my resume needed, and remembering which version went where. I wanted something my peers could use without a complicated AI setup. The zebra came along for moral support.
 
 Below are the [product decisions](#product-decisions), [how I worked with AI](#working-with-ai), [what I pushed back on](#what-i-pushed-back-on), and [what I'd do next](#what-id-do-next).
 
@@ -21,7 +21,7 @@ Below are the [product decisions](#product-decisions), [how I worked with AI](#w
 - **Plan:** save a posting, add your resume and current summary, then review ATS keywords, resume themes, a match score and suggested edits. **Move to Applied** carries the details and existing score into Applications, without another analysis.
 - **Applications:** track companies, roles, dates, locations, resumes, notes and statuses. Filter the list, see daily activity by status, and celebrate an offer with Zebby confetti.
 - **Job descriptions:** keep the extracted or pasted description, and edit it as needed. It stays available after the posting closes.
-- **Your files:** keep plans, applications and uploaded resumes together in a SQLite file you choose.
+- **Your files:** keep plans, applications and uploaded resumes together in a database file you choose.
 
 ![Zebby Plan, showing individual keyword and theme importance, a resume match score and suggested summary edits](docs/screenshots/plan.png?v=2.3.8)
 
@@ -32,7 +32,7 @@ Keyword and theme percentages estimate importance to the job. Review AI suggesti
 | Option | What you use |
 | --- | --- |
 | **Bring your own key** | Your OpenAI or Anthropic API key. Usage is billed to your provider account. |
-| **Run a local model** | Your Ollama server, or a model downloaded in Settings. Downloaded models run on CPU and work offline once installed. |
+| **Run a local model** | Your Ollama server, or a model downloaded in Settings. Downloaded models run on your computer's processor and work offline once installed. |
 | **Buy Zebby credits** | Online analysis with GPT-6.1 Sol or GPT-6 Luna. Packs of $20 or more also unlock GPT-6 Astra. No API key or Zebby account needed. |
 
 <details>
@@ -46,134 +46,72 @@ Choose your provider, model and supported thinking level. Keys stay on this comp
 
 ## Product decisions
 
-### Give each score a specific meaning
+### Explain what a score means
 
-In one comparison, a larger local model gave my resume a 62% match and a small model gave it
-90% for the same role. That was enough to question the score. It wasn't enough to establish
-which model was right, or whether either number was useful.
+In one comparison, two local models gave the same resume a **62% and a 90% match** for the same job. That made me question the score. It did not tell me which model was right.
 
-I had already separated **importance to the job** from **evidence in the resume**. An essential
-requirement should appear even when the resume does not demonstrate it. Missing evidence is
-a gap in the document, not proof that the person lacks the skill. The match explanation has
-to identify supporting experience and gaps.
+I separated **what the job asks for** from **what the resume supports**. An important requirement should still appear when the resume does not cover it. Missing evidence means the document needs attention, not necessarily that the person lacks the skill.
 
-This also sets a boundary on the product's claims. Importance percentages are independent
-estimates, not scores from an employer's ATS. Match strength is a directional assessment of
-the supplied resume, not a probability of getting hired. The full-model scores remain
-uncalibrated across models. [Analysis contract](desktop/analysis-contracts.ts)
+Scores are rough guides, not an employer's screening score or a prediction of getting hired. Different models have not been checked against a shared standard. [Analysis rules](desktop/analysis-contracts.ts)
 
-### Narrow the task when the model cannot support the full experience
+### Give a smaller model a smaller job
 
-The compact SmolLM2 mode has a different contract. Code identifies listing terms and computes
-keyword coverage; the model is asked for a limited wording edit using the supplied evidence.
-The explanation explicitly says that this mode does not assess experience depth or hiring
-likelihood. Other models retain the full analysis rather than silently falling back to this
-score.
+The smallest local model, SmolLM2, offers a lighter option for modest computers. Code checks which job-related terms appear in the resume; the model can suggest a limited wording edit. This mode does not assess the depth of someone's experience.
 
-That makes an offline option possible on modest hardware, at the cost of a shallower
-assessment. A high keyword-coverage score and a high full-analysis score do not mean the same
-thing. The distinction belongs in the result a person reads.
-[Compact-model behavior](desktop/basic-local-analysis.ts)
+That makes offline use more accessible, but the advice is shallower. Its keyword score does not mean the same thing as a full resume assessment, and the result needs to say so. Other models keep their full analysis. [How the smaller mode works](desktop/basic-local-analysis.ts)
 
-### A useful rewrite may leave the original alone
+### A good rewrite can leave the text alone
 
-I asked for an explanation when the suggested summary came back unchanged. Keeping good text
-can be a valid result; generating different wording is not evidence of improvement.
+When my summary came back unchanged, I asked for an explanation. New wording is not automatically better wording.
 
-The analysis instructions require the model to preserve the user's voice and avoid inventing
-experience, accomplishments or credentials. In compact mode, additional checks can reject a
-suggestion and retain the current summary. These constraints can also reject useful edits,
-and they do not guarantee factual accuracy. I would evaluate supported improvements and
-unsupported additions separately. [Rewrite instructions](desktop/analysis-contracts.ts) ·
-[Compact-mode checks](desktop/basic-local-analysis.ts)
+The model is instructed to preserve the person's voice and avoid inventing achievements or credentials. The smaller mode also checks its suggestions and can keep the original. Those checks can reject useful edits and cannot guarantee that every claim is true. [Rewrite rules](desktop/analysis-contracts.ts)
 
-### Fix the credit reservation before changing the model
+### Fix the credit estimate before changing the model
 
-I hit a confusing failure myself: roughly 90% of my credits remained, but Astra couldn't start.
-The service reserved enough for a large maximum response. The purchase page's illustrative
-analysis count made this look like a limit on runs.
+I once had roughly **90% of my credits left**, but Astra could not start. The app was setting aside enough credits for a much longer answer than the task needed.
 
-I wanted to preserve the selected model and thinking level. We changed quotes to count the
-complete input, including instructions and the response schema, and use separate output
-budgets for a match check and a full Plan. Actual usage is charged after a successful
-analysis; unused reservations are released.
+I wanted to keep my chosen model and thinking level. We changed the estimate to include everything sent to the model and allow different answer lengths for a quick match check and a full Plan. After a successful analysis, the app charges for actual use and releases the unused amount.
 
-The tradeoff remains: enough credit must be available before a request starts, and a response
-can exhaust its output budget. Those failures have explicit handling. I also chose to unlock
-Astra with a $20-or-higher purchase and make that condition visible before purchase and in
-Settings. [Budget and settlement tests](tests/credit-budgets.test.mjs)
+There is still a tradeoff: enough credit must be available upfront, and an answer can reach its length limit. I also chose to unlock Astra with a purchase of $20 or more and show that condition before purchase and in Settings. [Credit checks](tests/credit-budgets.test.mjs)
 
-### Removing signup moved complexity into recovery
+### Make signup optional, with a clear recovery cost
 
-I initially considered login for paid analysis, then asked whether people could buy credits
-without another account. We shipped a guest wallet with device credentials, a recovery code
-and temporary codes for connecting another computer.
+I asked whether people could buy credits without another account. Zebby uses a wallet with a recovery code and temporary codes for connecting another computer.
 
-That removes a step at checkout but puts more responsibility on recovery. Lose every connected
-device and the recovery code, and automatic recovery is unavailable. A failed connection must
-preserve existing access, and a retry must not charge twice. Wallet credentials stay outside
-the applications database, so sharing that file does not share the ability to spend credits.
-[Wallet and recovery tests](tests/guest-wallets.test.mjs)
+Checkout has fewer steps, but losing every connected device and the recovery code means automatic recovery is unavailable. Retries must not charge twice. Wallet access stays outside the shared applications file. [Recovery checks](tests/guest-wallets.test.mjs)
 
-### Let people keep working while inference runs
+### Let people keep working during analysis
 
-Early analysis flows locked the window, and navigating away could stop a match calculation.
-I asked to protect the listing being analyzed while letting me work on another one.
+I wanted to work on another job while an analysis ran. Results now stay with the original job, and a late answer cannot overwrite a Plan that has changed. If saving has already finished when someone cancels, the app keeps the saved result.
 
-Analysis now outlives the page displaying it. Results stay attached to their original record,
-duplicate requests are prevented, and a late result cannot overwrite a changed Plan.
-Cancellation has a boundary too: once saving has committed, the app delivers that result.
-
-I also asked for **Move to Applied** to carry the existing score and explanation forward.
-Changing workflow state should not require paying for the same analysis again.
-[Background-analysis tests](tests/background-analysis.test.mjs) · [Plan transfer](desktop/store.ts)
+I also asked for **Move to Applied** to carry the existing score and explanation forward. Moving a job between stages should not require paying for the same analysis again. [Background analysis checks](tests/background-analysis.test.mjs) · [Moving a Plan to Applications](desktop/store.ts)
 
 ## Working with AI
 
-I built Zebby with Codex, which wrote much of the implementation and test code. I supplied
-the workflow, tried the builds in my own job search, and turned failures and disagreements
-into specific requirements.
+Codex wrote much of the code and tests. I defined the workflow, used the builds in my own job search, and turned problems into specific requests.
 
-For the redesign, I asked for several interactive concepts before implementation. I combined
-the Applications and Settings structure from one with the Plan structure from another.
-For analysis, I specified what each result should mean, what evidence it could use and what
-must happen when the model did not produce a useful change.
+For the redesign, I asked for several working concepts, then combined the Applications and Settings structure from one with the Plan structure from another. For the AI advice, I decided what each result should explain, what evidence it could use, and when leaving a summary alone was acceptable.
 
-I distinguish two kinds of verification: software tests can check that a result is saved to
-the right job and charged once; evaluating model judgment requires checking the result against
-the resume, the role and human judgments. Passing the first does not establish the second.
+Software tests can show that a result reaches the right job and is charged once. Human review is still needed to judge whether the advice is accurate and useful.
 
 ## What I pushed back on
 
-- **A cleaner concept that dropped useful fields.** I kept the existing New Application form
-  when a redesign removed information the workflow needed.
-- **A pricing model built around a generic input assumption.** I challenged the initial
-  20,000-input-token estimate and asked for a baseline from my saved jobs and resume. The
-  resulting estimates distinguish source text from an allowance for reasoning tokens, which
-  those records did not contain.
-- **An unchanged summary with no explanation.** I asked the model to explain why it retained
-  the text or what it changed, rather than making the user guess whether analysis had worked.
-- **Paying again for an administrative step.** I asked for the existing analysis to move with
-  a Plan when it becomes an application, and for navigation to stop canceling paid work.
+- **A cleaner design that removed useful information.** I kept fields that the New Application form still needed.
+- **Pricing based on an assumed document size.** I asked for estimates based on my saved jobs and resume. The cost of the model's reasoning still needed a separate estimate.
+- **An unchanged summary without an explanation.** I wanted people to understand whether their text was already suitable or something had failed.
+- **Paying again when moving a Plan to Applications.** I wanted the analysis to move with the job.
 
 ## What I'd do next
 
-I'd start with a small, consented evaluation set of resumes and roles, with human judgments
-about demonstrated requirements, missing evidence and useful edits. I'd compare unsupported
-claims, missed requirements and run-to-run variation across models, keeping separate cases
-for tuning and evaluation. The 62%/90% observation motivates that work; it is not a benchmark.
+I would compare advice with human reviews of resumes and roles shared with permission. I would check missed requirements, invented claims, useful edits and how much answers change across repeated runs. Some examples would be kept aside to test changes, rather than used to tune them.
 
-I would assess compact keyword coverage separately from full resume analysis, then test
-whether a sourced explanation of evidence and gaps helps people more than the headline
-percentage. That could change what the product displays, including whether to retain a score.
+I would assess keyword coverage separately from full analysis, then test whether explanations help people more than the headline percentage. That could change whether Zebby should show a score at all.
 
-I'd also test recovery and insufficient-credit flows with people who did not build the app.
-The current tests check behavior and data preservation; they do not establish whether someone
-understands the next step or finds the advice useful.
+I would also watch new users recover a wallet or handle insufficient credits. Passing software tests does not show whether people understand what to do next.
 
 ## Keep your data with you
 
-Put your SQLite file in a cloud synced folder if you use more than one PC. **Quit Zebby and let syncing finish before switching computers.** Cloud drives cannot merge simultaneous database edits.
+Put your database file in a cloud synced folder if you use more than one PC. **Quit Zebby and let syncing finish before switching computers.** Cloud drives cannot merge simultaneous database edits.
 
 Downloaded-model analysis runs on your computer. Online methods send the selected job and CV content to your chosen provider. API keys, wallet access and downloaded models stay outside the shared database.
 
