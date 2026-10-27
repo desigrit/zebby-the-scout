@@ -73,7 +73,9 @@ async function fetchText(url: URL, signal: AbortSignal, ownHost: string, accept:
         method: "GET",
         redirect: "manual",
         signal,
-        headers: { Accept: accept },
+        // Keep compression within the reliably decoded formats in our desktop
+        // runtime. Amazon's zstd response was silently truncated at 1 KB.
+        headers: { Accept: accept, "Accept-Encoding": "gzip, deflate" },
         dispatcher: agent,
       });
       if (response.status >= 300 && response.status < 400) {
@@ -125,8 +127,8 @@ function platformFor(url: URL): Platform | null {
   return null;
 }
 
-export function formattedJobText(html: string): string {
-  return normalizeJobText(html).replace(/\r\n?/g, "\n").trim().slice(0, MAX_DESCRIPTION_CHARS);
+export function formattedJobText(value: string, html = false): string {
+  return normalizeJobText(value, html).replace(/\r\n?/g, "\n").trim().slice(0, MAX_DESCRIPTION_CHARS);
 }
 
 export function descriptionFromHtml(html: string): string {
@@ -150,12 +152,15 @@ export function descriptionFromHtml(html: string): string {
       }
     } catch { /* Continue with visible HTML. */ }
   }
-  const selectors = ["[itemprop='description']", "[data-testid*='job-description']",
+  // Amazon renders the description and both qualification sections together,
+  // followed by a separate sidebar for locations and recruiting categories.
+  const selectors = ["#job-detail-body .content", "[itemprop='description']", "[data-testid*='job-description']",
     "[class*='job-description']", "[class*='jobDescription']", "article", "main", "body"];
   for (const selector of selectors) {
     const element = $(selector).first();
     if (!element.length) continue;
-    const result = formattedJobText(element.html() || "");
+    // This is known HTML, even when its first element is a script or comment.
+    const result = formattedJobText(element.html() || "", true);
     if (result.length >= 80) return result;
   }
   return "";
@@ -216,6 +221,9 @@ export async function fetchJobPosting(value: string, ownHost = ""):
   const details = mergeJobDetails(api, html);
   if (platform && !details.company && (details.title || details.team || details.locations)) {
     details.company = companyFromBoardName(platform.board);
+  }
+  if (!apiText && !htmlText && !Object.values(details).some(Boolean)) {
+    throw new Error("The listing returned no job details. Paste the job description to continue.");
   }
   return { details, text: (apiText || htmlText).slice(0, MAX_DESCRIPTION_CHARS) };
 }

@@ -236,12 +236,28 @@ export async function detailsFromHtml(html: string): Promise<JobDetails> {
     .map((element) => $(element).text());
   const pageHeading = text(pick("job:title") || headerTitle || pick("og:title", "twitter:title") || pageTitle, 160);
   const genericHeading = /^(?:jobs?|careers?|open (?:roles|positions|jobs)|job openings|join our team|page not found)(?:\s*(?:[|:\-]|at)\s*.*)?$/i;
-  const fromDescription = detailsFromDescription(html);
+  const fromDescription = detailsFromDescription(normalizeJobText(html, true));
   const fallback: JobDetails = {
     company: genericSites.test(siteName) ? "" : siteName,
     title: genericHeading.test(pageHeading) ? "" : pageHeading,
     team: text(pick("job:team", "team", "job:department", "department"), 160) || fromDescription.team,
     locations: joinedLocations([pick("job:location", "job_location", "location")]) || joinedLocations(headerLocations) || fromDescription.locations,
   };
+  if (/^(?:www\.)?amazon\.jobs$/i.test(siteName) && $("#job-detail").length) {
+    fallback.company = "Amazon";
+    fallback.title = text($("#job-detail .apply-header h1.title").first().text(), 160) || fallback.title;
+    fallback.locations ||= joinedLocations($("#job-detail-body .association.location-icon .association-content li")
+      .toArray().map((element) => $(element).text()));
+    // PMT is Amazon's product-manager technical title. Its comma suffix is the
+    // specific team, whereas the sidebar category spans many unrelated teams.
+    const role = fallback.title.match(/^((?:(?:Senior|Sr\.?|Principal|Lead)\s+)*PMT)\s*,\s*(.{2,80})$/i);
+    const locationSuffix = role && (/^(remote|hybrid|onsite|on-site)$/i.test(role[2]) ||
+      parseLocations(fallback.locations).some((location) => location.split(",")
+        .some((part) => part.trim().toLowerCase() === role[2].toLowerCase())));
+    if (role && !fallback.team && !locationSuffix) {
+      fallback.title = role[1];
+      fallback.team = role[2];
+    }
+  }
   return mergeJobDetails(structured, fallback);
 }

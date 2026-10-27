@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 import {
   detailsFromAshby,
   detailsFromDescription,
@@ -11,6 +12,49 @@ import {
 } from "../lib/job-details.ts";
 import { descriptionFromHtml, descriptionText, formattedJobText } from "../lib/job-fetch.ts";
 import { parseLocations, serializeLocations } from "../lib/locations.ts";
+
+test("Amazon's server-rendered job keeps the role, team, locations and all description sections", async () => {
+  // Observed page structure and public role metadata, with synthetic description
+  // text and an additional location to check that every advertised city survives.
+  const html = await readFile(new URL("./fixtures/amazon-job.html", import.meta.url), "utf8");
+  assert.deepEqual(await detailsFromHtml(html), {
+    company: "Amazon", title: "Principal PMT", team: "Alexa for Shopping (Rufus) Partner Enablement",
+    locations: "USA, WA, Seattle; USA, CA, San Francisco",
+  });
+  assert.equal(descriptionFromHtml(html), [
+    "Description", "Lead a fictional platform initiative with product, design and engineering.",
+    "Key job responsibilities\n- Interview partners\n- Set the roadmap",
+    "Basic Qualifications", "- Experience launching technical products\n- Experience working with engineering",
+    "Preferred Qualifications", "- Experience building evaluation tools\n- Experience with self-service products",
+  ].join("\n\n"));
+});
+
+test("known HTML descriptions discard leading scripts and navigation before reading the job", () => {
+  const content = "<h2>Responsibilities</h2><p>Work with customers and engineering to build a reliable platform.</p>" +
+    "<ul><li>Lead discovery</li><li>Set direction</li></ul>";
+  for (const wrapper of ["article", "main", "body"]) {
+    const html = `<${wrapper}><!-- analytics --><script>console.log('private-tracking');</script>` +
+      `<style>.example{display:none}</style><nav>Account settings</nav>${content}<footer>Other jobs</footer></${wrapper}>`;
+    assert.equal(descriptionFromHtml(html), "Responsibilities\n\nWork with customers and engineering to build a reliable platform.\n\n• Lead discovery\n• Set direction");
+  }
+});
+
+test("Amazon PMT titles keep workplace and city suffixes out of the team field", async () => {
+  const html = await readFile(new URL("./fixtures/amazon-job.html", import.meta.url), "utf8");
+  for (const suffix of ["Remote", "Seattle"]) {
+    const details = await detailsFromHtml(html.replaceAll("Alexa for Shopping (Rufus) Partner Enablement", suffix));
+    assert.equal(details.title, `Principal PMT, ${suffix}`);
+    assert.equal(details.team, "");
+  }
+});
+
+test("an empty job shell supplies no description and plaintext angle brackets stay literal", async () => {
+  const html = "<html><head><script>window.analytics = 'head only';</script></head></html>";
+  assert.equal(descriptionFromHtml(html), "");
+  assert.deepEqual(await detailsFromHtml(html), { company: "", title: "", team: "", locations: "" });
+  assert.equal(formattedJobText("Build APIs for <T> and keep p95 latency < 100 ms."),
+    "Build APIs for <T> and keep p95 latency < 100 ms.");
+});
 
 test("structured JobPosting keeps employer, team, and multiple locations", () => {
   const details = detailsFromStructuredData({
