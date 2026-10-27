@@ -6,7 +6,7 @@
 
 I built Zebby while organizing my own job search: reviewing roles, deciding what my resume needed, and remembering which version went where. I wanted something my peers could use without a complicated AI setup. The zebra came along for moral support.
 
-Below are the [product decisions](#product-decisions), [how I worked with AI](#working-with-ai), [what I pushed back on](#what-i-pushed-back-on), and [what I'd do next](#what-id-do-next).
+Below are the [design exploration and selection](#choosing-a-design-direction), [product decisions](#product-decisions), [how I worked with AI](#working-with-ai), [what I pushed back on](#what-i-pushed-back-on), and [what I'd do next](#what-id-do-next).
 
 **[Download Zebby](https://github.com/desigrit/zebby-the-scout/releases/latest)** · [Getting started](docs/guide.md#install) · [Report an issue](https://github.com/desigrit/zebby-the-scout/issues)
 
@@ -43,6 +43,20 @@ Choose your provider, model and supported thinking level. Keys stay on this comp
 ![Zebby Analysis settings with OpenAI selected, a masked demo key and supported thinking levels](docs/screenshots/settings.png?v=2.3.8)
 
 </details>
+
+## Choosing a design direction
+
+**[Explore the nine interactive design directions](https://desigrit.github.io/zebby-the-scout/design-study/)** to compare Plan, Applications and Settings, including light and dark appearances and different window sizes.
+
+- **Compare different workflows as well as colors.** I asked for warm, crisp and balanced options, and the study explored layouts including a list with an inspector, a comparison table, a hiring-stage board and a guided Plan flow. Each made a different compromise: tables supported dense comparison, boards showed stages but fewer records, and a persistent inspector used more horizontal space.
+
+- **Combine the parts that fit.** I selected **Ember's palette across all pages**, **Ember's Applications and Settings**, and **Rosewood's document-style Plan in Ember colors**. Applications kept a compact list with role details alongside it, while Plan used a document structure for preparing a resume. I did not treat a concept as an indivisible package.
+
+- **Reject a cleaner mockup when it loses capability.** Ember's New Application concept omitted fields and features I already used. I asked to retain the existing form. For Plan, I kept the existing ATS keywords and resume themes side by side, with simple vertical lists, scores and copy controls, while removing unnecessary boxes.
+
+- **Choose review fixes individually.** I accepted the copy changes and protection for a Plan while analysis was running, with cancellation available. I also asked to reassess the UX after the redesign instead of treating every finding in the earlier review as a requirement.
+
+The linked study preserves the original alternatives and review, with a note explaining the later selection. Its data and model responses are simulated; it shows the decisions behind the redesign, not a measured usability improvement. The [current design specification](DESIGN.md) records the implementation that followed.
 
 ## Product decisions
 
@@ -90,7 +104,7 @@ I also asked for **Move to Applied** to carry the existing score and explanation
 
 Codex wrote much of the code and tests. I defined the workflow, used the builds in my own job search, and turned problems into specific requests.
 
-For the redesign, I asked for several working concepts, then combined the Applications and Settings structure from one with the Plan structure from another. For the AI advice, I decided what each result should explain, what evidence it could use, and when leaving a summary alone was acceptable.
+The [design study](#choosing-a-design-direction) records the alternatives I compared and the parts I retained. For the AI advice, I decided what each result should explain, what evidence it could use, and when leaving a summary alone was acceptable.
 
 Software tests can show that a result reaches the right job and is charged once. Human review is still needed to judge whether the advice is accurate and useful.
 

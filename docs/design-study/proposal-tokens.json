@@ -1,0 +1,890 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "proposal-comparison-token-inventory",
+  "title": "Zebby: nine unapproved alternatives",
+  "date": "2026-10-02",
+  "status": "unapproved comparison artifact",
+  "selectedDirection": null,
+  "normative": false,
+  "approvedVisualComp": null,
+  "corroboratedConceptSeed": null,
+  "product": {
+    "name": "Zebby",
+    "version": "1.5.0",
+    "revision": "6c52d838c1daae9b8d3c96f5fcb4247995e6bc0f"
+  },
+  "sourceRoot": "docs/design-study",
+  "sources": {
+    "palettes": "study.js",
+    "theme": "preview.js:41 and mix() at preview.js:42",
+    "styles": "preview.css, including the final typography and study-strip overrides",
+    "applications": "preview.js:56",
+    "plan": "preview.js:77",
+    "settings": "preview.js:87-89",
+    "behavior": "preview.js:92-99",
+    "framing": "index.html and gallery.js",
+    "review": "UX-review.md and review-data.js",
+    "finish": "review-status.md",
+    "contract": "Original comparison scope documented in design-notes.md",
+    "incumbentProduct": "https://github.com/desigrit/zebby-the-scout/blob/6c52d838c1daae9b8d3c96f5fcb4247995e6bc0f/PRODUCT.md",
+    "incumbentDesign": "https://github.com/desigrit/zebby-the-scout/blob/6c52d838c1daae9b8d3c96f5fcb4247995e6bc0f/DESIGN.md"
+  },
+  "paletteResolution": {
+    "rule": "For a direction and mode, combine shared.colors[mode] with directions[].colors[mode]. Every result has the 21 CSS color tokens returned by tones().",
+    "source": "preview.js:41",
+    "lightFieldMapping": {
+      "accent": "accent",
+      "secondary": "secondary",
+      "canvas": "canvas",
+      "sidebar": "sidebar",
+      "wash": "wash",
+      "ink": "ink",
+      "muted": "muted",
+      "line": "line"
+    },
+    "darkFieldMapping": {
+      "accent": "darkAccent",
+      "secondary": "darkAccent",
+      "canvas": "darkCanvas",
+      "sidebar": "darkSidebar",
+      "paper": "darkPaper",
+      "button-ink": "darkCanvas"
+    },
+    "fieldSource": "study.js: each direction entry",
+    "commonSource": "preview.js:41 literal colors",
+    "derivedSources": {
+      "light.hover": {
+        "source": "preview.js:41, mix() at preview.js:42",
+        "formula": "mix('#FFFFFF', direction.sidebar, 0.55)"
+      },
+      "dark.wash": {
+        "source": "preview.js:41, mix() at preview.js:42",
+        "formula": "mix(direction.darkPaper, direction.darkAccent, 0.12)"
+      },
+      "dark.line": {
+        "source": "preview.js:41, mix() at preview.js:42",
+        "formula": "mix(direction.darkPaper, '#FFFFFF', 0.16)"
+      },
+      "dark.hover": {
+        "source": "preview.js:41, mix() at preview.js:42",
+        "formula": "mix(direction.darkPaper, '#FFFFFF', 0.035)"
+      }
+    },
+    "interpolation": "Parse hex into 8-bit RGB channels, interpolate each channel, round with Math.round, and serialize as lowercase hex. This is the preview's arithmetic, not perceptual color interpolation.",
+    "darkSecondaryNote": "All nine dark palettes use darkAccent for secondary activity as well as primary actions. The separate light secondary hue is not retained in dark mode."
+  },
+  "shared": {
+    "colors": {
+      "light": {
+        "paper": "#FFFFFF",
+        "button-ink": "#FFFFFF",
+        "scroll-thumb": "#A5A8A1",
+        "good": "#407C59",
+        "good-wash": "#E5F2E7",
+        "good-ink": "#355F40",
+        "error": "#AB433B",
+        "danger-wash": "#FAE9E6",
+        "amber-wash": "#F8EED8",
+        "amber-ink": "#765719",
+        "status-wash": "#EEF0F2",
+        "status-ink": "#515D69"
+      },
+      "dark": {
+        "ink": "#F2F0EC",
+        "muted": "#BDB8B2",
+        "scroll-thumb": "#777873",
+        "good": "#9DBEA5",
+        "good-wash": "#253F30",
+        "good-ink": "#BCD8C6",
+        "error": "#F1ACA3",
+        "danger-wash": "#4D2E2C",
+        "amber-wash": "#463B21",
+        "amber-ink": "#E7C985",
+        "status-wash": "#363C43",
+        "status-ink": "#D9DEE5"
+      }
+    },
+    "colorSource": "preview.js:41",
+    "typography": {
+      "source": "preview.css: body, h1, h2, h3 and final overrides",
+      "fontFamily": "\"Segoe UI Variable\",\"Segoe UI\",-apple-system,BlinkMacSystemFont,sans-serif",
+      "roles": {
+        "body": {
+          "fontSize": "14px",
+          "lineHeight": 1.45
+        },
+        "roleTitle": {
+          "fontSize": "14px",
+          "fontWeight": 650,
+          "lineHeight": 1.35
+        },
+        "compactRoleTitle": {
+          "fontSize": "13px",
+          "fontWeight": 650
+        },
+        "selectedPlanTitle": {
+          "fontSize": "19px",
+          "fontWeight": 650,
+          "lineHeight": 1.25,
+          "letterSpacing": "-0.02em"
+        },
+        "sectionTitle": {
+          "fontSize": "15px",
+          "fontWeight": 650,
+          "letterSpacing": "-0.01em"
+        },
+        "planSectionTitle": {
+          "fontSize": "14px",
+          "fontWeight": 650
+        },
+        "control": {
+          "fontSize": "12px",
+          "fontWeight": 600
+        },
+        "formLabel": {
+          "fontSize": "12px",
+          "fontWeight": 600
+        },
+        "formValue": {
+          "fontSize": "13px",
+          "fontWeight": 400
+        },
+        "metadata": {
+          "fontSize": "11px"
+        },
+        "resultReading": {
+          "fontSize": "13px",
+          "lineHeight": 1.6
+        }
+      },
+      "readingWidths": {
+        "inspectorAndRationale": "72ch",
+        "why": "70ch",
+        "theme": "65ch",
+        "source": "preview.css: final .rationale p/.inspector p/.privacy-summary p, .why p and .theme-list li span"
+      },
+      "numerals": {
+        "value": "tabular-nums",
+        "source": ".match, .row-date, .stats strong, .term b and .theme-list b"
+      }
+    },
+    "spacing": {
+      "source": "preview.css: button rows, filters, field-grid, board, plan-content, plan-columns and workspace",
+      "status": "Observed recurring values, not a formalized production scale",
+      "controlGap": "7px",
+      "filterGap": "8px",
+      "fieldAndBoardGap": "12px",
+      "planRailGap": "18px",
+      "planColumnGap": "20px",
+      "workspaceInset": "0 24px 22px",
+      "listRowPadding": "15px 17px",
+      "resultPadding": "18px"
+    },
+    "radii": {
+      "source": "preview.css: named selectors",
+      "chip": {
+        "value": "5px",
+        "source": ".chip"
+      },
+      "segmentAndTerm": {
+        "value": "6px",
+        "source": ".segment, .term"
+      },
+      "fieldAndButton": {
+        "value": "7px",
+        "source": "button/input/select/textarea, .btn, .icon-btn, .search"
+      },
+      "boardCardAndToast": {
+        "value": "8px",
+        "source": ".board-card, .toast"
+      },
+      "navigationAndSettingsRow": {
+        "value": "9px",
+        "source": ".nav button, .setting-row"
+      },
+      "disclosure": {
+        "value": "10px",
+        "source": ".setting-disclosure"
+      },
+      "surface": {
+        "value": "12px",
+        "source": ".overview, .list-shell, .inspector, .results-panel, .confirm"
+      },
+      "brandImage": {
+        "value": "50%",
+        "source": ".brand img"
+      }
+    },
+    "layout": {
+      "source": "preview.css: shell, workspace, inspector-layout, plan-content, board, settings and media rules",
+      "titleRegion": "44px",
+      "navigation": {
+        "expanded": "158px",
+        "collapsed": "72px",
+        "targetMinHeight": "45px",
+        "icon": "24px",
+        "brandButton": "50px",
+        "brandImage": "43px"
+      },
+      "studyDisclosure": {
+        "height": "24px",
+        "below650px": "32px",
+        "source": ".shell and .study-strip final overrides"
+      },
+      "workspaceMaxWidth": "1480px",
+      "toolbarMinHeight": "62px",
+      "inspectorWidth": "300px",
+      "planRailWidth": "213px",
+      "planEditorColumns": "minmax(0,1fr) minmax(0,1fr)",
+      "boardColumns": "repeat(4,minmax(185px,1fr))",
+      "settingsMaxWidth": "990px",
+      "breakpoints": [
+        {
+          "maxWidth": "1200px",
+          "effects": [
+            "Navigation 142px.",
+            "Workspace inset 0 18px 18px.",
+            "Inspector 260px.",
+            "Plan rail 180px."
+          ]
+        },
+        {
+          "maxWidth": "1000px",
+          "effects": [
+            "Navigation 128px.",
+            "Workspace inset 0 16px 16px.",
+            "Plan rail 156px and CV/results stack.",
+            "Persistent role inspector and review snapshot hidden."
+          ]
+        },
+        {
+          "maxWidth": "820px",
+          "effects": [
+            "Navigation 72px with icon-only controls.",
+            "Plan rail hidden; Saved plans drawer remains available.",
+            "Rows wrap; file references hide.",
+            "Settings rows stack; local categories form a horizontal scrollable row.",
+            "Board uses four 205px columns with horizontal scrolling.",
+            "Toolbar minimum height 58px."
+          ]
+        },
+        {
+          "maxWidth": "650px",
+          "effects": [
+            "Study disclosure row grows to 32px.",
+            "Drawer bottom inset follows the disclosure row."
+          ]
+        }
+      ],
+      "status": "Viewport CSS for an HTML comparison, not approved native launch geometry"
+    },
+    "controls": {
+      "source": "preview.css: .btn, .icon-btn, .search, .filter, .form-label, .status and state selectors",
+      "primaryButton": {
+        "minHeight": "34px",
+        "padding": "7px 13px",
+        "radius": "7px",
+        "background": "accent",
+        "text": "button-ink"
+      },
+      "secondaryButton": {
+        "minHeight": "34px",
+        "padding": "7px 13px",
+        "background": "paper",
+        "border": "1px solid line",
+        "text": "ink"
+      },
+      "iconButton": {
+        "size": "32px",
+        "radius": "7px",
+        "icon": "17px",
+        "text": "muted"
+      },
+      "segmentedChoice": {
+        "minHeight": "32px",
+        "padding": "6px 12px",
+        "radius": "6px",
+        "selected": "wash + accent"
+      },
+      "search": {
+        "height": "34px",
+        "width": "210px",
+        "minWidth": "130px",
+        "padding": "0 10px",
+        "background": "paper",
+        "border": "1px solid line"
+      },
+      "formField": {
+        "height": "35px",
+        "padding": "9px 10px",
+        "background": "paper",
+        "border": "1px solid line"
+      },
+      "textarea": {
+        "descriptionMinHeight": "164px",
+        "overviewMinHeight": "116px",
+        "lineHeight": 1.6,
+        "resize": "vertical"
+      },
+      "status": {
+        "minHeight": "28px",
+        "padding": "5px 22px 5px 9px",
+        "fontSize": "11px"
+      },
+      "buttonHover": "filter: brightness(0.96)",
+      "iconHover": "wash background and accent text; destructive icon uses danger-wash and error",
+      "disabled": {
+        "opacity": 0.45,
+        "cursor": "default"
+      },
+      "cursors": {
+        "controls": "default",
+        "editableText": "text"
+      },
+      "note": "Desktop comparison geometry is smaller than several incumbent documented targets. Native control sizing and accessibility require verification after selection."
+    },
+    "focus": {
+      "source": "preview.css: shared :focus-visible selector, .bar:focus-visible, .search input and forced-colors rule",
+      "common": {
+        "outline": "2px solid accent",
+        "offset": "3px",
+        "targets": [
+          "button",
+          "a",
+          "summary",
+          "input",
+          "select",
+          "textarea"
+        ]
+      },
+      "chart": {
+        "outline": "2px solid accent",
+        "offset": "2px"
+      },
+      "selectedHighContrast": {
+        "outline": "1px solid Highlight",
+        "targets": [
+          "selected navigation",
+          "selected segment",
+          "selected plan"
+        ]
+      },
+      "limits": [
+        "Search input explicitly uses outline:0; its wrapper has no replacement focus ring in the current CSS.",
+        "Contenteditable keyword/theme spans are not in the shared focus selector.",
+        "CSS and supplied keyboard checks do not establish an assistive-technology pass."
+      ]
+    },
+    "scrolling": {
+      "source": "preview.css: .content-scroll/.scroll and ::-webkit-scrollbar selectors",
+      "regions": "Overflow stays inside the workspace, lists, Plan work area, chooser, inspector, board, Settings or drawer as composed.",
+      "idleThumb": "transparent",
+      "revealedThumb": "scroll-thumb",
+      "revealOn": [
+        "hover",
+        "focus-within"
+      ],
+      "webkitWidth": "7px",
+      "standardWidth": "thin",
+      "track": "transparent",
+      "highContrast": "scrollbar-color:auto for .content-scroll and .scroll",
+      "caveat": "CSS reveals a thumb; it does not widen it on hover. Native implementation must retain keyboard reachability, continuation cues and operating-system always-visible scroll preferences. This HTML study does not verify those preferences or native Mac scrolling."
+    },
+    "semantics": {
+      "source": "preview.js:31, preview.css: .status and status data selectors",
+      "statusTreatment": {
+        "Applied": "status-wash + status-ink",
+        "Heard back": "amber-wash + amber-ink",
+        "Interview scheduled": "good-wash + good-ink",
+        "Rejected": "danger-wash + error"
+      },
+      "nonColorCues": "Status text and numeric match values remain visible.",
+      "destructiveConfirmationInk": {
+        "value": "#FFFFFF",
+        "source": "preview.css: .confirm .danger"
+      },
+      "matchTrack": "good; all scored samples use this fill, with no threshold logic",
+      "chart": "secondary bars; final bar uses accent",
+      "resultMeaning": "Match and job importance are illustrative estimates. Importance is independent per item and separate from resume match. No hiring probability, measured ATS result or model-quality conclusion."
+    },
+    "depth": {
+      "source": "preview.css: .drawer, .confirm and .toast",
+      "restingSurfaces": "Paper/canvas tones and 1px rules; no resting row or panel shadows.",
+      "drawerShadow": "-8px 0 35px rgba(20,20,20,.14)",
+      "confirmationShadow": "0 12px 40px rgba(20,20,20,.2)",
+      "toastShadow": "0 6px 22px rgba(25,25,25,.16)",
+      "confirmationScrim": "rgba(24,28,29,.3)"
+    },
+    "motion": {
+      "source": "preview.css: .nav button, .nav button.activated svg, .busy-dot and prefers-reduced-motion",
+      "navigationHover": {
+        "property": "background",
+        "duration": "120ms",
+        "timingFunction": "CSS default ease"
+      },
+      "navigationActivation": {
+        "duration": "340ms",
+        "timingFunction": "cubic-bezier(.16,1,.3,1)",
+        "keyframes": [
+          {
+            "percent": 0,
+            "scale": 0.85
+          },
+          {
+            "percent": 55,
+            "scale": 1.12
+          },
+          {
+            "percent": 100,
+            "scale": 1
+          }
+        ]
+      },
+      "busySpinner": {
+        "duration": "1s",
+        "timingFunction": "linear",
+        "iteration": "infinite",
+        "rotation": "360deg"
+      },
+      "reducedMotion": "Animations and transitions are disabled with !important for elements and pseudo-elements. Busy spinner becomes a complete stationary ring.",
+      "note": "The HTML activation effect is a scale pulse. It is not the incumbent app's offline Lottie implementation."
+    }
+  },
+  "compositionDefinitions": {
+    "applications": {
+      "inspector": "Application list with a persistent role inspector; narrower panes use the shared details drawer.",
+      "agenda": "Application agenda grouped by applied date.",
+      "company": "Application collections grouped by company, with disclosure controls.",
+      "table": "Applications table with Role, Applied, Match, Resume, Status and actions; adaptive rows below 1000px.",
+      "status": "Application list filtered by hiring-stage tabs.",
+      "board": "Four hiring-stage columns with compact role cards and a details drawer.",
+      "inline": "Application ledger with details expanded beneath a record.",
+      "splitlist": "Compact application worklist beside an inspector with Details, Notes and Resume tabs.",
+      "records": "Application records with inline team context and resume reference."
+    },
+    "plan": {
+      "split": "Collapsed Job posting disclosure and CV editor beside all results; shared plan chooser and save footer.",
+      "steps": "Numbered Job, Your CV and Results steps with one focused page visible at a time.",
+      "document": "Document panel containing Job posting and CV fields above results.",
+      "focus": "Job, Your CV and Results pages with unnumbered navigation.",
+      "review": "Stacked Job posting, CV and results beside a summary; Review results scrolls and focuses the result.",
+      "accordion": "Job posting, Your CV and Resume direction disclosures; CV and results start open.",
+      "result-tabs": "Collapsed Job posting and CV editor beside results with Overview, Keywords and Themes tabs.",
+      "workbench": "Adaptive CV/results workbench with a collapsed Job posting; currently shares split Plan markup."
+    },
+    "settings": {
+      "rows": "Five sequential sections, each with a heading column and controls.",
+      "disclosures": "Five disclosure sections; Database and Analysis start open.",
+      "categories": "Local category navigation and one settings section at a time; Analysis starts selected."
+    }
+  },
+  "directions": [
+    {
+      "id": "ember",
+      "name": "Ember",
+      "family": "Warm",
+      "source": "study.js:2",
+      "compositions": {
+        "applications": "inspector",
+        "plan": "split",
+        "settings": "rows"
+      },
+      "bestUse": "Staying focused on one role while browsing the rest.",
+      "tradeoff": "The inspector uses some horizontal space.",
+      "colors": {
+        "light": {
+          "accent": "#A64A34",
+          "secondary": "#B17732",
+          "canvas": "#F8F6F3",
+          "sidebar": "#F0ECE6",
+          "wash": "#F8E8E1",
+          "ink": "#302C29",
+          "muted": "#71675F",
+          "line": "#DDD7D0",
+          "hover": "#f7f5f1"
+        },
+        "dark": {
+          "accent": "#F0AC91",
+          "secondary": "#F0AC91",
+          "canvas": "#24201E",
+          "sidebar": "#1E1B19",
+          "paper": "#2D2825",
+          "wash": "#443832",
+          "line": "#4f4a48",
+          "hover": "#34302d",
+          "button-ink": "#24201E"
+        }
+      }
+    },
+    {
+      "id": "honey",
+      "name": "Honey",
+      "family": "Warm",
+      "source": "study.js:3",
+      "compositions": {
+        "applications": "agenda",
+        "plan": "steps",
+        "settings": "disclosures"
+      },
+      "bestUse": "Applying to several roles every day.",
+      "tradeoff": "Planning is split into steps rather than one long view.",
+      "colors": {
+        "light": {
+          "accent": "#825C08",
+          "secondary": "#B98B26",
+          "canvas": "#FAF9F5",
+          "sidebar": "#F1EDE2",
+          "wash": "#F5EBCD",
+          "ink": "#302D25",
+          "muted": "#6E695C",
+          "line": "#DFDBCF",
+          "hover": "#f7f5ef"
+        },
+        "dark": {
+          "accent": "#EAC473",
+          "secondary": "#EAC473",
+          "canvas": "#24221C",
+          "sidebar": "#1C1B16",
+          "paper": "#2C2A22",
+          "wash": "#433c2c",
+          "line": "#4e4c45",
+          "hover": "#33312a",
+          "button-ink": "#24221C"
+        }
+      }
+    },
+    {
+      "id": "rosewood",
+      "name": "Rosewood",
+      "family": "Warm",
+      "source": "study.js:4",
+      "compositions": {
+        "applications": "company",
+        "plan": "document",
+        "settings": "rows"
+      },
+      "bestUse": "Managing several roles at the same company.",
+      "tradeoff": "Company groups add another level to scan.",
+      "colors": {
+        "light": {
+          "accent": "#91465F",
+          "secondary": "#BB7758",
+          "canvas": "#FAF8F8",
+          "sidebar": "#F1E9EC",
+          "wash": "#F5E4EB",
+          "ink": "#30282C",
+          "muted": "#75636A",
+          "line": "#E0D5DA",
+          "hover": "#f7f3f5"
+        },
+        "dark": {
+          "accent": "#EAB2C6",
+          "secondary": "#EAB2C6",
+          "canvas": "#251F23",
+          "sidebar": "#1C181B",
+          "paper": "#30272C",
+          "wash": "#46383e",
+          "line": "#514a4e",
+          "hover": "#372f33",
+          "button-ink": "#251F23"
+        }
+      }
+    },
+    {
+      "id": "beacon",
+      "name": "Beacon",
+      "family": "Crisp",
+      "source": "study.js:5",
+      "compositions": {
+        "applications": "table",
+        "plan": "split",
+        "settings": "rows"
+      },
+      "bestUse": "Fast comparison and keyboard-heavy use.",
+      "tradeoff": "A table needs an adaptive list at smaller widths.",
+      "colors": {
+        "light": {
+          "accent": "#2555BF",
+          "secondary": "#B68816",
+          "canvas": "#F6F7FA",
+          "sidebar": "#EAEFF8",
+          "wash": "#E5EDFD",
+          "ink": "#252C3A",
+          "muted": "#5F6C82",
+          "line": "#D9DFEA",
+          "hover": "#f3f6fb"
+        },
+        "dark": {
+          "accent": "#A5BCFF",
+          "secondary": "#A5BCFF",
+          "canvas": "#1C2029",
+          "sidebar": "#171B23",
+          "paper": "#252B35",
+          "wash": "#343c4d",
+          "line": "#484d55",
+          "hover": "#2d323c",
+          "button-ink": "#1C2029"
+        }
+      }
+    },
+    {
+      "id": "tide",
+      "name": "Tide",
+      "family": "Crisp",
+      "source": "study.js:6",
+      "compositions": {
+        "applications": "status",
+        "plan": "focus",
+        "settings": "disclosures"
+      },
+      "bestUse": "Knowing what needs attention at each stage.",
+      "tradeoff": "Switching Plan views hides some context.",
+      "colors": {
+        "light": {
+          "accent": "#0D746D",
+          "secondary": "#C15B42",
+          "canvas": "#F6F9F8",
+          "sidebar": "#E6F0EC",
+          "wash": "#DDF2EE",
+          "ink": "#253532",
+          "muted": "#5D736C",
+          "line": "#D3E0DB",
+          "hover": "#f1f7f5"
+        },
+        "dark": {
+          "accent": "#8CD4C8",
+          "secondary": "#8CD4C8",
+          "canvas": "#192523",
+          "sidebar": "#15201E",
+          "paper": "#22312D",
+          "wash": "#2f4540",
+          "line": "#45524f",
+          "hover": "#2a3834",
+          "button-ink": "#192523"
+        }
+      }
+    },
+    {
+      "id": "orchard",
+      "name": "Orchard",
+      "family": "Crisp",
+      "source": "study.js:7",
+      "compositions": {
+        "applications": "board",
+        "plan": "review",
+        "settings": "categories"
+      },
+      "bestUse": "Tracking conversations and interviews.",
+      "tradeoff": "A board shows fewer records and relies on details for dates and resumes.",
+      "colors": {
+        "light": {
+          "accent": "#2E704C",
+          "secondary": "#7754A4",
+          "canvas": "#F7F9F6",
+          "sidebar": "#E8EFE4",
+          "wash": "#E4F1E4",
+          "ink": "#29372B",
+          "muted": "#60715D",
+          "line": "#D8E1D3",
+          "hover": "#f2f6f0"
+        },
+        "dark": {
+          "accent": "#A1D0A5",
+          "secondary": "#A1D0A5",
+          "canvas": "#1D251D",
+          "sidebar": "#172017",
+          "paper": "#283228",
+          "wash": "#374537",
+          "line": "#4a534a",
+          "hover": "#303930",
+          "button-ink": "#1D251D"
+        }
+      }
+    },
+    {
+      "id": "olive",
+      "name": "Olive",
+      "family": "Balanced",
+      "source": "study.js:8",
+      "compositions": {
+        "applications": "inline",
+        "plan": "accordion",
+        "settings": "rows"
+      },
+      "bestUse": "A familiar tracker with less visual noise.",
+      "tradeoff": "Expanded records push the next rows down.",
+      "colors": {
+        "light": {
+          "accent": "#626F37",
+          "secondary": "#A87430",
+          "canvas": "#FAFAF7",
+          "sidebar": "#EEEFE5",
+          "wash": "#ECF0DB",
+          "ink": "#303329",
+          "muted": "#69715F",
+          "line": "#DCDDD2",
+          "hover": "#f6f6f1"
+        },
+        "dark": {
+          "accent": "#C2CD8E",
+          "secondary": "#C2CD8E",
+          "canvas": "#23261E",
+          "sidebar": "#1C2019",
+          "paper": "#2C3025",
+          "wash": "#3e4332",
+          "line": "#4e5148",
+          "hover": "#33372d",
+          "button-ink": "#23261E"
+        }
+      }
+    },
+    {
+      "id": "amethyst",
+      "name": "Amethyst",
+      "family": "Balanced",
+      "source": "study.js:9",
+      "compositions": {
+        "applications": "splitlist",
+        "plan": "result-tabs",
+        "settings": "categories"
+      },
+      "bestUse": "Editing one resume while referencing several saved plans.",
+      "tradeoff": "Result tabs make some generated content one click away.",
+      "colors": {
+        "light": {
+          "accent": "#74519D",
+          "secondary": "#B47750",
+          "canvas": "#F9F8FB",
+          "sidebar": "#ECE8F2",
+          "wash": "#EEE6F7",
+          "ink": "#2E2936",
+          "muted": "#70657D",
+          "line": "#DED8E6",
+          "hover": "#f5f2f8"
+        },
+        "dark": {
+          "accent": "#CEB3EC",
+          "secondary": "#CEB3EC",
+          "canvas": "#231F29",
+          "sidebar": "#1B1821",
+          "paper": "#2D2836",
+          "wash": "#40394c",
+          "line": "#4f4a56",
+          "hover": "#34303d",
+          "button-ink": "#231F29"
+        }
+      }
+    },
+    {
+      "id": "signal",
+      "name": "Signal",
+      "family": "Balanced",
+      "source": "study.js:10",
+      "compositions": {
+        "applications": "records",
+        "plan": "workbench",
+        "settings": "rows"
+      },
+      "bestUse": "A warmer evolution of Zebby with little relearning.",
+      "tradeoff": "Less visually adventurous than the board or guided flow.",
+      "colors": {
+        "light": {
+          "accent": "#AD4C39",
+          "secondary": "#187889",
+          "canvas": "#F8F8F6",
+          "sidebar": "#EBECE8",
+          "wash": "#F8E6DF",
+          "ink": "#2F3438",
+          "muted": "#666C70",
+          "line": "#DDDFD9",
+          "hover": "#f4f5f2"
+        },
+        "dark": {
+          "accent": "#F0B2A0",
+          "secondary": "#F0B2A0",
+          "canvas": "#202321",
+          "sidebar": "#191C1B",
+          "paper": "#292E2B",
+          "wash": "#413e39",
+          "line": "#4b4f4d",
+          "hover": "#303532",
+          "button-ink": "#202321"
+        }
+      }
+    }
+  ],
+  "commitments": {
+    "source": "Read-only PRODUCT.md and comparison contract",
+    "identity": "Existing full zebra icon, Zebby-only title, zebra collapse control, three destinations and desktop arrow cursor.",
+    "destinations": [
+      "Plan",
+      "Applications",
+      "Settings"
+    ],
+    "optionalApplicationData": true,
+    "nativeChrome": "Existing native controls remain a product commitment. The HTML controls and traffic lights are illustrative decorations."
+  },
+  "scope": {
+    "source": "preview.js:36,76,90,92,95; UX-review.md; review-status.md",
+    "sampleCounts": {
+      "standalone": {
+        "planChoices": 8,
+        "applications": 36
+      },
+      "nativeAudit": {
+        "plans": 13,
+        "applications": 36
+      }
+    },
+    "disclosure": "Design study · Sample data · Analysis and downloads simulated · No changes saved to disk",
+    "actions": "Notes, status, locations and application deletion can change in-memory sample state. Add/Edit application does not commit records, Save plan resets demo state, and New plan shows a route. General forms and edits do not implement a complete persistence workflow. Reloading the preview restores sample state.",
+    "simulation": "Analysis, downloads, provider/key/server setup, listing capture, database/file actions, logs and update checks are illustrative. No real service, billing, disk save, file download or model-quality result is demonstrated.",
+    "systemAppearance": "The System button currently resolves to the light demo state. There is no operating-system preference listener in the preview.",
+    "captures": {
+      "original": 38,
+      "defaultPages": 27,
+      "compactLightDarkDirections": [
+        "ember",
+        "beacon",
+        "signal"
+      ],
+      "otherOriginalStates": [
+        "Ember Plan dark",
+        "Signal collapsed",
+        "Signal local-model state",
+        "Signal Mac proposal"
+      ],
+      "gallery": 1,
+      "rasters": 49,
+      "missingProvenance": 0
+    },
+    "coverageLimit": "Light default captures cover all nine directions and three pages. Compact, dark and Mac states are sampled; native Mac behavior, assistive technology, real providers/downloads/updates/persistence, Windows OS scaling and extreme localization remain unverified.",
+    "finishReview": {
+      "disposition": "ship",
+      "scope": "Four named standalone comparison corrections",
+      "resolved": [
+        "Selected sample Plan identity",
+        "Persistent study disclosure and scoped feedback",
+        "Orchard results navigation and focus",
+        "Report links and distinct sample-plan counts"
+      ],
+      "productionApproval": false,
+      "nativeMacApproval": false,
+      "wholeProductApproval": false
+    },
+    "sourceSystemDrift": {
+      "finding": "F41",
+      "status": "Proposed future cleanup only",
+      "advisories": {
+        "total": 147,
+        "fontSize": 73,
+        "color": 59,
+        "radius": 15
+      },
+      "interpretation": "Advisories corroborate documentation/token drift; they are not 147 confirmed user-facing defects. Preserve semantic colors, intentional dark values and compact component shapes."
+    },
+    "existingDocs": "PRODUCT.md, DESIGN.md and .impeccable/design.json are preserved. These comparison tokens do not replace the Graphite production system.",
+    "impeccableUpdate": "Deferred by the user",
+    "nextStep": "Choose a palette/layout direction, then define and verify native Windows and Mac behavior during separately authorized implementation before persisting an approved design system."
+  }
+}
