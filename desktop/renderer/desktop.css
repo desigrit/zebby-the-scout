@@ -1,5 +1,6 @@
 /* Ember: warm neutrals, rust actions, and quiet document surfaces. */
 html, body, #root { height: 100%; overflow: hidden; }
+body { position: fixed; inset: 0; overflow: clip; }
 html[data-theme="light"] { color-scheme: light; }
 html[data-theme="dark"] {
   color-scheme: dark;

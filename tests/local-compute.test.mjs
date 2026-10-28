@@ -66,8 +66,14 @@ test("runtime paths cannot escape the package; a missing GPU binary leaves CPU u
   const folder = await mkdtemp(path.join(tmpdir(), "zebby-runtime-paths-"));
   try {
     await writeFile(path.join(folder, "cpu"), "runtime");
-    await writeFile(path.join(folder, "runtime.json"), JSON.stringify({ executable: "cpu", accelerator: { backend: "vulkan", executable: "../outside" } }));
-    assert.deepEqual(await readLocalRuntime(folder), { executable: path.join(folder, "cpu") });
+    for (const executable of ["../outside", "missing-gpu"]) {
+      await writeFile(path.join(folder, "runtime.json"), JSON.stringify({ backend: "cpu", executable: "cpu", accelerator: { backend: "vulkan", executable } }));
+      assert.deepEqual(await readLocalRuntime(folder), { executable: path.join(folder, "cpu") });
+    }
+    await writeFile(path.join(folder, "runtime.json"), JSON.stringify({ backend: "metal", executable: "cpu" }));
+    assert.deepEqual(await readLocalRuntime(folder), {
+      executable: path.join(folder, "cpu"), accelerator: { executable: path.join(folder, "cpu"), backend: "metal" },
+    });
     await writeFile(path.join(folder, "runtime.json"), JSON.stringify({ executable: "../outside" }));
     await assert.rejects(readLocalRuntime(folder), /engine could not be found/);
   } finally { assert.ok(folder.startsWith(tmpdir())); await rm(folder, { recursive: true, force: true }); }
@@ -77,7 +83,7 @@ for (const cancel of [false, true]) test(`GPU startup ${cancel ? "cancellation n
   const folder = await mkdtemp(path.join(tmpdir(), "zebby-gpu-fallback-"));
   const launches = path.join(folder, "launches.jsonl"), worker = path.join(folder, "worker.mjs");
   await writeFile(path.join(folder, "cpu"), "runtime"); await writeFile(path.join(folder, "gpu"), "runtime");
-  await writeFile(path.join(folder, "runtime.json"), JSON.stringify({ executable: "cpu", accelerator: { backend: "vulkan", executable: "gpu" } }));
+  await writeFile(path.join(folder, "runtime.json"), JSON.stringify({ backend: "cpu", executable: "cpu", accelerator: { backend: "vulkan", executable: "gpu" } }));
   await writeFile(worker, `import {appendFileSync} from 'node:fs';
     appendFileSync(${JSON.stringify(launches)}, JSON.stringify(process.argv.slice(3))+'\\n');
     if (process.argv.includes('Vulkan0') && ${!cancel}) setTimeout(() => process.exit(7), 30);

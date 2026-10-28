@@ -519,8 +519,20 @@ try {
     await nav.getByRole("button", { name: "Settings", exact: true }).click();
   }
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1));
+  // Hold Chromium's snapshot callback to exercise an immediate keyboard action
+  // while navigation still displays Settings. It must target Applications.
+  await page.evaluate(() => {
+    const original = document.startViewTransition.bind(document);
+    let release;
+    const waiting = new Promise((resolve) => { release = resolve; });
+    document.startViewTransition = (update) => original(async () => { await waiting; await update(); });
+    window.__emberReleaseTab = () => { document.startViewTransition = original; release(); };
+  });
   await nav.getByRole("button", { name: "Applications", exact: true }).click();
   await page.keyboard.press("Control+n"); await page.locator(".editor").waitFor();
+  await page.evaluate(() => window.__emberReleaseTab());
+  assert.equal(await nav.getByRole("button", { name: "Applications", exact: true }).getAttribute("aria-current"), "page");
+  checks.push("Immediate New shortcut during navigation opens the destination form, never the previous page's action");
   await capture("new-application-full-form");
   assert.equal(await page.getByRole("button", { name: "Save application", exact: true }).evaluate((e) => e.getBoundingClientRect().bottom <= innerHeight), true);
   for (const label of ["Job listing link", "Company", "Job title", "Team", "Date applied", "Match strength", "Job description"]) {
@@ -577,6 +589,11 @@ try {
     await page.screenshot({ path: path.join(output, "failure.png") }).catch(() => {});
     await writeFile(path.join(output, "failure-layout.json"), JSON.stringify(await page.evaluate(() => ({
       viewport: { width: innerWidth, height: innerHeight },
+      shellAncestors: ["html", "body", "#root", ".desktop-shell"].map((selector) => {
+        const element = document.querySelector(selector), style = getComputedStyle(element);
+        return { selector, scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight,
+          overflow: style.overflow, position: style.position, scrollBehavior: style.scrollBehavior, rect: element.getBoundingClientRect().toJSON() };
+      }),
       regions: [".desktop-titlebar", ".desktop-workspace", ".application-list", ".application-row-select"].map((selector) => {
         const element = document.querySelector(selector);
         return { selector, rect: element?.getBoundingClientRect().toJSON(), scrollTop: element?.scrollTop };

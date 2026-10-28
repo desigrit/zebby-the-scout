@@ -641,11 +641,11 @@ function Welcome({ state, onState }: { state: DesktopState; onState: (value: Des
 }
 
 export default function App() {
-  useWorkspaceShortcuts();
   useInteractiveScrollbars();
   const [state, setState] = useState<DesktopState | null>(null);
   const appearance = state?.appearance;
-  const [tab, setTab] = useTabTransition<Tab>("plan");
+  const [tab, setTab, settleTab] = useTabTransition<Tab>("plan");
+  useWorkspaceShortcuts(settleTab);
   const scrollToAnalysis = useRef(false);
   const [dirtyPlan, setDirtyPlan] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);

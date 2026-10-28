@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 
 // App-local commands. Standard editing shortcuts remain native to Electron.
-export function useWorkspaceShortcuts() {
+export function useWorkspaceShortcuts(beforeCommand?: () => void) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const mac = window.desktop && document.querySelector(".platform-mac");
@@ -10,6 +10,7 @@ export function useWorkspaceShortcuts() {
       const command = ({ n: "new", s: "save", f: "search" } as Record<string, string>)[event.key.toLowerCase()];
       if (!command) return;
       event.preventDefault();
+      beforeCommand?.();
       const control = document.querySelector<HTMLElement>(`[data-command="${command}"]:not(:disabled)`);
       if (!control) return;
       if (control instanceof HTMLInputElement) {
@@ -22,7 +23,7 @@ export function useWorkspaceShortcuts() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, []);
+  }, [beforeCommand]);
 }
 
 export function useInteractiveScrollbars() {
