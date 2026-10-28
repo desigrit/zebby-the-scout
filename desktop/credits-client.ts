@@ -5,8 +5,20 @@ import { creditModel, DEFAULT_CREDIT_MODEL, CREDIT_THINKING_LEVELS, validateOnli
 import { deviceNameSchema, deviceTokenSchema, guestSessionSchema, pairingCodeSchema, pairingSchema, recoveryCodeSchema,
   walletAccessSchema, type WalletAccess, type WalletPairing } from "../shared/wallet-access.ts";
 const integer = z.number().int().safe();
+const daySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((date) => {
+  const timestamp = Date.parse(`${date}T00:00:00Z`);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === date;
+});
+function walletTimestamp(value: string): bigint {
+  const milliseconds = Date.parse(value);
+  if (!Number.isFinite(milliseconds)) return BigInt(0);
+  const fraction = value.match(/\.(\d+)/)?.[1] || "";
+  return BigInt(Math.floor(milliseconds / 1000)) * BigInt(1_000_000) + BigInt(fraction.padEnd(6, "0").slice(0, 6) || "0");
+}
 const walletSchema = z.object({ balance: integer, reserved: integer.nonnegative(), used: integer.nonnegative(),
-  astraUnlocked: z.boolean().optional(),
+  astraUnlocked: z.boolean().optional(), completedAnalyses: integer.nonnegative().optional(),
+  dailyUsage: z.array(z.object({ date: daySchema, count: integer.nonnegative(), cost: integer.nonnegative() })).length(84)
+    .refine((days) => days.every((day, index) => !index || Date.parse(day.date) - Date.parse(days[index - 1].date) === 86_400_000)).optional(),
   purchased: integer.nonnegative(), updatedAt: z.string(), recent: z.array(z.object({ id: z.string().uuid(),
     model: z.string(), kind: z.string(), cost: integer.nonnegative(), createdAt: z.string() })).max(10) });
 const sessionSchema = z.object({ access_token: z.string().min(1).max(8192), refresh_token: z.string().min(1).max(8192),
@@ -210,6 +222,9 @@ export class CreditsClient {
     if (this.walletRefresh?.generation === generation) return this.walletRefresh.promise;
     const operation = async () => {
       try { const wallet = walletSchema.parse(await this.request("/v1/wallet")); this.checkGeneration(generation);
+        // A background refresh may arrive after a newer settlement or checkout.
+        // Keep that newer wallet instead of restoring the earlier balance.
+        if (this.wallet && walletTimestamp(wallet.updatedAt) < walletTimestamp(this.wallet.updatedAt)) return;
         this.wallet = wallet; this.stale = false; this.error = ""; await this.persist(); }
       catch (error) { if (generation === this.generation) { this.stale = true; this.error = error instanceof Error ? error.message : "Could not refresh credits."; } throw error; }
       finally { if (generation === this.generation) this.options.onChange(); }

@@ -90,7 +90,7 @@ jobs:
           path: work/ember-native-qa/failure*
           if-no-files-found: ignore
       - run: node --experimental-strip-types scripts/qa-local-engine.mjs smollm2-360m
-      - name: Check Qwen thinking mode on CPU
+      - name: Check Qwen thinking mode on local hardware
         run: node --experimental-strip-types scripts/qa-local-engine.mjs qwen3-06b --thinking
       - run: node node_modules/playwright-core/cli.js install chromium
       - run: npm run test:renderer
@@ -148,7 +148,7 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm run desktop:build
       - run: node --experimental-strip-types scripts/qa-local-engine.mjs smollm2-360m
-      - name: Check Qwen thinking mode on CPU
+      - name: Check Qwen thinking mode on local hardware
         run: node --experimental-strip-types scripts/qa-local-engine.mjs qwen3-06b --thinking
       - run: node node_modules/playwright-core/cli.js install chromium
       - run: npm run test:renderer

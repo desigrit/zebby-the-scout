@@ -188,6 +188,105 @@ test("simultaneous wallet refreshes are coalesced", async () => {
   await Promise.all([client.refreshWallet(), client.refreshWallet(), client.refreshWallet()]); assert.equal(calls, 1);
 });
 
+test("wallet totals include every completed analysis and keep recent usage bounded", async () => {
+  const db = new PGlite();
+  try {
+    await db.exec("create role anon; create role authenticated; create role service_role bypassrls;");
+    await db.exec(await readFile(new URL("../credits-service/schema.sql", import.meta.url), "utf8"));
+    await db.query("insert into zebby_wallets(user_id,balance,used,purchased) values($1,470000000,30000000,500000000)", [userId]);
+    for (let index = 0; index < 17; index++) {
+      const quote = randomUUID(), owner = index === 16 ? otherId : userId;
+      const status = index < 13 || index === 16 ? "completed" : index === 13 ? "reserved" : "failed";
+      await db.query("insert into zebby_quotes(id,user_id,model,kind,content_hash,maximum,price_version,expires_at) values($1,$2,'gpt-6.1-sol','plan','fixture',100000000,'fixture',now()+interval '1 hour')", [quote, owner]);
+      await db.query("insert into zebby_runs(id,user_id,quote_id,model,kind,maximum,cost,status,created_at) values($1,$2,$3,'gpt-6.1-sol','plan',100000000,$4,$5,$6)",
+        [randomUUID(), owner, quote, index * 100000, status, new Date(Date.UTC(2026, 9, index + 1)).toISOString()]);
+    }
+    const wallet = async () => (await db.query("select zebby_wallet($1) as result", [userId])).rows[0].result;
+    const before = await wallet();
+    assert.equal(before.completedAnalyses, 13);
+    assert.equal(before.recent.length, 10);
+    assert.equal(before.recent[0].cost, 1200000);
+    assert.equal(before.used, 30000000);
+    const savedRuns = (await db.query("select * from zebby_runs order by id")).rows;
+    const migration = await readFile(new URL("../credits-service/migrations/20261027_wallet_usage.sql", import.meta.url), "utf8");
+    await db.exec(migration); await db.exec(migration);
+    assert.deepEqual(await wallet(), before);
+    assert.deepEqual((await db.query("select * from zebby_runs order by id")).rows, savedRuns);
+    await assert.rejects(db.transaction(async (tx) => { await tx.exec("set local role anon"); await tx.query("select zebby_wallet($1)", [userId]); }), /permission denied/);
+  } finally { await db.close(); }
+});
+
+test("wallet activity covers 84 complete UTC days without recent-row, status or wallet leakage", async () => {
+  const db = new PGlite();
+  try {
+    await db.exec("create role anon; create role authenticated; create role service_role bypassrls; set timezone = 'America/Los_Angeles';");
+    await db.exec(await readFile(new URL("../credits-service/schema.sql", import.meta.url), "utf8"));
+    const today = (await db.query("select to_char((now() at time zone 'UTC')::date,'YYYY-MM-DD') as day")).rows[0].day;
+    const midnight = Date.parse(`${today}T00:00:00Z`), day = 86_400_000;
+    async function run({ owner = userId, status = "completed", at = midnight + 12 * 3600000, cost = 1000000 } = {}) {
+      const quote = randomUUID();
+      await db.query("insert into zebby_quotes(id,user_id,model,kind,content_hash,maximum,price_version,expires_at) values($1,$2,'gpt-6.1-sol','plan','fixture',100000000,'fixture',now()+interval '1 hour')", [quote, owner]);
+      await db.query("insert into zebby_runs(id,user_id,quote_id,model,kind,maximum,cost,status,created_at) values($1,$2,$3,'gpt-6.1-sol','plan',100000000,$4,$5,$6)",
+        [randomUUID(), owner, quote, cost, status, new Date(at).toISOString()]);
+    }
+    for (let index = 0; index < 15; index++) await run();
+    await run({ at: midnight - 83 * day, cost: 2000000 });
+    await run({ at: midnight - 83 * day - 1, cost: 3000000 });
+    await run({ at: midnight + day - 1, cost: 4000000 });
+    await run({ at: midnight + day, cost: 5000000 });
+    await run({ status: "failed", cost: 6000000 });
+    await run({ status: "reserved", cost: 6000000 });
+    await run({ owner: otherId, cost: 7000000 });
+    const wallet = async () => (await db.query("select zebby_wallet($1) as result", [userId])).rows[0].result;
+    const before = await wallet();
+    assert.equal(before.recent.length, 10);
+    assert.equal(before.completedAnalyses, 19);
+    assert.equal(before.dailyUsage.length, 84);
+    assert.deepEqual(before.dailyUsage[0], { date: new Date(midnight - 83 * day).toISOString().slice(0, 10), count: 1, cost: 2000000 });
+    assert.deepEqual(before.dailyUsage.at(-1), { date: today, count: 16, cost: 19000000 });
+    assert.equal(before.dailyUsage.reduce((total, value) => total + value.count, 0), 17);
+    assert.equal(before.dailyUsage.reduce((total, value) => total + value.cost, 0), 21000000);
+    assert.equal(before.dailyUsage.filter((value) => value.count === 0 && value.cost === 0).length, 82);
+    const migration = await readFile(new URL("../credits-service/migrations/20261027_wallet_usage.sql", import.meta.url), "utf8");
+    await db.exec(migration); await db.exec(migration);
+    assert.deepEqual(await wallet(), before);
+  } finally { await db.close(); }
+});
+
+test("credits client retains complete daily usage and accepts older wallets without it", async () => {
+  const base = { balance: 100000000, used: 0, reserved: 0, purchased: 100000000, updatedAt: new Date().toISOString(), recent: [] };
+  const dailyUsage = Array.from({ length: 84 }, (_, index) => ({ date: new Date(Date.UTC(2026, 9, 27) - (83 - index) * 86400000).toISOString().slice(0, 10), count: index % 3, cost: index * 1000 }));
+  let payload = { ...base, dailyUsage };
+  const client = new CreditsClient(config.publicUrl, { save: async () => {}, onChange() {}, fetcher: async () => Response.json(payload) });
+  client.restore(JSON.stringify({ url: config.publicUrl, session: { access: "fixture", refresh: "fixture", expires: Date.now() + 3600000, email: "peer@example.com", id: userId } }));
+  await client.refreshWallet();
+  assert.deepEqual(client.state("gpt-6.1-sol").wallet.dailyUsage, payload.dailyUsage);
+  payload = base;
+  await client.refreshWallet();
+  assert.equal(client.state("gpt-6.1-sol").wallet.dailyUsage, undefined);
+  for (const days of [dailyUsage.slice(1), dailyUsage.map((value, index) => index === 4 ? { ...value, date: "2026-02-31" } : value),
+    dailyUsage.map((value, index) => index === 4 ? dailyUsage[3] : value),
+    dailyUsage.map((value, index) => index === 4 ? dailyUsage[5] : value)]) {
+    payload = { ...base, dailyUsage: days };
+    await assert.rejects(client.refreshWallet());
+  }
+});
+
+test("a delayed refresh cannot replace a newer checkout wallet, including sub-millisecond ledger timestamps", async () => {
+  const oldWallet = { balance: 1000000, used: 0, reserved: 0, purchased: 1000000, updatedAt: "2026-10-27T12:00:00.000001Z", recent: [] };
+  const newWallet = { ...oldWallet, balance: 501000000, purchased: 501000000, updatedAt: "2026-10-27T12:00:00.000002+00:00" };
+  let finish, entered;
+  const waiting = new Promise((resolve) => { entered = resolve; });
+  const client = new CreditsClient(config.publicUrl, { save: async () => {}, onChange() {}, fetcher: async (url) => {
+    if (url.endsWith("/wallet")) { entered(); return new Promise((resolve) => { finish = () => resolve(Response.json(oldWallet)); }); }
+    return Response.json({ status: "paid", wallet: newWallet });
+  } });
+  client.restore(JSON.stringify({ url: config.publicUrl, session: { access: "fixture", refresh: "fixture", expires: Date.now() + 3600000, email: "peer@example.com", id: userId } }));
+  const refresh = client.refreshWallet(); await waiting;
+  await client.checkoutStatus("cs_fixture"); finish(); await refresh;
+  assert.deepEqual(client.state("gpt-6.1-sol").wallet, newWallet);
+});
+
 test("PostgreSQL ledger and service integration", async (t) => {
   const db = new PGlite();
   await db.exec("create role anon; create role authenticated; create role service_role bypassrls;");

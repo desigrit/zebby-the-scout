@@ -150,7 +150,7 @@ try {
   }
   async function assertSettingsActions() {
     await settleSidebar();
-    const actions = await page.locator('.settings-page button:not(.settings-link):not([role="switch"]):not([role="radio"]):visible').evaluateAll((buttons) => buttons.map((button) => {
+    const actions = await page.locator('.settings-page button:not(.settings-link):not(.credit-activity-day):not([role="switch"]):not([role="radio"]):visible').evaluateAll((buttons) => buttons.map((button) => {
       const style = getComputedStyle(button), icon = button.querySelector('svg');
       return { label: button.getAttribute('aria-label') || button.innerText, shared: button.classList.contains('settings-action'),
         height: button.getBoundingClientRect().height, size: style.fontSize, weight: style.fontWeight,
@@ -297,7 +297,8 @@ try {
     window.modelQA = { confirmDelete: false, deleteRequests: [], selections: [], rejectSidebarSave: false,
       updateState, installRequests: 0, failInstall: false, failCheck: false, finishDownload: null,
       logOpens: 0, failLogOpen: false, failKeySave: false, keySaveAttempts: 0, thinkingSelections: [], databaseRequests: [], stopRequests: [], update,
-      setPlatform: (platform) => { initialState.platform = platform; } };
+      setPlatform: (platform) => { initialState.platform = platform; },
+      setCompute: (compute) => { initialState.localCompute = compute; for (const listener of listeners) listener(snapshot()); } };
     window.desktop = { state: async () => initialState, onDatabaseChanged: () => () => {}, onNavigate: () => () => {},
       onAnalysisProgress: (listener) => { analysisListeners.add(listener); return () => analysisListeners.delete(listener); },
       cancelAnalysis: async (id) => { window.analysisQA.cancelled.push(id); return true; },
@@ -1353,6 +1354,44 @@ try {
   await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32"; document.documentElement.dataset.theme = "light"; });
   const emptyCredits = page.getByRole("region", { name: "Credits", exact: true });
   const settingsPage = page.locator(".settings-page");
+  // Rapid changes settle on the last destination without an inert workspace.
+  await page.evaluate(() => {
+    const buttons = [...document.querySelectorAll('.sidebar-nav button')];
+    for (const name of ["Plan", "Applications", "Plan", "Settings"]) buttons.find(button => button.textContent.trim() === name).click();
+  });
+  await settingsPage.waitFor();
+  await page.waitForFunction(() => !document.querySelector('.desktop-workspace')?.inert);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await nav.getByRole("button", { name: "Applications", exact: true }).click();
+  await nav.getByRole("button", { name: "Settings", exact: true }).click();
+  await settingsPage.waitFor();
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const guideLink = settingsPage.getByRole("button", { name: "Need help deciding?", exact: true });
+  await guideLink.click();
+  const analysisGuide = page.getByRole("dialog", { name: "Need help deciding?", exact: true });
+  await analysisGuide.waitFor();
+  assert.equal(await analysisGuide.locator("dt").count(), 4);
+  assert.ok((await analysisGuide.boundingBox()).width <= 680);
+  assert.equal(await guideLink.evaluate(element => getComputedStyle(element).color), "rgb(166, 74, 52)");
+  assert.equal(await analysisGuide.locator(".analysis-guide-options > div").evaluateAll(rows => rows.every(row =>
+    row.querySelector("dt").getBoundingClientRect().right < row.querySelector("dd").getBoundingClientRect().left &&
+    getComputedStyle(row).borderTopWidth === "0px")), true);
+  await captureSettings("analysis-guide-windows-light.png", false);
+  await page.keyboard.press("Escape"); await analysisGuide.waitFor({ state: "hidden" });
+  assert.equal(await guideLink.evaluate(element => element === document.activeElement), true);
+  await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption("builtin");
+  const beforeHardware = await page.evaluate(() => window.modelQA.selections.length);
+  for (const backend of ["vulkan", "metal", "cpu"]) {
+    await page.evaluate((backend) => window.modelQA.setCompute({ status: "ready", backend,
+      devices: backend === "cpu" ? [] : [{ id: backend === "metal" ? "Metal" : "Vulkan0", name: backend === "metal" ? "Apple M3" : "NVIDIA RTX", memory: 16e9, freeMemory: 12e9 }],
+      availableMemory: 16e9, recommendedModelIds: backend === "cpu" ? ["qwen3-06b", "lfm25-350m"] : ["qwen3-8b", "qwen3-4b"] }), backend);
+    const picker = page.getByRole("combobox", { name: "Local model", exact: true });
+    await picker.locator(`optgroup[label="Recommended for your ${backend === "cpu" ? "CPU" : "GPU"}"]`).waitFor({ state: "attached" });
+    assert.equal(await picker.locator("option[value]:not([value=''])").count(), LOCAL_MODELS.length);
+    assert.match(await page.locator(".model-compute-hint").innerText(), backend === "cpu" ? /^CPU$/ : backend === "metal" ? /Apple M3.*Metal/ : /NVIDIA RTX.*Vulkan/);
+    if (backend === "vulkan") await captureSettings("analysis-hardware-windows-light.png", false);
+  }
+  assert.equal(await page.evaluate(() => window.modelQA.selections.length), beforeHardware, "Hardware detection must not select or download a model");
   for (const method of ["ollama", "builtin", "openai", "anthropic"]) {
     await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption(method);
     assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).count(), 0);
@@ -1369,16 +1408,18 @@ try {
   await page.setViewportSize({ width: 790, height: 850 });
   await page.evaluate(() => { window.modelQA.setPlatform("darwin"); document.documentElement.dataset.platform = "darwin"; document.documentElement.dataset.theme = "dark"; });
   await captureSettings("credits-empty-mac-dark-narrow.png", false);
-  await emptyCredits.getByRole("button", { name: "Learn more", exact: true }).click();
+  assert.equal(await emptyCredits.getByRole("button", { name: "Restore credits", exact: true }).count(), 0);
+  assert.equal(await emptyCredits.getByRole("button", { name: "Connect this computer", exact: true }).count(), 0);
+  await emptyCredits.getByRole("button", { name: "Manage credits", exact: true }).click();
   const creditHelp = page.locator(".credit-help-dialog");
-  await creditHelp.getByRole("heading", { name: "Restore credits", exact: true }).waitFor();
+  await creditHelp.getByRole("heading", { name: "Manage credits", exact: true }).waitFor();
   assert.match(await creditHelp.innerText(), /saved recovery code/);
-  assert.match(await creditHelp.innerText(), /expire after 10 minutes and work once/);
-  assert.ok((await creditHelp.boundingBox()).width <= 480);
+  assert.equal(await creditHelp.locator("details").count(), 0);
+  assert.ok((await creditHelp.boundingBox()).width > 480);
   await captureSettings("credits-help-empty-mac-dark-narrow.png", false);
   await page.keyboard.press("Escape");
   await creditHelp.waitFor({ state: "hidden" });
-  assert.equal(await emptyCredits.getByRole("button", { name: "Learn more", exact: true }).evaluate(element => element === document.activeElement), true);
+  assert.equal(await emptyCredits.getByRole("button", { name: "Manage credits", exact: true }).evaluate(element => element === document.activeElement), true);
   // A cold or unavailable host must not hold up choosing a pack or cancelling.
   await page.evaluate(() => { window.creditQA.warmupMode = "pending"; });
   await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).click();
@@ -1497,7 +1538,14 @@ try {
   await page.evaluate(() => { window.creditQA.cancelRecovery = false; });
   await analysisDialog.getByRole("button", { name: "Save recovery code", exact: true }).click();
   await analysisDialog.getByText("Recovery code saved.", { exact: true }).waitFor();
-  await analysisDialog.getByRole("button", { name: /^Analyze with GPT/ }).click();
+  await analysisDialog.getByRole("button", { name: "Change in Settings", exact: true }).click();
+  await analysisDialog.waitFor({ state: "hidden" });
+  await page.waitForFunction(() => {
+    const heading = document.getElementById("ai-settings");
+    return heading && heading.getBoundingClientRect().top >= 44 && heading.getBoundingClientRect().top < 120;
+  });
+  await nav.getByRole("button", { name: "Plan", exact: true }).click();
+  await analyze.click();
   await page.waitForFunction(() => window.creditQA.quoteRequests.length > 0);
   const paidPlanSource = await page.evaluate(() => window.creditQA.quoteRequests.at(-1).source);
   const paidPlanPath = `/api/plans/${paidPlanSource.id}/analyze`;
@@ -1607,7 +1655,6 @@ try {
   assert.equal(await creditsSettings.evaluate(element => element.scrollWidth > element.clientWidth), false);
   await creditsSettings.getByRole("button", { name: "Cancel pairing", exact: true }).click();
   assert.equal(await page.evaluate(() => window.creditQA.pairingCancelled), 1);
-  await creditHelp.getByRole("button", { name: "Close credit help", exact: true }).click();
   assert.equal(await creditsSettings.getByRole("button", { name: "Connect this computer", exact: true }).isEnabled(), true);
   await creditsSettings.getByRole("button", { name: "Connect this computer", exact: true }).click();
   const pairInput = creditsSettings.getByLabel("Pairing code", { exact: true });
@@ -1618,20 +1665,19 @@ try {
   await pairInput.fill("ABCD-2345"); await pairInput.press("Enter");
   await creditsSettings.getByText("Computer connected.", { exact: true }).waitFor();
   assert.equal(await creditsSettings.getByRole("button", { name: "Connect this computer", exact: true }).evaluate(element => element === document.activeElement), true);
-  await creditsSettings.getByRole("button", { name: "Manage credits", exact: true }).click();
-  await creditsSettings.getByText("Connected computers (2)", { exact: true }).click();
+  await creditsSettings.getByRole("heading", { name: "Connected computers", exact: true }).waitFor();
   await creditsSettings.getByText("Mac laptop", { exact: true }).waitFor();
-  await creditsSettings.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await creditsSettings.getByRole("button", { name: "Disconnect Mac laptop", exact: true }).click();
   assert.equal(await creditsSettings.getByText("Mac laptop", { exact: true }).isVisible(), true);
   await page.evaluate(() => { window.creditQA.confirmDisconnect = true; });
-  await creditsSettings.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await creditsSettings.getByRole("button", { name: "Disconnect Mac laptop", exact: true }).click();
   assert.equal(await creditsSettings.getByText("Mac laptop", { exact: true }).count(), 0);
-  await creditHelp.getByRole("button", { name: "Close credit help", exact: true }).click();
   await creditsSettings.getByRole("button", { name: "Restore credits", exact: true }).click();
   const recoveryInput = creditsSettings.getByLabel("Recovery code", { exact: true });
   await recoveryInput.fill("synthetic private recovery code"); await recoveryInput.press("Escape");
   assert.equal(await recoveryInput.count(), 0);
   assert.equal(await creditsSettings.getByRole("button", { name: "Restore credits", exact: true }).evaluate(element => element === document.activeElement), true);
+  await creditHelp.getByRole("button", { name: "Close credits and devices", exact: true }).click();
   await page.setViewportSize({ width: 1550, height: 850 });
   await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32"; document.documentElement.dataset.theme = "light"; });
   await page.evaluate(() => { window.creditQA.update({ wallet: { balance: 499000000, reserved: 0, used: 1000000, purchased: 500000000,
@@ -1639,8 +1685,16 @@ try {
   await page.waitForFunction(() => document.querySelector(".sidebar-credit-button")?.getAttribute("aria-label") === "Buy credits. 1 of 500 credits used, 100% remaining.");
   assert.equal(await sidebarWallet.locator(".sidebar-credit-percent").innerText(), "100%");
   assert.equal(await sidebarWallet.locator(".sidebar-credit-track > span").evaluate(element => element.style.width), "99.8%");
-  await page.evaluate(() => { window.creditQA.update({ wallet: { balance: 465000000, reserved: 0, used: 35000000, purchased: 500000000,
-    updatedAt: "2026-09-30T20:00:00Z", recent: [{ id: "usage-fixture", model: "claude-sonnet-5-5", kind: "plan", cost: 35000000, createdAt: "2026-09-30T20:00:00Z" }] } }); });
+  await page.evaluate(() => {
+    const recent = [4.8, 1.3, .9, 3.7, 2.1, 4.2, .5, 6.8, .7, 2].map((cost, index) => ({ id: `usage-${index}`,
+      model: ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"][index % 3], kind: index % 2 ? "match" : "plan", cost: cost * 1000000,
+      createdAt: new Date(Date.parse("2026-09-30T20:00:00Z") - index * 2 * 86400000).toISOString() }));
+    const dailyUsage = Array.from({ length: 84 }, (_, index) => ({ date: new Date(Date.parse("2026-09-30T00:00:00Z") - (83 - index) * 86400000).toISOString().slice(0, 10), count: 0, cost: 0 }));
+    for (const item of recent) { const day = dailyUsage.find(day => item.createdAt.startsWith(day.date)); day.count++; day.cost += item.cost; }
+    [.5, .6, .7, 1, 1.4, 1.8, 2].forEach((cost, index) => { const day = dailyUsage[7 + index * 7]; day.count++; day.cost += cost * 1000000; });
+    window.creditQA.update({ wallet: { balance: 465000000, reserved: 0, used: 35000000, purchased: 500000000, completedAnalyses: 17,
+      updatedAt: "2026-09-30T20:00:00Z", recent, dailyUsage } });
+  });
   const creditBar = creditsSettings.getByRole("progressbar", { name: "Credits remaining", exact: true });
   await page.waitForFunction(() => document.querySelector('[role="progressbar"][aria-label="Credits remaining"]')?.getAttribute("aria-valuenow") === "93");
   assert.equal(await creditBar.getAttribute("aria-valuenow"), "93");
@@ -1677,8 +1731,37 @@ try {
   await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32"; document.documentElement.dataset.theme = "light"; });
   await creditsSettings.getByRole("button", { name: "Manage credits", exact: true }).click();
   await assertSettingsActions();
+  assert.equal(await creditHelp.locator("details").count(), 0);
+  assert.equal(await creditHelp.getByRole("list", { name: "Credit usage history" }).locator("li").count(), 10);
+  assert.equal(await creditHelp.locator(".credit-history-totals dd").allTextContents().then(values => values.join(",")), "17,35");
+  const activityDays = creditHelp.locator(".credit-activity-day");
+  assert.equal(await activityDays.count(), 84);
+  assert.equal(await creditHelp.locator(".credit-history-bar").count(), 0);
+  await activityDays.last().click();
+  assert.match(await creditHelp.locator(".credit-activity-detail").innerText(), /Sep 30\s+1 analysis · 4.8 credits/);
+  await page.keyboard.press("Home");
+  assert.equal(await activityDays.first().getAttribute("aria-pressed"), "true");
+  await page.keyboard.press("ArrowRight");
+  assert.equal(await activityDays.nth(7).getAttribute("aria-pressed"), "true");
+  assert.match(await creditHelp.locator(".credit-activity-detail").innerText(), /1 analysis · 0.5 credits/);
+  await page.keyboard.press("End");
+  assert.equal(await activityDays.last().getAttribute("aria-pressed"), "true");
+  const accessBox = await creditHelp.locator(".credit-manager-access").boundingBox(), activityBox = await creditHelp.locator(".credit-manager-activity").boundingBox();
+  assert.ok(accessBox.x + accessBox.width < activityBox.x);
+  assert.equal(await creditHelp.evaluate(element => element.scrollWidth > element.clientWidth), false);
   await captureSettings("credits-help-windows-light.png", false);
-  await creditHelp.getByRole("button", { name: "Close credit help", exact: true }).click();
+  await page.setViewportSize({ width: 600, height: 800 });
+  await page.evaluate(() => { window.modelQA.setPlatform("darwin"); document.documentElement.dataset.platform = "darwin"; document.documentElement.dataset.theme = "dark"; });
+  await creditHelp.getByRole("button", { name: "Refresh credits and devices", exact: true }).click();
+  await page.locator(".desktop-shell.platform-mac").waitFor();
+  assert.equal(await creditHelp.evaluate(element => element.scrollWidth > element.clientWidth), false);
+  await captureSettings("credits-manager-mac-dark-narrow.png", false);
+  await creditHelp.locator(".credit-history").scrollIntoViewIfNeeded();
+  await captureSettings("credits-manager-mac-dark-usage.png", false);
+  await page.setViewportSize({ width: 1550, height: 850 });
+  await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32"; document.documentElement.dataset.theme = "light"; });
+  await creditHelp.getByRole("button", { name: "Refresh credits and devices", exact: true }).click();
+  await creditHelp.getByRole("button", { name: "Close credits and devices", exact: true }).click();
   assert.equal(await creditsSettings.evaluate(element => element.scrollWidth > element.clientWidth), false);
   await page.evaluate(() => {
     window.creditQA.resumeMode = "error";

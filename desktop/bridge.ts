@@ -1,4 +1,5 @@
 import type { LocalModelStatus } from "./local-model-catalog";
+import type { ComputeBackend, LocalCompute } from "./local-compute";
 import type { UpdateState } from "./release-updates";
 import type { AnalysisProvider, AnalysisSource, CreditQuote, CreditsState } from "../shared/online-models";
 import type { WalletPairing } from "../shared/wallet-access";
@@ -25,7 +26,8 @@ export type DesktopState = {
   acceptedModelTerms: string[];
   localModels: LocalModelStatus[];
   modelsFolder: string;
-  localEngine: { status: "idle" | "loading" | "analyzing"; modelId: string };
+  localEngine: { status: "idle" | "loading" | "analyzing"; modelId: string; backend?: ComputeBackend; cpuFallback?: boolean };
+  localCompute?: LocalCompute;
   totalMemory: number;
   availableMemory: number;
   canSaveApiKey: boolean;

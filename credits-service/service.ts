@@ -9,6 +9,7 @@ import { validateInput, validateResult } from "./validation.ts";
 import { stripeRequest, verifyStripeEvent } from "./stripe.ts";
 import { ServiceError } from "./errors.ts";
 import { createWalletAccess } from "./wallet-access.ts";
+import { createWalletUsage } from "./wallet-usage.ts";
 import { z } from "zod";
 
 const uuid = z.string().uuid();
@@ -37,7 +38,7 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
   async function supabase<T = unknown>(path: string, options: RequestInit = {}, token = config.supabaseKey): Promise<T> {
     const response = await send(config.supabaseUrl + path, { ...options, headers: { apikey: config.supabaseKey,
       Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...options.headers },
-      signal: AbortSignal.timeout(15000) });
+      signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) });
     if (!response.ok) {
       if (path === "/rest/v1/rpc/zebby_reserve") {
         // Translate only known ledger rejections; never expose raw SQL errors.
@@ -50,8 +51,10 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
     if (response.status === 204) return null as T;
     return response.json() as Promise<T>;
   }
-  async function rpc<T = unknown>(name: string, value: unknown) { return supabase<T>(`/rest/v1/rpc/zebby_${name}`, { method: "POST", body: JSON.stringify(value) }); }
+  async function rpc<T = unknown>(name: string, value: unknown, signal?: AbortSignal) { return supabase<T>(`/rest/v1/rpc/zebby_${name}`, { method: "POST", body: JSON.stringify(value), signal }); }
   const access = createWalletAccess({ rpc, rateLimit });
+  const enrichWalletUsage = createWalletUsage({ url: config.supabaseUrl, key: config.supabaseKey, fetcher: send, now,
+    onFailure: () => console.warn("Credit activity is temporarily unavailable; wallet balance is unchanged.") });
   async function rows<T>(table: string, query: string) { return supabase<T[]>(`/rest/v1/zebby_${table}?${query}`); }
   async function insert<T>(table: string, value: unknown) { return supabase<T[]>(`/rest/v1/zebby_${table}`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify(value) }); }
   async function user(token: string) {
@@ -108,7 +111,10 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
     const managed = await access.manage(method, path, body, account);
     if (managed !== undefined) return managed;
     if (method === "POST" && path === "/v1/auth/logout") { await supabase("/auth/v1/logout?scope=local", { method: "POST" }, token); return { signedOut: true }; }
-    if (method === "GET" && path === "/v1/wallet") return rpc("wallet", { p_user: account.id });
+    if (method === "GET" && path === "/v1/wallet") {
+      const readWallet = (requestSignal: AbortSignal) => rpc<Wallet>("wallet", { p_user: account.id }, requestSignal);
+      return enrichWalletUsage(account.id, await readWallet(signal), readWallet, signal);
+    }
     if (method === "GET" && /^\/v1\/analyses\/[\da-f-]{36}$/i.test(path)) {
       const id = uuid.parse(path.split("/").at(-1));
       const [run] = await rows<RunRow>("runs", `id=eq.${id}&user_id=eq.${account.id}&select=*`);

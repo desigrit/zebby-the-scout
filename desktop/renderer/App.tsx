@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ArrowRight, ArrowUpRight, Check, FileText, FolderOpen,
   LoaderCircle, Monitor, Moon, Plus, RefreshCw, RotateCw, Search, Sparkles, Sun, Trash2 } from "lucide-react";
 import ApplicationDashboard from "./ApplicationDashboard";
@@ -11,6 +11,8 @@ import type { DesktopState } from "../bridge";
 import type { Plan, PlanInput } from "../store";
 import type { Application, Resume } from "../../lib/application-types";
 import { AnalysisSettings } from "./AnalysisSettings";
+import AnalysisGuide from "./AnalysisGuide";
+import { useTabTransition } from "./useTabTransition";
 import { AnalysisFlowProvider, SidebarCredits, useAnalysisFlow } from "./AnalysisFlow";
 import { CreditsSettings } from "./CreditsSettings";
 import { onlineModel } from "../../shared/online-models";
@@ -571,7 +573,7 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking 
       </div>
     </section>
     <section className="settings-section" aria-labelledby="ai-settings">
-      <div className="settings-section-heading"><h2 id="ai-settings">Analysis</h2></div>
+      <div className="settings-section-heading"><h2 id="ai-settings">Analysis</h2><AnalysisGuide /></div>
       <div className="settings-content"><AnalysisSettings state={state} onState={onState} openCredits={openCredits} /></div>
     </section>
     <CreditsSettings />
@@ -643,7 +645,8 @@ export default function App() {
   useInteractiveScrollbars();
   const [state, setState] = useState<DesktopState | null>(null);
   const appearance = state?.appearance;
-  const [tab, setTab] = useState<Tab>("plan");
+  const [tab, setTab] = useTabTransition<Tab>("plan");
+  const scrollToAnalysis = useRef(false);
   const [dirtyPlan, setDirtyPlan] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [applicationSelection, setApplicationSelection] = useState<{ id: string; notice: string } | null>(null);
@@ -658,9 +661,21 @@ export default function App() {
   }, [loaded]);
   const navigate = useCallback((target: Tab) => {
     if (target !== "plan" && dirtyPlan && !window.confirm("Discard unsaved changes to this plan?")) return false;
+    scrollToAnalysis.current = false;
     setApplicationSelection(null); setTab(target);
     return true;
-  }, [dirtyPlan]);
+  }, [dirtyPlan, setTab]);
+  useLayoutEffect(() => {
+    if (tab === "settings" && scrollToAnalysis.current) {
+      scrollToAnalysis.current = false;
+      document.getElementById("ai-settings")?.scrollIntoView({ block: "start" });
+    }
+  }, [tab]);
+  function openAnalysisSettings() {
+    if (!navigate("settings")) return;
+    if (tab === "settings") document.getElementById("ai-settings")?.scrollIntoView({ block: "start" });
+    else scrollToAnalysis.current = true;
+  }
 
   async function toggleSidebar() {
     if (!state || sidebarSaving) return;
@@ -699,6 +714,7 @@ export default function App() {
   useEffect(() => {
     void window.desktop!.state().then(setState);
     const removeChanged = window.desktop!.onDatabaseChanged((next) => {
+      scrollToAnalysis.current = false;
       setState(next); setDatabaseVersion((current) => current + 1); setSelectedPlanId(null); setApplicationSelection(null); setTab("plan");
     });
     const removeNavigate = window.desktop!.onNavigate((target) => {
@@ -707,7 +723,7 @@ export default function App() {
     const removeModelsChanged = window.desktop!.onLocalModelsChanged((next) => {
       setState((current) => current ? { ...current, builtInModelId: next.builtInModelId,
         localModels: next.localModels, acceptedModelTerms: next.acceptedModelTerms,
-        modelsFolder: next.modelsFolder, localEngine: next.localEngine,
+        modelsFolder: next.modelsFolder, localEngine: next.localEngine, localCompute: next.localCompute,
         totalMemory: next.totalMemory, availableMemory: next.availableMemory } : next);
     });
     const removeCreditsChanged = window.desktop!.onCreditsChanged((next) => {
@@ -717,7 +733,7 @@ export default function App() {
       setState((current) => current ? { ...current, updates } : current);
     });
     return () => { removeChanged(); removeNavigate(); removeModelsChanged(); removeUpdatesChanged(); removeCreditsChanged(); };
-  }, [navigate]);
+  }, [navigate, setTab]);
 
   useEffect(() => {
     if (!appearance) return;
@@ -730,7 +746,7 @@ export default function App() {
   }, [appearance]);
 
   if (!state) return <div className="desktop-loading"><LoaderCircle className="spin" size={24} /> Opening workspace...</div>;
-  return <SavedFeedbackProvider><AnalysisFlowProvider state={state} onState={setState} onOpenSettings={() => { if (navigate("settings")) requestAnimationFrame(() => document.getElementById("ai-settings")?.scrollIntoView({ block: "start" })); }}><BackgroundAnalysisProvider key={databaseVersion}><div className={`desktop-shell ${state.platform === "darwin" ? "platform-mac" : "platform-windows"}${state.sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+  return <SavedFeedbackProvider><AnalysisFlowProvider state={state} onState={setState} onOpenSettings={openAnalysisSettings}><BackgroundAnalysisProvider key={databaseVersion}><div className={`desktop-shell ${state.platform === "darwin" ? "platform-mac" : "platform-windows"}${state.sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
     <header className="desktop-titlebar" aria-label="Window title bar">
       <div className="titlebar-sidebar" aria-hidden="true" />
       <div className="titlebar-caption">Zebby</div>

@@ -1,11 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Check, Copy, KeyRound, Link2, LoaderCircle, Monitor, RefreshCw, ShieldCheck, Unplug, X } from "lucide-react";
-import { formatCredits, onlineModel } from "../../shared/online-models";
+import { formatCredits } from "../../shared/online-models";
 import { creditUsage } from "../../shared/credit-usage";
 import type { WalletPairing } from "../../shared/wallet-access";
 import SettingsAction from "./SettingsAction";
 import { ErrorBanner } from "./WorkspaceFeedback";
 import { useAnalysisFlow } from "./AnalysisFlow";
+import CreditUsage from "./CreditUsage";
 
 export function CreditsSettings() {
   const { state, updateState } = useAnalysisFlow();
@@ -21,6 +22,7 @@ export function CreditsSettings() {
   const pairedDevices = useRef(new Set<string>());
   const opener = useRef<HTMLButtonElement | null>(null), input = useRef<HTMLInputElement | null>(null);
   const restoreFocus = useRef(false);
+  const feedbackEpoch = useRef(0);
   const usable = state.canSaveApiKey;
   const pairingActive = Boolean(pairing) && remaining > 0;
   useEffect(() => {
@@ -60,22 +62,44 @@ export function CreditsSettings() {
     return () => { active = false; clearInterval(timer); };
   }, [pairing, pairingActive, updateState]);
   async function action(operation: () => Promise<void>) {
+    feedbackEpoch.current++;
     retryAction.current = () => void action(operation);
     setWorking(true); setError(""); setNotice("");
     try { await operation(); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Could not update wallet access."); }
     finally { setWorking(false); }
   }
-  async function refreshBalance() {
-    updateState(await window.desktop!.refreshCredits()); updateState(await window.desktop!.refreshCreditAccess());
-  }
+  const refreshBalance = useCallback(async (isActive: () => boolean = () => true, broadcastOnly = false) => {
+    const balance = await window.desktop!.refreshCredits();
+    if (!isActive()) return;
+    if (!broadcastOnly) updateState(balance);
+    const access = await window.desktop!.refreshCreditAccess();
+    if (isActive() && !broadcastOnly) updateState(access);
+  }, [updateState]);
+  useEffect(() => {
+    if (!helpOpen || !credits.signedIn) return;
+    let active = true;
+    const epoch = ++feedbackEpoch.current;
+    // The main-process broadcasts are authoritative. Ignoring returned snapshots
+    // here prevents a background open from replacing newer settings or wallet data.
+    void refreshBalance(() => active, true).then(() => {
+      if (active && epoch === feedbackEpoch.current) setError("");
+    }).catch((cause) => {
+      if (active && epoch === feedbackEpoch.current) {
+        retryAction.current = null;
+        setError(cause instanceof Error ? cause.message : "Could not refresh credits.");
+      }
+    });
+    return () => { active = false; };
+  }, [helpOpen, credits.signedIn, refreshBalance]);
   function openEditor(kind: "restore" | "connect", button: HTMLButtonElement) {
     opener.current = button; setCode(""); setError(""); setNotice(""); setEditor(kind);
   }
   function closeEditor() { restoreFocus.current = true; setEditor(null); setCode(""); }
+  function closeManager() { setHelpOpen(false); setEditor(null); setCode(""); }
   async function saveRecovery(rotate = false) {
     const result = await window.desktop!.saveCreditRecoveryCode(rotate); updateState(result.state);
-    if (result.saved) setNotice("Recovery code saved. Keep the file private.");
+    if (result.saved) setNotice("Recovery code saved.");
   }
   async function startPairing() {
     const next = await window.desktop!.refreshCreditAccess(); updateState(next);
@@ -88,6 +112,17 @@ export function CreditsSettings() {
   const percentLabel = usage && usage.percentRemaining > 0 && roundedPercent === 0 ? "<1% left" : `${roundedPercent}% left`;
   const feedback = <><ErrorBanner message={credits.pendingConnection ? "" : error || credits.error} retry={() => error && retryAction.current ? retryAction.current() : void action(refreshBalance)} busy={working} />
     {notice && <p className="notice" role="status">{notice}</p>}</>;
+  const accessForm = editor && <form className="credit-connect-form" onSubmit={(event) => { event.preventDefault(); void action(async () => {
+    const result = await window.desktop!.connectCreditWallet(editor, code); updateState(result.state);
+    if (result.connected) { closeEditor(); setNotice(editor === "restore" ? "Credits restored." : "Computer connected."); }
+  }); }} onKeyDown={(event) => { if (event.key === "Escape" && !working) { event.preventDefault(); event.stopPropagation(); closeEditor(); } }}>
+    <label className="field"><span>{editor === "restore" ? "Recovery code" : "Pairing code"}</span>
+      <input ref={input} type={editor === "restore" ? "password" : "text"} value={code} spellCheck={false} autoComplete="off" maxLength={100}
+        placeholder={editor === "restore" ? "Paste your recovery code" : "ABCD-EFGH"} required disabled={working} onChange={(event) => setCode(event.target.value)} /></label>
+    <div className="settings-actions"><SettingsAction variant="primary" type="submit" busy={working} disabled={!code.trim()}>
+      {editor === "restore" ? "Restore credits" : "Connect"}</SettingsAction>
+      <SettingsAction disabled={working} onClick={closeEditor}>Cancel</SettingsAction></div>
+  </form>;
   return <section className="settings-section" aria-labelledby="credits-settings">
     <div className="settings-section-heading"><h2 id="credits-settings">Credits</h2></div>
     <div className="settings-content credit-settings-content">
@@ -111,69 +146,68 @@ export function CreditsSettings() {
       {credits.pendingConnection && <div className="credit-connection-pending"><p className="settings-help" role="status">Connection interrupted.</p>
         <SettingsAction icon={RefreshCw} busy={working} disabled={!usable} onClick={() => void action(refreshBalance)}>Retry connection</SettingsAction></div>}
       <div className="credit-settings-links">
-        <div className="credit-restore-links"><button className="settings-link" type="button" disabled={!usable || working || pairingActive}
-          onClick={(event) => openEditor("restore", event.currentTarget)}>Restore credits</button><span aria-hidden="true">|</span>
-          <button className="settings-link" type="button" disabled={!usable || working || pairingActive}
-            onClick={(event) => openEditor("connect", event.currentTarget)}>Connect this computer</button></div>
-        <button ref={helpOpener} className="settings-link" type="button" disabled={working} onClick={() => setHelpOpen(true)}>{hasCredits ? "Manage credits" : "Learn more"}</button>
+        <button ref={helpOpener} className="settings-link" type="button" aria-haspopup="dialog" disabled={working} onClick={() => setHelpOpen(true)}>Manage credits</button>
       </div>
-      {editor && <form className="credit-connect-form" onSubmit={(event) => { event.preventDefault(); void action(async () => {
-        const result = await window.desktop!.connectCreditWallet(editor, code); updateState(result.state);
-        if (result.connected) { closeEditor(); setNotice(editor === "restore" ? "Credits restored." : "Computer connected."); }
-      }); }} onKeyDown={(event) => { if (event.key === "Escape" && !working) { event.preventDefault(); closeEditor(); } }}>
-        <label className="field"><span>{editor === "restore" ? "Recovery code" : "Pairing code"}</span>
-          <input ref={input} type={editor === "restore" ? "password" : "text"} value={code} spellCheck={false} autoComplete="off" maxLength={100}
-            placeholder={editor === "restore" ? "Paste your saved recovery code" : "ABCD-EFGH"} required disabled={working} onChange={(event) => setCode(event.target.value)} /></label>
-        <div className="settings-actions"><SettingsAction variant="primary" icon={editor === "restore" ? KeyRound : Link2} type="submit" busy={working} disabled={!code.trim()}>
-          {editor === "restore" ? "Restore credits" : "Connect"}</SettingsAction>
-          <SettingsAction disabled={working} onClick={closeEditor}>Cancel</SettingsAction></div>
-      </form>}
       {!usable && <p className="form-error">Credit wallets need Windows secure storage or Mac Keychain.</p>}
       {!helpOpen && feedback}
-      <dialog ref={helpDialog} className="analysis-dialog credit-help-dialog" aria-labelledby="credit-help-title"
-        onCancel={(event) => { event.preventDefault(); if (!working) setHelpOpen(false); }} onClose={() => setHelpOpen(false)}>
-        <header className="analysis-dialog-header"><h2 id="credit-help-title">{hasCredits ? "Credits and devices" : "About credits"}</h2>
-          <SettingsAction className="analysis-dialog-close" icon={X} iconOnly disabled={working} aria-label="Close credit help" title="Close"
-            onClick={() => setHelpOpen(false)} /></header>
-        <div className="analysis-dialog-body">
-          {hasCredits && <details className="credit-how"><summary>How credits work</summary><p>Credits pay for online analysis. Computers connected to this wallet share the same balance. Keep a recovery code so you can restore access.</p></details>}
-          <section className="credit-help-topic"><h3>Restore credits</h3>
-            <p>Use your saved recovery code to recover your credit balance after reinstalling Zebby or replacing a computer.</p>
-            {hasCredits && <><SettingsAction icon={ShieldCheck} disabled={!usable || working} onClick={() => void action(() => saveRecovery())}>Save recovery code</SettingsAction>
-              {credits.access?.hasRecoveryCode && <details className="credit-recovery-options"><summary>Replace recovery code</summary><p className="settings-help">The new code replaces the previous one. Connected computers keep access.</p>
-                <SettingsAction icon={RefreshCw} disabled={!usable || working} onClick={() => void action(() => saveRecovery(true))}>Create new recovery code</SettingsAction></details>}</>}
-          </section>
-          <section className="credit-help-topic"><h3>{hasCredits ? "Connect another computer" : "Connect this computer"}</h3>
-            <p>{hasCredits ? "Create a code here, then enter it on your other computer to share this balance." : "Enter a pairing code from Zebby on your connected computer to share its balance."} Codes expire after 10 minutes and work once.</p>
-            {hasCredits && <SettingsAction icon={Monitor} disabled={!usable || working || Boolean(pairing)} onClick={() => void action(startPairing)}>Connect another computer</SettingsAction>}
-            {pairing && <div className="credit-pairing-panel" aria-labelledby="credit-pairing-title">
-              <div className="credit-pairing-heading"><strong id="credit-pairing-title">Enter this code on your other computer</strong>
+      <dialog ref={helpDialog} className="analysis-dialog credit-help-dialog credit-manager-dialog" aria-labelledby="credit-help-title"
+        onCancel={(event) => { event.preventDefault(); if (!working) closeManager(); }} onClose={() => setHelpOpen(false)}>
+        <header className="analysis-dialog-header"><h2 id="credit-help-title">Credits and devices</h2>
+          <SettingsAction className="credit-manager-refresh" icon={RefreshCw} iconOnly busy={working} disabled={!usable}
+            aria-label="Refresh credits and devices" title="Refresh" onClick={() => void action(refreshBalance)} />
+          <SettingsAction className="analysis-dialog-close" icon={X} iconOnly disabled={working} aria-label="Close credits and devices" title="Close"
+            onClick={closeManager} /></header>
+        <div className="analysis-dialog-body credit-manager-layout">
+          <section className="credit-manager-access" aria-labelledby="credit-manage-title"><h3 id="credit-manage-title">Manage credits</h3>
+            {usage && <div className="credit-manager-balance"><strong>{formatCredits(usage.available)}<span> credits available</span></strong>
+              <div className="credit-usage-track" aria-hidden="true"><span style={{ width: `${usage.percentRemaining}%` }} /></div>
+              <span>{percentLabel}{wallet?.reserved ? ` · ${formatCredits(wallet.reserved)} reserved` : ""}</span></div>}
+            {hasCredits && <div className="credit-manager-task"><h4>Recovery code</h4>
+              <p>Keep your credits when you reinstall or switch computers.</p>
+              <SettingsAction icon={ShieldCheck} disabled={!usable || working} onClick={() => void action(() => saveRecovery())}>Save recovery code</SettingsAction>
+              {credits.access?.hasRecoveryCode && <button type="button" className="settings-link credit-replace-code" disabled={!usable || working}
+                onClick={() => void action(() => saveRecovery(true))}>Replace code</button>}
+            </div>}
+            {hasCredits && <div className="credit-manager-task"><h4>Use credits on another computer</h4>
+              <p>Share this balance with a one-time pairing code.</p>
+              <SettingsAction icon={Monitor} disabled={!usable || working || pairingActive} onClick={() => void action(startPairing)}>Connect another computer</SettingsAction>
+            {pairing && <div className="credit-pairing-panel" role="group" aria-label="Pairing instructions">
+              <div className="credit-pairing-heading"><strong id="credit-pairing-title">Pairing code</strong>
                 <SettingsAction icon={X} iconOnly disabled={working} aria-label="Cancel pairing" title="Cancel pairing" onClick={() => void action(async () => {
                   await window.desktop!.cancelCreditPairing(); setPairing(null); setRemaining(0); setCopied(false);
                 })} /></div>
-              <p className="settings-help">On your other computer, open Settings, Credits, then Connect this computer.</p>
+              <p className="settings-help">On your other computer: Manage credits, then Connect this computer.</p>
               <div className="credit-pairing-code"><output aria-label="Pairing code">{displayCode}</output>
                 <SettingsAction icon={copied ? Check : Copy} disabled={working || remaining <= 0} onClick={() => void action(async () => {
                   await navigator.clipboard.writeText(displayCode); setCopied(true);
                 })}>{copied ? "Copied" : "Copy code"}</SettingsAction></div>
-              <div className="credit-pairing-expiry"><span>{remaining > 0 ? `Expires in ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}` : "Code expired. Generate a new one."}</span>
+              <div className="credit-pairing-expiry"><span>{remaining > 0 ? `Expires in ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}` : "Code expired"}</span>
                 <SettingsAction icon={RefreshCw} disabled={working} onClick={() => void action(startPairing)}>New code</SettingsAction></div>
             </div>}
-            {hasCredits && <details className="credit-devices"><summary>Connected computers{credits.access ? ` (${credits.access.devices.length})` : ""}</summary>
+            </div>}
+            <div className="credit-manager-task"><h4>{hasCredits ? "Restore or connect a wallet" : "Already have credits?"}</h4>
+              <p>Restore with a saved recovery code, or enter a pairing code from your other computer.</p>
+              <div className="credit-access-actions"><SettingsAction icon={KeyRound} aria-expanded={editor === "restore"} disabled={!usable || working || pairingActive}
+                onClick={(event) => openEditor("restore", event.currentTarget)}>Restore credits</SettingsAction>
+                <SettingsAction icon={Link2} aria-expanded={editor === "connect"} disabled={!usable || working || pairingActive}
+                  onClick={(event) => openEditor("connect", event.currentTarget)}>Connect this computer</SettingsAction></div>
+              {accessForm}
+            </div>
+            {helpOpen && feedback}
+          </section>
+          <div className="credit-manager-activity">
+            <section className="credit-devices" aria-labelledby="credit-devices-title"><div className="credit-manager-section-title"><h3 id="credit-devices-title">Connected computers</h3>
+              {credits.access && <span>{credits.access.devices.length}</span>}</div>
               {credits.access ? <ul>{credits.access.devices.map((device) => <li key={device.id}><Monitor size={17} aria-hidden="true" />
                 <span><strong>{device.name}</strong><small>{device.current ? "This computer" : `Last used ${new Date(device.lastSeenAt).toLocaleDateString()}`}</small></span>
-                {!device.current && <SettingsAction variant="danger" icon={Unplug} disabled={working} onClick={() => void action(async () => {
+                {!device.current && <SettingsAction className="credit-device-disconnect" variant="danger" icon={Unplug} iconOnly title={`Disconnect ${device.name}`} aria-label={`Disconnect ${device.name}`} disabled={working} onClick={() => void action(async () => {
                   updateState(await window.desktop!.removeCreditDevice(device.id));
-                })}>Disconnect</SettingsAction>}</li>)}</ul> : <p className="settings-help">Refresh balance to load connected computers.</p>}
-            </details>}
-          </section>
-          {!!wallet?.recent.length && <details className="credit-history"><summary>Recent usage</summary><ul>{wallet.recent.map((item) => <li key={item.id}>
-            <span>{modelName(item.model)}<small>{new Date(item.createdAt).toLocaleDateString()} · {item.kind === "plan" ? "Plan analysis" : "Resume match"}</small></span><strong>{formatCredits(item.cost)} credits</strong>
-          </li>)}</ul></details>}
-          {helpOpen && feedback}
+                })} />}</li>)}</ul> : <p className="settings-help">{credits.signedIn ? "Refresh to load connected computers." : "No computers connected."}</p>}
+            </section>
+            <CreditUsage wallet={wallet} />
+          </div>
         </div>
       </dialog>
     </div>
   </section>;
 }
-function modelName(id: string) { try { return onlineModel(id).name; } catch { return "Online model"; } }

@@ -5,6 +5,7 @@ import type { DesktopState } from "../bridge";
 import SettingsAction from "./SettingsAction";
 import { ErrorBanner } from "./WorkspaceFeedback";
 import type { ChangeAnalysisState } from "./ThinkingSettings";
+import { computeLabel } from "../local-compute";
 
 export function LocalModelSelect({ state, onState, disabled = false, onBusy }: { state: DesktopState; onState: ChangeAnalysisState;
   disabled?: boolean; onBusy?: (busy: boolean) => void }) {
@@ -12,6 +13,9 @@ export function LocalModelSelect({ state, onState, disabled = false, onBusy }: {
   const retryModel = useRef("");
   const selected = LOCAL_MODELS.find((item) => item.id === state.builtInModelId);
   const installed = state.localModels.some((item) => item.id === selected?.id && item.status === "ready");
+  const recommended = state.localCompute?.recommendedModelIds || [];
+  const ordered = [...LOCAL_MODELS].sort((a, b) => b.released.localeCompare(a.released));
+  const option = (model: LocalModel) => <option value={model.id} key={model.id}>{model.name}</option>;
   async function selectModel(id: string) {
     if (!id) return;
     retryModel.current = id; setWorking(true); onBusy?.(true); setError("");
@@ -24,12 +28,17 @@ export function LocalModelSelect({ state, onState, disabled = false, onBusy }: {
       <select value={state.builtInModelId || ""} disabled={disabled || working} aria-label="Local model" aria-describedby={!installed ? "local-download-help" : undefined}
         onChange={(event) => void selectModel(event.target.value)}>
         <option value="" disabled>Choose a model</option>
-        {[...LOCAL_MODELS].sort((a, b) => b.released.localeCompare(a.released)).map((model) => <option value={model.id} key={model.id}>
-          {model.name}
-        </option>)}
+        {recommended.length ? <>
+          <optgroup label={state.localCompute?.backend === "cpu" ? "Recommended for your CPU" : "Recommended for your GPU"}>
+            {recommended.map((id) => LOCAL_MODELS.find((model) => model.id === id)).filter((model): model is LocalModel => Boolean(model)).map(option)}
+          </optgroup>
+          <optgroup label="Other models">{ordered.filter((model) => !recommended.includes(model.id)).map(option)}</optgroup>
+        </> : ordered.map(option)}
       </select>
       {selected && <span className="model-size-badge" aria-label={`Download size: ${formatModelBytes(selected.bytes)}`}>{formatModelBytes(selected.bytes)}</span>}
-    </div></label>{!installed && <p id="local-download-help" className="model-download-help">Choosing a model starts its download.</p>}
+    </div></label>
+    {state.localCompute && <p className="model-compute-hint" role="status">{computeLabel(state.localCompute)}</p>}
+    {!installed && <p id="local-download-help" className="model-download-help">Choosing a model starts its download.</p>}
     <ErrorBanner message={error} retry={() => void selectModel(retryModel.current)} busy={disabled || working} /></div>;
 }
 
@@ -126,7 +135,12 @@ export default function LocalModelsSettings({ state, onState, hideSelector = fal
       <details className="selected-model-about" key={selected.id} open={selected.license && !state.acceptedModelTerms?.includes(selected.id) || undefined}>
         <summary>{selected.license && !state.acceptedModelTerms?.includes(selected.id) ? "Model terms" : "About this model"}</summary>
         <p className="model-description">{selected.description}</p>
-        <p className="model-memory">{selected.tier} · {selected.memoryHint} · Runs on your CPU</p>
+        <p className="model-memory">{selected.tier} · {selected.memoryHint}</p>
+        <p className="model-memory">{state.localEngine.modelId === selected.id && state.localEngine.cpuFallback
+          ? "Using CPU. GPU acceleration was unavailable for this model."
+          : state.localCompute?.backend === "metal" ? "Uses your Apple GPU through Metal."
+          : state.localCompute?.backend === "vulkan" ? "Uses your GPU automatically, with CPU fallback."
+          : "Runs on your CPU."}</p>
         {selected.license && <div className="model-license"><p className="settings-help">{selected.license.summary}{" "}
           <a href={selected.license.url} target="_blank" rel="noreferrer">Model terms</a>
           {selected.license.policyUrl && <> · <a href={selected.license.policyUrl} target="_blank" rel="noreferrer">Use restrictions</a></>}
