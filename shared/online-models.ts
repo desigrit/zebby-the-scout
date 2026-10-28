@@ -109,7 +109,9 @@ export function maximumCost(model: OnlineModel, inputTokens: number, maxOutputTo
 export function formatCredits(nanos: number) {
   return (nanos / NANODOLLARS_PER_CREDIT).toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
-export type Wallet = { balance: number; reserved: number; used: number; purchased: number; updatedAt: string;
+export type DailyCreditUsage = { date: string; count: number; cost: number };
+export type Wallet = { balance: number; reserved: number; used: number; purchased: number; updatedAt: string; completedAnalyses?: number;
+  dailyUsage?: DailyCreditUsage[];
   recent: { id: string; model: string; kind: string; cost: number; createdAt: string }[]; astraUnlocked?: boolean };
 export type CreditsState = { available: boolean; signedIn: boolean; email: string; wallet: Wallet | null;
   stale: boolean; error: string; model: string; access: WalletAccess | null; recoverySaved: boolean; pendingConnection: boolean };

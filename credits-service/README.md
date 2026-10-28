@@ -8,6 +8,8 @@ A $20, $50 or $100 purchase unlocks Astra for that wallet. Existing paid purchas
 
 Before deploying this update, run [20261020_counted_budgets.sql](migrations/20261020_counted_budgets.sql) in Supabase SQL Editor. It adds token-count/output-limit fields to quotes and derives Astra access from purchases. It preserves wallets, balances, ledger entries and saved results. Repeating it is safe. Then deploy the service and build the desktop app. Existing clients also receive the new server reservation policy, but require an app update for the new pricing labels and clearer balance errors.
 
+The updated service supports existing databases without another migration. [20261027_wallet_usage.sql](migrations/20261027_wallet_usage.sql) is an optional optimization that calculates lifetime analysis counts and 84 days of credit activity directly in the wallet response. Until it is installed, the service reads the same completed-run history through bounded, cached queries. Recent history remains capped at ten entries. No environment or Stripe changes are needed.
+
 No Stripe product, environment-variable or API-key replacement is required. The OpenAI service key must permit `POST /v1/responses/input_tokens` as well as response creation. Confirm this endpoint is allowed if the key is restricted.
 
 Quotes use OpenAI's [input token count endpoint](https://developers.openai.com/api/docs/guides/token-counting) with the same model, instructions, complete source, thinking configuration and JSON schema as generation. If counting fails, no quote or hold is created; Zebby asks the user to retry rather than guessing. Text and responses are never included in diagnostic logs.

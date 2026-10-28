@@ -23,7 +23,15 @@ html[data-theme="dark"] .application-activity { --activity-applied: #a69b92; --a
 .titlebar-sidebar { background: var(--forest); }
 .titlebar-caption { display: flex; align-items: center; justify-content: center; min-width: 0; padding: 0 150px 0 16px; font-size: 12px; }
 .platform-mac .titlebar-caption { padding-right: 16px; }
-.desktop-workspace { grid-column: 2; grid-row: 2; min-width: 0; min-height: 0; overflow: auto; }
+.desktop-workspace { grid-column: 2; grid-row: 2; min-width: 0; min-height: 0; overflow: auto; view-transition-name: workspace; }
+html { view-transition-name: none; }
+::view-transition { pointer-events: none; }
+::view-transition-group(workspace) { animation: none; }
+::view-transition-old(workspace) { animation: workspace-leave 120ms ease-out both; mix-blend-mode: normal; }
+::view-transition-new(workspace) { animation: workspace-enter 240ms cubic-bezier(.16, 1, .3, 1) both; mix-blend-mode: normal; }
+@keyframes workspace-leave { to { opacity: 0; } }
+@keyframes workspace-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { ::view-transition-group(workspace), ::view-transition-old(workspace), ::view-transition-new(workspace) { animation: none; } }
 .workspace-warning { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 24px; background: var(--accent-wash); color: var(--ink); font-size: 13px; }
 .workspace-warning button { border: 0; padding: 0; background: transparent; color: var(--accent); font-weight: 650; text-decoration: underline; }
 .desktop-sidebar { z-index: 11; grid-column: 1; grid-row: 1 / -1; display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: calc(var(--brand-inset) - 4px) 13px 20px; background: var(--forest); color: var(--ink); transition: padding-top var(--sidebar-motion); }
@@ -288,6 +296,22 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .settings-section:first-of-type { padding-top: 0; }
 .settings-section-heading h2 { margin: 3px 0 0; font-size: 14px; font-weight: 700; }
 .settings-section-heading p { margin: 5px 0 0; color: var(--ink-soft); font-size: 11px; }
+.settings-section-heading .analysis-guide-link { margin-top: 7px; font-size: 12px; line-height: 1.5; color: var(--accent); text-decoration: underline; }
+.settings-section-heading .analysis-guide-link:hover { color: var(--accent-hover); }
+.analysis-dialog.analysis-guide-dialog { width: min(680px, calc(100vw - 32px)); }
+.analysis-guide-dialog .analysis-dialog-header { padding: 18px 24px; }
+.analysis-guide-dialog .analysis-dialog-header h2 { font-size: 18px; }
+.analysis-guide-dialog .analysis-dialog-body { padding: 24px; }
+.analysis-guide-dialog .analysis-dialog-close { border: 0; background: transparent; }
+.analysis-guide-options { display: grid; gap: 26px; margin: 0; }
+.analysis-guide-options > div { display: grid; grid-template-columns: 156px minmax(0, 1fr); gap: 24px; align-items: baseline; }
+.analysis-guide-options dt { font-size: 13px; font-weight: 650; line-height: 1.6; }
+.analysis-guide-options dd { margin: 0; color: var(--ink-soft); font-size: 13px; line-height: 1.6; }
+.model-compute-hint { margin: 8px 0 0; color: var(--ink-soft); font-size: 12px; overflow-wrap: anywhere; }
+@media (max-width: 520px) {
+  .analysis-guide-options { gap: 22px; }
+  .analysis-guide-options > div { grid-template-columns: minmax(0, 1fr); gap: 5px; }
+}
 .settings-content { min-width: 0; }
 .database-location { display: grid; gap: 4px; padding: 14px 16px; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; }
 .database-location > span { font-size: 11px; color: var(--ink-soft); }
@@ -491,6 +515,73 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .credit-help-dialog .analysis-dialog-header { padding: 16px 20px; }
 .credit-help-dialog .analysis-dialog-header h2 { font-size: 18px; }
 .credit-help-dialog .analysis-dialog-body { padding: 20px; }
+.analysis-dialog.credit-manager-dialog { width: min(1000px, calc(100vw - 64px)); }
+.credit-manager-dialog .analysis-dialog-header { padding: 18px 24px; gap: 8px; }
+.credit-manager-dialog .credit-manager-refresh { margin-left: auto; border: 0; background: transparent; }
+.credit-manager-dialog .analysis-dialog-close { margin-left: 0; }
+.credit-manager-dialog .analysis-dialog-header .settings-action, .analysis-guide-dialog .analysis-dialog-header .settings-action { border: 0; background: transparent; }
+.credit-manager-dialog .analysis-dialog-header .settings-action:hover, .analysis-guide-dialog .analysis-dialog-header .settings-action:hover { background: var(--surface-hover); }
+.credit-manager-dialog .credit-manager-layout { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 32px; padding: 24px; }
+.credit-manager-layout h3 { margin: 0; font-size: 14px; font-weight: 650; }
+.credit-manager-access, .credit-manager-activity { min-width: 0; }
+.credit-manager-access { padding-right: 32px; border-right: 1px solid var(--line); }
+.credit-manager-balance { margin-top: 18px; padding-bottom: 6px; font-variant-numeric: tabular-nums; }
+.credit-manager-balance > strong { font-size: 21px; font-weight: 650; }
+.credit-manager-balance strong span { font-size: 12px; font-weight: 400; color: var(--ink-soft); }
+.credit-manager-balance > span { display: block; margin-top: 8px; color: var(--ink-soft); font-size: 11px; }
+.credit-manager-task { margin-top: 24px; }
+.credit-manager-task + .credit-manager-task { padding-top: 20px; border-top: 1px solid var(--line); }
+.credit-manager-task h4 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
+.credit-manager-task > p { margin: 0 0 12px; color: var(--ink-soft); font-size: 12px; line-height: 1.6; }
+.credit-manager-task .credit-replace-code { display: flex; margin-top: 10px; }
+.credit-access-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.credit-access-actions .settings-action[aria-expanded="true"] { background: var(--accent-wash); border-color: var(--accent); color: var(--accent); }
+.credit-manager-access > .notice, .credit-manager-access > .notice-error { margin-top: 16px; }
+.credit-manager-section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.credit-manager-section-title > span { font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.credit-manager-activity .credit-devices { margin: 0; }
+.credit-manager-activity .credit-devices ul { max-height: 158px; overflow: auto; margin-top: 8px; }
+.credit-manager-activity .credit-devices li:last-child { border-bottom: 0; }
+.credit-manager-activity .credit-device-disconnect { border: 0; background: transparent; }
+.credit-manager-activity .credit-device-disconnect:hover { background: var(--surface-hover); }
+.credit-manager-activity .credit-history { margin-top: 24px; padding-top: 22px; border-top: 1px solid var(--line); }
+.credit-history-totals { display: flex; gap: 40px; margin: 18px 0 20px; font-variant-numeric: tabular-nums; }
+.credit-history-totals dt { color: var(--ink-soft); font-size: 11px; }
+.credit-history-totals dd { margin: 4px 0 0; font-size: 22px; font-weight: 600; line-height: 1.2; }
+.credit-history-caption { margin: 0 0 4px; font-size: 11px; color: var(--ink-soft); }
+.credit-manager-activity .credit-history ul { max-height: 276px; overflow: auto; overscroll-behavior: contain; }
+.credit-history-item { min-width: 0; width: 100%; }
+.credit-history-item > div:first-child { display: flex; justify-content: space-between; gap: 14px; }
+.credit-history-item > div > span { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.credit-history-item small { display: block; margin-top: 5px; font-size: 11px; line-height: 1.6; }
+.credit-activity-blocks { margin: 0 0 22px; }
+.credit-activity-heading { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 11px; color: var(--ink-soft); font-size: 11px; }
+.credit-activity-calendar { display: grid; grid-template-columns: 28px minmax(0, 1fr); grid-template-rows: 15px auto; gap: 6px; }
+.credit-activity-months { grid-column: 2; display: grid; grid-template-columns: repeat(var(--credit-weeks), minmax(0, 1fr)); gap: 4px; color: var(--ink-soft); font-size: 11px; line-height: 15px; }
+.credit-activity-weekdays { grid-column: 1; grid-row: 2; display: grid; grid-template-rows: repeat(7, 1fr); row-gap: 4px; color: var(--ink-soft); font-size: 11px; }
+.credit-activity-weekdays span { align-self: center; }
+.credit-activity-weekdays span:nth-child(2) { grid-row: 3; }
+.credit-activity-weekdays span:nth-child(3) { grid-row: 5; }
+.credit-activity-grid { grid-column: 2; grid-row: 2; display: grid; grid-template-columns: repeat(var(--credit-weeks), minmax(0, 1fr)); grid-template-rows: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.credit-activity-day { appearance: none; min-width: 0; min-height: 0; height: 19px; padding: 0; border: 0; border-radius: 3px; background: var(--line); }
+.credit-activity-day[data-level="1"] { background: color-mix(in srgb, var(--accent) 28%, var(--paper)); }
+.credit-activity-day[data-level="2"] { background: color-mix(in srgb, var(--accent) 48%, var(--paper)); }
+.credit-activity-day[data-level="3"] { background: color-mix(in srgb, var(--accent) 72%, var(--paper)); }
+.credit-activity-day[data-level="4"] { background: var(--accent); }
+.credit-activity-day[aria-pressed="true"] { outline: 1px solid var(--ink); outline-offset: 2px; }
+.credit-activity-day:hover { box-shadow: inset 0 0 0 1px var(--ink-soft); }
+.credit-activity-day:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.credit-activity-detail { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px 14px; margin-top: 14px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.credit-activity-detail time { color: var(--ink-soft); }
+.credit-manager-layout .settings-help { margin-top: 12px; }
+.credit-manager-layout .credit-pairing-panel { padding: 12px; margin-bottom: 0; }
+.credit-manager-layout .credit-pairing-code { gap: 8px; justify-content: space-between; }
+.credit-manager-layout .credit-pairing-code output { font-size: 23px; }
+@media (max-width: 760px) {
+  .analysis-dialog.credit-manager-dialog { width: calc(100vw - 32px); }
+  .credit-manager-dialog .credit-manager-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .credit-manager-access { padding: 0 0 24px; border-right: 0; border-bottom: 1px solid var(--line); }
+}
 .credit-help-topic + .credit-help-topic { padding-top: 20px; margin-top: 20px; border-top: 1px solid var(--line); }
 .credit-help-topic h3 { margin: 0 0 6px; font-size: 14px; font-weight: 650; }
 .credit-help-topic > p { margin: 0 0 12px; color: var(--ink-soft); font-size: 13px; line-height: 1.6; }

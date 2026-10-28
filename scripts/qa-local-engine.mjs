@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { LocalModelDownloads } from "../desktop/local-model-downloads.ts";
+import { hashModelFile, LocalModelDownloads } from "../desktop/local-model-downloads.ts";
 import { LocalModelEngine } from "../desktop/local-model-engine.ts";
 import { analyzeBasicLocal } from "../desktop/basic-local-analysis.ts";
 import { getLocalModel } from "../desktop/local-model-catalog.ts";
@@ -21,6 +21,17 @@ const resources = process.platform === "darwin"
   ? path.resolve("desktop-packages/mac-arm64/Zebby.app/Contents/Resources")
   : path.resolve(`desktop-packages/${process.arch === "arm64" ? "win-arm64-unpacked" : "win-unpacked"}/resources`);
 let lastStatus = "";
+// Optional read-only source for a previously downloaded model. All QA writes
+// still stay inside work/local-engine-qa, never the user's model directory.
+if (process.env.ZEBBY_QA_MODEL_FILE) {
+  await mkdir(path.join(output, "Models"), { recursive: true });
+  const target = path.join(output, "Models", model.filename);
+  await copyFile(path.resolve(process.env.ZEBBY_QA_MODEL_FILE), target);
+  assert.equal(await hashModelFile(target), model.sha256);
+  const file = await stat(target);
+  assert.equal(file.size, model.bytes);
+  await writeFile(`${target}.verified.json`, JSON.stringify({ sha256: model.sha256, bytes: file.size, mtimeMs: file.mtimeMs }));
+}
 const downloads = new LocalModelDownloads(path.join(output, "Models"), {
   licensesFolder: packaged ? path.join(resources, "local-runtime/model-licenses") : path.resolve("build/model-licenses"), onChange: () => {
   const status = downloads.status(id).status;
@@ -67,6 +78,10 @@ try {
   assert.ok(plan.overview && plan.overviewRationale && plan.explanation);
   assert.ok(Number.isInteger(plan.score) && plan.score >= 0 && plan.score <= 100);
   assert.ok(Number.isInteger(match.score) && match.score >= 0 && match.score <= 100 && match.explanation);
+  if (process.argv.includes("--require-gpu")) {
+    assert.notEqual(engine.backend, "cpu", "This check requires a working GPU backend.");
+    assert.ok(engine.offloadedLayers > 0, "The native runtime must confirm GPU layer offload.");
+  }
   if (process.argv.includes("--thinking")) {
     assert.equal(model.supportsThinking, true, "The thinking check requires a supported model.");
     console.log(`${model.name}: checking thinking-enabled structured output`);
@@ -82,7 +97,8 @@ try {
   await engine.stop();
   await assert.rejects(fetch(`${engineUrl}/health`, { signal: AbortSignal.timeout(2000) }));
   await writeFile(path.join(output, `${id}.json`), JSON.stringify({ model: model.name,
-    seconds: Math.round((Date.now() - started) / 1000), plan, match, events, authentication: "required", shutdown: "verified" }, null, 2));
+    seconds: Math.round((Date.now() - started) / 1000), backend: engine.backend, offloadedLayers: engine.offloadedLayers,
+    plan, match, events, authentication: "required", shutdown: "verified" }, null, 2));
   console.log(`${model.name}: Plan, match, authenticated loopback access, and shutdown passed (${Math.round((Date.now() - started) / 1000)} seconds).`);
 } catch (error) {
   await writeFile(path.join(output, `${id}-response.json`), JSON.stringify({ model: model.name, events,

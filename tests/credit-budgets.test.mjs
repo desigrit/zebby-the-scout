@@ -144,6 +144,7 @@ test("counted quotes, Astra access and settlement in an isolated ledger", async 
       const before = await wallet(), priorQuotes = (await db.query("select * from zebby_quotes order by id")).rows;
       const migration = await readFile(new URL("../credits-service/migrations/20261020_counted_budgets.sql", import.meta.url), "utf8");
       await db.exec(migration); await db.exec(migration);
+      await db.exec(await readFile(new URL("../credits-service/migrations/20261027_wallet_usage.sql", import.meta.url), "utf8"));
       assert.deepEqual(await wallet(), before);
       assert.deepEqual((await db.query("select * from zebby_quotes order by id")).rows, priorQuotes);
       assert.equal(before.astraUnlocked, true);

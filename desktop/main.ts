@@ -179,7 +179,9 @@ function state() {
     acceptedModelTerms: LOCAL_MODELS.filter((model) => model.license && modelTermsAccepted(model, settings.acceptedModelTerms))
       .map((model) => model.id),
     localModels: modelDownloads?.list() || [], modelsFolder: modelDownloads?.folder || "",
-    localEngine: { status: modelEngine?.status || "idle", modelId: modelEngine?.modelId || "" },
+    localEngine: { status: modelEngine?.status || "idle", modelId: modelEngine?.modelId || "",
+      backend: modelEngine?.backend || "cpu", cpuFallback: modelEngine?.cpuFallback || false },
+    localCompute: modelEngine?.compute,
     totalMemory: totalmem(), availableMemory: freemem(),
     canSaveApiKey: safeStorage.isEncryptionAvailable(),
     appearance: settings.appearance || "auto", sidebarCollapsed: settings.sidebarCollapsed === true,
@@ -870,6 +872,7 @@ else {
     registerIpc();
     createMenu();
     createWindow();
+    void modelEngine.detectHardware();
     void updates.check();
     app.on("activate", () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
   }).catch((error) => { console.error("Could not start Zebby", error);
