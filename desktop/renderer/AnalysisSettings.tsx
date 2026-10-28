@@ -8,6 +8,7 @@ import { OnlineModelSelect, ThinkingSelect, type ChangeAnalysisState } from "./T
 import ApiKeyField from "./ApiKeyField";
 import SettingsAction from "./SettingsAction";
 import { ErrorBanner } from "./WorkspaceFeedback";
+import { ollamaModelLabel, type OllamaModel } from "../../shared/ollama-models";
 
 export function providerReady(state: DesktopState, provider = state.analysisProvider) {
   if (provider === "openai") return state.hasApiKey;
@@ -21,7 +22,8 @@ export function AnalysisSettings({ state, onState, provider: suppliedProvider, o
   state: DesktopState; onState: ChangeAnalysisState; provider?: AnalysisProvider; openCredits: (pack?: "regular") => void;
   onPendingChange?: (pending: boolean) => void }) {
   const provider = suppliedProvider || state.analysisProvider;
-  const [url, setUrl] = useState(state.ollamaUrl), [model, setModel] = useState(state.ollamaModel), [models, setModels] = useState<string[]>([]);
+  const [url, setUrl] = useState(state.ollamaUrl), [model, setModel] = useState(state.ollamaModel), [models, setModels] = useState<OllamaModel[]>([]);
+  const listedModel = models.some((item) => item.name === model);
   const [working, setWorking] = useState(false), [finding, setFinding] = useState(false), [error, setError] = useState(""), [notice, setNotice] = useState("");
   const [connection, setConnection] = useState(""), [connectionError, setConnectionError] = useState("");
   const retryAction = useRef<() => void>(() => undefined);
@@ -80,14 +82,14 @@ export function AnalysisSettings({ state, onState, provider: suppliedProvider, o
       </div></div>}
       <div className="analysis-setting-row"><span className="analysis-setting-label">Model</span>
       {provider === "ollama" ? <div className="analysis-server-model"><div className="ollama-model-row"><label className="field"><span>Model</span>
-        <select value={models.includes(model) ? model : "custom"} disabled={working || finding}
+        <select value={listedModel ? model : "custom"} disabled={working || finding} title={model || undefined}
           onChange={(event) => { const value = ["custom", "new-custom"].includes(event.target.value) ? "" : event.target.value; setModel(value); if (value) saveServer(url, value); }}>
-          {!models.includes(model) && model && <option value="custom">{model}</option>}
-          {models.map((name) => <option key={name}>{name}</option>)}<option value={model && !models.includes(model) ? "new-custom" : "custom"}>Enter model name</option>
+          {!listedModel && model && <option value="custom">{ollamaModelLabel({ name: model })}</option>}
+          {models.map((item) => <option key={item.name} value={item.name}>{ollamaModelLabel(item)}</option>)}<option value={model && !listedModel ? "new-custom" : "custom"}>Enter model name</option>
         </select></label><SettingsAction className="model-refresh" icon={RotateCw} iconOnly busy={finding} disabled={working}
           aria-label="Find models" title="Find models" onClick={() => void findModels()} /></div>
         {notice && <p className="server-connection-status" role="status">{notice}</p>}
-        {!models.includes(model) && <label className="field custom-model-field"><span>Model name</span><input value={model} spellCheck={false} disabled={working}
+        {!listedModel && <label className="field custom-model-field"><span>Model name</span><input value={model} spellCheck={false} disabled={working}
           onChange={(event) => setModel(event.target.value)} onBlur={() => saveServer()}
           onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); saveServer(); } }} placeholder="qwen3:8b" /></label>}
       </div> : provider === "builtin" ? <LocalModelSelect state={state} onState={onState} disabled={working} onBusy={setWorking} />

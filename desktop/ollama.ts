@@ -1,6 +1,7 @@
 import { thinkingLabel, type ThinkingCapability } from "../shared/thinking.ts";
 import type { GenerationStage } from "../shared/analysis-progress.ts";
 import { readOllamaResponse } from "./ollama-response.ts";
+import type { OllamaModel } from "../shared/ollama-models.ts";
 export const DEFAULT_OLLAMA_URL = "http://localhost:11434";
 
 export function normalizeOllamaUrl(value: string): string {
@@ -19,16 +20,21 @@ function endpoint(baseUrl: string, path: string): string {
   return `${normalizeOllamaUrl(baseUrl)}${path}`;
 }
 
-export async function listOllamaModels(baseUrl: string, fetcher: typeof fetch = fetch): Promise<string[]> {
+export async function listOllamaModels(baseUrl: string, fetcher: typeof fetch = fetch): Promise<OllamaModel[]> {
   let response: Response;
   try { response = await fetcher(endpoint(baseUrl, "/api/tags"), { signal: AbortSignal.timeout(8_000) }); }
   catch { throw new Error("Could not reach the Ollama server. Check its URL and that it is running."); }
   if (!response.ok) throw new Error(`Ollama returned ${response.status} while listing models.`);
-  const payload = await response.json() as { models?: Array<{ name?: unknown; modified_at?: string }> };
+  type Entry = { name?: unknown; modified_at?: string; details?: { parameter_size?: unknown; quantization_level?: unknown } };
+  const payload = await response.json() as { models?: Entry[] };
   return (Array.isArray(payload.models) ? payload.models : [])
-    .filter((item): item is { name: string; modified_at?: string } => typeof item?.name === "string" && Boolean(item.name.trim()))
+    .filter((item): item is Entry & { name: string } => typeof item?.name === "string" && Boolean(item.name.trim()))
     .sort((a, b) => (Date.parse(b.modified_at || "") || 0) - (Date.parse(a.modified_at || "") || 0)
-      || b.name.localeCompare(a.name, undefined, { numeric: true })).map((item) => item.name);
+      || b.name.localeCompare(a.name, undefined, { numeric: true })).map((item) => ({
+        name: item.name,
+        parameterSize: typeof item.details?.parameter_size === "string" ? item.details.parameter_size : undefined,
+        quantizationLevel: typeof item.details?.quantization_level === "string" ? item.details.quantization_level : undefined,
+      }));
 }
 
 export async function ollamaThinkingCapability(baseUrl: string, model: string, fetcher: typeof fetch = fetch, signal?: AbortSignal): Promise<ThinkingCapability> {

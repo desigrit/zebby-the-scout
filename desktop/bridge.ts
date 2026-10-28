@@ -4,6 +4,7 @@ import type { AnalysisProvider, AnalysisSource, CreditQuote, CreditsState } from
 import type { WalletPairing } from "../shared/wallet-access";
 import type { ThinkingCapability, ThinkingPreferences } from "../shared/thinking";
 import type { AnalysisProgress } from "../shared/analysis-progress";
+import type { OllamaModel } from "../shared/ollama-models";
 
 export type DesktopState = {
   filePath: string;
@@ -65,7 +66,7 @@ export type DesktopBridge = {
   onCreditsChanged(callback: (state: DesktopState) => void): () => void;
   setAnalysisProvider(value: DesktopState["analysisProvider"]): Promise<DesktopState>;
   setOllamaConfig(value: { url: string; model: string }): Promise<DesktopState>;
-  listOllamaModels(url: string): Promise<string[]>;
+  listOllamaModels(url: string): Promise<OllamaModel[]>;
   ollamaThinkingCapability(url: string, model: string): Promise<ThinkingCapability>;
   selectLocalModel(id: string): Promise<DesktopState>;
   pauseModelDownload(): Promise<DesktopState>;

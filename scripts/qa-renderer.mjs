@@ -385,7 +385,7 @@ try {
       downloadResume: async () => true,
       chooseDatabase: async (kind) => { window.modelQA.databaseRequests.push(kind); return null; },
       openLogs: async () => { if (window.modelQA.failLogOpen) throw new Error("Synthetic logs folder error"); window.modelQA.logOpens++; },
-      listOllamaModels: async () => ["qwen3.8:27b", "qwen3:8b"],
+      listOllamaModels: async () => [{ name: "qwen3.8:27b", quantizationLevel: "Q4_K_M" }, { name: "qwen3:8b", quantizationLevel: "Q4_K_M" }],
       setAnalysisProvider: async (provider) => { initialState.analysisProvider = provider; return snapshot(); },
       setOllamaConfig: async ({ url, model }) => { initialState.ollamaUrl = url; initialState.ollamaModel = model; return snapshot(); },
       setApiKey: async (key) => {
@@ -1067,7 +1067,7 @@ try {
   await page.getByRole("button", { name: "Open logs folder", exact: true }).click();
   assert.equal(await page.evaluate(() => window.modelQA.logOpens), 1);
   assert.equal(await page.getByRole("alert").count(), 0);
-  await page.getByRole("combobox", { name: "Model", exact: true }).getByRole("option", { name: "qwen3.8:27b", exact: true }).waitFor({ state: "attached" });
+  await page.getByRole("combobox", { name: "Model", exact: true }).getByRole("option", { name: "Qwen 3.8 27B (4-bit quant)", exact: true }).waitFor({ state: "attached" });
   await assertSettingsActions();
   await page.getByRole('combobox', { name: 'Model', exact: true }).selectOption('qwen3:8b');
   await page.getByRole('combobox', { name: 'Model', exact: true }).selectOption('qwen3.8:27b');
