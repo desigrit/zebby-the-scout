@@ -1367,12 +1367,15 @@ try {
   await settingsPage.waitFor();
   await page.emulateMedia({ reducedMotion: "no-preference" });
   const guideLink = settingsPage.getByRole("button", { name: "Need help deciding?", exact: true });
+  await page.mouse.move(0, 0);
+  await page.waitForFunction(() => getComputedStyle(document.querySelector(".analysis-guide-link")).color === "rgb(166, 74, 52)");
+  await guideLink.hover();
+  await page.waitForFunction(() => getComputedStyle(document.querySelector(".analysis-guide-link")).color === "rgb(142, 61, 42)");
   await guideLink.click();
   const analysisGuide = page.getByRole("dialog", { name: "Need help deciding?", exact: true });
   await analysisGuide.waitFor();
   assert.equal(await analysisGuide.locator("dt").count(), 4);
   assert.ok((await analysisGuide.boundingBox()).width <= 680);
-  assert.equal(await guideLink.evaluate(element => getComputedStyle(element).color), "rgb(166, 74, 52)");
   assert.equal(await analysisGuide.locator(".analysis-guide-options > div").evaluateAll(rows => rows.every(row =>
     row.querySelector("dt").getBoundingClientRect().right < row.querySelector("dd").getBoundingClientRect().left &&
     getComputedStyle(row).borderTopWidth === "0px")), true);
