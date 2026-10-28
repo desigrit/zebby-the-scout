@@ -49,10 +49,12 @@ test("Ollama settings normalize URLs and list installed models", async () => {
   let requested;
   const models = await listOllamaModels("http://localhost:11434", async (url) => {
     requested = url;
-    return Response.json({ models: [{ name: "qwen3:8b" }, { name: "qwen3.8:27b" }] });
+    return Response.json({ models: [{ name: "qwen3:8b" }, { name: "qwen3.8:27b", details: { parameter_size: "27.3B", quantization_level: "Q4_K_M" } }] });
   });
   assert.equal(requested, "http://localhost:11434/api/tags");
-  assert.deepEqual(models, ["qwen3.8:27b", "qwen3:8b"]);
+  assert.deepEqual(models.map((model) => model.name), ["qwen3.8:27b", "qwen3:8b"]);
+  assert.equal(models[0].parameterSize, "27.3B");
+  assert.equal(models[0].quantizationLevel, "Q4_K_M");
 });
 
 test("Ollama analysis keeps structured JSON while requesting a streamed response", async () => {

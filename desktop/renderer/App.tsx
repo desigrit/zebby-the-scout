@@ -26,6 +26,7 @@ import SettingsAction from "./SettingsAction";
 import { LOCAL_MODELS } from "../local-model-catalog";
 import { importanceForTerms } from "../plan-importance";
 import { useInteractiveScrollbars, useWorkspaceShortcuts } from "./useWorkspaceShortcuts";
+import { ollamaModelLabel, type OllamaModel } from "../../shared/ollama-models";
 
 type Tab = "plan" | "applications" | "settings";
 
@@ -57,8 +58,8 @@ function formatUpdated(value: string) {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(value));
 }
 
-function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady, onDirtyChange, initialSelectedId, onSelectionChange, onApplied }: {
-  analysisProvider: DesktopState["analysisProvider"]; ollamaModel: string;
+function PlanView({ analysisProvider, ollamaUrl, ollamaModel, builtInModelId, builtInReady, onDirtyChange, initialSelectedId, onSelectionChange, onApplied }: {
+  analysisProvider: DesktopState["analysisProvider"]; ollamaUrl: string; ollamaModel: string;
   builtInModelId: string; builtInReady: boolean;
   onDirtyChange: (dirty: boolean) => void;
   initialSelectedId: string | null; onSelectionChange: (id: string | null) => void;
@@ -92,6 +93,18 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const builtInModel = LOCAL_MODELS.find((model) => model.id === builtInModelId);
+  const [serverModels, setServerModels] = useState<{ url: string; models: OllamaModel[] } | null>(null);
+  useEffect(() => {
+    if (analysisProvider !== "ollama") return;
+    let active = true;
+    void window.desktop!.listOllamaModels(ollamaUrl).then((models) => {
+      if (active) setServerModels({ url: ollamaUrl, models });
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [analysisProvider, ollamaUrl, ollamaModel]);
+  const selectedOllamaLabel = ollamaModel ? ollamaModelLabel(
+    (serverModels?.url === ollamaUrl ? serverModels.models.find((item) => item.name === ollamaModel) : undefined)
+      ?? { name: ollamaModel }) : "Ollama";
 
   const listingController = useRef<AbortController | null>(null);
   const dirty = JSON.stringify(draft) !== JSON.stringify(savedDraft) || Boolean(resumeFile);
@@ -320,7 +333,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
       const saved = dirty || !selectedId ? await save() : selectedPlan;
       if (!saved) throw new Error("Save this plan before analyzing it.");
       setNotice("");
-      const modelLabel = analysisProvider === "ollama" ? ollamaModel || "Ollama" : analysisProvider === "builtin"
+      const modelLabel = analysisProvider === "ollama" ? selectedOllamaLabel : analysisProvider === "builtin"
         ? builtInModel?.name || "Local model" : onlineModel(analysisProvider === "credits" ? analysisFlow.state.credits.model
           : analysisProvider === "anthropic" ? analysisFlow.state.anthropicModel : analysisFlow.state.openaiModel).name;
       retryAction.current = () => void analyze();
@@ -437,7 +450,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
             </button>
             {analyzing && <button className="button button-secondary" type="button" onClick={() => void cancelAnalysis()}
               disabled={cancelling || analysisProgress?.stage === "saving"}>Cancel</button>}
-            <small>{analyzing && analysisProgress?.modelLabel ? analysisProgress.modelLabel : analysisProvider === "ollama" ? (ollamaModel || "Ollama") : analysisProvider === "builtin"
+            <small>{analyzing && analysisProgress?.modelLabel ? analysisProgress.modelLabel : analysisProvider === "ollama" ? selectedOllamaLabel : analysisProvider === "builtin"
               ? (builtInModel?.name || "Local model") : onlineModel(analysisProvider === "credits" ? analysisFlow.state.credits.model
                 : analysisProvider === "anthropic" ? analysisFlow.state.anthropicModel : analysisFlow.state.openaiModel).name}</small>
           </div>
@@ -481,7 +494,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
           <details className="analysis-sharing"><summary>Analysis details</summary><p>{analysisProvider === "builtin"
             ? `Your posting, overview, and resume stay on this computer. Analysis uses ${builtInModel?.name || "the selected local model"}.`
             : analysisProvider === "ollama"
-            ? `Job text, your overview, and extracted resume text are sent to ${ollamaModel || "your selected model"} on your Ollama server.`
+            ? `Job text, your overview, and extracted resume text are sent to ${ollamaModel ? selectedOllamaLabel : "your selected model"} on your Ollama server.`
             : analysisProvider === "credits" ? "Job text, your overview, and resume text are sent to Zebby and your selected online provider. Credits cover actual model usage."
             : `Job text, your overview, and ${analysisProvider === "openai" ? "the selected resume" : "resume text"} are sent to ${analysisProvider === "openai" ? "OpenAI" : "Anthropic"}. Usage is billed to your API account.`}</p>
 </details>
@@ -781,7 +794,7 @@ export default function App() {
       </div>}
       {!state.filePath ? (tab === "settings" ? <SettingsView state={state} onState={setState} onUpdate={() => void applyUpdate()} onCheckUpdates={checkUpdates} updateWorking={updateWorking} /> : <Welcome state={state} onState={setState} />)
       : tab === "plan" ? <PlanView key={databaseVersion}
-        analysisProvider={state.analysisProvider} ollamaModel={state.ollamaModel}
+        analysisProvider={state.analysisProvider} ollamaUrl={state.ollamaUrl} ollamaModel={state.ollamaModel}
         builtInModelId={state.builtInModelId} builtInReady={Boolean(state.localModels?.some((model) =>
           model.id === state.builtInModelId && model.status === "ready") &&
           (!LOCAL_MODELS.find((model) => model.id === state.builtInModelId)?.license ||

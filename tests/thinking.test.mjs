@@ -87,7 +87,7 @@ test("Ollama analysis sends the selected thinking mode, and model lists prefer r
   const models = await listOllamaModels("http://localhost:11434", async () => Response.json({ models: [
     { name: "qwen3:8b", modified_at: "2026-10-10" }, { name: "qwen3.8:27b", modified_at: "2026-10-09" },
   ] }));
-  assert.deepEqual(models, ["qwen3:8b", "qwen3.8:27b"]);
+  assert.deepEqual(models.map((model) => model.name), ["qwen3:8b", "qwen3.8:27b"]);
 });
 
 test("cancelling while checking Ollama metadata cancels that request immediately", async () => {
