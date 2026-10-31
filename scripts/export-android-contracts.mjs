@@ -12,5 +12,5 @@ const contracts = { plan: { instructions: planInstructions, schema: planSchema }
   outputLimits: Object.fromEntries(['plan', 'match', 'resume'].map(kind => [kind, Object.fromEntries(['off', 'on', 'low', 'medium', 'high', 'xhigh', 'max'].map(e => [e, outputLimit(kind, e)]))])),
   packs: CREDIT_PACKS.map(p => ({ ...p, astraAnalyses: estimatedAnalyses(p.credits, 'gpt-6-astra'), lunaAnalyses: estimatedAnalyses(p.credits, 'gpt-6-luna') })), estimateDescription: CREDIT_ESTIMATE_DESCRIPTION };
 const value = JSON.stringify(contracts, null, 2) + '\n';
-if (process.argv.includes('--check')) { if (readFileSync(path, 'utf8') !== value) throw new Error('Regenerate Android contracts: node scripts/export-android-contracts.mjs'); }
+if (process.argv.includes('--check')) { if (readFileSync(path, 'utf8').replaceAll('\r\n', '\n') !== value) throw new Error('Regenerate Android contracts: node scripts/export-android-contracts.mjs'); }
 else writeFileSync(path, value);
