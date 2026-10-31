@@ -1556,8 +1556,8 @@ try {
   assert.equal(await analysisDialog.getByRole("radio").count(), 4);
   assert.equal(await analysisDialog.getByRole("combobox").count(), 0);
   assert.equal(await analysisDialog.getByText("Unlocks Astra and Opus", { exact: true }).count(), 3);
-  assert.match(await analysisDialog.locator(".credit-pack").nth(1).innerText(), /~6 analyses\s+GPT-6 Astra \(Medium\)/);
-  assert.deepEqual(await analysisDialog.locator(".credit-pack").nth(1).locator(".credit-estimate-model").allTextContents(), ["GPT-6 Astra (Medium)", "GPT-6.1 Sol (High)", "GPT-6 Luna (High)"]);
+  assert.match(await analysisDialog.locator(".credit-pack").nth(1).innerText(), /~22 analyses\s+Astra or Opus \(Medium\)/);
+  assert.deepEqual(await analysisDialog.locator(".credit-pack").nth(1).locator(".credit-estimate-model").allTextContents(), ["Astra or Opus (Medium)", "GPT-6.1 Sol (High)", "GPT-6 Luna (High)"]);
   assert.deepEqual(await analysisDialog.locator(".credit-pack").first().locator(".credit-estimate-model").allTextContents(), ["GPT-6.1 Sol (High)", "GPT-6 Luna (High)"]);
   assert.match(await analysisDialog.innerText(), /Choose or change your model in Settings after purchase/);
   assert.equal(await analysisDialog.getByRole("button", { name: "Continue to checkout · $5", exact: true }).isEnabled(), true);

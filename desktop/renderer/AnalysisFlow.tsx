@@ -186,7 +186,7 @@ export function AnalysisFlowProvider({ state, onState, children, onOpenSettings 
               <strong className="credit-pack-price">${item.dollars}</strong><span className="credit-pack-count">{item.credits.toLocaleString()} credits</span>
               <span className="credit-pack-access">{item.astra ? "Unlocks Astra and Opus" : "Sol, Luna, Sonnet and Haiku"}</span>
               <span className="credit-pack-estimates">
-                {(item.astra ? [ASTRA_MODEL, ...CREDIT_ESTIMATE_MODELS] : CREDIT_ESTIMATE_MODELS).map((model) => <small key={model}><span className="credit-estimate-count">~{estimatedAnalyses(item.credits, model).toLocaleString()} analyses</span><span className="credit-estimate-model">{onlineModel(model).name} ({creditEstimateThinkingLevel(model) === "medium" ? "Medium" : "High"})</span></small>)}
+                {(item.astra ? [ASTRA_MODEL, ...CREDIT_ESTIMATE_MODELS] : CREDIT_ESTIMATE_MODELS).map((model) => <small key={model}><span className="credit-estimate-count">~{estimatedAnalyses(item.credits, model).toLocaleString()} analyses</span><span className="credit-estimate-model">{model === ASTRA_MODEL ? "Astra or Opus" : onlineModel(model).name} ({creditEstimateThinkingLevel(model) === "medium" ? "Medium" : "High"})</span></small>)}
               </span>
             </label>)}
           </fieldset><p className="settings-help">Prices in USD. Actual usage varies by job, model and thinking level.</p>

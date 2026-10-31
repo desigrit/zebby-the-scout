@@ -32,10 +32,14 @@ export const CREDIT_MODELS = ONLINE_MODELS.filter((model) => model.id !== "claud
 export const CREDIT_ESTIMATE = { model: DEFAULT_CREDIT_MODEL, thinkingLevel: "high", input: 3600,
   visibleOutput: 500, thinkingAllowance: 7500, output: 8000 } as const;
 export const CREDIT_ESTIMATE_MODELS = [DEFAULT_CREDIT_MODEL, "gpt-6-luna"] as const;
-export const CREDIT_ESTIMATE_DESCRIPTION = "Examples use 3,600 input tokens. High allows 8,000 output tokens, including thinking. Medium uses the full 8,192-token Plan budget. Input is priced as cache writes. Actual usage can be lower; these are examples, not analysis limits.";
+// Product planning estimates, independent of generation limits and settlement.
+// Premium examples assume roughly 125 to 137 credits per completed analysis.
+export const PREMIUM_ANALYSIS_ESTIMATES: Readonly<Record<number, number>> = { 500: 0, 3000: 22, 8000: 64, 16000: 121 };
+export const CREDIT_ESTIMATE_DESCRIPTION = "Astra and Opus figures are rounded planning estimates of roughly 125 to 137 credits per analysis. Sol and Luna examples use 3,600 input tokens and 8,000 output tokens, including thinking, with input priced as cache writes. Actual usage varies by job, model and thinking level.";
 export function creditEstimateThinkingLevel(modelId: string) { return creditModelNeedsPack(modelId) ? "medium" : "high"; }
 export function estimatedAnalyses(credits: number, modelId: string = CREDIT_ESTIMATE.model) {
   const model = creditModel(modelId);
+  if (creditModelNeedsPack(modelId) && Object.hasOwn(PREMIUM_ANALYSIS_ESTIMATES, credits)) return PREMIUM_ANALYSIS_ESTIMATES[credits];
   const output = creditEstimateThinkingLevel(modelId) === "medium" ? creditOutputLimit("plan", "medium") : CREDIT_ESTIMATE.output;
   const estimate = usageCost(model, { input: 0, cached: 0, cacheWrite: CREDIT_ESTIMATE.input, output });
   return Math.floor(credits * NANODOLLARS_PER_CREDIT / estimate);

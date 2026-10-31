@@ -60,8 +60,8 @@ test("credit pack counts use the sampled Plan baseline with separate estimated t
   const lunaExample = usageCost(onlineModel("gpt-6-luna"), { input: 0, cached: 0, cacheWrite: CREDIT_ESTIMATE.input, output: CREDIT_ESTIMATE.output });
   assert.equal(lunaExample / NANODOLLARS_PER_CREDIT, 4.45);
   assert.deepEqual(CREDIT_PACKS.map((pack) => estimatedAnalyses(pack.credits, "gpt-6-luna")), [112, 674, 1797, 3595]);
-  assert.deepEqual(CREDIT_PACKS.map((pack) => estimatedAnalyses(pack.credits, "gpt-6-astra")), [1, 6, 17, 35]);
-  assert.deepEqual(CREDIT_PACKS.map((pack) => estimatedAnalyses(pack.credits, "claude-opus-5-5")), [2, 16, 43, 87]);
+  assert.deepEqual(CREDIT_PACKS.map((pack) => estimatedAnalyses(pack.credits, "gpt-6-astra")), [0, 22, 64, 121]);
+  assert.deepEqual(CREDIT_PACKS.map((pack) => estimatedAnalyses(pack.credits, "claude-opus-5-5")), [0, 22, 64, 121]);
   assert.deepEqual(CREDIT_PACKS.map((pack) => estimatedAnalyses(pack.credits, "claude-sonnet-5-5")), [5, 33, 89, 179]);
   assert.deepEqual(CREDIT_PACKS.map((pack) => estimatedAnalyses(pack.credits, "claude-haiku-5-5")), [112, 674, 1797, 3595]);
   for (const pack of CREDIT_PACKS) {
