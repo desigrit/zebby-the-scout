@@ -47,7 +47,7 @@ Complete the current IARC questionnaire in Partner Center. Use the functionality
 
 Upload the eight PNGs in `Screenshots` in numeric order. Each is 3100 by 1920 pixels. Captions are in `captions-en-US.txt`. Use `Zebby-Store-icon-300.png` as the 300 by 300 app tile icon. The 3840 by 2160 hero is optional and contains only the approved zebra art on the Ember background.
 
-The capture script is `scripts/create-store-listing-assets.mjs`. It uses the compiled renderer, an isolated in-memory data bridge, and a headless browser. It never opens the desktop app, a user database, or a payment session. To regenerate after a renderer build:
+To regenerate screenshots after a renderer build:
 
 ```powershell
 node --experimental-strip-types scripts/create-store-listing-assets.mjs 'D:\Code\Applications\Microsoft Store listing'

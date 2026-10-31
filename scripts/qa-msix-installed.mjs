@@ -227,10 +227,27 @@ try {
     const runtime = JSON.parse(await readFile(path.join(runtimeRoot, "runtime.json"), "utf8"));
     const cpuExecutable = path.resolve(runtimeRoot, runtime.executable);
     assert.equal(inside(runtimeRoot, cpuExecutable), true);
-    const cpu = await execute(cpuExecutable, ["--version"], { cwd: path.dirname(cpuExecutable), windowsHide: true, timeout: 30_000, maxBuffer: 1024 * 1024 });
-    await writeFile(path.join(output, "installed-cpu-runtime.log"), cpu.stdout + cpu.stderr);
-    assert.ok((cpu.stdout + cpu.stderr).trim(), "The bundled CPU runtime must respond");
-    checks.push("The installed package's CPU llama-server starts with its bundled dependencies without downloading a model.");
+    // Start native code from its owning package, matching the production engine path.
+    // A separate QA Node process cannot directly execute private binaries under WindowsApps.
+    const worker = await app.evaluate(async ({ app }, cpuExecutable) => {
+      const { spawn } = process.getBuiltinModule("node:child_process");
+      const path = process.getBuiltinModule("node:path");
+      const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^LLAMA_|^GGML_/i.test(key)));
+      return new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, [path.join(app.getAppPath(), "desktop-dist", "local-runtime-worker.cjs"), String(process.pid), cpuExecutable, "--version"],
+          { cwd: path.dirname(cpuExecutable), windowsHide: true, stdio: ["pipe", "ignore", "pipe"], env: { ...environment, ELECTRON_RUN_AS_NODE: "1" } });
+        let stderr = "";
+        const timeout = setTimeout(() => { child.kill(); reject(new Error("The installed ASAR worker did not complete its CPU smoke check.")); }, 25_000);
+        child.stderr.on("data", (data) => { stderr = (stderr + String(data)).slice(-8192); });
+        child.stdin.on("error", () => {});
+        child.once("error", (error) => { clearTimeout(timeout); reject(error); });
+        child.once("close", (code, signal) => { clearTimeout(timeout); resolve({ code, signal, stderr }); });
+      });
+    }, cpuExecutable);
+    await writeFile(path.join(output, "installed-asar-worker.json"), JSON.stringify(worker, null, 2));
+    assert.equal(worker.code, 0, "The packaged app must launch its ASAR worker and CPU runtime successfully");
+    assert.equal(worker.signal, null);
+    checks.push("The installed app launches Electron RUN_AS_NODE, its ASAR worker and the CPU runtime successfully.");
 
     const fetches = await app.evaluate(() => globalThis.__msixQA.fetches);
     assert.equal(fetches.some((url) => /api\.github\.com|github\.com\/.*\/releases/.test(url)), false);
