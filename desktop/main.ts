@@ -32,6 +32,10 @@ import { creditModel, DEFAULT_CREDIT_MODEL, onlineModel, validateOnlineThinking,
 import { maskedApiKey, onlineThinkingCapability, selectedThinking, thinkingKey, type ThinkingPreferences } from "../shared/thinking";
 import { writeProfileSettings } from "./settings-persistence";
 import { restoreStartupDatabase } from "./startup-database";
+import { readResumeBlocks, resumeDocx, resumeHtml, tailoredBaseName } from "./tailored-resume";
+import { applyResumeEdits, tailoringInstructions, tailoringSchema } from "../shared/tailored-resume";
+import { printResumePdf } from "./resume-pdf";
+import { materializeTailoredResume } from "./resume-files";
 import { distributionChannel as resolveDistributionChannel, readStorePackageFamily, requireDirectUpdates,
   requireDurableDatabase, storeDataPaths, STORE_UPDATES_URI } from "./distribution";
 
@@ -275,10 +279,20 @@ function selectedAnalysis() {
 }
 
 function analysisHash(input: unknown) { return createHash("sha256").update(JSON.stringify(input)).digest("hex"); }
+async function tailoringInput(id: string) {
+  const plan = store.getPlan(id), resume = plan?.resumeId && store.getResume(plan.resumeId);
+  if (!plan || !resume) throw new Error("Save this plan with a resume first.");
+  if (!plan.matchAnalyzedAt && !plan.keywords.length) throw new Error("Analyze this plan before creating a tailored resume.");
+  const resumeBlocks = await readResumeBlocks(resume.resume.filename, resume.data);
+  return { plan, resume, input: { url: plan.listingUrl, company: plan.company, title: plan.title, team: plan.team, locations: plan.locations,
+    jobDescription: plan.description, currentCvOverview: plan.currentOverview, resumeText: resumeBlocks.map(block => block.text).join("\n"),
+    resumeBlocks, suggestedSummary: plan.overview, keywords: plan.keywords, themes: plan.themes } };
+}
 async function quoteAnalysis(source: AnalysisSource) {
-  if (!source || !["plan", "match"].includes(source.kind) || typeof source.id !== "string" || !/^[\da-f-]{36}$/i.test(source.id)) throw new Error("Choose a saved job to analyze.");
+  if (!source || !["plan", "match", "resume"].includes(source.kind) || typeof source.id !== "string" || !/^[\da-f-]{36}$/i.test(source.id)) throw new Error("Choose a saved job to analyze.");
   let input: Record<string, unknown>;
-  if (source.kind === "plan") {
+  if (source.kind === "resume") input = (await tailoringInput(source.id)).input;
+  else if (source.kind === "plan") {
     const plan = store.getPlan(source.id), resume = plan?.resumeId && store.getResume(plan.resumeId);
     if (!plan || !resume) throw new Error("Save the plan with a resume before analyzing it.");
     const description = plan.description.trim();
@@ -317,10 +331,10 @@ async function analyzeWithSelectedProvider(instructions: string, input: unknown,
       return analyzeWithOllama({ baseUrl, model, instructions: prompt, content: JSON.stringify(content), schema: format, thinkingLevel: level, signal, onProgress: progress });
     },
     openai: async (prompt, content, formatName, format) => (await onlineAnalysis({ model: selected.model, key: selected.apiKey, instructions: prompt,
-      input: content, name: formatName, schema: format, kind: formatName === "resume_plan" ? "plan" : "match", thinkingLevel: selected.thinkingLevel, signal })).result,
+      input: content, name: formatName, schema: format, kind: formatName === "tailored_resume" ? "resume" : formatName === "resume_plan" ? "plan" : "match", thinkingLevel: selected.thinkingLevel, signal })).result,
     anthropic: async (prompt, content, formatName, format) => (await onlineAnalysis({ model: selected.model,
       key: selected.apiKey, instructions: prompt, input: content, name: formatName, schema: format,
-      kind: formatName === "resume_plan" ? "plan" : "match", thinkingLevel: selected.thinkingLevel, signal })).result,
+      kind: formatName === "tailored_resume" ? "resume" : formatName === "resume_plan" ? "plan" : "match", thinkingLevel: selected.thinkingLevel, signal })).result,
     credits: async () => {
       const quote = paid && paidQuotes.get(paid.quoteId);
       if (!paid || !quote || quote.source.id !== paid.source.id || quote.source.kind !== paid.source.kind || quote.expires < Date.now()
@@ -335,6 +349,39 @@ async function analyzeWithSelectedProvider(instructions: string, input: unknown,
     },
     local: (id, prompt, content, format, maxTokens) => modelEngine.analyze(id, prompt, content, format, maxTokens, signal, selected.thinkingLevel, progress),
   }, instructions, input, name, schema, failure);
+}
+
+async function createTailoredResume(id: string, signal: AbortSignal, commit: <T>(persist: () => Promise<T>) => Promise<T>, quoteId = "", progress?: ReportAnalysisProgress) {
+  const selected = selectedAnalysis();
+  const { plan, resume, input } = await tailoringInput(id);
+  signal.throwIfAborted();
+  const infer = (value: unknown) => analyzeWithSelectedProvider(tailoringInstructions, value, "tailored_resume", tailoringSchema,
+    "The tailored resume could not be created.", selected, signal, { quoteId, source: { kind: "resume", id } }, progress);
+  let result: Record<string, unknown>;
+  if (selected.provider === "builtin" && getLocalModel(selected.builtInModelId).basic && input.resumeBlocks.some(block => block.editable)) {
+    const edits: unknown[] = [];
+    // Small downloaded models receive one editable paragraph at a time. All
+    // other source paragraphs stay intact in the output document.
+    for (const block of input.resumeBlocks.filter(block => block.editable)) {
+      signal.throwIfAborted();
+      const partial = await infer({ jobDescription: input.jobDescription.slice(0, 1800), keywords: input.keywords.slice(0, 12), resumeBlocks: [block] });
+      applyResumeEdits([block], partial);
+      edits.push(...partial.edits as unknown[]);
+    }
+    result = { edits };
+  } else result = await infer(input);
+  signal.throwIfAborted();
+  progress?.("generating");
+  const blocks = applyResumeEdits(input.resumeBlocks, result);
+  const [docx, pdf] = await Promise.all([resumeDocx(blocks), printResumePdf(resumeHtml(blocks), signal)]);
+  const saved = await commit(() => store.saveTailoredResume(id, plan.updatedAt,
+    tailoredBaseName(resume.resume.filename, plan.listingUrl, id), analysisHash(input), docx, pdf));
+  if (selected.provider === "credits") await creditsClient.acknowledge(quoteId);
+  // The database holds both originals of the generated files, including when
+  // Documents is temporarily unavailable. Revealing the link retries export.
+  try { await Promise.all((["docx", "pdf"] as const).map(format => materializeTailoredResume(store, app.getPath("documents"), id, format))); }
+  catch (error) { logDiagnostic("Tailored resume export will be retried when opened", error); }
+  return saved;
 }
 
 async function analyzePlan(id: string, signal: AbortSignal, commit: <T>(persist: () => Promise<T>) => Promise<T>, quoteId = "", progress?: ReportAnalysisProgress) {
@@ -499,6 +546,10 @@ async function handleApi(request: Request, pathname: string): Promise<Response> 
       const result = await store.applyPlan(applyPlanId, input.expectedUpdatedAt);
       return Response.json(result, { status: result.created ? 201 : 200 });
     }
+    const tailoringId = pathname.match(/^\/api\/plans\/([\da-f-]+)\/tailor$/i)?.[1];
+    if (tailoringId && method === "POST") return Response.json({ plan: await analysisRequests.run(
+      request.headers.get("X-Zebby-Analysis-ID") || randomUUID(), (signal, commit, progress) => createTailoredResume(tailoringId, signal, commit,
+        request.headers.get("X-Zebby-Credit-Quote") || "", progress), `plan:${tailoringId}`) });
     const analysisId = pathname.match(/^\/api\/plans\/([\da-f-]+)\/analyze$/i)?.[1];
     if (analysisId && method === "POST") return Response.json({ plan: await analysisRequests.run(
       request.headers.get("X-Zebby-Analysis-ID") || randomUUID(), (signal, commit, progress) => analyzePlan(analysisId, signal, commit,
@@ -769,6 +820,10 @@ function registerIpc() {
     return state();
   });
   handle("desktop:open-model-folder", () => shell.openPath(modelDownloads.folder));
+  handle("desktop:reveal-tailored-resume", async (_event, id: string, format: "docx" | "pdf") => {
+    const filePath = await materializeTailoredResume(store, app.getPath("documents"), id, format);
+    shell.showItemInFolder(filePath);
+  });
   handle("desktop:download-resume", async (_event, id: string) => {
     const file = store.getResume(id);
     if (!file) throw new Error("Resume not found.");

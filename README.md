@@ -21,6 +21,7 @@ Below are the [design exploration and selection](#choosing-a-design-direction), 
 <sub>[Explore the full-resolution flow](docs/screenshots/screen-flow.png) · [Browse individual screens](docs/screenshots/README.md)</sub>
 
 - **Plan:** save a posting, add your resume and current summary, then review ATS keywords, resume themes, a match score and suggested edits. **Move to Applied** carries the details and existing score into Applications, without another analysis.
+- **Tailored resumes:** create Word and PDF copies from an analyzed Plan using your selected model and thinking level. Keep the original resume, with generated copies named for the job.
 - **Applications:** track companies, roles, dates, locations, resumes, notes and statuses. Filter the list, see daily activity by status, and celebrate an offer with Zebby confetti.
 - **Job descriptions:** keep the extracted or pasted description, and edit it as needed. It stays available after the posting closes.
 - **Your files:** keep plans, applications and uploaded resumes together in a database file you choose.

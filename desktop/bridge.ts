@@ -81,6 +81,7 @@ export type DesktopBridge = {
   setSidebarCollapsed(value: boolean): Promise<DesktopState>;
   openLogs(): Promise<void>;
   downloadResume(id: string): Promise<boolean>;
+  revealTailoredResume(id: string, format: "docx" | "pdf"): Promise<void>;
   onDatabaseChanged(callback: (state: DesktopState) => void): () => void;
   onNavigate(callback: (target: string) => void): () => void;
   onLocalModelsChanged(callback: (state: DesktopState) => void): () => void;

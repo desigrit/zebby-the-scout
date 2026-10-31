@@ -1,7 +1,7 @@
 import type { WalletAccess } from "./wallet-access.ts";
 
 export type AnalysisProvider = "ollama" | "builtin" | "openai" | "anthropic" | "credits";
-export type AnalysisKind = "plan" | "match";
+export type AnalysisKind = "plan" | "match" | "resume";
 export const PRICE_VERSION = "2026-10-20-counted-budgets";
 export const DEFAULT_CREDIT_MODEL = "gpt-6.1-sol";
 export const ASTRA_MODEL = "gpt-6-astra";
@@ -83,7 +83,7 @@ export function usageCost(model: OnlineModel, usage: TokenUsage): number {
   return cost;
 }
 export function outputLimit(kind: AnalysisKind, thinkingLevel: OnlineThinkingLevel = "low") {
-  const answer = kind === "plan" ? 6000 : 3000;
+  const answer = kind === "resume" ? 10000 : kind === "plan" ? 6000 : 3000;
   // Thinking and the final structured answer share the provider's output budget.
   return thinkingLevel === "max" ? 64000 : thinkingLevel === "xhigh" ? 40000 : thinkingLevel === "high" ? 24000
     : thinkingLevel === "medium" ? 16000 : thinkingLevel === "on" ? answer + 4096 : answer;
@@ -93,7 +93,9 @@ export function creditOutputLimit(kind: AnalysisKind, thinkingLevel: OnlineThink
   // explanation; a Plan also returns keyword/theme lists and a rewritten summary.
   // These ceilings depend on the task and chosen effort, never the wallet balance.
   // Keep personal-key output limits separate until those callers opt into this policy.
-  const limits = kind === "plan"
+  const limits = kind === "resume"
+    ? { off: 8192, low: 10240, medium: 12288, high: 16384, xhigh: 28672, max: 53248, on: 12288 }
+    : kind === "plan"
     ? { off: 4096, low: 6144, medium: 8192, high: 12288, xhigh: 24576, max: 49152, on: 8192 }
     : { off: 1024, low: 3072, medium: 6144, high: 8192, xhigh: 16384, max: 32768, on: 5120 };
   return limits[thinkingLevel];

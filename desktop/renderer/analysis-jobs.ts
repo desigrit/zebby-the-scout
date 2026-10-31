@@ -43,7 +43,7 @@ export class AnalysisJobs {
   };
   async start(source: AnalysisSource, options: { prepare: (signal: AbortSignal) => Promise<{ quoteId?: string } | null>;
     automatic?: boolean; modelLabel?: string }) {
-    if (jobRunning(this.get(source))) return;
+    if (this.jobs.some(job => jobRunning(job) && job.id === source.id && (job.kind === source.kind || job.kind !== "match" && source.kind !== "match"))) return;
     const requestId = crypto.randomUUID(), controller = new AbortController();
     this.controllers.set(requestId, controller);
     this.jobs = [...this.jobs.filter((job) => jobKey(job) !== jobKey(source)), { ...source, requestId,
@@ -61,15 +61,15 @@ export class AnalysisJobs {
       });
       controller.signal.throwIfAborted();
       if (!authorization) { this.jobs = this.jobs.filter((job) => job.requestId !== requestId); this.publish(); return; }
-      const path = source.kind === "plan" ? "plans" : "applications";
-      const response = await this.send(`/api/${path}/${encodeURIComponent(source.id)}/analyze`, {
+      const path = source.kind === "match" ? "applications" : "plans";
+      const response = await this.send(`/api/${path}/${encodeURIComponent(source.id)}/${source.kind === "resume" ? "tailor" : "analyze"}`, {
         method: "POST", headers: { "X-Zebby-Analysis-ID": requestId,
           ...(authorization.quoteId ? { "X-Zebby-Credit-Quote": authorization.quoteId } : {}) }, signal: controller.signal,
       });
       const result = await response.json() as AnalysisJob["result"] & { error?: string };
       controller.signal.throwIfAborted();
       if (!response.ok) throw new Error(result?.error || "The analysis could not be completed. Try again.");
-      if (!(source.kind === "plan" ? result?.plan : result?.application)) throw new Error("The analysis returned no saved result. Try again.");
+      if (!(source.kind === "match" ? result?.application : result?.plan)) throw new Error("The analysis returned no saved result. Try again.");
       this.update(requestId, { status: "succeeded", result, error: "", cancelling: false });
     } catch (cause) {
       this.update(requestId, { status: controller.signal.aborted ? "cancelled" : "failed", cancelling: false,

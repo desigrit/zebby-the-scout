@@ -470,6 +470,36 @@ test("PostgreSQL ledger and service integration", async (t) => {
       await db.query("update zebby_quotes set expires_at=now()-interval '1 second' where id=$1", [quote.id]);
       await assert.rejects(analyze(quote.id)); await assert.rejects(analyze(quote.id, randomUUID(), input, "invalid")); assert.equal(providerCalls, calls);
     });
+    await t.test("tailored resumes migrate safely, preserve the chosen model and charge valid edits once", async () => {
+      const migration = await readFile(new URL("../credits-service/migrations/20261031_tailored_resumes.sql", import.meta.url), "utf8");
+      const before = await wallet();
+      await db.exec("alter table zebby_quotes drop constraint zebby_quotes_kind_check; alter table zebby_quotes add constraint zebby_quotes_kind_check check(kind in ('plan','match'));");
+      await db.exec(migration); await db.exec(migration);
+      assert.deepEqual(await wallet(), before);
+      const resumeInput = { ...input, resumeBlocks: [
+        { id: 0, text: "Alex Morgan", style: "name", editable: false },
+        { id: 1, text: "Led customer discovery and partnered with engineering to improve activation by 18%.", style: "bullet", editable: true },
+      ], suggestedSummary: "", keywords: [], themes: [] };
+      expectedModel = "gpt-6-luna";
+      const quote = () => handle("POST", "/v1/quotes", { model: expectedModel, thinkingLevel: "high", kind: "resume", input: resumeInput });
+      try {
+        providerResult = { edits: [{ id: 0, text: "Invented name" }] };
+        await assert.rejects(analyze((await quote()).id, randomUUID(), resumeInput));
+        assert.equal((await wallet()).balance, before.balance);
+        assert.equal((await wallet()).reserved, 0);
+        providerResult = { edits: [{ id: 1, text: "Partnered with engineering on customer discovery, improving activation by 18%." }] };
+        const quoted = await quote(), requestId = randomUUID();
+        const response = await analyze(quoted.id, requestId, resumeInput);
+        assert.deepEqual(response.result, providerResult);
+        assert.equal(lastProviderRequest.model, "gpt-6-luna");
+        assert.equal(lastProviderRequest.reasoning.effort, "high");
+        assert.equal(lastProviderRequest.max_output_tokens, creditOutputLimit("resume", "high"));
+        assert.equal(response.wallet.reserved, 0);
+        const calls = providerCalls, charged = (await wallet()).used;
+        await analyze(quoted.id, requestId, resumeInput);
+        assert.equal(providerCalls, calls); assert.equal((await wallet()).used, charged);
+      } finally { expectedModel = "gpt-6.1-sol"; providerResult = plan; }
+    });
     await t.test("refunds are cumulative and idempotent, and disputes freeze spending", async () => {
       const previous = (await wallet()).balance;
       const event = signature({ id: "evt_partial_refund", livemode: false, type: "charge.refunded", data: { object: { payment_intent: "pi_fixture", amount_refunded: 100, disputed: false } } });

@@ -16,14 +16,14 @@ Quotes use OpenAI's [input token count endpoint](https://developers.openai.com/a
 
 Credit generation uses the output ceiling stored with the quote. These limits include both reasoning and the visible result:
 
-| Thinking | Resume match | Full Plan |
-| --- | ---: | ---: |
-| Off (Luna) | 1,024 | 4,096 |
-| Low | 3,072 | 6,144 |
-| Medium | 6,144 | 8,192 |
-| High | 8,192 | 12,288 |
-| Extra high | 16,384 | 24,576 |
-| Maximum | 32,768 | 49,152 |
+| Thinking | Resume match | Full Plan | Tailored resume |
+| --- | ---: | ---: | ---: |
+| Off (Luna) | 1,024 | 4,096 | 8,192 |
+| Low | 3,072 | 6,144 | 10,240 |
+| Medium | 6,144 | 8,192 | 12,288 |
+| High | 8,192 | 12,288 | 16,384 |
+| Extra high | 16,384 | 24,576 | 28,672 |
+| Maximum | 32,768 | 49,152 | 53,248 |
 
 Model and thinking selections are preserved. The limits do not shrink to fit a wallet's remaining balance, and source text is not truncated. They are initial task budgets, not a guarantee every request will finish. Incomplete or invalid results are not saved or charged to the wallet; their holds are released, with no automatic paid retry. Provider costs from unsuccessful requests can still apply. See OpenAI's [reasoning-token guidance](https://developers.openai.com/api/docs/guides/reasoning).
 
@@ -42,6 +42,8 @@ For the 2.2.0 update, run [20261010_analysis_thinking.sql](migrations/20261010_a
 For Luna support, then run [20261010_credit_luna.sql](migrations/20261010_credit_luna.sql) **before deploying the updated service and desktop app**. It permits Luna's Off thinking option without changing existing quotes, wallets or balances, and is safe to run again. Fresh installations can use the complete schema instead. Luna uses the existing OpenAI service key; no Stripe or environment changes are needed. Confirm that the key's project can access Luna before inviting users.
 
 ## What you need
+
+For tailored resumes, run [20261031_tailored_resumes.sql](migrations/20261031_tailored_resumes.sql) before deploying the updated service. This adds the resume task type without changing wallets, balances or existing results. No new environment variables are needed. The service validates edits against the source resume before settling usage; Word and PDF files are created on the user's computer.
 
 - A Supabase project for PostgreSQL.
 - A Stripe account, starting in a test sandbox.

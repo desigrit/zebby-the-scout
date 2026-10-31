@@ -395,6 +395,14 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .welcome-copy p { max-width: 60ch; margin: 14px 0 0; font-size: 16px; color: var(--ink-soft); }
 .welcome-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
 .welcome-foot { max-width: 65ch; font-size: 12px; color: var(--ink-soft); }
+.tailored-resume-section { display: grid; gap: 14px; padding: 20px 0 4px; border-top: 1px solid var(--line); }
+.tailored-resume-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; }
+.tailored-resume-files { display: grid; gap: 4px; max-width: 100%; }
+.tailored-resume-file { display: flex; align-items: center; gap: 10px; padding: 10px 0; border: 0; background: transparent; text-align: left; color: var(--accent); font: inherit; }
+.tailored-resume-file > span:first-of-type { overflow-wrap: anywhere; min-width: 0; }
+.tailored-resume-file svg { flex-shrink: 0; }
+.tailored-resume-file .file-format { color: var(--ink-soft); font-size: 11px; border-radius: 5px; padding: 2px 6px; background: var(--field); flex-shrink: 0; }
+.tailored-resume-file:hover > span:first-of-type { text-decoration: underline; text-underline-offset: 3px; }
 .desktop-loading { height: 100%; display: flex; align-items: center; justify-content: center; gap: 12px; color: var(--ink-soft); }
 .spin { animation: desktop-spin 1s linear infinite; }
 @keyframes desktop-spin { to { transform: rotate(360deg); } }

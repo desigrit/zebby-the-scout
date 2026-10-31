@@ -22,7 +22,7 @@ const packageJson = JSON.parse(await readFile(path.join(repo, "package.json"), "
 const version = storeVersion(packageJson.version);
 const architectures = values.architectures.split(",");
 if (!architectures.length || new Set(architectures).size !== architectures.length || architectures.some(arch => !["x64", "arm64"].includes(arch))) throw new Error("Architectures must be x64,arm64 or a single supported architecture.");
-const identity = values.identity ? storeIdentity(JSON.parse(await readFile(path.resolve(values.identity), "utf8"))) : null;
+const identity = values.identity ? storeIdentity(JSON.parse((await readFile(path.resolve(values.identity), "utf8")).replace(/^\uFEFF/, ""))) : null;
 if (!identity && !values["prepare-only"]) throw new Error("Pass --identity with the exact Partner Center identity JSON. Use --prepare-only to build payloads while waiting for that identity.");
 await mkdir(output, { recursive: true });
 const validation = path.join(output, "Validation");

@@ -3,6 +3,7 @@ import type { ServiceConfig } from "./config.ts";
 import { CREDIT_PACKS, CREDIT_MODELS, CREDIT_THINKING_LEVELS, PRICE_VERSION, NANODOLLARS_PER_CREDIT, creditPack, creditModel, onlineModel,
   maximumCost, creditOutputLimit, creditReservationMessage, usageCost, validateOnlineThinking, ASTRA_MODEL, ASTRA_PACK_MESSAGE, type Wallet } from "../shared/online-models.ts";
 import { planInstructions, planSchema, matchInstructions, matchSchema } from "../desktop/analysis-contracts.ts";
+import { tailoringInstructions, tailoringSchema } from "../shared/tailored-resume.ts";
 import { onlineAnalysis } from "../desktop/online-analysis.ts";
 import { countOpenAIAnalysisInput } from "../desktop/openai-request.ts";
 import { validateInput, validateResult } from "./validation.ts";
@@ -13,12 +14,17 @@ import { createWalletUsage } from "./wallet-usage.ts";
 import { z } from "zod";
 
 const uuid = z.string().uuid();
-const kindSchema = z.enum(["plan", "match"]);
+const kindSchema = z.enum(["plan", "match", "resume"]);
+function contract(kind: "plan" | "match" | "resume") {
+  return kind === "resume" ? { instructions: tailoringInstructions, schema: tailoringSchema, name: "tailored_resume" }
+    : kind === "plan" ? { instructions: planInstructions, schema: planSchema, name: "resume_plan" }
+    : { instructions: matchInstructions, schema: matchSchema, name: "resume_match" };
+}
 type PurchaseRow = { id: string; user_id: string; pack: string; cents: number; session_id: string | null; paid: boolean };
-type QuoteRow = { id: string; kind: "plan" | "match"; model: string; thinking_level: string; price_version: string;
+type QuoteRow = { id: string; kind: "plan" | "match" | "resume"; model: string; thinking_level: string; price_version: string;
   input_tokens: number; output_limit: number; maximum: number };
 type RunRow = { status: "reserved" | "completed" | "failed"; fresh?: boolean; result?: Record<string, unknown> | null;
-  id: string; quote_id: string; model: string; kind: "plan" | "match"; cost: number };
+  id: string; quote_id: string; model: string; kind: "plan" | "match" | "resume"; cost: number };
 const stripeCheckout = z.object({ id: z.string().regex(/^cs_[a-zA-Z0-9_]+$/), url: z.string().url() });
 const paidSession = z.object({ id: z.string(), payment_status: z.string(), currency: z.string(), amount_subtotal: z.number().int(),
   client_reference_id: uuid, payment_intent: z.string().startsWith("pi_"), metadata: z.object({ user_id: uuid, purchase_id: uuid, pack: z.string() }) });
@@ -158,9 +164,7 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
         const wallet = await rpc<Wallet>("wallet", { p_user: account.id });
         if (!wallet.astraUnlocked) throw new ServiceError(ASTRA_PACK_MESSAGE, 403);
       }
-      const instructions = value.kind === "plan" ? planInstructions : matchInstructions;
-      const inputTokens = await countOpenAIAnalysisInput({ model: model.id, key: providerKey(model.id), input, instructions,
-        schema: value.kind === "plan" ? planSchema : matchSchema, name: value.kind === "plan" ? "resume_plan" : "resume_match",
+      const inputTokens = await countOpenAIAnalysisInput({ model: model.id, key: providerKey(model.id), input, ...contract(value.kind),
         thinkingLevel, signal, fetcher: send });
       signal.throwIfAborted();
       const outputTokens = creditOutputLimit(value.kind, thinkingLevel);
@@ -194,11 +198,10 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
       try {
         signal.throwIfAborted();
         const response = await onlineAnalysis({ model: model.id, key: providerKey(model.id), kind,
-          instructions: kind === "plan" ? planInstructions : matchInstructions, schema: kind === "plan" ? planSchema : matchSchema,
-          name: kind === "plan" ? "resume_plan" : "resume_match", input, thinkingLevel, signal, fetcher: send, billingOwner: "zebby",
+          ...contract(kind), input, thinkingLevel, signal, fetcher: send, billingOwner: "zebby",
           maxOutputTokens: quote.output_limit });
         signal.throwIfAborted();
-        const result = validateResult(response.result, kind), cost = usageCost(model, response.usage);
+        const result = validateResult(response.result, kind, input), cost = usageCost(model, response.usage);
         const settled = await rpc<RunRow>("finish", { p_user: account.id, p_id: value.requestId, p_cost: cost, p_result: result, p_success: true });
         if (settled.status !== "completed") throw new ServiceError("This analysis expired. Your reserved credits were released.");
         return { result, wallet: await rpc("wallet", { p_user: account.id }) };

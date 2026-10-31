@@ -266,7 +266,7 @@ try {
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   }
   await page.addInitScript(({ initialState, licenseVersions }) => {
-    window.controlsQA = { copied: "", failCopy: false };
+    window.controlsQA = { copied: "", failCopy: false, revealed: [] };
     Object.defineProperty(navigator, "clipboard", { value: { writeText: async (text) => {
       if (window.controlsQA.failCopy) throw new Error("Synthetic clipboard failure");
       window.controlsQA.copied = text;
@@ -387,6 +387,7 @@ try {
         updateState({ download: { phase: "installing", received: 100, total: 100, error: "" } });
       },
       downloadResume: async () => true,
+      revealTailoredResume: async (id, format) => { window.controlsQA.revealed.push({ id, format }); },
       chooseDatabase: async (kind) => {
         window.modelQA.databaseRequests.push(kind);
         if (window.modelQA.databaseResult === "error") throw new Error("The selected database could not be opened.");
@@ -474,7 +475,7 @@ try {
       if (!existing) applications = [application, ...applications];
       data = { application, created: !existing };
     }
-    else if (pathname.endsWith("/analyze")) {
+    else if (pathname.endsWith("/analyze") || pathname.endsWith("/tailor")) {
       if (route.request().headers()["x-zebby-credit-quote"]) paidAnalysisRequests.push({ pathname, quoteId: route.request().headers()["x-zebby-credit-quote"] });
       const requestId = route.request().headers()["x-zebby-analysis-id"];
       analysisRequestIds.set(pathname, requestId);
@@ -491,6 +492,12 @@ try {
         const id = pathname.split("/")[3];
         applications = applications.map((item) => item.id === id ? { ...item, matchStrength: 89, updatedAt: "2026-09-30T20:00:00Z" } : item);
         data = { application: applications.find((item) => item.id === id) };
+      } else if (pathname.endsWith("/tailor")) {
+        const id = pathname.split("/")[3];
+        plans = plans.map(item => item.id !== id ? item : { ...item, tailoredResume: {
+          docx: { id: "tailored-word", filename: "Sample Product CV - 123456 - tailored.docx" },
+          pdf: { id: "tailored-pdf", filename: "Sample Product CV - 123456 - tailored.pdf" }, generatedAt: "2026-10-31T20:00:00Z", sourceHash: "fixture" } });
+        plan = plans.find(item => item.id === id); data = { plan };
       } else { plan = { ...plan, matchStrength: 86,
         matchNotes: "Customer discovery and roadmap delivery are well demonstrated in the selected resume. The posting asks for deeper experimentation experience than the resume shows. The candidate has led product strategy, worked with design and engineering, and used customer evidence to prioritize work. The main gaps are direct experience in the posting's domain and clearer examples of experiments that connect product decisions to measured outcomes. The score reflects strong transferable product experience with room to demonstrate those specific requirements more clearly." };
         plans = plans.map((item) => item.id === plan.id ? plan : item); data = { plan }; }
@@ -927,6 +934,26 @@ try {
   await page.reload();
   await page.getByRole("textbox", { name: "Core ATS keyword 1", exact: true }).waitFor();
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
+  assert.equal(await page.getByText("Analysis details", { exact: true }).count(), 0);
+  const tailorButton = page.getByRole("button", { name: "Create tailored resume", exact: true });
+  const tailoringPath = `/api/plans/${plans[0].id}/tailor`;
+  await tailorButton.click(); await waitForAnalysis(tailoringPath);
+  await page.locator('.tailored-resume-section .plan-analysis-progress').waitFor();
+  await captureSettings("plan-tailoring.png", false);
+  await nav.getByRole("button", { name: "Settings", exact: true }).click();
+  await nav.getByRole("button", { name: "Plan", exact: true }).click();
+  await page.locator('.tailored-resume-section .plan-analysis-progress').waitFor();
+  await completeAnalysis(tailoringPath);
+  await page.locator('.tailored-resume-files').waitFor();
+  await page.getByRole("button", { name: /Sample Product CV.*tailored.docx/ }).click();
+  await page.getByRole("button", { name: /Sample Product CV.*tailored.pdf/ }).click();
+  assert.deepEqual(await page.evaluate(() => window.controlsQA.revealed.map(item => item.format)), ['docx', 'pdf']);
+  await captureSettings("plan-tailored-files.png", false);
+  await tailorButton.click(); await waitForAnalysis(tailoringPath);
+  await page.locator('.tailored-resume-section').getByRole('button', { name: 'Cancel', exact: true }).click();
+  await tailorButton.waitFor();
+  assert.equal(await page.locator('.tailored-resume-files button').count(), 2);
+  await completeAnalysis(tailoringPath);
   await nav.getByRole("button", { name: "Applications", exact: true }).click();
   await page.getByRole("main", { name: "Applications", exact: true }).waitFor();
   const table = page.locator(".application-list");
@@ -1529,7 +1556,9 @@ try {
   assert.equal(await analysisDialog.getByRole("radio").count(), 4);
   assert.equal(await analysisDialog.getByRole("combobox").count(), 0);
   assert.equal(await analysisDialog.getByText("Unlocks GPT-6 Astra", { exact: true }).count(), 3);
-  assert.match(await analysisDialog.locator(".credit-pack").nth(1).innerText(), /About 6 analyses\s+GPT-6 Astra \(High\)/);
+  assert.match(await analysisDialog.locator(".credit-pack").nth(1).innerText(), /~6 analyses\s+GPT-6 Astra \(High\)/);
+  assert.deepEqual(await analysisDialog.locator(".credit-pack").nth(1).locator(".credit-estimate-model").allTextContents(), ["GPT-6 Astra (High)", "GPT-6.1 Sol (High)", "GPT-6 Luna (High)"]);
+  assert.deepEqual(await analysisDialog.locator(".credit-pack").first().locator(".credit-estimate-model").allTextContents(), ["GPT-6.1 Sol (High)", "GPT-6 Luna (High)"]);
   assert.match(await analysisDialog.innerText(), /Choose or change your model in Settings after purchase/);
   assert.equal(await analysisDialog.getByRole("button", { name: "Continue to checkout · $5", exact: true }).isEnabled(), true);
   assert.doesNotMatch(await analysisDialog.innerText(), /Paid credits are not|not connected yet/);

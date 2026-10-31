@@ -68,6 +68,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   const retryAction = useRef<() => void>(() => undefined);
   const [listingMessage, setListingMessage] = useState("");
   const descriptionInput = useRef<HTMLTextAreaElement>(null);
+  const tailoringSection = useRef<HTMLDivElement>(null);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [resumeFile, setResumeFile] = useState<File | null>(null);
@@ -82,7 +83,12 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   const [saving, setSaving] = useState(false);
   const [moving, setMoving] = useState(false);
   const { jobs } = useBackgroundAnalysis();
-  const analysisProgress = selectedId ? jobs.get({ kind: "plan", id: selectedId }) : undefined;
+  const resumeProgress = selectedId ? jobs.get({ kind: "resume", id: selectedId }) : undefined;
+  const tailoring = jobRunning(resumeProgress);
+  useLayoutEffect(() => {
+    if (tailoring) tailoringSection.current?.scrollIntoView({ block: "end", behavior: "instant" });
+  }, [tailoring]);
+  const analysisProgress = tailoring ? resumeProgress : selectedId ? jobs.get({ kind: "plan", id: selectedId }) : undefined;
   const analyzing = jobRunning(analysisProgress);
   const cancelling = Boolean(analysisProgress?.cancelling);
   const [preparing, setPreparing] = useState(false);
@@ -126,7 +132,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
     let active = true;
     const receive = () => { if (!active) return;
     for (const job of jobs.snapshot()) {
-      if (job.kind !== "plan" || jobRunning(job) || handledResults.current.has(job.requestId)) continue;
+      if (job.kind === "match" || jobRunning(job) || handledResults.current.has(job.requestId)) continue;
       handledResults.current.add(job.requestId);
       const plan = job.result?.plan;
       if (plan) {
@@ -142,8 +148,8 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
         if (job.status === "succeeded") savedFeedback();
         if (job.error) retryAction.current = () => {
           setError("");
-          void jobs.start({ kind: "plan", id: job.id }, { modelLabel: job.modelLabel,
-            prepare: (signal) => analysisFlow.prepare({ kind: "plan", id: job.id }, signal) });
+          void jobs.start({ kind: job.kind, id: job.id }, { modelLabel: job.modelLabel,
+            prepare: (signal) => analysisFlow.prepare({ kind: job.kind, id: job.id }, signal) });
         };
       }
     } };
@@ -205,10 +211,10 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
     setDraft(plan ? inputFromPlan(plan) : emptyPlan(lastCurrentOverview));
     setSavedDraft(plan ? inputFromPlan(plan) : emptyPlan(lastCurrentOverview));
     setResumeFile(null);
-    const job = plan ? jobs.get({ kind: "plan", id: plan.id }) : undefined;
+    const job = plan ? jobs.snapshot().filter(job => job.id === plan.id && job.kind !== "match").sort((a,b) => b.startedAt-a.startedAt)[0] : undefined;
     setError(job?.error || "");
     setNotice(""); setListingMessage("");
-    if (job?.error) retryAction.current = () => void analyze();
+    if (job?.error) retryAction.current = () => void analyze(job.kind === "resume");
   }
 
   const readListing = useCallback(async (url: string) => {
@@ -252,7 +258,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   useEffect(() => () => listingController.current?.abort(), []);
 
   async function save(value = draft): Promise<Plan> {
-    if (selectedId && jobRunning(jobs.get({ kind: "plan", id: selectedId }))) throw new Error("Finish or cancel analysis before editing this plan.");
+    if (selectedId && jobs.snapshot().some(job => job.id === selectedId && job.kind !== "match" && jobRunning(job))) throw new Error("Finish or cancel analysis before editing this plan.");
     if (selectedId) jobs.dismiss({ kind: "plan", id: selectedId });
     retryAction.current = () => { void save().catch((cause) => setError(errorText(cause))); };
     setSaving(true); setError("");
@@ -311,10 +317,10 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
     finally { setMoving(false); }
   }
 
-  async function analyze() {
+  async function analyze(tailor = false) {
     if (busy || !canAnalyze) return;
     setError(""); setNotice("");
-    retryAction.current = () => void analyze();
+    retryAction.current = () => void analyze(tailor);
     setPreparing(true);
     try {
       const saved = dirty || !selectedId ? await save() : selectedPlan;
@@ -323,9 +329,9 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
       const modelLabel = analysisProvider === "ollama" ? ollamaModel || "Ollama" : analysisProvider === "builtin"
         ? builtInModel?.name || "Local model" : onlineModel(analysisProvider === "credits" ? analysisFlow.state.credits.model
           : analysisProvider === "anthropic" ? analysisFlow.state.anthropicModel : analysisFlow.state.openaiModel).name;
-      retryAction.current = () => void analyze();
-      void jobs.start({ kind: "plan", id: saved.id }, { modelLabel,
-        prepare: (signal) => analysisFlow.prepare({ kind: "plan", id: saved.id }, signal) });
+      retryAction.current = () => void analyze(tailor);
+      const source = { kind: tailor ? "resume" as const : "plan" as const, id: saved.id };
+      void jobs.start(source, { modelLabel, prepare: (signal) => analysisFlow.prepare(source, signal) });
     } catch (cause) { setError(errorText(cause)); }
     finally { setPreparing(false); }
   }
@@ -333,7 +339,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   async function cancelAnalysis() {
     if (!selectedId) return;
     retryAction.current = () => void cancelAnalysis();
-    try { await jobs.cancel({ kind: "plan", id: selectedId }); }
+    try { await jobs.cancel({ kind: tailoring ? "resume" : "plan", id: selectedId }); }
     catch (cause) { setError(errorText(cause)); }
   }
 
@@ -379,7 +385,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
         <div className="plan-items">{visiblePlans.map((plan) => <button key={plan.id} type="button"
           className={`plan-item ${selectedId === plan.id ? "selected" : ""}`}
           onClick={() => choose(plan)} disabled={navigatingBusy} aria-current={selectedId === plan.id ? "page" : undefined}>
-          <strong>{plan.title || "Untitled role"}{jobRunning(jobs.get({ kind: "plan", id: plan.id })) &&
+          <strong>{plan.title || "Untitled role"}{jobs.snapshot().some(job => job.kind !== "match" && job.id === plan.id && jobRunning(job)) &&
             <LoaderCircle size={13} className="spin plan-item-progress" aria-label="Analysis in progress" />}</strong>
           <span className="plan-item-meta"><span>{plan.company || new URL(plan.listingUrl).hostname}</span><small>Edited {formatUpdated(plan.updatedAt)}</small></span>
         </button>)}</div>
@@ -431,18 +437,18 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
           </fieldset>
           <div className="plan-analyze-actions">
             <button className="button button-primary analysis-button" type="button" onClick={() => void analyze()}
-              disabled={busy || !canAnalyze} aria-label={analyzing ? "Analysis in progress" : "Analyze"}>
-              {analyzing ? <LoaderCircle className="spin" size={17} aria-hidden="true" /> : <Sparkles size={17} aria-hidden="true" />}
+              disabled={busy || !canAnalyze} aria-label={analyzing && !tailoring ? "Analysis in progress" : "Analyze"}>
+              {analyzing && !tailoring ? <LoaderCircle className="spin" size={17} aria-hidden="true" /> : <Sparkles size={17} aria-hidden="true" />}
               Analyze
             </button>
-            {analyzing && <button className="button button-secondary" type="button" onClick={() => void cancelAnalysis()}
+            {analyzing && !tailoring && <button className="button button-secondary" type="button" onClick={() => void cancelAnalysis()}
               disabled={cancelling || analysisProgress?.stage === "saving"}>Cancel</button>}
             <small>{analyzing && analysisProgress?.modelLabel ? analysisProgress.modelLabel : analysisProvider === "ollama" ? (ollamaModel || "Ollama") : analysisProvider === "builtin"
               ? (builtInModel?.name || "Local model") : onlineModel(analysisProvider === "credits" ? analysisFlow.state.credits.model
                 : analysisProvider === "anthropic" ? analysisFlow.state.anthropicModel : analysisFlow.state.openaiModel).name}</small>
           </div>
           <div className="plan-progress-slot">
-            {analyzing && analysisProgress && <PlanAnalysisProgress key={analysisProgress.requestId}
+            {analyzing && !tailoring && analysisProgress && <PlanAnalysisProgress key={analysisProgress.requestId}
               stage={analysisProgress.stage} startedAt={analysisProgress.startedAt} />}
             {!analyzing && !canAnalyze && <p className="analysis-requirements">Add a job link, job description (100+ characters), and a resume to analyze.</p>}
           </div>
@@ -478,14 +484,21 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
             <strong>{overviewUnchanged ? "No wording changes" : "What changed"}</strong>
             <p>{overviewRationale}</p>
           </div>}
-          <details className="analysis-sharing"><summary>Analysis details</summary><p>{analysisProvider === "builtin"
-            ? `Your posting, overview, and resume stay on this computer. Analysis uses ${builtInModel?.name || "the selected local model"}.`
-            : analysisProvider === "ollama"
-            ? `Job text, your overview, and extracted resume text are sent to ${ollamaModel || "your selected model"} on your Ollama server.`
-            : analysisProvider === "credits" ? "Job text, your overview, and resume text are sent to Zebby and your selected online provider. Credits cover actual model usage."
-            : `Job text, your overview, and ${analysisProvider === "openai" ? "the selected resume" : "resume text"} are sent to ${analysisProvider === "openai" ? "OpenAI" : "Anthropic"}. Usage is billed to your API account.`}</p>
-</details>
         </fieldset>
+        {hasAnalysis && <div className="tailored-resume-section" ref={tailoringSection}>
+          <div className="tailored-resume-actions"><button type="button" className="button button-secondary" disabled={busy || !canAnalyze}
+            onClick={() => void analyze(true)}>{tailoring ? <LoaderCircle size={17} className="spin" aria-hidden="true" /> : <Sparkles size={17} aria-hidden="true" />}Create tailored resume</button>
+            {tailoring && <button type="button" className="text-action" disabled={cancelling || resumeProgress?.stage === "saving"} onClick={() => void cancelAnalysis()}>Cancel</button>}
+          </div>
+          {tailoring && resumeProgress && <PlanAnalysisProgress key={resumeProgress.requestId} task="resume" stage={resumeProgress.stage} startedAt={resumeProgress.startedAt} />}
+          {selectedPlan?.tailoredResume && <div className="tailored-resume-files">{(["docx", "pdf"] as const).map(format => {
+            const file = selectedPlan.tailoredResume![format];
+            return <button key={file.id} type="button" className="tailored-resume-file" title="Show in folder" onClick={() => {
+              const reveal = () => { void window.desktop!.revealTailoredResume(selectedPlan.id, format).catch(cause => setError(errorText(cause))); };
+              retryAction.current = reveal; reveal();
+            }}><FileText size={18} aria-hidden="true" /><span>{file.filename}</span><span className="file-format">{format === "docx" ? "Word" : "PDF"}</span><FolderOpen size={15} aria-hidden="true" /></button>;
+          })}</div>}
+        </div>}
         </div>
         </div>
         <div className="plan-actions">
