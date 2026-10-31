@@ -121,7 +121,10 @@ private fun fraction(wallet:JSONObject)=(available(wallet).toDouble()/wallet.opt
                             Column(Modifier.widthIn(min=64.dp)) {Text("$${pack.getInt("dollars")}",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.SemiBold);if(pack.getString("id")=="starter") SmallLabel("Start here")}
                             Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                                 Text("${java.text.NumberFormat.getIntegerInstance().format(pack.getInt("credits"))} credits",style=MaterialTheme.typography.titleSmall)
-                                SmallLabel("About ${pack.getInt("analyses")} analyses with Sol High\nor ${pack.getInt("lunaAnalyses")} with Luna High")
+                                if(pack.optBoolean("astra")) SmallLabel("Unlocks GPT-6 Astra")
+                                if(pack.optBoolean("astra")) SmallLabel("~${pack.getInt("astraAnalyses")} analyses · Astra (High)")
+                                SmallLabel("~${pack.getInt("analyses")} analyses · Sol (High)")
+                                SmallLabel("~${java.text.NumberFormat.getIntegerInstance().format(pack.getInt("lunaAnalyses"))} analyses · Luna (High)")
                             }
                         }
                     }

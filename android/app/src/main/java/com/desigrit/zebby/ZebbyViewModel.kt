@@ -54,7 +54,7 @@ class ZebbyViewModel(application:Application):AndroidViewModel(application) {
     fun createDatabase()=action {ensureIdle();app.store.newWorkspace()}
     fun active(job:Job):WorkInfo? = state.value.runs.firstOrNull { "record:${job.id}" in it.tags && !it.state.isFinished }
     fun latest(job:Job):WorkInfo? = state.value.runs.filter { "record:${job.id}" in it.tags }.maxByOrNull { info -> info.tags.firstOrNull { it.startsWith("created:") }?.substringAfter(':')?.toLongOrNull() ?: 0L }
-    fun paidPending(job:Job)=app.credits.pending("${app.store.file.name}:${if(job.plan) "plan" else "match"}:${job.id}")
+    fun paidPending(job:Job)=app.credits.pending("${app.store.file.name}:${if(job.plan) "plan" else "match"}:${job.id}") || job.plan && app.credits.pending("${app.store.file.name}:resume:${job.id}")
     fun anyActive()=state.value.runs.any { !it.state.isFinished }
     fun ensureIdle() { require(!anyActive()) { "Wait for analysis to finish, or cancel it, before switching or syncing databases." } }
     fun save(job:Job,done:(Job)->Unit={})=action(true) {
@@ -64,16 +64,20 @@ class ZebbyViewModel(application:Application):AndroidViewModel(application) {
         val saved=app.store.save(job);withContext(Dispatchers.Main) { done(saved) }
         if(app.preferences.provider!="credits" && previous==null && !job.plan && saved.score==null && saved.description.length>=80 && saved["resume_id"].isNotBlank()) withContext(Dispatchers.Main) {analyze(saved,done)}
     }
-    fun analyze(job:Job,done:(Job)->Unit={})=action {
+    fun analyze(job:Job,done:(Job)->Unit={},tailor:Boolean=false)=action {
+        require(active(job)==null) {"This job is already being analyzed."}
+        val otherKind=if(tailor) "plan" else "resume"
+        require(!app.credits.pending("${app.store.file.name}:$otherKind:${job.id}")) {"Recover the pending ${if(tailor) "analysis" else "tailored resume"} first."}
+        require(!tailor || job.plan && (job.score!=null || job["keywords_json"].length>2)) {"Analyze this plan before creating a tailored resume."}
         require(!paidPending(job) || app.store.get(job.plan,job.id)?.source()==job.source()) {"Recover the pending paid analysis before changing this job's source."}
         val saved=app.store.save(job)
         require(saved.description.length >= (if(job.plan) 100 else 80) && saved["resume_id"].isNotBlank()) { "Add a job description and a resume to analyze." }
         require(!saved.plan || saved["listing_url"].isNotBlank()) { "Add a job link before analyzing." }
         val settings=app.preferences;val model=settings.model();val catalog=app.contracts.models.firstOrNull { it.id==model }
         require(model.isNotBlank()) { "Choose a model in Settings." }
-        val request=OneTimeWorkRequestBuilder<AnalysisWorker>().addTag("analysis").addTag("record:${job.id}").addTag("created:${System.currentTimeMillis()}").setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build()
+        val request=OneTimeWorkRequestBuilder<AnalysisWorker>().addTag("analysis").addTag("record:${job.id}").addTag(if(tailor) "tailored-resume" else "job-analysis").addTag("created:${System.currentTimeMillis()}").setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build()
         app.vault.put("run:${request.id}",JSONObject().put("plan",job.plan).put("record",job.id).put("workspace",app.store.file.name).put("source",saved.source())
-            .put("provider",settings.provider).put("model",model).put("thinking",settings.thinking(catalog)).put("server",settings["server"]).toString())
+            .put("tailor",tailor).put("provider",settings.provider).put("model",model).put("thinking",settings.thinking(catalog)).put("server",settings["server"]).toString())
         work.enqueueUniqueWork("analysis:${app.store.file.name}:${job.id}",ExistingWorkPolicy.KEEP,request)
         withContext(Dispatchers.Main) { done(saved) }
     }
@@ -86,6 +90,22 @@ class ZebbyViewModel(application:Application):AndroidViewModel(application) {
         require(name.substringAfterLast('.').lowercase() in listOf("pdf","docx","txt")) { "Choose a PDF, DOCX or text resume." }
         val bytes=app.contentResolver.openInputStream(uri).use { requireNotNull(it);it.readBounded(10*1024*1024+1) }
         val resume=app.store.addResume(name,mime,bytes);withContext(Dispatchers.Main) { done(resume) }
+    }
+    fun openResume(resumeId:String)=action {
+        val resume=app.store.resumes().firstOrNull {it.id==resumeId} ?: error("This resume could not be found.")
+        val folder=File(app.cacheDir,"exports/${resume.id.replace(Regex("[^a-zA-Z0-9-]"),"_")}").apply {mkdirs()}
+        val file=File(folder,resume.name.replace(Regex("[<>:\"/\\\\|?*\\x00-\\x1f]"),"_")).apply {writeBytes(app.store.resumeBytes(resumeId))}
+        val content=androidx.core.content.FileProvider.getUriForFile(app,app.packageName+".files",file)
+        withContext(Dispatchers.Main) {
+            val intent=Intent(Intent.ACTION_VIEW).setDataAndType(content,resume.mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {app.startActivity(intent)} catch(_:android.content.ActivityNotFoundException) {
+                app.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType(resume.mime).putExtra(Intent.EXTRA_STREAM,content).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),"Open resume").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+        }
+    }
+    fun exportResume(resumeId:String,uri:Uri)=action {
+        val bytes=app.store.resumeBytes(resumeId)
+        app.contentResolver.openOutputStream(uri,"w").use {requireNotNull(it);it.write(bytes)}
     }
     fun fileName(uri:Uri):String=app.contentResolver.query(uri,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)?.use { if(it.moveToFirst()) it.getString(0) else null } ?: "Resume"
     fun importDatabase(uri:Uri)=action { ensureIdle();app.store.importDatabase(uri,fileName(uri)) }

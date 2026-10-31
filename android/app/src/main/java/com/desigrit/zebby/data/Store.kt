@@ -77,6 +77,23 @@ class Store(private val context: Context) {
         } finally { db.endTransaction() }
     }
     @Synchronized fun lastSummary(): String = db.rawQuery("SELECT value FROM workspace_preferences WHERE key='last_current_overview'", null).use { if (it.moveToFirst()) it.getString(0) else "" }
+    @Synchronized fun tailored(planId:String):org.json.JSONObject? = db.rawQuery("SELECT value FROM workspace_preferences WHERE key=?",arrayOf("tailored_resume:$planId")).use {c ->
+        if(c.moveToFirst()) runCatching {org.json.JSONObject(c.getString(0))}.getOrNull() else null
+    }
+    @Synchronized fun saveTailored(job:Job,name:String,hash:String,word:ByteArray,pdf:ByteArray) {
+        require(job.plan)
+        db.beginTransaction()
+        try {
+            val current=get(true,job.id)
+            require(current?.get("updated_at")==job["updated_at"] && current.source()==job.source()) {"This plan changed while creating the resume. Try again from the latest version."}
+            val docx=addResume("$name.docx","application/vnd.openxmlformats-officedocument.wordprocessingml.document",word)
+            val document=addResume("$name.pdf","application/pdf",pdf);val generated=now()
+            val value=org.json.JSONObject().put("docx",org.json.JSONObject().put("id",docx.id).put("filename",docx.name))
+                .put("pdf",org.json.JSONObject().put("id",document.id).put("filename",document.name)).put("generatedAt",generated).put("sourceHash",hash)
+            db.execSQL("INSERT OR REPLACE INTO workspace_preferences(key,value) VALUES(?,?)",arrayOf("tailored_resume:${job.id}",value.toString()))
+            db.execSQL("UPDATE plans SET updated_at=? WHERE id=?",arrayOf(generated,job.id));db.setTransactionSuccessful()
+        } finally {db.endTransaction()}
+    }
     @Synchronized fun recents(): List<String> = (all(true) + all(false)).sortedByDescending { it["updated_at"] }.flatMap { locations(it["locations"]) }.distinctBy(String::lowercase).take(40)
     @Synchronized fun resumes(): List<Resume> = db.rawQuery("SELECT id,filename,size,content_type FROM resumes ORDER BY created_at DESC", null).use { c -> buildList { while(c.moveToNext()) add(Resume(c.getString(0),c.getString(1),c.getLong(2),c.getString(3))) } }
     @Synchronized fun resumeBytes(id: String): ByteArray {

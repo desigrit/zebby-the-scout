@@ -26,6 +26,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - run: npm ci --ignore-scripts
       - run: node scripts/export-android-contracts.mjs --check
       - uses: actions/setup-java@v4
         with:
@@ -41,6 +42,19 @@ jobs:
         run: ./gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease --console=plain
       - name: Collect preview
         run: cp android/app/build/outputs/apk/debug/app-debug.apk Zebby-Android-preview.apk
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify native resume files
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: cd android && ./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.desigrit.zebby.TailoredResumeDeviceTest --console=plain
       - uses: actions/upload-artifact@v4
         with:
           name: Zebby-Android-preview
@@ -52,6 +66,7 @@ jobs:
           name: Android-test-reports
           path: |
             android/app/build/reports/tests/
+            android/app/build/reports/androidTests/
             android/app/build/reports/lint-results-debug.html
           retention-days: 1
       - uses: actions/upload-artifact@v4

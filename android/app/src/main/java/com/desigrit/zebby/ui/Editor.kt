@@ -51,7 +51,7 @@ import org.json.JSONArray
     fun saved(job:Job) {serialized=job.toJson();baseline=serialized;onSaved(job)}
     val resumePicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if(uri!=null) vm.importResume(uri) { change("resume_id",it.id) } }
     val notifications=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
-    fun analyze() {if(Build.VERSION.SDK_INT>=33) notifications.launch(Manifest.permission.POST_NOTIFICATIONS);dismissedError="";vm.analyze(draft,::saved)}
+    fun analyze(tailor:Boolean=false) {if(Build.VERSION.SDK_INT>=33) notifications.launch(Manifest.permission.POST_NOTIFICATIONS);dismissedError="";vm.analyze(draft,::saved,tailor)}
     fun fill() {vm.fill(draft) {filled -> serialized=if(filled.source()!=draft.source()) filled.with("match_strength","").with("match_notes","").with("match_analyzed_at","").with("keyword_importance_json","[]").with("theme_importance_json","[]").toJson() else filled.toJson()}}
     val clipboard=LocalClipboardManager.current
     Column(Modifier.fillMaxSize()) {
@@ -90,13 +90,13 @@ import org.json.JSONArray
                 Selector("Resume",resume?.name ?: "Choose a resume",listOf("" to "No resume")+state.resumes.map {it.id to it.name},enabled) {change("resume_id",it)}
                 TextButton(enabled=enabled,onClick={resumePicker.launch(arrayOf("application/pdf","application/vnd.openxmlformats-officedocument.wordprocessingml.document","text/plain"))}) {Icon(Icons.Outlined.UploadFile,null);Spacer(Modifier.width(8.dp));Text("Upload resume")}
                 if(draft.plan) Field("Current summary",draft["current_overview"],enabled,multiline=true) {change("current_overview",it)}
-                Button(onClick=::analyze,enabled=canAnalyze,modifier=Modifier.heightIn(min=48.dp)) {Icon(Icons.Outlined.AutoAwesome,null,Modifier.size(20.dp));Spacer(Modifier.width(8.dp));Text(if(draft.score!=null) "Refresh analysis" else "Analyze")}
+                Button(onClick={analyze()},enabled=canAnalyze,modifier=Modifier.heightIn(min=48.dp)) {Icon(Icons.Outlined.AutoAwesome,null,Modifier.size(20.dp));Spacer(Modifier.width(8.dp));Text(if(draft.score!=null) "Refresh analysis" else "Analyze")}
                 if(run!=null) RunStatus(run) {vm.cancel(draft)} else if(draft.description.length<100 || draft["resume_id"].isBlank() || draft.plan && draft["listing_url"].isBlank()) {
                     SmallLabel(if(draft.plan) "Add a job link, job description (100+ characters), and a resume to analyze." else "Add a job description and resume to analyze.")
                 } else SmallLabel(vm.app.preferences.model())
                 if(finished?.state==WorkInfo.State.FAILED && dismissedError!=finished.id.toString()) {
                     ErrorBanner(finished.outputData.getString("error") ?: "Analysis could not finish.") {dismissedError=finished.id.toString()}
-                    TextButton(onClick=::analyze,enabled=canAnalyze) {Icon(Icons.Outlined.Refresh,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Try again")}
+                    TextButton(onClick={analyze(finished.tags.contains("tailored-resume"))},enabled=canAnalyze) {Icon(Icons.Outlined.Refresh,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Try again")}
                 }
             }
             HorizontalDivider()
@@ -107,10 +107,10 @@ import org.json.JSONArray
                     Text("Resume direction",style=MaterialTheme.typography.titleMedium)
                     if(run==null) ActionIcon(Icons.Outlined.Refresh,"Refresh analysis",canAnalyze) {analyze()}
                 }
-                if(run!=null) RunStatus(run) {vm.cancel(draft)}
+                if(run!=null && !run.tags.contains("tailored-resume")) RunStatus(run) {vm.cancel(draft)}
                 if(finished?.state==WorkInfo.State.FAILED && dismissedError!=finished.id.toString()) {
                     ErrorBanner(finished.outputData.getString("error") ?: "Analysis could not finish.") {dismissedError=finished.id.toString()}
-                    TextButton(onClick=::analyze,enabled=canAnalyze) {Text("Try again")}
+                    TextButton(onClick={analyze(finished.tags.contains("tailored-resume"))},enabled=canAnalyze) {Text("Try again")}
                 }
             }
             Section(if(draft.plan) "Match" else "Resume direction") {
@@ -127,6 +127,20 @@ import org.json.JSONArray
                     Field("Suggested summary",draft["overview"],enabled,multiline=true) {change("overview",it)}
                     if(draft["overview_rationale"].isNotBlank()) Text(draft["overview_rationale"],style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                if(draft.score!=null || draft["keywords_json"].length>2) {
+                    Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                        OutlinedButton(onClick={analyze(true)},enabled=canAnalyze,modifier=Modifier.heightIn(min=48.dp)) {
+                            Icon(Icons.Outlined.AutoAwesome,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Create tailored resume")
+                        }
+                        if(run!=null && run.tags.contains("tailored-resume")) RunStatus(run) {vm.cancel(draft)}
+                        val files=remember(stored?.get("updated_at"),draft.id) {vm.app.store.tailored(draft.id)}
+                        if(files!=null) for(format in listOf("docx","pdf")) {
+                            val file=files.optJSONObject(format)
+                            val resume=file?.let { f -> state.resumes.firstOrNull {it.id==f.optString("id")} }
+                            if(resume!=null) TailoredResumeLink(vm,resume)
+                        }
+                    }
+                }
             }
             }
         }
@@ -140,6 +154,15 @@ import org.json.JSONArray
     if(delete) AlertDialog(onDismissRequest={delete=false},title={Text(if(draft.plan) "Delete this plan?" else "Delete this application?")},text={Text("The saved record will be removed from this database.")},confirmButton={TextButton(onClick={delete=false;vm.delete(draft,onClose)}){Text("Delete")}},dismissButton={TextButton(onClick={delete=false}){Text("Cancel")}})
     if(replaceDescription) AlertDialog(onDismissRequest={replaceDescription=false},title={Text("Fill this job from its link?")},text={Text("Extracted details will replace the current job fields. Your resume and notes will stay.")},confirmButton={TextButton(onClick={replaceDescription=false;fill()}){Text("Fill from link")}},dismissButton={TextButton(onClick={replaceDescription=false}){Text("Cancel")}})
     if(duplicate!=null) AlertDialog(onDismissRequest={duplicate=null},title={Text("Already in Applications")},text={Text("${duplicate!!.title} at ${duplicate!!.company} uses this listing link.")},confirmButton={TextButton(onClick={duplicate=null;vm.save(draft,::saved)}){Text("Save another")}},dismissButton={TextButton(onClick={duplicate=null}){Text("Cancel")}})
+}
+@Composable private fun TailoredResumeLink(vm:ZebbyViewModel,resume:Resume) {
+    val export=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(resume.mime)) {uri -> if(uri!=null) vm.exportResume(resume.id,uri)}
+    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+        TextButton(onClick={vm.openResume(resume.id)},modifier=Modifier.weight(1f),contentPadding=PaddingValues(vertical=12.dp)) {
+            Icon(Icons.Outlined.Description,null,Modifier.size(20.dp));Spacer(Modifier.width(10.dp));Text(resume.name,Modifier.weight(1f),maxLines=3)
+        }
+        ActionIcon(Icons.Outlined.Download,"Save ${if(resume.name.endsWith(".pdf")) "PDF" else "Word"} copy") {export.launch(resume.name)}
+    }
 }
 @Composable fun Field(label:String,value:String,enabled:Boolean=true,multiline:Boolean=false,keyboard:KeyboardType=KeyboardType.Text,onChange:(String)->Unit) {
     OutlinedTextField(value=value,onValueChange=onChange,enabled=enabled,label={Text(label)},modifier=Modifier.fillMaxWidth(),singleLine=!multiline,minLines=if(multiline) 3 else 1,maxLines=if(multiline) 8 else 1,keyboardOptions=KeyboardOptions(keyboardType=keyboard))

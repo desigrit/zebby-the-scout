@@ -93,6 +93,9 @@ class Credits(private val http:Http,private val vault:Secrets,private val origin
 
     /** Durable receipt is acknowledged only after its validated result has reached SQLite. */
     suspend fun analyze(record:String,input:JSONObject,plan:Boolean,model:String,thinking:String,progress:suspend(String)->Unit):JSONObject {
+        return generate(record,input,if(plan) "plan" else "match",model,thinking,progress)
+    }
+    suspend fun generate(record:String,input:JSONObject,kind:String,model:String,thinking:String,progress:suspend(String)->Unit):JSONObject {
         mutex.withLock { ensureGuestUnlocked() }
         val key="analysis:$record";val hash=sha256(input.toString().toByteArray());val wallet=vault.get("wallet-id")
         var pending=vault.get(key).takeIf(String::isNotBlank)?.let(::JSONObject)
@@ -109,7 +112,7 @@ class Credits(private val http:Http,private val vault:Secrets,private val origin
             vault.put(key,"");pending=null
         }
         progress("Preparing analysis")
-        val quote=request("/v1/quotes",JSONObject().put("kind",if(plan) "plan" else "match").put("input",input).put("model",model).put("thinkingLevel",thinking))
+        val quote=request("/v1/quotes",JSONObject().put("kind",kind).put("input",input).put("model",model).put("thinkingLevel",thinking))
         require(quote.getString("model")==model && quote.getString("thinkingLevel")==thinking) { "The quote did not match your selected model." }
         val balance=request("/v1/wallet").also(::saveWallet)
         require(balance.getLong("balance")-balance.getLong("reserved")>=quote.getLong("maximum")) { "You need more credits to begin this analysis. Buy credits in Settings." }

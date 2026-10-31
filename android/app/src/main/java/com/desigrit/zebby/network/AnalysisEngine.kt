@@ -11,7 +11,10 @@ import kotlin.coroutines.coroutineContext
 
 class AnalysisEngine(private val http:Http,private val contracts:Contracts,private val vault:Secrets) {
     suspend fun analyze(provider:String,model:String,thinking:String,server:String,input:JSONObject,plan:Boolean,progress:suspend (String)->Unit):AnalysisResult {
-        val kind=if(plan) "plan" else "match";val contract=contracts.json.getJSONObject(kind);val instructions=contract.getString("instructions");val schema=contract.getJSONObject("schema")
+        return AnalysisResult.parse(generate(provider,model,thinking,server,input,if(plan) "plan" else "match",progress),plan)
+    }
+    suspend fun generate(provider:String,model:String,thinking:String,server:String,input:JSONObject,kind:String,progress:suspend (String)->Unit):JSONObject {
+        val contract=contracts.json.getJSONObject(kind);val instructions=contract.getString("instructions");val schema=contract.getJSONObject("schema")
         val limit=contracts.json.getJSONObject("outputLimits").getJSONObject(kind).optInt(thinking,6000)
         progress("Waiting for $model")
         val text=when(provider) {
@@ -62,7 +65,7 @@ class AnalysisEngine(private val http:Http,private val contracts:Contracts,priva
             else -> error("Choose an analysis method in Settings.")
         }
         progress("Checking the result")
-        return AnalysisResult.parse(JSONObject(text),plan)
+        return JSONObject(text)
     }
     suspend fun serverModels(server:String):List<String> = http.json(normalizeServer(server)+"/api/tags",deadlineSeconds=15).getJSONArray("models").let { a -> (0 until a.length()).map { a.getJSONObject(it) }.sortedByDescending { it.optString("modified_at") }.map { it.getString("name") } }
     suspend fun serverThinking(server:String,model:String):List<String> {

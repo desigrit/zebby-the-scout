@@ -18,6 +18,7 @@ A native Kotlin and Jetpack Compose companion to Zebby for Windows and Mac, in t
 - A welcome screen with Create database and Open existing database. Existing workspaces reopen on upgrade.
 - Phone navigation and tablet navigation rail with an application inspector.
 - Job extraction, reusable PDF/DOCX/text resumes, editable summaries, ATS keywords, resume themes, match explanations and per-item copy.
+- Create tailored Word and PDF resumes from an analyzed Plan. Open each file or save a copy through Android's file picker.
 - Move to Applied reuses the existing score and resume. All application fields remain optional.
 - Search, company/status filters, notes, recent locations and a 30-day stacked activity chart.
 - OpenAI and Anthropic keys, an Ollama server, and the existing Zebby guest credit wallet and checkout service.

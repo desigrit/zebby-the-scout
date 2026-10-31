@@ -9,6 +9,8 @@ import androidx.core.app.NotificationCompat
 import androidx.work.*
 import com.desigrit.zebby.data.*
 import com.desigrit.zebby.network.ResumeReader
+import com.desigrit.zebby.network.TailoredResume
+import com.desigrit.zebby.network.sha256
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -34,15 +36,34 @@ class AnalysisWorker(context:Context,params:WorkerParameters):CoroutineWorker(co
             val job=app.store.get(plan,record) ?: error("This job is no longer available.")
             require(job.source()==run.getString("source")) { "This job changed before analysis started. Try again from the latest version." }
             val provider=run.getString("provider")
+            val tailor=run.optBoolean("tailor")
             require(runAttemptCount==0 || provider=="credits") { "Analysis was interrupted. Tap Analyze to start it again." }
             setForeground(getForegroundInfo());val started=System.currentTimeMillis()
             suspend fun progress(stage:String) { setProgress(workDataOf("stage" to stage,"started" to started)) }
             progress("Reading your resume")
             val resume=app.store.resumes().firstOrNull { it.id==job["resume_id"] } ?: error("Choose a resume before analyzing.")
-            val resumeText=ResumeReader.read(applicationContext,resume.name,app.store.resumeBytes(resume.id))
+            val bytes=app.store.resumeBytes(resume.id)
+            val blocks=if(tailor) TailoredResume.blocks(applicationContext,resume.name,bytes) else emptyList()
+            val resumeText=if(tailor) blocks.joinToString("\n") {it.text} else ResumeReader.read(applicationContext,resume.name,bytes)
             require(job.description.length >= if(plan) 100 else 80) { "Add a longer job description before analyzing." }
             val input=JSONObject().put("resumeText",resumeText).put("jobDescription",job.description).put("company",job.company).put("title",job["title"])
                 .put("currentCvOverview",if(plan) job["current_overview"] else "").put("url",job["listing_url"]).put("team",job["team"]).put("locations",job["locations"])
+            if(tailor) {
+                require(plan && (job.score!=null || job["keywords_json"].length>2)) {"Analyze this plan before creating a tailored resume."}
+                input.put("resumeBlocks",org.json.JSONArray(blocks.map {it.json()})).put("suggestedSummary",job["overview"])
+                    .put("keywords",org.json.JSONArray(jsonArray(job["keywords_json"]))).put("themes",org.json.JSONArray(jsonArray(job["themes_json"])))
+                val paidKey="$workspace:resume:$record"
+                progress("Tailoring your resume")
+                val result=if(provider=="credits") app.credits.generate(paidKey,input,"resume",run.getString("model"),run.getString("thinking"),::progress)
+                    else app.engine.generate(provider,run.getString("model"),run.getString("thinking"),run.getString("server"),input,"resume",::progress)
+                coroutineContext.ensureActive();progress("Creating Word and PDF files")
+                val tailored=TailoredResume.apply(blocks,result);val word=TailoredResume.word(tailored);val pdf=TailoredResume.pdf(tailored)
+                coroutineContext.ensureActive();progress("Saving your tailored resume")
+                require(app.store.file.name==workspace) {"The database changed. Reopen the original plan to recover the result."}
+                app.store.saveTailored(job,TailoredResume.name(resume.name,job["listing_url"],job.id),sha256(input.toString().toByteArray()),word,pdf)
+                if(provider=="credits") app.credits.acknowledge(paidKey)
+                app.vault.put(runKey,"");app.log("resume.completed");return@withContext Result.success()
+            }
             val paidKey="$workspace:${if(plan) "plan" else "match"}:$record"
             val result=if(provider=="credits") AnalysisResult.parse(app.credits.analyze(paidKey,input,plan,run.getString("model"),run.getString("thinking"),::progress),plan)
                 else app.engine.analyze(provider,run.getString("model"),run.getString("thinking"),run.getString("server"),input,plan,::progress)
