@@ -38,8 +38,9 @@ private fun fraction(wallet:JSONObject)=(available(wallet).toDouble()/wallet.opt
         LinearProgressIndicator(progress={fraction(wallet)},modifier=Modifier.fillMaxWidth().height(3.dp),color=MaterialTheme.colorScheme.onSurfaceVariant,trackColor=MaterialTheme.colorScheme.outlineVariant,drawStopIndicator={})
     }
 }
-@Composable fun CreditSummary(vm:ZebbyViewModel,onBuy:()->Unit,showBuy:Boolean) {
+@Composable fun CreditSummary(vm:ZebbyViewModel,onBuy:()->Unit) {
     val wallet=runCatching {vm.app.credits.cachedWallet()}.getOrNull()
+    var managerOpen by remember {mutableStateOf(false)}
     var connection by remember {mutableStateOf("")};var code by remember {mutableStateOf("")};var learn by remember {mutableStateOf(false)}
     val connectionScope=rememberCoroutineScope()
     var connectionWorking by remember {mutableStateOf(false)};var connectionError by remember {mutableStateOf("")}
@@ -57,16 +58,25 @@ private fun fraction(wallet:JSONObject)=(available(wallet).toDouble()/wallet.opt
             }
         }
     } else SmallLabel("No credits yet. Buy a pack or connect your existing credits.")
-    if(showBuy) Button(onClick=onBuy,modifier=Modifier.heightIn(min=48.dp)) {Text("Buy Zebby credits")}
-    FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-        TextButton(onClick={connection="restore";code="";connectionError=""}) {Text("Restore credits")}
-        TextButton(onClick={connection="connect";code="";connectionError=""}) {Text("Connect this device")}
-        TextButton(onClick={learn=true}) {Text("Learn more")}
+    FlowRow(horizontalArrangement=Arrangement.spacedBy(24.dp)) {
+        TextButton(onClick=onBuy,contentPadding=PaddingValues(vertical=12.dp)) {Text("Buy credits")}
+        TextButton(onClick={managerOpen=true},contentPadding=PaddingValues(vertical=12.dp)) {Text("Manage credits")}
     }
-    if(wallet!=null && wallet.optLong("purchased")>0) {
-        TextButton(onClick={recoveryConfirm=true}) {Icon(Icons.Outlined.Key,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Save recovery code")}
-        TextButton(onClick={vm.action {val value=vm.app.credits.pairing();withContext(Dispatchers.Main) {pairing=value}}}) {Text("Connect another device")}
-        TextButton(onClick={vm.action {val value=vm.app.credits.access();withContext(Dispatchers.Main) {manage=value}}}) {Text("Connected devices")}
+    if(managerOpen) ModalBottomSheet(onDismissRequest={managerOpen=false},sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal=24.dp).padding(bottom=32.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                Text("Manage credits",Modifier.weight(1f),style=MaterialTheme.typography.headlineSmall)
+                ActionIcon(Icons.Outlined.Close,"Close manage credits") {managerOpen=false}
+            }
+            TextButton(onClick={managerOpen=false;connection="restore";code="";connectionError=""}) {Text("Restore credits")}
+            TextButton(onClick={managerOpen=false;connection="connect";code="";connectionError=""}) {Text("Connect this device")}
+            if(wallet!=null && wallet.optLong("purchased")>0) {
+                TextButton(onClick={managerOpen=false;recoveryConfirm=true}) {Icon(Icons.Outlined.Key,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Save recovery code")}
+                TextButton(onClick={managerOpen=false;vm.action {val value=vm.app.credits.pairing();withContext(Dispatchers.Main) {pairing=value}}}) {Text("Connect another device")}
+                TextButton(onClick={managerOpen=false;vm.action {val value=vm.app.credits.access();withContext(Dispatchers.Main) {manage=value}}}) {Text("Connected devices")}
+            }
+            TextButton(onClick={managerOpen=false;learn=true}) {Text("Learn more")}
+        }
     }
     if(connection.isNotBlank()) AlertDialog(onDismissRequest={if(!connectionWorking) connection=""},title={Text(if(connection=="restore") "Restore credits" else "Connect this device")},text={Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
         Text(if(connection=="restore") "Paste your saved recovery code." else "Enter the pairing code shown on your other device.",style=MaterialTheme.typography.bodyMedium)

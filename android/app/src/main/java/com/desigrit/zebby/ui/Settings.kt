@@ -83,13 +83,13 @@ fun thinkingLabel(value:String)=when(value) {"xhigh"->"Extra high";"max"->"Maxim
             }
         }
         HorizontalDivider()
-        Section("Credits") {CreditSummary(vm,onBuy,showBuy=provider=="credits")}
+        Section("Credits") {CreditSummary(vm,onBuy)}
         HorizontalDivider()
         Section("Database") {
-            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {Icon(Icons.Outlined.Storage,null);Column(Modifier.weight(1f)) {Text(runCatching {vm.app.store.name}.getOrDefault("Database unavailable"),style=MaterialTheme.typography.bodyLarge);SmallLabel("A private working copy on this device")}}
+            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {Icon(Icons.Outlined.Storage,null);Column(Modifier.weight(1f)) {Text(if(state.hasDatabase) vm.app.store.name else "No database selected",style=MaterialTheme.typography.bodyLarge);if(state.hasDatabase) SmallLabel("A private working copy on this device")}}
             FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 TextButton(enabled=!vm.anyActive(),onClick={import.launch(arrayOf("*/*"))}) {Icon(Icons.Outlined.FileOpen,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Import")}
-                TextButton(enabled=!vm.anyActive(),onClick={export.launch("Zebby-${java.time.LocalDate.now()}.sqlite")}) {Icon(Icons.Outlined.IosShare,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Export copy")}
+                TextButton(enabled=state.hasDatabase && !vm.anyActive(),onClick={export.launch("Zebby-${java.time.LocalDate.now()}.sqlite")}) {Icon(Icons.Outlined.IosShare,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Export copy")}
                 TextButton(enabled=!vm.anyActive(),onClick={newDatabase=true}) {Text("Create new")}
             }
             TextButton(enabled=!vm.anyActive(),onClick={workspaceList=vm.app.store.workspaces().map {it.name}}) {Text("Saved on this device")}

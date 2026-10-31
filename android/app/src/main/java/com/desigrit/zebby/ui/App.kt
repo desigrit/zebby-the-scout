@@ -28,12 +28,15 @@ import kotlinx.coroutines.launch
     var dirty by remember { mutableStateOf(false) }
     var leave by remember { mutableStateOf<(() -> Unit)?>(null) }
     var buy by remember { mutableStateOf(false) }
+    var consumedShare by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar=remember { SnackbarHostState() }
     val scope=rememberCoroutineScope()
     fun navigate(action:()->Unit) { if(dirty) leave=action else action() }
     fun close() { editor=null;selected="";dirty=false }
     fun create() { val summary=runCatching { vm.app.store.lastSummary() }.getOrDefault("");editor=Job.fresh(tab==0,summary).toJson();selected="" }
-    LaunchedEffect(sharedText) { if(!sharedText.isNullOrBlank()) { tab=0;editor=Job.fresh(true).with("listing_url",Regex("https?://\\S+").find(sharedText)?.value.orEmpty()).let { if(it["listing_url"].isBlank()) it.with("description",sharedText) else it }.toJson() } }
+    LaunchedEffect(sharedText,state.hasDatabase) { if(state.hasDatabase && !sharedText.isNullOrBlank() && consumedShare!=sharedText) {
+        consumedShare=sharedText;tab=0;editor=Job.fresh(true).with("listing_url",Regex("https?://\\S+").find(sharedText)?.value.orEmpty()).let { if(it["listing_url"].isBlank()) it.with("description",sharedText) else it }.toJson()
+    } }
     LaunchedEffect(Unit) { vm.notices.collect { snackbar.showSnackbar(it,duration=SnackbarDuration.Short) } }
     BackHandler(enabled=editor!=null || selected.isNotBlank()) { navigate(::close) }
     ZebbyTheme(vm.app.preferences["appearance"]) {
@@ -47,7 +50,7 @@ import kotlinx.coroutines.launch
                         Image(painterResource(R.drawable.zebby),"Zebby",Modifier.padding(vertical=16.dp).size(40.dp))
                     }) { tabs.forEachIndexed { i,title -> NavigationRailItem(selected=tab==i,onClick={navigate {tab=i;close()}},icon={Icon(icons[i],title)},label={Text(title)},alwaysShowLabel=true) } }
                     Scaffold(modifier=Modifier.weight(1f),containerColor=MaterialTheme.colorScheme.background,
-                        topBar={ TopAppBar(title={ Text(if(editor!=null) { if(Job.fromJson(editor!!).plan) "Plan" else "Application" } else tabs[tab]) },
+                        topBar={ TopAppBar(title={ Text(if(!state.hasDatabase && tab<2) "Zebby" else if(editor!=null) { if(Job.fromJson(editor!!).plan) "Plan" else "Application" } else tabs[tab]) },
                             navigationIcon={ if(editor!=null || selected.isNotBlank()) ActionIcon(Icons.AutoMirrored.Outlined.ArrowBack,"Back") { navigate(::close) }
                                 else if(!expanded) Image(painterResource(R.drawable.zebby),"Zebby",Modifier.padding(start=20.dp,end=12.dp).size(36.dp)) },
                             actions={ if(runCatching { vm.app.credits.cachedWallet()?.optLong("purchased",0) ?: 0 }.getOrDefault(0)>0) CreditCompact(vm) { buy=true };if(state.busy) CircularProgressIndicator(Modifier.padding(16.dp).size(20.dp),strokeWidth=2.dp) },
@@ -56,7 +59,7 @@ import kotlinx.coroutines.launch
                             tabs.forEachIndexed { i,title -> NavigationBarItem(selected=tab==i,onClick={navigate {tab=i;close()}},icon={Icon(icons[i],null)},label={Text(title)}) }
                         } },
                         snackbarHost={ SnackbarHost(snackbar) },
-                        floatingActionButton={ if(tab<2 && editor==null && selected.isBlank()) ExtendedFloatingActionButton(onClick={create()},icon={Icon(Icons.Outlined.Add,null)},text={Text(if(tab==0) "New plan" else "Add application")},containerColor=MaterialTheme.colorScheme.primary,contentColor=MaterialTheme.colorScheme.onPrimary) }
+                        floatingActionButton={ if(state.hasDatabase && tab<2 && editor==null && selected.isBlank()) ExtendedFloatingActionButton(onClick={create()},icon={Icon(Icons.Outlined.Add,null)},text={Text(if(tab==0) "New plan" else "Add application")},containerColor=MaterialTheme.colorScheme.primary,contentColor=MaterialTheme.colorScheme.onPrimary) }
                     ) { insets ->
                         Column(Modifier.padding(insets).consumeWindowInsets(insets).imePadding().fillMaxSize()) {
                             if(state.error.isNotBlank()) Box(Modifier.padding(horizontal=20.dp,vertical=8.dp)) { ErrorBanner(state.error,vm::clearError) }
@@ -66,6 +69,7 @@ import kotlinx.coroutines.launch
                             Box(Modifier.widthIn(max=contentWidth).fillMaxSize()) {
                             when {
                                 state.loading -> Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) { CircularProgressIndicator() }
+                                !state.hasDatabase && tab<2 -> WelcomeScreen(vm,state)
                                 editing!=null -> JobEditor(vm,editing,state,wide=expanded,onDirty={dirty=it},onSaved={editor=it.toJson();dirty=false},onApplied={tab=1;editor=null;selected=it.id;dirty=false},onClose={close()})
                                 tab==0 -> PlansScreen(state,vm,onSelect={editor=it.toJson()},onNew={create()})
                                 tab==1 -> ApplicationsScreen(state,vm,selected,expanded,onSelect={selected=it},onEdit={editor=it.toJson()},onNew={create()},onClose={selected=""})

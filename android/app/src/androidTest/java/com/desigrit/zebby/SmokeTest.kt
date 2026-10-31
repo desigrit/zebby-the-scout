@@ -78,14 +78,15 @@ What you bring
         rule.onNodeWithText("Settings").performClick();capture("phone-settings")
         rule.onNodeWithText("OpenAI API key").performClick();rule.onNodeWithText("Local server").performClick();capture("phone-settings-server")
         rule.onNodeWithText("Local server").performClick();rule.onNodeWithText("Zebby credits").performClick()
-        rule.onNodeWithText("Restore credits").performScrollTo().performClick()
+        rule.onNodeWithText("Manage credits").performScrollTo().performClick()
+        rule.onNodeWithText("Restore credits").performClick()
         rule.onNodeWithText("Code").performTextInput("invalid-synthetic-code")
         rule.onNodeWithText("Connect",useUnmergedTree=true).performClick()
         rule.onNodeWithText("Check the code and try again.").assertIsDisplayed()
         rule.onNodeWithText("invalid-synthetic-code").assertExists()
         capture("phone-restore-error")
         rule.onNodeWithText("Cancel").performClick()
-        rule.onNodeWithText("Buy Zebby credits").performScrollTo().performClick();capture("phone-credits")
+        rule.onNodeWithText("Buy credits").performScrollTo().performClick();capture("phone-credits")
         rule.onAllNodes(isSelectable() and isSelected()).assertAny(hasText("$5") or hasAnyDescendant(hasText("$5")))
     }
     @Test fun analysisContinuesAcrossNavigationAndSavesItsResult() {

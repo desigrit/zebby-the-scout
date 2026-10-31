@@ -17,7 +17,7 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 data class UiState(val plans:List<Job> = emptyList(),val applications:List<Job> = emptyList(),val resumes:List<Resume> = emptyList(),val recents:List<String> = emptyList(),
-    val loading:Boolean=true,val busy:Boolean=false,val error:String="",val runs:List<WorkInfo> = emptyList(),val version:Int=0)
+    val loading:Boolean=true,val busy:Boolean=false,val error:String="",val runs:List<WorkInfo> = emptyList(),val version:Int=0,val hasDatabase:Boolean=false)
 class ZebbyViewModel(application:Application):AndroidViewModel(application) {
     val app=application as ZebbyApplication
     private val _state=MutableStateFlow(UiState());val state=_state.asStateFlow()
@@ -39,11 +39,19 @@ class ZebbyViewModel(application:Application):AndroidViewModel(application) {
         }
     }
     fun reload() { viewModelScope.launch {
-        try { val data=withContext(Dispatchers.IO) { Triple(app.store.all(true),app.store.all(false),app.store.resumes()) };val recents=withContext(Dispatchers.IO) { app.store.recents() }
-            _state.update { it.copy(plans=data.first,applications=data.second,resumes=data.third,recents=recents,loading=false,version=it.version+1) }
+        try {
+            val ready=withContext(Dispatchers.IO) {app.store.hasDatabase}
+            if(!ready) {
+                _state.update {it.copy(plans=emptyList(),applications=emptyList(),resumes=emptyList(),recents=emptyList(),hasDatabase=false,loading=false,
+                    error=app.store.startupError.ifBlank {it.error},version=it.version+1)}
+                return@launch
+            }
+            val data=withContext(Dispatchers.IO) { Triple(app.store.all(true),app.store.all(false),app.store.resumes()) };val recents=withContext(Dispatchers.IO) { app.store.recents() }
+            _state.update { it.copy(plans=data.first,applications=data.second,resumes=data.third,recents=recents,hasDatabase=true,loading=false,version=it.version+1) }
         } catch(e:Exception) { app.log("database.open.failed",e);_state.update { it.copy(loading=false,error=e.message ?: "Could not open this database.") } }
     } }
     fun clearError() { _state.update { it.copy(error="") } }
+    fun createDatabase()=action {ensureIdle();app.store.newWorkspace()}
     fun active(job:Job):WorkInfo? = state.value.runs.firstOrNull { "record:${job.id}" in it.tags && !it.state.isFinished }
     fun latest(job:Job):WorkInfo? = state.value.runs.filter { "record:${job.id}" in it.tags }.maxByOrNull { info -> info.tags.firstOrNull { it.startsWith("created:") }?.substringAfter(':')?.toLongOrNull() ?: 0L }
     fun paidPending(job:Job)=app.credits.pending("${app.store.file.name}:${if(job.plan) "plan" else "match"}:${job.id}")

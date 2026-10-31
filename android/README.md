@@ -10,16 +10,18 @@ A native Kotlin and Jetpack Compose companion to Zebby for Windows and Mac, in t
   <img src="../docs/screenshots/android/settings.png" width="30%" alt="Android Settings with provider, model and named thinking choices" />
 </p>
 
-Synthetic sample data. [Tablet layout](../docs/screenshots/android/tablet-applications.png).
+[Tablet layout](../docs/screenshots/android/tablet-applications.png).
 
 ## What is included
 
 - Plan, Applications and Settings, with Ember light and dark themes.
+- A welcome screen with Create database and Open existing database. Existing workspaces reopen on upgrade.
 - Phone navigation and tablet navigation rail with an application inspector.
 - Job extraction, reusable PDF/DOCX/text resumes, editable summaries, ATS keywords, resume themes, match explanations and per-item copy.
 - Move to Applied reuses the existing score and resume. All application fields remain optional.
 - Search, company/status filters, notes, recent locations and a 30-day stacked activity chart.
 - OpenAI and Anthropic keys, an Ollama server, and the existing Zebby guest credit wallet and checkout service.
+- Buy credits and Manage credits sit together in Settings, regardless of the selected analysis provider.
 - Background analysis with progress, cancellation and a notification. Only the analyzed record is protected; other screens remain available.
 - SQLite import/export and explicit cloud sync with conflict checks and retained recovery copies.
 
@@ -32,6 +34,8 @@ Android 8.0 or newer is required. Transfer `app-debug.apk` to your phone, open i
 The preview is signed with the build computer's development certificate. Rebuilding elsewhere may produce a different certificate. Export your database and save your credits recovery code before uninstalling or changing signing certificates. Android removes private app data on uninstall.
 
 ## Use your desktop database
+
+On first launch, choose **Create database** to start on this device or **Open existing database** to import a file from your device or cloud drive. Opening a file makes a private working copy and preserves the original. Use Settings for explicit cloud sync or export.
 
 Zebby uses desktop database schema **10**, including embedded resume files. Open an older database in current desktop Zebby before importing it.
 

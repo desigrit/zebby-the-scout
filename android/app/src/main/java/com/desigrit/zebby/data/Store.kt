@@ -12,14 +12,19 @@ class Store(private val context: Context) {
     private val preferences = context.getSharedPreferences("workspace", Context.MODE_PRIVATE)
     private val folder = File(context.filesDir, "workspaces").apply { mkdirs() }
     var file: File = File(folder, preferences.getString("file", "Applications.sqlite")!!); private set
-    private var startupError = ""
-    private var connection:SQLiteDatabase? = try { open(file) } catch(e:Exception) { startupError=e.message ?: "The database could not be opened.";null }
-    private val db:SQLiteDatabase get() = connection ?: error(startupError)
+    var startupError = ""; private set
+    private var connection:SQLiteDatabase? = try {
+        if (file.exists()) open(file)
+        else { if (preferences.contains("file")) startupError="The previous database could not be found. Open a database to continue."; null }
+    } catch(e:Exception) { startupError=e.message ?: "The database could not be opened.";null }
+    val hasDatabase:Boolean get() = connection != null
+    private val db:SQLiteDatabase get() = connection ?: error(startupError.ifBlank { "Create or open a database first." })
     val name: String get() = preferences.getString("name", file.name)!!
 
-    private fun open(path: File): SQLiteDatabase {
+    private fun open(path: File, create:Boolean=false): SQLiteDatabase {
         val exists = path.exists()
-        val db = SQLiteDatabase.openDatabase(path.path, null, SQLiteDatabase.CREATE_IF_NECESSARY, preserveCorruptFile)
+        require(exists || create) { "This database could not be found. Open a database to continue." }
+        val db = SQLiteDatabase.openDatabase(path.path, null, if(create) SQLiteDatabase.CREATE_IF_NECESSARY else SQLiteDatabase.OPEN_READWRITE, preserveCorruptFile)
         try {
             db.rawQuery("PRAGMA journal_mode=DELETE",null).use { it.moveToFirst() }
             db.setForeignKeyConstraintsEnabled(true)
@@ -96,7 +101,7 @@ class Store(private val context: Context) {
     @Synchronized fun fingerprint():String {require(!db.inTransaction());return file.inputStream().use {it.sha256Bounded()}}
     @Synchronized fun exportBytes(): ByteArray { require(!db.inTransaction()); return file.readBytes() }
     @Synchronized fun <T> exclusive(block: () -> T): T = block()
-    @Synchronized fun newWorkspace() { val next = File(folder, "Applications-${System.currentTimeMillis()}.sqlite"); val connection = open(next); switch(next, connection, "Applications.sqlite") }
+    @Synchronized fun newWorkspace() { val next = File(folder, "Applications-${id()}.sqlite"); val connection = open(next,create=true); switch(next, connection, "Applications.sqlite") }
     /** Only reads the selected URI. No delete, rename, overwrite, or write permission is requested. */
     @Synchronized fun importDatabase(uri: Uri, displayName: String) {
         val next = File(folder, "Imported-${System.currentTimeMillis()}.sqlite")
