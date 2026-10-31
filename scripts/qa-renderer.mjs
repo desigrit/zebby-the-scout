@@ -552,6 +552,8 @@ try {
     document.documentElement.dataset.platform = original.platform;
     window.modelQA.setDatabase(original);
   }, originalDatabase);
+  await page.getByRole("main", { name: "Plan", exact: true }).waitFor();
+  await page.waitForFunction(() => document.querySelector(".desktop-sidebar nav button")?.getBoundingClientRect().height > 0);
   assert.equal(await page.title(), "Zebby");
   assert.equal(await page.locator(".desktop-titlebar").innerText(), "Zebby");
   assert.equal(await page.locator(".sidebar-brand").innerText(), "");
@@ -567,14 +569,19 @@ try {
   assert.equal(chrome.drag, "drag");
   assert.equal(chrome.sidebar, chrome.sidebarBody);
   assert.equal(await page.getByRole("heading", { name: "Plan", exact: true }).count(), 0);
-  const sidebarPosition = await page.locator(".desktop-sidebar").evaluate((element) => ({
+  // Restoring the database can replace the sidebar between locator resolution
+  // and evaluation. Resolve and measure the current node in one browser task.
+  const sidebarPosition = await page.evaluate(() => {
+    const element = document.querySelector(".desktop-sidebar");
+    return {
     padding: getComputedStyle(element).paddingTop,
     brandBottom: getComputedStyle(element.querySelector(".sidebar-brand")).paddingBottom,
     zebraTop: element.querySelector(".brand-mark").getBoundingClientRect().top - element.getBoundingClientRect().top,
     zebraLeft: element.querySelector(".brand-mark").getBoundingClientRect().left - element.getBoundingClientRect().left,
     iconSize: element.querySelector(".navigation-icon").getBoundingClientRect().width,
     navHeight: element.querySelector("nav button").getBoundingClientRect().height,
-  }));
+    };
+  });
   assert.deepEqual(sidebarPosition, { padding: "22px", brandBottom: "12px", zebraTop: 26, zebraLeft: 26, iconSize: 24, navHeight: 48 });
   await page.waitForFunction(() => [...document.querySelectorAll('.navigation-icon')].every(icon => icon.dataset.ready === "true"));
   assert.equal(await nav.locator('.navigation-icon-player svg').count(), 3);
