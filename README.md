@@ -129,7 +129,7 @@ Put your database file in a cloud synced folder if you use more than one PC. **Q
 
 Downloaded-model analysis runs on your computer. Online methods send the selected job and CV content to your chosen provider. API keys, wallet access and downloaded models stay outside the shared database.
 
-Zebby checks for updates and offers **Restart to update** when a verified download is ready. For Windows and Mac installation prompts, see the [installation notes](docs/guide.md#install).
+Direct downloads check for updates and offer **Restart to update** when a verified download is ready. Store builds use Microsoft Store updates. For Windows and Mac installation prompts, see the [installation notes](docs/guide.md#install).
 
 <details>
 <summary>Dark mode</summary>
@@ -148,4 +148,4 @@ Zebby checks for updates and offers **Restart to update** when a verified downlo
 
 Electron, React, TypeScript, SQLite and a native inference engine.
 
-[User and build guide](docs/guide.md) · [Host your own credits service](credits-service/README.md) · [Ideas and bugs](https://github.com/desigrit/zebby-the-scout/issues)
+[User and build guide](docs/guide.md) · [Privacy](docs/privacy.md) · [Microsoft Store packaging](docs/microsoft-store/build.md) · [Host your own credits service](credits-service/README.md) · [Ideas and bugs](https://github.com/desigrit/zebby-the-scout/issues)

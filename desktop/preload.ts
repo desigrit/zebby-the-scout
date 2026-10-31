@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("desktop", {
   },
   state: () => ipcRenderer.invoke("desktop:state"),
   checkForUpdates: () => ipcRenderer.invoke("desktop:check-updates"),
+  openStoreUpdates: () => ipcRenderer.invoke("desktop:open-store-updates"),
   downloadUpdate: () => ipcRenderer.invoke("desktop:download-update"),
   installUpdate: () => ipcRenderer.invoke("desktop:install-update"),
   confirmUpdateLoaded: () => ipcRenderer.invoke("desktop:confirm-update-loaded"),

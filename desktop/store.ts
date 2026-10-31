@@ -1,6 +1,6 @@
 import { randomUUID, createHash } from "node:crypto";
 import { constants, existsSync } from "node:fs";
-import { copyFile, mkdir, readFile, rename, stat, unlink } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync, backup } from "node:sqlite";
 import { z } from "zod";
@@ -378,7 +378,11 @@ export class DesktopStore {
       incoming.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = DELETE; PRAGMA busy_timeout = 3000;");
       migrated = migrate(incoming);
     } finally { incoming.close(); }
+    const preservedJournals = await this.preserveWorkingCopy(workingPath, target, sourceHash);
     this.db?.close();
+    for (const suffix of preservedJournals) await unlink(workingPath + suffix).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error;
+    });
     await rename(temp, workingPath);
     this.db = new DatabaseSync(workingPath);
     this.db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = DELETE; PRAGMA busy_timeout = 3000;");
@@ -387,8 +391,53 @@ export class DesktopStore {
     this.syncedHash = sourceHash;
     this.dirty = migrated;
     if (migrated) await this.flush();
+    else await this.recordCleanWorkingCopy();
     this.diagnostic(`Database opened (${target}, schema 10, migrated ${migrated})`);
     return this.status;
+  }
+
+  private async preserveWorkingCopy(workingPath: string, target: string, sourceHash: string) {
+    const recoveryStat = async (file: string) => stat(file).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    if (!(await recoveryStat(workingPath))?.isFile()) return [];
+    const workingHash = await hashFile(workingPath);
+    const companions: string[] = [];
+    for (const suffix of ["-journal", "-wal", "-shm"]) {
+      if ((await recoveryStat(workingPath + suffix))?.isFile()) companions.push(suffix);
+    }
+    let cleanHash = "";
+    try {
+      const saved = JSON.parse(await readFile(workingPath + ".synced.json", "utf8"));
+      if (saved?.version === 1 && typeof saved.hash === "string" && /^[a-f0-9]{64}$/.test(saved.hash)) cleanHash = saved.hash;
+    } catch { /* An unknown working copy must be preserved, not assumed to be synced. */ }
+    if (!companions.length && (workingHash === sourceHash || workingHash === cleanHash)) return [];
+    const recovery = path.join(this.userData, "Recovered", `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID()}`);
+    try {
+      await mkdir(recovery, { recursive: true });
+      const preserved = path.join(recovery, "Zebby Applications.sqlite");
+      await copyFile(workingPath, preserved, constants.COPYFILE_EXCL);
+      for (const suffix of companions) {
+        await copyFile(workingPath + suffix, preserved + suffix, constants.COPYFILE_EXCL);
+        if (await hashFile(workingPath + suffix) !== await hashFile(preserved + suffix)) throw new Error("The recovery journal could not be verified.");
+      }
+      await writeFile(path.join(recovery, "source.json"), JSON.stringify({ originalPath: target, workingHash, recoveredAt: new Date().toISOString() }), { flag: "wx" });
+      if (await hashFile(preserved) !== workingHash || await hashFile(workingPath) !== workingHash) throw new Error("The recovery copy could not be verified.");
+    } catch (cause) {
+      this.diagnostic(`Could not preserve a previous working database (${workingPath})`, cause);
+      throw new Error("Zebby could not preserve pending database changes. Check available disk space, then try again.", { cause });
+    }
+    this.diagnostic(`Previous working database preserved before reopening (${target}, recovery ${recovery})`);
+    return companions;
+  }
+
+  private async recordCleanWorkingCopy() {
+    // Only a successfully synced copy may be replaced without a recovery file.
+    // A missing, stale or interrupted marker safely preserves an extra copy.
+    try {
+      await writeFile(this.workingPath + ".synced.json", JSON.stringify({ version: 1, hash: await hashFile(this.workingPath) }));
+    } catch (error) { this.diagnostic(`Could not record the synced working database (${this.workingPath})`, error); }
   }
 
   private async assertCurrentFile() {
@@ -418,6 +467,7 @@ export class DesktopStore {
     }
     this.syncedHash = await hashFile(this.filePath);
     this.dirty = false;
+    await this.recordCleanWorkingCopy();
     this.diagnostic(`Database save completed (${this.filePath}, ${Date.now() - started} ms)`);
   }
 

@@ -602,6 +602,10 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking 
     <section className="settings-section" aria-labelledby="updates-settings">
       <div className="settings-section-heading"><h2 id="updates-settings">Updates</h2><p>Zebby {state.updates.currentVersion}</p></div>
       <div className="settings-content">
+        {state.distributionChannel === "store" ? <>
+          <div className="settings-actions"><SettingsAction icon={ArrowUpRight} onClick={() => void checkUpdates()}>Open Microsoft Store</SettingsAction></div>
+          <p className="settings-help">Updates are managed by Microsoft Store.</p>
+        </> : <>
         <div className="settings-actions">
           {!state.updates.available && !state.updates.error && <SettingsAction icon={RefreshCw} busy={state.updates.checking}
             onClick={() => void checkUpdates()} disabled={state.updates.checking}>Check for updates</SettingsAction>}
@@ -612,6 +616,7 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking 
           Release notes <ArrowUpRight size={15} aria-hidden="true" /></a>}
         <ErrorBanner message={state.updates.download.error || (state.updates.error ? "Could not check for updates." : "")}
           retry={state.updates.download.error ? onUpdate : () => void checkUpdates()} busy={updateWorking || state.updates.checking} />
+        </>}
       </div>
     </section>
   </main>;
@@ -707,6 +712,7 @@ export default function App() {
   }
 
   async function checkUpdates() {
+    if (state?.distributionChannel === "store") { await window.desktop!.openStoreUpdates(); return; }
     const updates = await window.desktop!.checkForUpdates();
     setState((current) => current ? { ...current, updates } : current);
   }
@@ -764,7 +770,7 @@ export default function App() {
       </nav>
       {(state.updates.available || state.credits.wallet?.purchased || state.filePath && !state.sidebarCollapsed) && <div className="sidebar-footer">
         <SidebarCredits />
-        <UpdateButton updates={state.updates} collapsed={state.sidebarCollapsed} working={updateWorking} onClick={() => void applyUpdate()} />
+        {state.distributionChannel !== "store" && <UpdateButton updates={state.updates} collapsed={state.sidebarCollapsed} working={updateWorking} onClick={() => void applyUpdate()} />}
         {state.filePath && !state.sidebarCollapsed && <div className="sidebar-database" title={state.filePath}>
         <span>Current database</span><strong>{state.filename}</strong>
         {state.dirty && <small>Save pending</small>}

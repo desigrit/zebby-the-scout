@@ -35,6 +35,7 @@ export type DesktopState = {
   sidebarCollapsed: boolean;
   logsPath: string;
   platform: string;
+  distributionChannel: "direct" | "store";
   updates: UpdateState;
 };
 
@@ -43,6 +44,7 @@ export type DesktopBridge = {
   cancelAnalysis(id: string): Promise<boolean>;
   onAnalysisProgress(callback: (progress: AnalysisProgress) => void): () => void;
   checkForUpdates(): Promise<UpdateState>;
+  openStoreUpdates(): Promise<void>;
   downloadUpdate(): Promise<UpdateState>;
   installUpdate(): Promise<void>;
   confirmUpdateLoaded(): Promise<void>;

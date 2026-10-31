@@ -1,0 +1,39 @@
+{
+  "language": "en-US",
+  "productName": "Zebby",
+  "shortDescription": "A calmer place to plan your resume, track applications, and see how your job search is progressing.",
+  "description": "Keep the details of your job search together. Zebby gives every role a place for its job description, resume, notes, match analysis, and next step.\n\nPlan before you apply\nBring in a job listing or paste its description. Compare it with your resume, review the reasons behind the match score, and work through core ATS keywords, resume themes, and suggested summary edits. Move a finished plan to Applied with its metadata and analysis intact.\n\nKnow where things stand\nTrack applications from Applied to Offer received. Search by role or company, filter by status, keep notes, and see the last 30 days of activity in a compact chart.\n\nChoose how you analyze\nUse a downloaded model, an Ollama server, your own OpenAI or Anthropic API key, or optional Zebby credits. Downloaded models use supported GPU acceleration or your CPU. Choose your model and supported thinking level in Settings.\n\nKeep your files with you\nYour applications and resumes live in a SQLite database you choose. Reuse resume versions, keep your notes close, and work in light or dark appearance.\n\nZebby is free to use for tracking and planning. Online analysis needs your own provider account or optional credit packs. Zebby credits are one-time purchases, with no subscription or Zebby signup. Local models download separately and run on your computer.",
+  "features": [
+    "Job applications, resumes, and notes in one workspace",
+    "Resume match with reasons and evidence gaps",
+    "Core ATS keywords, resume themes, and summary suggestions",
+    "Move plans to Applied without repeating the analysis",
+    "Daily activity chart and five hiring stages",
+    "Downloaded models with supported GPU acceleration and CPU fallback",
+    "Bring your own OpenAI or Anthropic API key, or use Ollama",
+    "Optional Zebby credits with recovery and connected computers",
+    "Your own SQLite database and reusable resume versions",
+    "Light and dark appearance"
+  ],
+  "searchTerms": [
+    "job application tracker",
+    "resume",
+    "CV",
+    "job search",
+    "application organizer",
+    "career planning",
+    "local AI"
+  ],
+  "category": "Productivity",
+  "website": "https://github.com/desigrit/zebby-the-scout",
+  "support": "https://github.com/desigrit/zebby-the-scout/issues",
+  "privacyPolicy": "https://github.com/desigrit/zebby-the-scout/blob/main/docs/privacy.md",
+  "firstSubmissionWhatsNew": "",
+  "updateWhatsNew": "Hardware-aware local models with GPU acceleration on supported Windows PCs. A clearer Analysis guide, refreshed Credits and devices view, and daily credit usage history. Microsoft Store manages updates for this edition.",
+  "additionalSystemRequirements": [
+    "Internet access for job imports, model downloads, and online analysis",
+    "Local models download separately and need additional disk space and memory",
+    "Vulkan-capable GPU for accelerated downloaded models on Windows x64; CPU fallback is available",
+    "Windows ARM64 downloaded models use the CPU"
+  ]
+}

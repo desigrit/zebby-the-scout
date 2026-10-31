@@ -12,6 +12,7 @@ await buildEsbuild({
   bundle: true, platform: "node", target: "node24", format: "cjs",
   external: ["electron", "node:*"],
   define: { "process.env.NODE_ENV": '"production"',
+    "process.env.ZEBBY_DISTRIBUTION_CHANNEL": JSON.stringify(process.env.ZEBBY_DISTRIBUTION_CHANNEL === "store" ? "store" : "direct"),
     "process.env.ZEBBY_CREDITS_SERVICE_URL": JSON.stringify(process.env.ZEBBY_CREDITS_SERVICE_URL || "") },
 });
 await buildEsbuild({

@@ -31,6 +31,8 @@ import { OnlineAnalysisError } from "./online-response";
 import { creditModel, DEFAULT_CREDIT_MODEL, onlineModel, validateOnlineThinking, type AnalysisProvider, type AnalysisSource } from "../shared/online-models";
 import { maskedApiKey, onlineThinkingCapability, selectedThinking, thinkingKey, type ThinkingPreferences } from "../shared/thinking";
 import { writeProfileSettings } from "./settings-persistence";
+import { distributionChannel as resolveDistributionChannel, readStorePackageFamily, requireDirectUpdates,
+  requireDurableDatabase, storeDataPaths, STORE_UPDATES_URI } from "./distribution";
 
 protocol.registerSchemesAsPrivileged([{
   scheme: "tracker", privileges: { standard: true, secure: true, supportFetchAPI: true },
@@ -38,6 +40,9 @@ protocol.registerSchemesAsPrivileged([{
 
 const appRoot = __dirname;
 const rendererRoot = path.join(appRoot, "renderer");
+const distributionChannel = resolveDistributionChannel(process.platform, process.windowsStore, process.env.ZEBBY_DISTRIBUTION_CHANNEL);
+const storeEdition = distributionChannel === "store";
+let storePaths: ReturnType<typeof storeDataPaths> | undefined;
 let mainWindow: BrowserWindow | null = null;
 let store: DesktopStore;
 let apiKey = "";
@@ -48,7 +53,7 @@ let startupError = "";
 let modelDownloads: LocalModelDownloads;
 let modelEngine: LocalModelEngine;
 let shuttingDown = false;
-let selfUpdater: SelfUpdater;
+let selfUpdater: SelfUpdater | undefined;
 let installingUpdate = false;
 let activeApiRequests = 0;
 let activeSettingsRequests = 0;
@@ -57,7 +62,7 @@ const analysisRequests = new AnalysisRequests((progress) => {
   try { mainWindow.webContents.send("desktop:analysis-progress", progress); }
   catch (error) { logDiagnostic("Could not send analysis progress", error); }
 });
-const updates = new ReleaseUpdates({ version: app.getVersion(), platform: process.platform, arch: process.arch,
+const updates = new ReleaseUpdates({ version: app.getVersion(), platform: process.platform, arch: process.arch, channel: distributionChannel,
   onChange: (value) => mainWindow?.webContents.send("desktop:updates-changed", value),
   onError: (error) => logDiagnostic("Could not check for updates", error) });
 let settings: { databasePath?: string; encryptedApiKey?: string; appearance?: Appearance; sidebarCollapsed?: boolean;
@@ -70,6 +75,16 @@ const diagnosticLog = new DiagnosticLog(() => logsPath(), () => [apiKey, anthrop
 
 function settingsPath() { return path.join(app.getPath("userData"), "settings.json"); }
 function logsPath() { return path.join(app.getPath("userData"), "Logs"); }
+
+function directUpdater() {
+  requireDirectUpdates(distributionChannel);
+  if (!selfUpdater) throw new Error("The updater is not ready. Reopen Zebby and try again.");
+  return selfUpdater;
+}
+
+function checkDatabaseLocation(filePath: string) {
+  if (storePaths) requireDurableDatabase(filePath, storePaths.packageRoot);
+}
 
 function logDiagnostic(message: string, error?: unknown) {
   diagnosticLog.error(message, error);
@@ -147,14 +162,14 @@ async function loadSettings() {
     catch (error) { creditsClient.restoreFailed(); logDiagnostic("Could not restore wallet access", error); }
   }
   if (settings.databasePath) {
-    try { await store.open(settings.databasePath); }
+    try { checkDatabaseLocation(settings.databasePath); await store.open(settings.databasePath); }
     catch (error) { startupError = error instanceof Error ? error.message : "The last database could not be opened.";
       logDiagnostic("Could not open the saved database", error); }
   }
   if (!store.status.filePath) {
     if (settings.databasePath) logEvent("Selected database unavailable; opening the local workspace without replacing the selected file");
     const previousLocal = path.join(app.getPath("userData"), "PM Applications.sqlite");
-    const localPath = (await stat(previousLocal).catch(() => null))?.isFile()
+    const localPath = storePaths ? storePaths.database : (await stat(previousLocal).catch(() => null))?.isFile()
       ? previousLocal : path.join(app.getPath("userData"), "Zebby Applications.sqlite");
     if ((await stat(localPath).catch(() => null))?.isFile()) await store.open(localPath);
     else await store.create(localPath);
@@ -187,6 +202,7 @@ function state() {
     appearance: settings.appearance || "auto", sidebarCollapsed: settings.sidebarCollapsed === true,
     logsPath: logsPath(),
     platform: process.platform,
+    distributionChannel,
     updates: updates.state,
   };
 }
@@ -206,6 +222,7 @@ async function chooseDatabase(kind: "open" | "create") {
     if (result.canceled) return null;
     if (activeApiRequests || analysisRequests.busy) throw new Error("Finish or cancel analysis and saving before switching databases.");
     filePath = result.filePaths[0];
+    checkDatabaseLocation(filePath);
     await store.open(filePath);
   } else {
     const result = await dialog.showSaveDialog(parent!, {
@@ -215,6 +232,7 @@ async function chooseDatabase(kind: "open" | "create") {
     if (result.canceled || !result.filePath) return null;
     if (activeApiRequests || analysisRequests.busy) throw new Error("Finish or cancel analysis and saving before switching databases.");
     filePath = result.filePath;
+    checkDatabaseLocation(filePath);
     await store.create(filePath);
   }
   settings.databasePath = filePath;
@@ -528,7 +546,7 @@ function registerIpc() {
     ipcMain.handle(channel, async (event, ...args: Args) => {
       const started = Date.now();
       const trace = !["desktop:state", "desktop:refresh-credits", "desktop:credit-checkout-status"].includes(channel);
-      const changing = !["desktop:state", "desktop:check-updates", "desktop:download-update", "desktop:install-update",
+      const changing = !["desktop:state", "desktop:check-updates", "desktop:open-store-updates", "desktop:download-update", "desktop:install-update",
         "desktop:list-ollama-models", "desktop:ollama-thinking-capability", "desktop:open-logs", "desktop:open-model-folder", "desktop:download-resume",
         "desktop:warm-credits-service"].includes(channel);
       if (installingUpdate && changing) throw new Error("Zebby is restarting to install an update.");
@@ -640,15 +658,21 @@ function registerIpc() {
     return accepted;
   });
   handle("desktop:check-updates", () => updates.check(true));
-  handle("desktop:confirm-update-loaded", () => selfUpdater.cleanupInstalled(app.getVersion()));
+  handle("desktop:open-store-updates", async () => {
+    if (!storeEdition) throw new Error("This installation receives updates in Zebby.");
+    await shell.openExternal(STORE_UPDATES_URI);
+  });
+  handle("desktop:confirm-update-loaded", async () => { if (!storeEdition) await directUpdater().cleanupInstalled(app.getVersion()); });
   handle("desktop:download-update", async () => {
+    const updater = directUpdater();
     if (!app.isPackaged) throw new Error("Automatic updates are available in the installed app.");
     const available = updates.state.available;
     if (!available) throw new Error("Check for an available update first.");
-    await selfUpdater.download(available);
+    await updater.download(available);
     return updates.state;
   });
   handle("desktop:install-update", async () => {
+    const updater = directUpdater();
     if (installingUpdate) return;
     if (!app.isPackaged || updates.state.download.phase !== "ready") throw new Error("Download the update before restarting.");
     if (activeApiRequests || activeSettingsRequests) throw new Error("Wait for analysis and saving to finish, then restart to update.");
@@ -658,7 +682,7 @@ function registerIpc() {
       await Promise.all([modelDownloads.pause(), modelEngine.shutdown()]);
       await store.retrySync();
       await diagnosticLog.flush();
-      await selfUpdater.install();
+      await updater.install();
       shuttingDown = true;
       setImmediate(() => app.quit());
     } catch (error) { installingUpdate = false; throw error; }
@@ -821,22 +845,34 @@ function createWindow() {
     logDiagnostic("Renderer process stopped", `${details.reason}, exit code ${details.exitCode}`));
   void mainWindow.loadURL("tracker://app/");
   mainWindow.on("closed", () => { mainWindow = null; });
-  mainWindow.on("focus", () => { void updates.check(); });
+  mainWindow.on("focus", () => { if (!storeEdition) void updates.check(); });
 }
 
 if (process.env.PM_TRACKER_TEST_USER_DATA) app.setPath("userData", path.resolve(process.env.PM_TRACKER_TEST_USER_DATA));
+let profile: ReturnType<typeof configureApplicationProfile> | undefined;
+let profileError: unknown;
+if (storeEdition) {
+  try {
+    const isolatedFolder = process.env.PM_TRACKER_TEST_USER_DATA;
+    storePaths = storeDataPaths({ packageFamilyName: isolatedFolder ? undefined : readStorePackageFamily(process.resourcesPath),
+      localAppData: process.env.LOCALAPPDATA, home: app.getPath("home"), documents: app.getPath("documents"), isolatedFolder });
+    // Store and direct installations use independent profiles and instance locks.
+    // Do not import private keys or move models out of the direct installation.
+    profile = configureApplicationProfile(app, storePaths.profile);
+  } catch (error) { profileError = error; }
+}
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  let profile: ReturnType<typeof configureApplicationProfile> | undefined;
-  let profileError: unknown;
-  try { profile = configureApplicationProfile(app, process.env.PM_TRACKER_TEST_USER_DATA); }
-  catch (error) { profileError = error; }
+  if (!storeEdition) {
+    try { profile = configureApplicationProfile(app, process.env.PM_TRACKER_TEST_USER_DATA); }
+    catch (error) { profileError = error; }
+  }
   app.on("second-instance", () => { mainWindow?.show(); mainWindow?.focus(); });
   app.whenReady().then(async () => {
     if (!profile) throw profileError || new Error("The Zebby data folder could not be created.");
-    await migrateApplicationProfile(profile);
+    if (!storeEdition) await migrateApplicationProfile(profile);
     logEvent(`Zebby starting (${app.getVersion()}, ${process.platform}/${process.arch}, profile ${app.getPath("userData")})`);
-    store = new DesktopStore(app.getPath("userData"), logEvent);
+    store = new DesktopStore(storePaths?.recovery || app.getPath("userData"), logEvent);
     await loadSettings();
     nativeTheme.themeSource = settings.appearance === "auto" || !settings.appearance ? "system" : settings.appearance;
     nativeTheme.on("updated", updateWindowAppearance);
@@ -853,12 +889,14 @@ else {
     const platformFolder = `${process.platform === "darwin" ? "mac" : "win"}-${process.arch}`;
     const runtimeFolder = app.isPackaged ? path.join(process.resourcesPath, "local-runtime")
       : path.resolve(appRoot, "../build/llama", platformFolder);
-    const localAppData = process.env.PM_TRACKER_TEST_USER_DATA ? undefined : process.env.LOCALAPPDATA;
+    const localAppData = storeEdition || process.env.PM_TRACKER_TEST_USER_DATA ? undefined : process.env.LOCALAPPDATA;
     const modelsFolder = localModelFolder(app.getPath("userData"), process.platform, localAppData);
-    await migrateModelFolder(path.join(profile.folder, "Models"), modelsFolder);
-    if (process.platform === "win32" && localAppData && path.win32.isAbsolute(localAppData)) {
-      for (const name of ["PM Application Tracker", "pm-application-tracker"]) {
-        await migrateModelFolder(path.join(localAppData, name, "Models"), modelsFolder);
+    if (!storeEdition) {
+      await migrateModelFolder(path.join(profile.folder, "Models"), modelsFolder);
+      if (process.platform === "win32" && localAppData && path.win32.isAbsolute(localAppData)) {
+        for (const name of ["PM Application Tracker", "pm-application-tracker"]) {
+          await migrateModelFolder(path.join(localAppData, name, "Models"), modelsFolder);
+        }
       }
     }
     modelDownloads = new LocalModelDownloads(modelsFolder, { onChange: modelsChanged, licensesFolder: path.join(runtimeFolder, "model-licenses") });
@@ -866,14 +904,14 @@ else {
     modelEngine = new LocalModelEngine({ downloads: modelDownloads, onChange: modelsChanged, onDiagnostic: logEvent,
       runtimeFolder,
       workerPath: path.join(appRoot, "local-runtime-worker.cjs") });
-    selfUpdater = new SelfUpdater({ folder: path.join(path.dirname(modelsFolder), "Updates"), platform: process.platform,
+    if (!storeEdition) selfUpdater = new SelfUpdater({ folder: path.join(path.dirname(modelsFolder), "Updates"), platform: process.platform,
       executable: app.getPath("exe"), onChange: (download) => updates.setDownload(download) });
     registerProtocol();
     registerIpc();
     createMenu();
     createWindow();
     void modelEngine.detectHardware();
-    void updates.check();
+    if (!storeEdition) void updates.check();
     app.on("activate", () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
   }).catch((error) => { console.error("Could not start Zebby", error);
     logDiagnostic("Could not start the app", error);
