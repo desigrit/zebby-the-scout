@@ -26,7 +26,7 @@ Model providers process requests under their own terms. Retention and use for mo
 
 Zebby credits uses a wallet without requiring a Zebby signup. The service stores wallet balances, purchases, credit usage, model and thinking selections for paid analyses, request identifiers, device names, connection times, and hashed device, recovery, and pairing credentials. These records support purchases, access recovery, connected computers, and usage history.
 
-Stripe processes checkout and payment details. Zebby's database stores transaction references, pack amounts, and payment status, not full card numbers. Stripe may collect billing and contact details during checkout. The credits service uses Render for hosting and Supabase for its database.
+Stripe processes checkout and payment details. Zebby's database stores transaction references, pack amounts, and payment status, not full card numbers. Stripe may collect billing and contact details during checkout. The credits service uses Microsoft Azure for hosting and Supabase for its database. Earlier app versions continue to connect through Render during the transition. Both hosts use the same wallet ledger.
 
 The credits service processes job and resume text for the requested analysis. Raw input text is not saved as a separate database record. Generated analysis can contain information from your resume and is retained so an interrupted response can be recovered without another charge. Results become eligible for automatic cleanup after 24 hours and are cleared when the service next runs cleanup. Request hashes and financial, device, and usage records remain for wallet operation, payment reconciliation, and abuse prevention.
 
