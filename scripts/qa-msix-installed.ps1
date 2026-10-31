@@ -13,11 +13,21 @@ if (-not $buildRoot.StartsWith($allowedRoot, [StringComparison]::OrdinalIgnoreCa
 $resultRoot = Join-Path $buildRoot 'Validation\installed'
 New-Item -ItemType Directory -Path $resultRoot -Force | Out-Null
 $packageStatus = Get-Content -LiteralPath (Join-Path $buildRoot 'Validation\package-status.json') -Raw | ConvertFrom-Json
-if ($packageStatus.status -ne 'packaged' -or $packageStatus.identity.identityName -ne 'Zebby.StoreQA' -or $packageStatus.identity.publisher -ne 'CN=Zebby Store QA') {
+$packageIdentity = $packageStatus
+if ($packageStatus.PSObject.Properties.Name -contains 'identity') {
+  $packageIdentity = $packageStatus.identity
+  if ($null -eq $packageIdentity) { throw 'The package identity is missing.' }
+  foreach ($name in @('identityName', 'publisher', 'packageFamilyName')) {
+    if ($packageStatus.PSObject.Properties.Name -contains $name -and $packageStatus.$name -cne $packageIdentity.$name) {
+      throw 'Conflicting package identity metadata.'
+    }
+  }
+}
+if ($packageStatus.status -ne 'packaged' -or $packageIdentity.identityName -cne 'Zebby.StoreQA' -or $packageIdentity.publisher -cne 'CN=Zebby Store QA') {
   throw 'Only the dedicated Zebby.StoreQA package can be installed by this validation script.'
 }
 if (@(Get-AppxPackage -Name 'Zebby.StoreQA').Count -ne 0) { throw 'The temporary QA package is already installed. Use a fresh runner.' }
-$packageFamily = $packageStatus.identity.packageFamilyName
+$packageFamily = $packageIdentity.packageFamilyName
 if ($packageFamily -notmatch '^Zebby\.StoreQA_[a-z0-9]{13}$') { throw 'Unexpected QA package family.' }
 $candidates = @(Get-ChildItem -LiteralPath (Join-Path $buildRoot 'Packages\Individual architectures') -Filter '*-x64.msix' -File)
 if ($candidates.Count -ne 1) { throw 'Expected exactly one unsigned x64 MSIX.' }

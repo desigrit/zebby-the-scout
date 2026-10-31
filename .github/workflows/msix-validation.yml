@@ -36,7 +36,11 @@ jobs:
             publisherDisplayName = 'Zebby Store QA'
           } | ConvertTo-Json | Set-Content -LiteralPath work/msix/qa-identity.json -Encoding utf8NoBOM
       - name: Build an unsigned Store package for validation
-        run: node scripts/build-msix.mjs --identity work/msix/qa-identity.json --output work/msix/ci --architectures x64
+        run: node scripts/build-msix.mjs --identity work/msix/qa-identity.json --output work/msix/ci
+      - name: Verify interactive Windows PowerShell finalization for both architectures
+        run: node scripts/qa-msix-finalizer.mjs --output work/msix/ci
+        env:
+          ZEBBY_MSIX_QA_RUNNER: ${{ runner.environment }}
       - name: Install, exercise and remove the temporary signed copy
         shell: powershell
         run: ./scripts/qa-msix-installed.ps1 -BuildOutput work/msix/ci

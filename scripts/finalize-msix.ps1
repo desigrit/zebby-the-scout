@@ -94,7 +94,13 @@ try {
     $manifest.Package.Identity.SetAttribute('Publisher', $identity.publisher)
     $manifest.Package.Identity.SetAttribute('Version', $version)
     $manifest.Package.Identity.SetAttribute('ProcessorArchitecture', $arch)
-    $manifest.Package.Properties.PublisherDisplayName = $identity.publisherDisplayName
+    # Windows PowerShell 5.1 wraps Read-Host output. Its XML property adapter
+    # rejects that value, so write through the DOM with an explicit string.
+    $namespaces = [Xml.XmlNamespaceManager]::new($manifest.NameTable)
+    $namespaces.AddNamespace('appx', $manifest.DocumentElement.NamespaceURI)
+    $publisherElement = $manifest.SelectSingleNode('/appx:Package/appx:Properties/appx:PublisherDisplayName', $namespaces)
+    if ($null -eq $publisherElement) { throw 'The prepared manifest is missing PublisherDisplayName.' }
+    $publisherElement.InnerText = [string]$identity.publisherDisplayName
     $manifest.Save((Join-Path $stage 'AppxManifest.xml'))
     $runtimeIdentity = [ordered]@{ identityName = $identity.identityName; publisher = $identity.publisher;
       publisherDisplayName = $identity.publisherDisplayName; packageFamilyName = $family;
