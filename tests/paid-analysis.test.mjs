@@ -56,10 +56,14 @@ test("credit pack counts use the sampled Plan baseline with separate estimated t
   assert.equal(CREDIT_ESTIMATE.output, CREDIT_ESTIMATE.visibleOutput + CREDIT_ESTIMATE.thinkingAllowance);
   assert.equal(example / NANODOLLARS_PER_CREDIT, 89);
   assert.deepEqual(CREDIT_PACKS.map((pack) => pack.analyses), [5, 33, 89, 179]);
-  assert.deepEqual(CREDIT_MODELS.map((model) => model.id), ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"]);
+  assert.deepEqual(CREDIT_MODELS.map((model) => model.id), ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]);
   const lunaExample = usageCost(onlineModel("gpt-6-luna"), { input: 0, cached: 0, cacheWrite: CREDIT_ESTIMATE.input, output: CREDIT_ESTIMATE.output });
   assert.equal(lunaExample / NANODOLLARS_PER_CREDIT, 4.45);
   assert.deepEqual(CREDIT_PACKS.map((pack) => estimatedAnalyses(pack.credits, "gpt-6-luna")), [112, 674, 1797, 3595]);
+  assert.deepEqual(CREDIT_PACKS.map((pack) => estimatedAnalyses(pack.credits, "gpt-6-astra")), [1, 6, 17, 35]);
+  assert.deepEqual(CREDIT_PACKS.map((pack) => estimatedAnalyses(pack.credits, "claude-opus-5-5")), [2, 16, 43, 87]);
+  assert.deepEqual(CREDIT_PACKS.map((pack) => estimatedAnalyses(pack.credits, "claude-sonnet-5-5")), [5, 33, 89, 179]);
+  assert.deepEqual(CREDIT_PACKS.map((pack) => estimatedAnalyses(pack.credits, "claude-haiku-5-5")), [112, 674, 1797, 3595]);
   for (const pack of CREDIT_PACKS) {
     assert.ok(pack.analyses * example <= pack.credits * NANODOLLARS_PER_CREDIT);
     assert.ok(pack.credits * NANODOLLARS_PER_CREDIT - pack.analyses * example < example);
@@ -71,6 +75,13 @@ test("credit pack counts use the sampled Plan baseline with separate estimated t
   assert.equal(usageCost(onlineModel("gpt-6-luna"), { input: 100, cached: 50, output: 10 }), 10500);
   assert.throws(() => usageCost(onlineModel("gpt-6-luna"), { input: 1, cached: 2, output: 0 }));
   assert.throws(() => usageCost(onlineModel("gpt-6-luna"), { input: NaN, cached: 0, output: 0 }));
+});
+
+test("Haiku 5.5 accounts for its higher rate above 100,000 input tokens", () => {
+  const model = onlineModel("claude-haiku-5-5");
+  assert.equal(usageCost(model, { input: 100000, cached: 0, output: 500 }), 10_250_000);
+  assert.equal(usageCost(model, { input: 100001, cached: 0, output: 500 }), 51_250_500);
+  assert.equal(usageCost(model, { input: 99999, cached: 500, cacheWrite5m: 2, output: 500 }), 51_025_750);
 });
 test("Stripe signatures reject changes, stale events, and invalid signatures", () => {
   const event = { id: "evt_fixture", livemode: false }, signed = signature(event);
@@ -364,7 +375,7 @@ test("PostgreSQL ledger and service integration", async (t) => {
       assert.equal(high.thinkingLevel, "high"); assert.ok(high.maximum > low.maximum);
       const stored = (await db.query("select thinking_level from zebby_quotes where id=$1", [high.id])).rows[0];
       assert.equal(stored.thinking_level, "high");
-      assert.deepEqual((await handle("GET", "/v1/catalog")).models.map((model) => model.id), ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"]);
+      assert.deepEqual((await handle("GET", "/v1/catalog")).models.map((model) => model.id), ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]);
       for (const model of ["unknown-model", "claude-sonnet-5-5"]) await assert.rejects(handle("POST", "/v1/quotes", { model, kind: "plan", input }));
       await assert.rejects(newQuote("off"));
       await assert.rejects(handle("POST", "/v1/quotes", { model: "gpt-6-astra", thinkingLevel: "off", kind: "plan", input }));

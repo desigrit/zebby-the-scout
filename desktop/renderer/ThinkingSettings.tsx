@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from
 import { Info } from "lucide-react";
 import type { DesktopState } from "../bridge";
 import { LOCAL_MODELS } from "../local-model-catalog";
-import { ASTRA_MODEL, ASTRA_PACK_MESSAGE, CREDIT_MODELS, ONLINE_MODELS, type AnalysisProvider } from "../../shared/online-models";
+import { ASTRA_PACK_MESSAGE, CREDIT_MODELS, ONLINE_MODELS, creditModelNeedsPack, onlineModel, type AnalysisProvider } from "../../shared/online-models";
 import { localThinkingCapability, onlineThinkingCapability, selectedThinking, thinkingKey, type ThinkingCapability } from "../../shared/thinking";
 import { ErrorBanner } from "./WorkspaceFeedback";
 
@@ -15,12 +15,12 @@ export function OnlineModelSelect({ state, onState, provider, disabled = false, 
   const retryModel = useRef("");
   const value = provider === "credits" ? state.credits.model : provider === "openai" ? state.openaiModel : state.anthropicModel;
   const models = provider === "credits" ? CREDIT_MODELS : ONLINE_MODELS.filter((model) => model.provider === provider);
-  const astraLocked = provider === "credits" && (!state.credits.wallet || state.credits.wallet.astraUnlocked === false);
-  // Keep an already-selected Astra visible, while letting it be selected again
+  const premiumLocked = provider === "credits" && !state.credits.wallet?.astraUnlocked;
+  // Keep an already-selected premium model visible, while letting it be selected again
   // to open purchase. The placeholder never changes the saved model preference.
-  const displayedValue = astraLocked && value === ASTRA_MODEL ? "locked-astra" : value;
+  const displayedValue = premiumLocked && creditModelNeedsPack(value) ? "locked-premium" : value;
   async function changeModel(model: string) {
-    if (astraLocked && model === ASTRA_MODEL) {
+    if (premiumLocked && creditModelNeedsPack(model)) {
       if (onLockedModel) onLockedModel(); else setError(ASTRA_PACK_MESSAGE);
       return;
     }
@@ -30,10 +30,10 @@ export function OnlineModelSelect({ state, onState, provider, disabled = false, 
     finally { setWorking(false); onBusy?.(false); }
   }
   return <div className="analysis-model-control"><label className="field"><span>Model</span><select value={displayedValue} disabled={disabled || working}
-    onChange={(event) => { const model = event.target.value; if (astraLocked && model === ASTRA_MODEL) event.currentTarget.value = displayedValue; void changeModel(model); }}>
-    {displayedValue === "locked-astra" && <option value="locked-astra" hidden>GPT-6 Astra · Locked</option>}
-    {models.map((model) => <option key={model.id} value={model.id}>{model.name}{astraLocked && model.id === ASTRA_MODEL ? " · Locked" : ""}</option>)}
-  </select></label>{astraLocked && <p className="settings-help">{ASTRA_PACK_MESSAGE}</p>}
+    onChange={(event) => { const model = event.target.value; if (premiumLocked && creditModelNeedsPack(model)) event.currentTarget.value = displayedValue; void changeModel(model); }}>
+    {displayedValue === "locked-premium" && <option value="locked-premium" hidden>{onlineModel(value).name} · Locked</option>}
+    {models.map((model) => <option key={model.id} value={model.id}>{model.name}{premiumLocked && creditModelNeedsPack(model.id) ? " · Locked" : ""}</option>)}
+  </select></label>{premiumLocked && <p className="settings-help">{ASTRA_PACK_MESSAGE}</p>}
   <ErrorBanner message={error} retry={() => void changeModel(retryModel.current)} busy={working || disabled} /></div>;
 }
 export function ThinkingSelect({ state, onState, provider, model, disabled = false, onBusy, quiet = false }: {

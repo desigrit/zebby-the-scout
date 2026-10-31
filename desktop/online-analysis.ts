@@ -1,6 +1,7 @@
 import { onlineModel, outputLimit, validateOnlineThinking, type AnalysisKind, type TokenUsage } from "../shared/online-models.ts";
-import { anthropicSchema, providerFailure, validStructuredResult } from "./online-response.ts";
+import { providerFailure, validStructuredResult } from "./online-response.ts";
 import { openAIAnalysisInput } from "./openai-request.ts";
+import { anthropicAnalysisInput } from "./anthropic-request.ts";
 type Content = { type: string; text?: string };
 type ProviderPayload = { status?: string; stop_reason?: string; incomplete_details?: { reason?: string }; output?: { content?: Content[] }[]; content?: Content[];
   usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
@@ -19,7 +20,6 @@ export async function onlineAnalysis(options: { model: string; key: string; inst
   const deadline = ["high", "xhigh", "max"].includes(thinkingLevel) ? 480000 : 180000;
   const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(deadline)]) : AbortSignal.timeout(deadline);
   const isOpenAI = model.provider === "openai";
-  const haiku = model.id === "claude-haiku-4-5-20251001";
   const provider = isOpenAI ? "OpenAI" : "Anthropic";
   let response: Response;
   try { response = await send(isOpenAI ? "https://api.openai.com/v1/responses" : "https://api.anthropic.com/v1/messages", {
@@ -28,10 +28,7 @@ export async function onlineAnalysis(options: { model: string; key: string; inst
     body: JSON.stringify(isOpenAI ? {
       ...openAIAnalysisInput(options), store: false, max_output_tokens: maxOutputTokens,
     } : {
-      model: model.id, max_tokens: maxOutputTokens, system: options.instructions,
-      messages: [{ role: "user", content: JSON.stringify(options.input) }],
-      thinking: haiku ? thinkingLevel === "on" ? { type: "enabled", budget_tokens: 4096 } : { type: "disabled" } : { type: "adaptive" },
-      output_config: { ...(!haiku ? { effort: thinkingLevel } : {}), format: { type: "json_schema", schema: anthropicSchema(options.schema) } },
+      ...anthropicAnalysisInput(options), max_tokens: maxOutputTokens,
     }),
   }); } catch {
     options.signal?.throwIfAborted();

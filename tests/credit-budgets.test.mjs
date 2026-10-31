@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { countOpenAIAnalysisInput, openAIAnalysisInput } from "../desktop/openai-request.ts";
+import { countAnthropicAnalysisInput, anthropicAnalysisInput } from "../desktop/anthropic-request.ts";
 import { onlineAnalysis } from "../desktop/online-analysis.ts";
 import { createService } from "../credits-service/service.ts";
 import { matchInstructions, matchSchema } from "../desktop/analysis-contracts.ts";
@@ -55,6 +56,32 @@ test("token count failures are explicit and never fall back to bytes or generati
   await assert.rejects(pending, { name: "AbortError" });
 });
 
+test("Claude quotes count the exact generation request, including schema and chosen effort", async () => {
+  for (const model of ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]) {
+    let counted, generated;
+    const options = { ...sample, model, thinkingLevel: "medium", fetcher: async (url, request) => {
+      assert.equal(request.headers["x-api-key"], "fixture");
+      const body = JSON.parse(request.body);
+      if (url.endsWith("/count_tokens")) { counted = body; return Response.json({ input_tokens: 4200 }); }
+      generated = body;
+      return Response.json({ stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(result) }],
+        usage: { input_tokens: 4200, output_tokens: 500 } });
+    } };
+    assert.equal(await countAnthropicAnalysisInput(options), 4200);
+    await onlineAnalysis({ ...options, maxOutputTokens: 6144 });
+    const { max_tokens, ...generationInput } = generated;
+    assert.equal(max_tokens, 6144);
+    assert.deepEqual(counted, generationInput);
+    assert.deepEqual(counted, anthropicAnalysisInput(options));
+    assert.equal(counted.output_config.effort, "medium");
+    assert.deepEqual(counted.thinking, { type: "adaptive" });
+  }
+  for (const input_tokens of [undefined, 0, -1, "4200", 3.5]) {
+    await assert.rejects(countAnthropicAnalysisInput({ ...sample, model: "claude-opus-5-5",
+      fetcher: async () => Response.json({ input_tokens }) }), /invalid token count/);
+  }
+});
+
 test("task budgets preserve effort, cover usage and do not depend on wallet size", () => {
   const astra = onlineModel(model);
   for (const effort of ["low", "medium", "high", "xhigh", "max"]) {
@@ -90,7 +117,7 @@ test("counted quotes, Astra access and settlement in an isolated ledger", async 
   await db.exec("create role anon; create role authenticated; create role service_role bypassrls;");
   await db.exec(await readFile(new URL("../credits-service/schema.sql", import.meta.url), "utf8"));
   const config = { supabaseUrl: "https://database.example", supabaseKey: "fixture", publicUrl: "https://credits.example",
-    stripeKey: "sk_test_fixture", stripeWebhookSecret: "whsec_fixture", openaiKey: "fixture", anthropicKey: "", live: false, port: 8080 };
+    stripeKey: "sk_test_fixture", stripeWebhookSecret: "whsec_fixture", openaiKey: "fixture", anthropicKey: "fixture", live: false, port: 8080 };
   async function rpc(name, data) {
     return (await db.query(`select zebby_${name}(${Object.keys(data).map((k, i) => `${k}=>$${i + 1}`).join(",")}) as result`,
       Object.values(data))).rows[0].result;
@@ -113,13 +140,15 @@ test("counted quotes, Astra access and settlement in an isolated ledger", async 
       return Response.json((await db.query("select * from zebby_quotes where id=$1 and user_id=$2",
         [url.searchParams.get("id").slice(3), url.searchParams.get("user_id").slice(3)])).rows);
     }
-    assert.equal(url.hostname, "api.openai.com");
-    if (url.pathname.endsWith("/input_tokens")) {
+    assert.ok(["api.openai.com", "api.anthropic.com"].includes(url.hostname));
+    if (url.pathname.endsWith("/input_tokens") || url.pathname.endsWith("/count_tokens")) {
       counts++;
       return countFails ? Response.json({ input_tokens: null }) : Response.json({ object: "response.input_tokens", input_tokens: 3600 });
     }
     generations++; lastRequest = body;
     if (incomplete) return Response.json({ status: "incomplete", incomplete_details: { reason: "max_output_tokens" } });
+    if (url.hostname === "api.anthropic.com") return Response.json({ stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(result) }],
+      usage: { input_tokens: 3600, output_tokens: 500 } });
     return Response.json({ status: "completed", output: [{ content: [{ type: "output_text", text: JSON.stringify(result) }] }],
       usage: { input_tokens: 3600, output_tokens: 500 } });
   };
@@ -135,8 +164,11 @@ test("counted quotes, Astra access and settlement in an isolated ledger", async 
       await db.query("update zebby_wallets set balance=500000000,purchased=500000000 where user_id=$1", [user]);
       assert.equal((await wallet()).astraUnlocked, false);
       await assert.rejects(quote(), { message: ASTRA_PACK_MESSAGE });
+      await assert.rejects(quote("claude-opus-5-5"), { message: ASTRA_PACK_MESSAGE });
       assert.equal(counts, 0); assert.equal(generations, 0);
       assert.equal((await quote("gpt-6.1-sol")).model, "gpt-6.1-sol");
+      assert.equal((await quote("claude-sonnet-5-5")).model, "claude-sonnet-5-5");
+      assert.equal((await quote("claude-haiku-5-5")).model, "claude-haiku-5-5");
     });
     await t.test("existing $20 purchases unlock Astra and repeated migrations retain data", async () => {
       await db.query("insert into zebby_purchases(id,user_id,pack,cents,amount,paid) values($1,$2,'regular',2000,3000000000,true)", [purchase, user]);
@@ -145,6 +177,8 @@ test("counted quotes, Astra access and settlement in an isolated ledger", async 
       const migration = await readFile(new URL("../credits-service/migrations/20261020_counted_budgets.sql", import.meta.url), "utf8");
       await db.exec(migration); await db.exec(migration);
       await db.exec(await readFile(new URL("../credits-service/migrations/20261027_wallet_usage.sql", import.meta.url), "utf8"));
+      const claudeMigration = await readFile(new URL("../credits-service/migrations/20261031_claude_credits.sql", import.meta.url), "utf8");
+      await db.exec(claudeMigration); await db.exec(claudeMigration);
       assert.deepEqual(await wallet(), before);
       assert.deepEqual((await db.query("select * from zebby_quotes order by id")).rows, priorQuotes);
       assert.equal(before.astraUnlocked, true);
@@ -174,6 +208,18 @@ test("counted quotes, Astra access and settlement in an isolated ledger", async 
       incomplete = false;
       assert.equal((await wallet()).balance, before.balance); assert.equal((await wallet()).reserved, 0);
     });
+    await t.test("unlocked Opus uses Anthropic and charges actual usage once", async () => {
+      const q = await quote("claude-opus-5-5"), id = randomUUID(), before = await wallet();
+      const response = await analyze(q, id);
+      assert.equal(lastRequest.model, "claude-opus-5-5");
+      assert.equal(lastRequest.output_config.effort, "high");
+      assert.equal(lastRequest.max_tokens, q.outputTokens);
+      assert.equal(response.wallet.balance, before.balance - 24_400_000);
+      const calls = generations;
+      await analyze(q, id);
+      assert.equal(generations, calls);
+      assert.equal((await wallet()).used, before.used + 24_400_000);
+    });
     await t.test("concurrent reservations cannot overspend the same balance", async () => {
       const first = await quote(), second = await quote();
       await db.query("update zebby_wallets set balance=600000000 where user_id=$1", [user]);
@@ -188,7 +234,7 @@ test("counted quotes, Astra access and settlement in an isolated ledger", async 
       assert.equal((await wallet()).reserved, 0);
     });
     await t.test("Astra access survives spending, and refund/dispute changes are enforced at reserve", async () => {
-      const q = await quote(), hash = (await db.query("select content_hash from zebby_quotes where id=$1", [q.id])).rows[0].content_hash;
+      const q = await quote(), opus = await quote("claude-opus-5-5"), hash = (await db.query("select content_hash from zebby_quotes where id=$1", [q.id])).rows[0].content_hash;
       await db.query("update zebby_wallets set balance=0 where user_id=$1", [user]);
       assert.equal((await wallet()).astraUnlocked, true);
       await db.query("update zebby_wallets set balance=3000000000 where user_id=$1", [user]);
@@ -197,6 +243,7 @@ test("counted quotes, Astra access and settlement in an isolated ledger", async 
       await assert.rejects(rpc("reserve", { p_user: user, p_id: randomUUID(), p_quote: q.id, p_hash: hash }), /disputed/);
       await db.query("update zebby_purchases set disputed=false,reversed=amount where id=$1", [purchase]);
       await assert.rejects(rpc("reserve", { p_user: user, p_id: randomUUID(), p_quote: q.id, p_hash: hash }), /Astra/);
+      await assert.rejects(rpc("reserve", { p_user: user, p_id: randomUUID(), p_quote: opus.id, p_hash: hash }), /Claude Opus/);
       assert.equal((await wallet()).astraUnlocked, false);
     });
   } finally { await db.close(); }

@@ -2,10 +2,12 @@ import type { WalletAccess } from "./wallet-access.ts";
 
 export type AnalysisProvider = "ollama" | "builtin" | "openai" | "anthropic" | "credits";
 export type AnalysisKind = "plan" | "match" | "resume";
-export const PRICE_VERSION = "2026-10-20-counted-budgets";
+export const PRICE_VERSION = "2026-10-31-claude-credits";
 export const DEFAULT_CREDIT_MODEL = "gpt-6.1-sol";
 export const ASTRA_MODEL = "gpt-6-astra";
-export const ASTRA_PACK_MESSAGE = "GPT-6 Astra is included with a $20, $50 or $100 pack.";
+export const OPUS_MODEL = "claude-opus-5-5";
+export const ASTRA_PACK_MESSAGE = "GPT-6 Astra and Claude Opus are included with a $20, $50 or $100 pack.";
+export function creditModelNeedsPack(model: string) { return model === ASTRA_MODEL || model === OPUS_MODEL; }
 export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
 export type EffortLevel = typeof EFFORT_LEVELS[number];
 export const CREDIT_THINKING_LEVELS = ["off", ...EFFORT_LEVELS] as const;
@@ -17,22 +19,25 @@ export const ONLINE_MODELS = [
   { id: "gpt-6.1-sol", name: "GPT-6.1 Sol", provider: "openai", input: 2000, cached: 100, output: 10000 },
   { id: "gpt-6-luna", name: "GPT-6 Luna", provider: "openai", input: 100, cached: 10, output: 500 },
   { id: "gpt-6-astra", name: "GPT-6 Astra", provider: "openai", input: 10000, cached: 1000, output: 50000 },
+  { id: "claude-haiku-5-5", name: "Claude Haiku 5.5", provider: "anthropic", input: 100, cached: 10, output: 500 },
   { id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5", provider: "anthropic", input: 2000, cached: 100, output: 10000 },
   { id: "claude-opus-5-5", name: "Claude Opus 5.5", provider: "anthropic", input: 4000, cached: 200, output: 20000 },
   { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5", provider: "anthropic", input: 1000, cached: 100, output: 5000 },
 ] as const;
 export type OnlineModel = typeof ONLINE_MODELS[number];
 // Newest generation first within each provider. Same-release families retain a stable order.
-export const CREDIT_MODELS = ONLINE_MODELS.filter((model) => model.provider === "openai");
+export const CREDIT_MODELS = ONLINE_MODELS.filter((model) => model.id !== "claude-haiku-4-5-20251001");
 // Rounded text baseline from a local audit of saved Plans. Provider reasoning was
 // not retained, so keep the existing total output allowance as an explicit estimate.
 export const CREDIT_ESTIMATE = { model: DEFAULT_CREDIT_MODEL, thinkingLevel: "high", input: 3600,
   visibleOutput: 500, thinkingAllowance: 7500, output: 8000 } as const;
 export const CREDIT_ESTIMATE_MODELS = [DEFAULT_CREDIT_MODEL, "gpt-6-luna"] as const;
-export const CREDIT_ESTIMATE_DESCRIPTION = "High estimates use a sample Plan with 3,600 input tokens and about 500 result tokens, plus an estimated 7,500-token thinking allowance. Input is priced as cache writes. These are usage examples, not a limit on the number of analyses.";
+export const CREDIT_ESTIMATE_DESCRIPTION = "Examples use 3,600 input tokens. High allows 8,000 output tokens, including thinking. Medium uses the full 8,192-token Plan budget. Input is priced as cache writes. Actual usage can be lower; these are examples, not analysis limits.";
+export function creditEstimateThinkingLevel(modelId: string) { return creditModelNeedsPack(modelId) ? "medium" : "high"; }
 export function estimatedAnalyses(credits: number, modelId: string = CREDIT_ESTIMATE.model) {
   const model = creditModel(modelId);
-  const estimate = usageCost(model, { input: 0, cached: 0, cacheWrite: CREDIT_ESTIMATE.input, output: CREDIT_ESTIMATE.output });
+  const output = creditEstimateThinkingLevel(modelId) === "medium" ? creditOutputLimit("plan", "medium") : CREDIT_ESTIMATE.output;
+  const estimate = usageCost(model, { input: 0, cached: 0, cacheWrite: CREDIT_ESTIMATE.input, output });
   return Math.floor(credits * NANODOLLARS_PER_CREDIT / estimate);
 }
 export const CREDIT_PACKS = [
@@ -49,13 +54,13 @@ export function onlineModel(id: string): OnlineModel {
 }
 export function creditModel(id: string): OnlineModel {
   const model = CREDIT_MODELS.find((item) => item.id === id);
-  if (!model) throw new Error("Choose GPT-6.1 Sol, GPT-6 Luna or GPT-6 Astra for Zebby credits.");
+  if (!model) throw new Error("Choose an available model for Zebby credits.");
   return model;
 }
 export function onlineThinking(model: OnlineModel) {
   if (model.id === "claude-haiku-4-5-20251001") return { values: ["off", "on"] as readonly OnlineThinkingLevel[], defaultValue: "off" as OnlineThinkingLevel };
   const values: readonly OnlineThinkingLevel[] = model.id === "gpt-6-luna" ? ["off", ...EFFORT_LEVELS] : EFFORT_LEVELS;
-  return { values, defaultValue: (model.id === "claude-opus-5-5" ? "medium" : "high") as OnlineThinkingLevel };
+  return { values, defaultValue: (["claude-opus-5-5", "claude-haiku-5-5"].includes(model.id) ? "medium" : "high") as OnlineThinkingLevel };
 }
 export function validateOnlineThinking(model: OnlineModel, value?: string): OnlineThinkingLevel {
   const capability = onlineThinking(model), level = value ?? capability.defaultValue;
@@ -76,9 +81,10 @@ export function usageCost(model: OnlineModel, usage: TokenUsage): number {
   if (usage.cached > usage.input) throw new Error("The provider returned invalid cached usage.");
   const written = (usage.cacheWrite || 0) + (usage.cacheWrite5m || 0) + (usage.cacheWrite1h || 0);
   const longContext = model.provider === "openai" && usage.input + written > 272000;
+  const haikuLongContext = model.id === "claude-haiku-5-5" && usage.input + written > 100000;
   const inputCost = (usage.input - usage.cached) * model.input + usage.cached * model.cached
     + ((usage.cacheWrite || 0) + (usage.cacheWrite5m || 0)) * model.input * 1.25 + (usage.cacheWrite1h || 0) * model.input * 2;
-  const cost = inputCost * (longContext ? 2 : 1) + usage.output * model.output * (longContext ? 1.5 : 1);
+  const cost = (inputCost * (longContext ? 2 : 1) + usage.output * model.output * (longContext ? 1.5 : 1)) * (haikuLongContext ? 5 : 1);
   if (!Number.isSafeInteger(cost)) throw new Error("The provider returned invalid usage cost.");
   return cost;
 }

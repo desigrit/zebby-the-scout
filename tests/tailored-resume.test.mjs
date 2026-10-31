@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import JSZip from "jszip";
 import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -46,6 +47,21 @@ test("PDF markup escapes resume text and blocks scripts and remote resources", (
   assert.ok(html.includes("&lt;img"));
   assert.ok(html.includes("default-src 'none'"));
   assert.doesNotMatch(html, /<img|<script|<iframe/);
+});
+
+test("Word header and footer content is retained once with the source body", async () => {
+  const zip = await JSZip.loadAsync(await resumeDocx(blocks.slice(2)));
+  const xml = await zip.file("word/document.xml").async("string");
+  zip.file("word/document.xml", xml.replace("<w:sectPr>", '<w:sectPr><w:headerReference r:id="header"/><w:headerReference r:id="header" w:type="first"/><w:footerReference r:id="footer"/>'));
+  zip.file("word/_rels/document.xml.rels", '<Relationships><Relationship Id="header" Target="header1.xml"/><Relationship Id="footer" Target="/word/footer1.xml"/></Relationships>');
+  zip.file("word/header1.xml", '<w:hdr><w:p><w:r><w:t>Alex Morgan</w:t></w:r></w:p><w:tbl><w:p><w:r><w:t>alex@example.com | Seattle, WA</w:t></w:r></w:p></w:tbl></w:hdr>');
+  zip.file("word/footer1.xml", '<w:ftr><w:p><w:r><w:t>linkedin.com/in/alex</w:t></w:r></w:p></w:ftr>');
+  const parsed = await readResumeBlocks("resume.docx", await zip.generateAsync({ type: "uint8array" }));
+  assert.deepEqual(parsed.map(b => b.text), [...blocks.map(b => b.text), "linkedin.com/in/alex"]);
+  assert.equal(parsed[1].editable, false);
+  assert.equal(parsed.at(-1).editable, false);
+  zip.remove("word/header1.xml");
+  await assert.rejects(readResumeBlocks("resume.docx", await zip.generateAsync({ type: "uint8array" })), /missing part/);
 });
 
 test("artifact names use the job ID and cannot escape the output folder", () => {

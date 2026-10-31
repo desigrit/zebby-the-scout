@@ -1555,9 +1555,9 @@ try {
   await analysisDialog.getByRole("button", { name: "Continue", exact: true }).click();
   assert.equal(await analysisDialog.getByRole("radio").count(), 4);
   assert.equal(await analysisDialog.getByRole("combobox").count(), 0);
-  assert.equal(await analysisDialog.getByText("Unlocks GPT-6 Astra", { exact: true }).count(), 3);
-  assert.match(await analysisDialog.locator(".credit-pack").nth(1).innerText(), /~6 analyses\s+GPT-6 Astra \(High\)/);
-  assert.deepEqual(await analysisDialog.locator(".credit-pack").nth(1).locator(".credit-estimate-model").allTextContents(), ["GPT-6 Astra (High)", "GPT-6.1 Sol (High)", "GPT-6 Luna (High)"]);
+  assert.equal(await analysisDialog.getByText("Unlocks Astra and Opus", { exact: true }).count(), 3);
+  assert.match(await analysisDialog.locator(".credit-pack").nth(1).innerText(), /~6 analyses\s+GPT-6 Astra \(Medium\)/);
+  assert.deepEqual(await analysisDialog.locator(".credit-pack").nth(1).locator(".credit-estimate-model").allTextContents(), ["GPT-6 Astra (Medium)", "GPT-6.1 Sol (High)", "GPT-6 Luna (High)"]);
   assert.deepEqual(await analysisDialog.locator(".credit-pack").first().locator(".credit-estimate-model").allTextContents(), ["GPT-6.1 Sol (High)", "GPT-6 Luna (High)"]);
   assert.match(await analysisDialog.innerText(), /Choose or change your model in Settings after purchase/);
   assert.equal(await analysisDialog.getByRole("button", { name: "Continue to checkout · $5", exact: true }).isEnabled(), true);
@@ -1673,13 +1673,21 @@ try {
   const creditsSettings = page.getByRole("region", { name: "Credits", exact: true });
   const paidSettingsModel = settingsPage.getByRole("combobox", { name: "Model", exact: true });
   await paidSettingsModel.waitFor();
-  assert.deepEqual(await paidSettingsModel.locator("option").evaluateAll(options => options.map(option => option.value)), ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"]);
+  assert.deepEqual(await paidSettingsModel.locator("option").evaluateAll(options => options.map(option => option.value)), ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]);
   await page.evaluate(() => window.creditQA.update({ wallet: { balance: 450000000, reserved: 0, used: 50000000, purchased: 500000000, recent: [], astraUnlocked: false } }));
-  await settingsPage.getByText("GPT-6 Astra is included with a $20, $50 or $100 pack.", { exact: true }).waitFor();
+  await settingsPage.getByText("GPT-6 Astra and Claude Opus are included with a $20, $50 or $100 pack.", { exact: true }).waitFor();
   assert.equal(await paidSettingsModel.locator('option[value="gpt-6-astra"]').innerText(), "GPT-6 Astra · Locked");
   await captureSettings("credits-astra-locked.png", false);
   const savedModel = await paidSettingsModel.inputValue();
+  assert.equal(await paidSettingsModel.locator('option[value="claude-opus-5-5"]').innerText(), "Claude Opus 5.5 · Locked");
   await paidSettingsModel.focus();
+  await paidSettingsModel.selectOption("claude-opus-5-5");
+  await analysisDialog.getByRole("button", { name: "Continue to checkout · $20", exact: true }).waitFor();
+  assert.equal(await paidSettingsModel.inputValue(), savedModel);
+  await analysisDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await analysisDialog.waitFor({ state: "hidden" });
+  await paidSettingsModel.focus();
+  await page.waitForFunction(() => document.activeElement?.tagName === "SELECT");
   await paidSettingsModel.selectOption("gpt-6-astra");
   await analysisDialog.getByRole("button", { name: "Continue to checkout · $20", exact: true }).waitFor();
   assert.equal(await paidSettingsModel.inputValue(), savedModel);
@@ -1687,7 +1695,7 @@ try {
   await analysisDialog.waitFor({ state: "hidden" });
   await page.waitForFunction(() => document.activeElement?.tagName === "SELECT");
   await page.evaluate(() => window.creditQA.update({ model: "gpt-6-astra" }));
-  await page.waitForFunction(() => document.querySelector('select:has(option[value="locked-astra"])')?.value === "locked-astra");
+  await page.waitForFunction(() => document.querySelector('select:has(option[value="locked-premium"])')?.value === "locked-premium");
   await captureSettings("credits-astra-current-locked.png", false);
   await paidSettingsModel.selectOption("gpt-6-astra");
   await analysisDialog.getByRole("button", { name: "Continue to checkout · $20", exact: true }).waitFor();
@@ -1695,6 +1703,9 @@ try {
   await analysisDialog.waitFor({ state: "hidden" });
   await page.evaluate(() => window.creditQA.update({ wallet: { balance: 3000000000, reserved: 0, used: 0, purchased: 3000000000, recent: [], astraUnlocked: true } }));
   await page.waitForFunction(() => [...document.querySelectorAll("option")].some(option => option.value === "gpt-6-astra" && option.textContent === "GPT-6 Astra"));
+  await paidSettingsModel.selectOption("claude-opus-5-5");
+  await page.waitForFunction(() => document.querySelector('select:has(option[value="claude-opus-5-5"])')?.value === "claude-opus-5-5");
+  await settingsPage.getByRole("radiogroup", { name: "Thinking level", exact: true }).getByRole("radio", { name: "Medium", exact: true }).waitFor();
   await paidSettingsModel.selectOption("gpt-6-luna");
   await settingsPage.getByRole("radiogroup", { name: "Thinking level", exact: true }).getByRole("radio", { name: "Off", exact: true }).click();
   await paidSettingsModel.selectOption("gpt-6-astra");
@@ -1746,7 +1757,7 @@ try {
   await creditHelp.getByRole("button", { name: "Close credits and devices", exact: true }).click();
   await page.setViewportSize({ width: 1550, height: 850 });
   await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32"; document.documentElement.dataset.theme = "light"; });
-  await page.evaluate(() => { window.creditQA.update({ wallet: { balance: 499000000, reserved: 0, used: 1000000, purchased: 500000000,
+  await page.evaluate(() => { window.creditQA.update({ wallet: { astraUnlocked: true, balance: 499000000, reserved: 0, used: 1000000, purchased: 500000000,
     updatedAt: "2026-09-30T20:00:00Z", recent: [] } }); });
   await page.waitForFunction(() => document.querySelector(".sidebar-credit-button")?.getAttribute("aria-label") === "Buy credits. 1 of 500 credits used, 100% remaining.");
   assert.equal(await sidebarWallet.locator(".sidebar-credit-percent").innerText(), "100%");
@@ -1758,7 +1769,7 @@ try {
     const dailyUsage = Array.from({ length: 84 }, (_, index) => ({ date: new Date(Date.parse("2026-09-30T00:00:00Z") - (83 - index) * 86400000).toISOString().slice(0, 10), count: 0, cost: 0 }));
     for (const item of recent) { const day = dailyUsage.find(day => item.createdAt.startsWith(day.date)); day.count++; day.cost += item.cost; }
     [.5, .6, .7, 1, 1.4, 1.8, 2].forEach((cost, index) => { const day = dailyUsage[7 + index * 7]; day.count++; day.cost += cost * 1000000; });
-    window.creditQA.update({ wallet: { balance: 465000000, reserved: 0, used: 35000000, purchased: 500000000, completedAnalyses: 17,
+    window.creditQA.update({ wallet: { astraUnlocked: true, balance: 465000000, reserved: 0, used: 35000000, purchased: 500000000, completedAnalyses: 17,
       updatedAt: "2026-09-30T20:00:00Z", recent, dailyUsage } });
   });
   const creditBar = creditsSettings.getByRole("progressbar", { name: "Credits remaining", exact: true });

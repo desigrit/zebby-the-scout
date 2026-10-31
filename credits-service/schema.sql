@@ -227,9 +227,9 @@ begin
   if not found or q.user_id<>p_user or q.content_hash<>p_hash then raise exception 'Invalid analysis quote'; end if;
   if q.expires_at<=now() or q.claimed_by is not null then raise exception 'Analysis quote expired or already used'; end if;
   if exists(select 1 from zebby_purchases where user_id=p_user and disputed) then raise exception 'Contact support about a disputed payment'; end if;
-  if q.model='gpt-6-astra' and not exists(select 1 from zebby_purchases where user_id=p_user
+  if q.model in ('gpt-6-astra','claude-opus-5-5') and not exists(select 1 from zebby_purchases where user_id=p_user
     and paid and cents>=2000 and reversed<amount and not disputed) then
-    raise exception 'GPT-6 Astra is included with a $20, $50 or $100 pack';
+    raise exception 'GPT-6 Astra and Claude Opus are included with a $20, $50 or $100 pack';
   end if;
   if w.balance-w.reserved<q.maximum then raise exception 'Not enough credits for this analysis'; end if;
   update zebby_quotes set claimed_by=p_id where id=p_quote;

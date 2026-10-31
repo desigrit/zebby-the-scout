@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, Check, ChevronRight, Coins, Download, ExternalLink, KeyRound, LoaderCircle, Server, X } from "lucide-react";
 import type { DesktopState } from "../bridge";
-import { ASTRA_MODEL, ASTRA_PACK_MESSAGE, CREDIT_PACKS, CREDIT_ESTIMATE_MODELS, CREDIT_ESTIMATE_DESCRIPTION, creditReservationMessage, estimatedAnalyses, formatCredits, onlineModel, quoteNeedsCredits, type AnalysisProvider, type AnalysisSource } from "../../shared/online-models";
+import { ASTRA_MODEL, ASTRA_PACK_MESSAGE, CREDIT_PACKS, CREDIT_ESTIMATE_MODELS, CREDIT_ESTIMATE_DESCRIPTION, creditEstimateThinkingLevel, creditReservationMessage, estimatedAnalyses, formatCredits, onlineModel, quoteNeedsCredits, type AnalysisProvider, type AnalysisSource } from "../../shared/online-models";
 import CreditAccessForm from "./CreditAccessForm";
 import { ErrorBanner } from "./WorkspaceFeedback";
 import { onlineThinkingCapability, selectedThinking, thinkingKey, thinkingLabel } from "../../shared/thinking";
@@ -184,15 +184,15 @@ export function AnalysisFlowProvider({ state, onState, children, onOpenSettings 
               <input type="radio" name="credit-pack" value={item.id} checked={pack === item.id} onChange={() => setPack(item.id)} />
               <span className="credit-pack-badge">{item.id === "starter" ? "Suggested start" : ""}</span>
               <strong className="credit-pack-price">${item.dollars}</strong><span className="credit-pack-count">{item.credits.toLocaleString()} credits</span>
-              <span className="credit-pack-access">{item.astra ? "Unlocks GPT-6 Astra" : "Sol and Luna"}</span>
+              <span className="credit-pack-access">{item.astra ? "Unlocks Astra and Opus" : "Sol, Luna, Sonnet and Haiku"}</span>
               <span className="credit-pack-estimates">
-                {(item.astra ? [ASTRA_MODEL, ...CREDIT_ESTIMATE_MODELS] : CREDIT_ESTIMATE_MODELS).map((model) => <small key={model}><span className="credit-estimate-count">~{estimatedAnalyses(item.credits, model).toLocaleString()} analyses</span><span className="credit-estimate-model">{onlineModel(model).name} (High)</span></small>)}
+                {(item.astra ? [ASTRA_MODEL, ...CREDIT_ESTIMATE_MODELS] : CREDIT_ESTIMATE_MODELS).map((model) => <small key={model}><span className="credit-estimate-count">~{estimatedAnalyses(item.credits, model).toLocaleString()} analyses</span><span className="credit-estimate-model">{onlineModel(model).name} ({creditEstimateThinkingLevel(model) === "medium" ? "Medium" : "High"})</span></small>)}
               </span>
             </label>)}
           </fieldset><p className="settings-help">Prices in USD. Actual usage varies by job, model and thinking level.</p>
           <details className="credit-estimate-help"><summary>How estimates work</summary><p>{CREDIT_ESTIMATE_DESCRIPTION}</p>
             <p>Zebby counts the full input and reserves a task-specific response allowance, including thinking. Your model and thinking level stay as selected. Only actual usage is charged.</p>
-            <p>Astra stays available after a qualifying purchase. You can top up with any pack. A fully refunded or disputed purchase does not qualify.</p></details>
+            <p>Astra and Opus stay available after a qualifying purchase. You can top up with any pack. A fully refunded or disputed purchase does not qualify.</p></details>
           {!state.credits.signedIn && <div className="credit-recover-links"><span>Already have credits?</span>
             <button className="settings-link" type="button" onClick={() => show("restore")}>Restore credits</button>
             <button className="settings-link" type="button" onClick={() => show("connect")}>Connect this computer</button></div>}

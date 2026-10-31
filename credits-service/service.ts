@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { ServiceConfig } from "./config.ts";
 import { CREDIT_PACKS, CREDIT_MODELS, CREDIT_THINKING_LEVELS, PRICE_VERSION, NANODOLLARS_PER_CREDIT, creditPack, creditModel, onlineModel,
-  maximumCost, creditOutputLimit, creditReservationMessage, usageCost, validateOnlineThinking, ASTRA_MODEL, ASTRA_PACK_MESSAGE, type Wallet } from "../shared/online-models.ts";
+  maximumCost, creditOutputLimit, creditReservationMessage, usageCost, validateOnlineThinking, creditModelNeedsPack, ASTRA_PACK_MESSAGE, type Wallet } from "../shared/online-models.ts";
 import { planInstructions, planSchema, matchInstructions, matchSchema } from "../desktop/analysis-contracts.ts";
 import { tailoringInstructions, tailoringSchema } from "../shared/tailored-resume.ts";
 import { onlineAnalysis } from "../desktop/online-analysis.ts";
 import { countOpenAIAnalysisInput } from "../desktop/openai-request.ts";
+import { countAnthropicAnalysisInput } from "../desktop/anthropic-request.ts";
 import { validateInput, validateResult } from "./validation.ts";
 import { stripeRequest, verifyStripeEvent } from "./stripe.ts";
 import { ServiceError } from "./errors.ts";
@@ -160,11 +161,12 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
       const value = z.object({ model: z.string(), kind: kindSchema, thinkingLevel: z.enum(CREDIT_THINKING_LEVELS).default("high"), input: z.unknown() }).strict().parse(body);
       const model = configuredModel(value.model), input = validateInput(value.input, value.kind);
       const thinkingLevel = validateOnlineThinking(model, value.thinkingLevel);
-      if (model.id === ASTRA_MODEL) {
+      if (creditModelNeedsPack(model.id)) {
         const wallet = await rpc<Wallet>("wallet", { p_user: account.id });
         if (!wallet.astraUnlocked) throw new ServiceError(ASTRA_PACK_MESSAGE, 403);
       }
-      const inputTokens = await countOpenAIAnalysisInput({ model: model.id, key: providerKey(model.id), input, ...contract(value.kind),
+      const countInput = model.provider === "openai" ? countOpenAIAnalysisInput : countAnthropicAnalysisInput;
+      const inputTokens = await countInput({ model: model.id, key: providerKey(model.id), input, ...contract(value.kind),
         thinkingLevel, signal, fetcher: send });
       signal.throwIfAborted();
       const outputTokens = creditOutputLimit(value.kind, thinkingLevel);

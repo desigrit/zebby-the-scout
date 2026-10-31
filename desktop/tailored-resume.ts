@@ -13,14 +13,38 @@ export async function readResumeBlocks(filename: string, data: Uint8Array): Prom
   if (/\.docx$/i.test(filename)) {
     const zip = await JSZip.loadAsync(data), document = zip.file("word/document.xml");
     if (!document) throw new Error("This Word file has no readable document.");
-    const xml = await document.async("string");
-    if (xml.length > 4_000_000) throw new Error("This Word document is too large to tailor.");
-    const $ = load(xml, { xml: true });
-    $("w\\:body w\\:p").each((_, p) => {
-      const text = $(p).find("w\\:t,w\\:tab,w\\:br").map((_, node) => node.tagName === "w:t" ? $(node).text() : " ").get().join("");
-      const style = $(p).find("w\\:pStyle").attr("w:val") || "";
-      lines.push({ text, bullet: $(p).find("w\\:numPr").length > 0 || /listparagraph/i.test(style), heading: /^heading/i.test(style) });
-    });
+    // Contact details often live in Word headers. Read referenced parts once,
+    // including tables, without repeating the header on every generated page.
+    let totalXml = 0;
+    const readXml = async (name: string) => {
+      const part = zip.file(name);
+      if (!part) throw new Error("This Word file is missing part of its content.");
+      const xml = await part.async("string"); totalXml += xml.length;
+      if (totalXml > 4_000_000) throw new Error("This Word document is too large to tailor.");
+      return load(xml, { xml: true });
+    };
+    const body = await readXml("word/document.xml");
+    const relationships = zip.file("word/_rels/document.xml.rels");
+    const rels = relationships ? load(await relationships.async("string"), { xml: true }) : null;
+    const parts = (kind: "header" | "footer") => [...new Set(body(`w\\:${kind}Reference`).map((_, node) => {
+      const id = body(node).attr("r:id");
+      const rel = rels?.("Relationship").filter((_, item) => rels(item).attr("Id") === id);
+      const target = rel?.attr("Target") || "";
+      if (rel?.attr("TargetMode") === "External" || !/^(?:\/word\/)?(?:header|footer)[^/\\]*\.xml$/.test(target)) {
+        throw new Error("This Word file has an unreadable header or footer.");
+      }
+      return target.startsWith("/") ? target.slice(1) : `word/${target}`;
+    }).get())];
+    const readParagraphs = ($: ReturnType<typeof load>) => {
+      $("w\\:p").each((_, p) => {
+        const text = $(p).find("w\\:t,w\\:tab,w\\:br").map((_, node) => node.tagName === "w:t" ? $(node).text() : " ").get().join("");
+        const style = $(p).find("w\\:pStyle").attr("w:val") || "";
+        if (text.trim()) lines.push({ text, bullet: $(p).find("w\\:numPr").length > 0 || /listparagraph/i.test(style), heading: /^heading/i.test(style) });
+      });
+    };
+    for (const part of parts("header")) readParagraphs(await readXml(part));
+    readParagraphs(body);
+    for (const part of parts("footer")) readParagraphs(await readXml(part));
   } else if (/\.pdf$/i.test(filename)) {
     const document = await getDocumentProxy(new Uint8Array(data));
     try {

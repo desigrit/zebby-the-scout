@@ -1,8 +1,14 @@
 # Zebby credits service
 
-Official Zebby builds connect to `https://zebby-credits.onrender.com`. Credits support GPT-6.1 Sol, GPT-6 Luna and GPT-6 Astra. Users can also bring their own OpenAI or Anthropic API key, use an Ollama server, or download a local model. Those methods do not need this service. Custom builds set the public `ZEBBY_CREDITS_SERVICE_URL` when building the desktop app. Wallet access requires OS secure storage.
+Official Zebby builds connect to `https://zebby-credits.onrender.com`. Credits support GPT-6.1 Sol, GPT-6 Luna, GPT-6 Astra, Claude Haiku 5.5, Claude Sonnet 5.5 and Claude Opus 5.5. Users can also bring their own OpenAI or Anthropic API key, use an Ollama server, or download a local model. Those methods do not need this service. Custom builds set the public `ZEBBY_CREDITS_SERVICE_URL` when building the desktop app. Wallet access requires OS secure storage.
 
-A $20, $50 or $100 purchase unlocks Astra for that wallet. Existing paid purchases qualify, and access travels with wallet restoration and device pairing. Spending credits does not remove access; users can subsequently top up with any pack. Fully refunded and disputed purchases do not qualify. The $5 pack supports Sol and Luna without an Astra unlock. Personal API keys have no pack restriction.
+A $20, $50 or $100 purchase unlocks Astra and Opus for that wallet. Existing paid purchases qualify, and access travels with wallet restoration and device pairing. Spending credits does not remove access; users can subsequently top up with any pack. Fully refunded and disputed purchases do not qualify. The $5 pack supports Sol, Luna, Sonnet and Haiku. Personal API keys have no pack restriction.
+
+## Claude credits update
+
+Run [20261031_claude_credits.sql](migrations/20261031_claude_credits.sql) before deploying. This extends the existing purchase unlock to Claude Opus, including previous qualifying purchases. It preserves balances, purchases and results. Repeating it is safe.
+
+The existing `ANTHROPIC_API_KEY` enables Claude. It must allow message creation and `POST /v1/messages/count_tokens`. Quotes count the same instructions, source and JSON schema sent for generation. No Stripe changes are needed.
 
 ## Counted budgets update
 
@@ -12,7 +18,7 @@ The updated service supports existing databases without another migration. [2026
 
 No Stripe product, environment-variable or API-key replacement is required. The OpenAI service key must permit `POST /v1/responses/input_tokens` as well as response creation. Confirm this endpoint is allowed if the key is restricted.
 
-Quotes use OpenAI's [input token count endpoint](https://developers.openai.com/api/docs/guides/token-counting) with the same model, instructions, complete source, thinking configuration and JSON schema as generation. If counting fails, no quote or hold is created; Zebby asks the user to retry rather than guessing. Text and responses are never included in diagnostic logs.
+OpenAI quotes use OpenAI's [input token count endpoint](https://developers.openai.com/api/docs/guides/token-counting) with the same model, instructions, complete source, thinking configuration and JSON schema as generation. If counting fails, no quote or hold is created; Zebby asks the user to retry rather than guessing. Text and responses are never included in diagnostic logs.
 
 Credit generation uses the output ceiling stored with the quote. These limits include both reasoning and the visible result:
 
