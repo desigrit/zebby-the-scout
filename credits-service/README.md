@@ -1,6 +1,6 @@
 # Zebby credits service
 
-Official Zebby builds connect to `https://zebby-credits.onrender.com`. Credits support GPT-6.1 Sol, GPT-6 Luna, GPT-6 Astra, Claude Haiku 5.5, Claude Sonnet 5.5 and Claude Opus 5.5. Users can also bring their own OpenAI or Anthropic API key, use an Ollama server, or download a local model. Those methods do not need this service. Custom builds set the public `ZEBBY_CREDITS_SERVICE_URL` when building the desktop app. Wallet access requires OS secure storage.
+From 2.6.1, official Zebby builds connect to `https://zebby-credits-9d5bde.westus2.cloudapp.azure.com`, hosted on an always-on Azure VM. Earlier releases continue to use Render. Both hosts share the same Supabase wallet ledger, so updating preserves credits, connected devices and pending results. Credits support GPT-6.1 Sol, GPT-6 Luna, GPT-6 Astra, Claude Haiku 5.5, Claude Sonnet 5.5 and Claude Opus 5.5. Users can also bring their own OpenAI or Anthropic API key, use an Ollama server, or download a local model. Those methods do not need this service. Custom builds set the public `ZEBBY_CREDITS_SERVICE_URL` when building the desktop app. Wallet access requires OS secure storage.
 
 A $20, $50 or $100 purchase unlocks Astra and Opus for that wallet. Existing paid purchases qualify, and access travels with wallet restoration and device pairing. Spending credits does not remove access; users can subsequently top up with any pack. Fully refunded and disputed purchases do not qualify. The $5 pack supports Sol, Luna, Sonnet and Haiku. Personal API keys have no pack restriction.
 
@@ -91,6 +91,8 @@ Checkout uses guest payments and collects the buyer's email and payment details 
 
 ## 3. Host the service
 
+The official service uses a Linux VM with Caddy and systemd. See the [VM deployment guide](deploy/README.md) for installation, updates and rollback. Provider keys and payment configuration stay on the server.
+
 For Render:
 
 1. Open the [Render dashboard](https://dashboard.render.com/) and choose **New → Web Service**.
@@ -143,12 +145,12 @@ The checked-in Node tests use an isolated PostgreSQL engine and mocked network r
 
 ## Packs and estimates
 
-| Price | Credits | Sol (High) | Luna (High) | Astra (High) |
+| Price | Credits | Astra / Opus (Medium) | Sol / Sonnet (High) | Luna / Haiku (High) |
 | --- | ---: | ---: | ---: | ---: |
-| $5 | 500 | About 5 | About 112 | Requires an earlier qualifying purchase |
-| $20 | 3,000 | About 33 | About 674 | About 6 |
-| $50 | 8,000 | About 89 | About 1,797 | About 17 |
-| $100 | 16,000 | About 179 | About 3,595 | About 35 |
+| $5 | 500 | Locked until a qualifying purchase | ~5 | ~112 |
+| $20 | 3,000 | ~22 | ~33 | ~674 |
+| $50 | 8,000 | ~64 | ~89 | ~1,797 |
+| $100 | 16,000 | ~121 | ~179 | ~3,595 |
 
 Analyze starts directly after Zebby prepares an internal quote. If funds are insufficient, the app shows the credits needed to start and the available balance. The service reserves the quote, charges for actual reported token usage, including thinking, and returns unused credits to the wallet. Cancelled, failed and invalid analyses release their reservations.
 

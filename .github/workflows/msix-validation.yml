@@ -17,7 +17,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 45
     env:
-      ZEBBY_CREDITS_SERVICE_URL: https://zebby-credits.onrender.com
+      ZEBBY_CREDITS_SERVICE_URL: https://zebby-credits-9d5bde.westus2.cloudapp.azure.com
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

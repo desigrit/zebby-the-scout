@@ -4,14 +4,12 @@ COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY credits-service ./credits-service
 COPY shared ./shared
-COPY desktop/online-analysis.ts desktop/online-response.ts desktop/openai-request.ts desktop/anthropic-request.ts desktop/analysis-contracts.ts ./desktop/
+COPY desktop/online-analysis.ts desktop/online-response.ts desktop/openai-request.ts desktop/anthropic-request.ts desktop/analysis-contracts.ts desktop/analysis-fetch.ts ./desktop/
 COPY scripts/build-credits-service.mjs ./scripts/
-RUN node scripts/build-credits-service.mjs && npm prune --omit=dev --ignore-scripts
+RUN node scripts/build-credits-service.mjs --standalone
 FROM node:22-slim
 WORKDIR /app
 ENV NODE_ENV=production PORT=8080
-COPY --from=build /app/node_modules/zod ./node_modules/zod
-COPY --from=build /app/node_modules/ipaddr.js ./node_modules/ipaddr.js
 COPY --from=build /app/credits-service/dist/server.mjs ./server.mjs
 USER node
 EXPOSE 8080

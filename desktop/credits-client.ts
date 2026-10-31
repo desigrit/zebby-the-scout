@@ -1,6 +1,8 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { needsServiceWakeup, waitForCreditsService } from "./credits-service-ready.ts";
+import { walletStorageOrigin } from "../shared/credit-service.ts";
+import { analysisFetch } from "./analysis-fetch.ts";
 import { creditModel, DEFAULT_CREDIT_MODEL, CREDIT_THINKING_LEVELS, validateOnlineThinking, type AnalysisSource, type CreditQuote, type CreditsState, type Wallet, type AnalysisKind } from "../shared/online-models.ts";
 import { deviceNameSchema, deviceTokenSchema, guestSessionSchema, pairingCodeSchema, pairingSchema, recoveryCodeSchema,
   walletAccessSchema, type WalletAccess, type WalletPairing } from "../shared/wallet-access.ts";
@@ -76,7 +78,7 @@ export class CreditsClient {
     try {
       const stored = JSON.parse(value);
       if (!this.url) return;
-      if (stored.url !== this.url) {
+      if (walletStorageOrigin(stored.url) !== walletStorageOrigin(this.url)) {
         const unconfigured = unconfiguredGuestSchema.safeParse(stored);
         if (unconfigured.success) this.candidate = unconfigured.data.candidate;
         else this.restoreFailed();
@@ -111,7 +113,7 @@ export class CreditsClient {
   }
   private async persist() {
     for (const [id, run] of this.pending) if (run.expires < Date.now()) this.pending.delete(id);
-    await this.options.save(this.session || this.pending.size || this.candidate || this.recovery ? JSON.stringify({ url: this.url, session: this.session,
+    await this.options.save(this.session || this.pending.size || this.candidate || this.recovery ? JSON.stringify({ url: walletStorageOrigin(this.url), session: this.session,
       wallet: this.wallet, pending: [...this.pending.values()], candidate: this.candidate, recovery: this.recovery }) : "");
   }
   // Public health only. Opening the purchase flow must not create a wallet or checkout.
@@ -160,7 +162,7 @@ export class CreditsClient {
     }
     const controller = new AbortController(); this.controllers.add(controller);
     try {
-      const fetcher = this.options.fetcher || fetch;
+      const fetcher = this.options.fetcher || (path === "/v1/analysis" ? analysisFetch : fetch);
       const activeSignal = AbortSignal.any([controller.signal, ...(signal ? [signal] : [])]);
       if (needsServiceWakeup(this.url, this.lastServiceResponse)) {
         await this.warmService(activeSignal);

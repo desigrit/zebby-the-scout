@@ -200,7 +200,7 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
       try {
         signal.throwIfAborted();
         const response = await onlineAnalysis({ model: model.id, key: providerKey(model.id), kind,
-          ...contract(kind), input, thinkingLevel, signal, fetcher: send, billingOwner: "zebby",
+          ...contract(kind), input, thinkingLevel, signal, fetcher: dependencies.fetcher, billingOwner: "zebby",
           maxOutputTokens: quote.output_limit });
         signal.throwIfAborted();
         const result = validateResult(response.result, kind, input), cost = usageCost(model, response.usage);
