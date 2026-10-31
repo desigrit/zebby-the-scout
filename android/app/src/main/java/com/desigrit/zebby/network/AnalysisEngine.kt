@@ -29,7 +29,7 @@ class AnalysisEngine(private val http:Http,private val contracts:Contracts,priva
             }
             "anthropic" -> {
                 val key=vault.get("anthropic");require(key.isNotBlank()) { "Add your Anthropic key in Settings." }
-                val haiku=model.startsWith("claude-haiku")
+                val haiku=model=="claude-haiku-4-5-20251001"
                 fun strip(value:Any?):Any? = when(value) { is JSONObject -> JSONObject().also { out -> value.keys().forEach { k -> if(k !in listOf("minLength","maxLength","minimum","maximum","minItems","maxItems")) out.put(k,strip(value.get(k))) } };is JSONArray -> JSONArray((0 until value.length()).map { strip(value.get(it)) });else -> value }
                 val output=JSONObject().put("format",JSONObject().put("type","json_schema").put("schema",strip(schema)))
                 if(!haiku) output.put("effort",thinking)

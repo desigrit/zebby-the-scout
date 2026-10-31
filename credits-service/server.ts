@@ -5,6 +5,9 @@ import { ZodError } from "zod";
 import { clientAddress } from "./client-address.ts";
 import { OnlineAnalysisError } from "../desktop/online-response.ts";
 const config = serviceConfig(), service = createService(config);
+// Public release identifiers only. Never expose the rest of the host environment.
+const version = /^\d+\.\d+\.\d+$/.test(process.env.ZEBBY_SERVICE_VERSION || "") ? process.env.ZEBBY_SERVICE_VERSION : "development";
+const commit = /^[\da-f]{40}$/i.test(process.env.RENDER_GIT_COMMIT || "") ? process.env.RENDER_GIT_COMMIT : undefined;
 const server = createServer(async (request, response) => {
   response.setHeader("Cache-Control", "no-store"); response.setHeader("X-Content-Type-Options", "nosniff");
   response.setHeader("Referrer-Policy", "no-referrer");
@@ -26,7 +29,8 @@ const server = createServer(async (request, response) => {
       : await service.handle(request.method || "GET", path, raw.length ? JSON.parse(raw.toString("utf8")) : undefined,
         String(request.headers.authorization || "").replace(/^Bearer /, ""), controller.signal,
         clientAddress(request.socket.remoteAddress, request.headers["x-forwarded-for"], config.trustedProxyHops));
-    response.setHeader("Content-Type", "application/json"); response.end(JSON.stringify(result));
+    const payload = path === "/health" && request.method === "GET" ? { ...(result as Record<string, unknown>), version, ...(commit ? { commit } : {}) } : result;
+    response.setHeader("Content-Type", "application/json"); response.end(JSON.stringify(payload));
   } catch (error) {
     if (response.destroyed) return;
     response.statusCode = error instanceof ServiceError ? error.status : error instanceof ZodError || error instanceof SyntaxError ? 400 : 503;

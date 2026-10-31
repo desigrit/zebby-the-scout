@@ -1,21 +1,31 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { ServiceConfig } from "./config.ts";
 import { CREDIT_PACKS, CREDIT_MODELS, CREDIT_THINKING_LEVELS, PRICE_VERSION, NANODOLLARS_PER_CREDIT, creditPack, creditModel, onlineModel,
-  maximumCost, usageCost, validateOnlineThinking } from "../shared/online-models.ts";
+  maximumCost, creditOutputLimit, creditReservationMessage, usageCost, validateOnlineThinking, creditModelNeedsPack, ASTRA_PACK_MESSAGE, type Wallet } from "../shared/online-models.ts";
 import { planInstructions, planSchema, matchInstructions, matchSchema } from "../desktop/analysis-contracts.ts";
+import { tailoringInstructions, tailoringSchema } from "../shared/tailored-resume.ts";
 import { onlineAnalysis } from "../desktop/online-analysis.ts";
+import { countOpenAIAnalysisInput } from "../desktop/openai-request.ts";
+import { countAnthropicAnalysisInput } from "../desktop/anthropic-request.ts";
 import { validateInput, validateResult } from "./validation.ts";
 import { stripeRequest, verifyStripeEvent } from "./stripe.ts";
 import { ServiceError } from "./errors.ts";
 import { createWalletAccess } from "./wallet-access.ts";
+import { createWalletUsage } from "./wallet-usage.ts";
 import { z } from "zod";
 
 const uuid = z.string().uuid();
-const kindSchema = z.enum(["plan", "match"]);
+const kindSchema = z.enum(["plan", "match", "resume"]);
+function contract(kind: "plan" | "match" | "resume") {
+  return kind === "resume" ? { instructions: tailoringInstructions, schema: tailoringSchema, name: "tailored_resume" }
+    : kind === "plan" ? { instructions: planInstructions, schema: planSchema, name: "resume_plan" }
+    : { instructions: matchInstructions, schema: matchSchema, name: "resume_match" };
+}
 type PurchaseRow = { id: string; user_id: string; pack: string; cents: number; session_id: string | null; paid: boolean };
-type QuoteRow = { id: string; kind: "plan" | "match"; model: string; thinking_level: string; price_version: string };
+type QuoteRow = { id: string; kind: "plan" | "match" | "resume"; model: string; thinking_level: string; price_version: string;
+  input_tokens: number; output_limit: number; maximum: number };
 type RunRow = { status: "reserved" | "completed" | "failed"; fresh?: boolean; result?: Record<string, unknown> | null;
-  id: string; quote_id: string; model: string; kind: "plan" | "match"; cost: number };
+  id: string; quote_id: string; model: string; kind: "plan" | "match" | "resume"; cost: number };
 const stripeCheckout = z.object({ id: z.string().regex(/^cs_[a-zA-Z0-9_]+$/), url: z.string().url() });
 const paidSession = z.object({ id: z.string(), payment_status: z.string(), currency: z.string(), amount_subtotal: z.number().int(),
   client_reference_id: uuid, payment_intent: z.string().startsWith("pi_"), metadata: z.object({ user_id: uuid, purchase_id: uuid, pack: z.string() }) });
@@ -35,13 +45,23 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
   async function supabase<T = unknown>(path: string, options: RequestInit = {}, token = config.supabaseKey): Promise<T> {
     const response = await send(config.supabaseUrl + path, { ...options, headers: { apikey: config.supabaseKey,
       Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...options.headers },
-      signal: AbortSignal.timeout(15000) });
-    if (!response.ok) throw new ServiceError(path.startsWith("/auth/") ? "Existing wallet access could not be refreshed. Restore credits or reconnect this computer." : "The credit service could not complete this request.", path.startsWith("/auth/") ? 401 : 503);
+      signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) });
+    if (!response.ok) {
+      if (path === "/rest/v1/rpc/zebby_reserve") {
+        // Translate only known ledger rejections; never expose raw SQL errors.
+        const error = await response.json().catch(() => null) as { message?: string } | null;
+        if (error?.message === "Not enough credits for this analysis") throw new ServiceError("Not enough credits for this analysis.", 402);
+        if (error?.message === ASTRA_PACK_MESSAGE.replace(/\.$/, "")) throw new ServiceError(ASTRA_PACK_MESSAGE, 403);
+      }
+      throw new ServiceError(path.startsWith("/auth/") ? "Existing wallet access could not be refreshed. Restore credits or reconnect this computer." : "The credit service could not complete this request.", path.startsWith("/auth/") ? 401 : 503);
+    }
     if (response.status === 204) return null as T;
     return response.json() as Promise<T>;
   }
-  async function rpc<T = unknown>(name: string, value: unknown) { return supabase<T>(`/rest/v1/rpc/zebby_${name}`, { method: "POST", body: JSON.stringify(value) }); }
+  async function rpc<T = unknown>(name: string, value: unknown, signal?: AbortSignal) { return supabase<T>(`/rest/v1/rpc/zebby_${name}`, { method: "POST", body: JSON.stringify(value), signal }); }
   const access = createWalletAccess({ rpc, rateLimit });
+  const enrichWalletUsage = createWalletUsage({ url: config.supabaseUrl, key: config.supabaseKey, fetcher: send, now,
+    onFailure: () => console.warn("Credit activity is temporarily unavailable; wallet balance is unchanged.") });
   async function rows<T>(table: string, query: string) { return supabase<T[]>(`/rest/v1/zebby_${table}?${query}`); }
   async function insert<T>(table: string, value: unknown) { return supabase<T[]>(`/rest/v1/zebby_${table}`, { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify(value) }); }
   async function user(token: string) {
@@ -98,7 +118,10 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
     const managed = await access.manage(method, path, body, account);
     if (managed !== undefined) return managed;
     if (method === "POST" && path === "/v1/auth/logout") { await supabase("/auth/v1/logout?scope=local", { method: "POST" }, token); return { signedOut: true }; }
-    if (method === "GET" && path === "/v1/wallet") return rpc("wallet", { p_user: account.id });
+    if (method === "GET" && path === "/v1/wallet") {
+      const readWallet = (requestSignal: AbortSignal) => rpc<Wallet>("wallet", { p_user: account.id }, requestSignal);
+      return enrichWalletUsage(account.id, await readWallet(signal), readWallet, signal);
+    }
     if (method === "GET" && /^\/v1\/analyses\/[\da-f-]{36}$/i.test(path)) {
       const id = uuid.parse(path.split("/").at(-1));
       const [run] = await rows<RunRow>("runs", `id=eq.${id}&user_id=eq.${account.id}&select=*`);
@@ -138,12 +161,21 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
       const value = z.object({ model: z.string(), kind: kindSchema, thinkingLevel: z.enum(CREDIT_THINKING_LEVELS).default("high"), input: z.unknown() }).strict().parse(body);
       const model = configuredModel(value.model), input = validateInput(value.input, value.kind);
       const thinkingLevel = validateOnlineThinking(model, value.thinkingLevel);
-      const instructions = value.kind === "plan" ? planInstructions : matchInstructions;
-      const maximum = maximumCost(model, Buffer.byteLength(JSON.stringify(input)), Buffer.byteLength(instructions), value.kind, thinkingLevel);
+      if (creditModelNeedsPack(model.id)) {
+        const wallet = await rpc<Wallet>("wallet", { p_user: account.id });
+        if (!wallet.astraUnlocked) throw new ServiceError(ASTRA_PACK_MESSAGE, 403);
+      }
+      const countInput = model.provider === "openai" ? countOpenAIAnalysisInput : countAnthropicAnalysisInput;
+      const inputTokens = await countInput({ model: model.id, key: providerKey(model.id), input, ...contract(value.kind),
+        thinkingLevel, signal, fetcher: send });
+      signal.throwIfAborted();
+      const outputTokens = creditOutputLimit(value.kind, thinkingLevel);
+      const maximum = maximumCost(model, inputTokens, outputTokens);
       const quote = { id: randomUUID(), user_id: account.id, model: model.id, kind: value.kind, thinking_level: thinkingLevel,
+        input_tokens: inputTokens, output_limit: outputTokens,
         content_hash: digest(JSON.stringify(input)), maximum, price_version: PRICE_VERSION, expires_at: new Date(now() + 5 * 60000).toISOString() };
       await insert("quotes", quote);
-      return { id: quote.id, model: quote.model, thinkingLevel, maximum, expiresAt: quote.expires_at };
+      return { id: quote.id, model: quote.model, thinkingLevel, maximum, inputTokens, outputTokens, expiresAt: quote.expires_at };
     }
     if (method === "POST" && path === "/v1/analysis") {
       const value = z.object({ quoteId: uuid, requestId: uuid, input: z.unknown() }).strict().parse(body);
@@ -151,7 +183,16 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
       if (!quote || quote.price_version !== PRICE_VERSION) throw new ServiceError("Request a fresh analysis quote.");
       const kind = kindSchema.parse(quote.kind), model = configuredModel(quote.model), input = validateInput(value.input, kind);
       const thinkingLevel = validateOnlineThinking(model, quote.thinking_level);
-      const run = await rpc<RunRow>("reserve", { p_user: account.id, p_id: value.requestId, p_quote: quote.id, p_hash: digest(JSON.stringify(input)) });
+      if (quote.output_limit !== creditOutputLimit(kind, thinkingLevel) ||
+          quote.maximum !== maximumCost(model, quote.input_tokens, quote.output_limit)) throw new ServiceError("Request a fresh analysis quote.");
+      const run = await rpc<RunRow>("reserve", { p_user: account.id, p_id: value.requestId, p_quote: quote.id, p_hash: digest(JSON.stringify(input)) })
+        .catch(async (error: unknown) => {
+          if (error instanceof ServiceError && error.status === 402) {
+            const wallet = await rpc<Wallet>("wallet", { p_user: account.id });
+            throw new ServiceError(creditReservationMessage(quote, wallet.balance - wallet.reserved), 402);
+          }
+          throw error;
+        });
       if (!run.fresh) {
         if (run.status === "completed" && run.result) return { result: run.result, wallet: await rpc("wallet", { p_user: account.id }) };
         throw new ServiceError(run.status === "reserved" ? "This analysis is already running." : "This analysis has ended. Request a new quote.", 409);
@@ -159,10 +200,10 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
       try {
         signal.throwIfAborted();
         const response = await onlineAnalysis({ model: model.id, key: providerKey(model.id), kind,
-          instructions: kind === "plan" ? planInstructions : matchInstructions, schema: kind === "plan" ? planSchema : matchSchema,
-          name: kind === "plan" ? "resume_plan" : "resume_match", input, thinkingLevel, signal, fetcher: send, billingOwner: "zebby" });
+          ...contract(kind), input, thinkingLevel, signal, fetcher: send, billingOwner: "zebby",
+          maxOutputTokens: quote.output_limit });
         signal.throwIfAborted();
-        const result = validateResult(response.result, kind), cost = usageCost(model, response.usage);
+        const result = validateResult(response.result, kind, input), cost = usageCost(model, response.usage);
         const settled = await rpc<RunRow>("finish", { p_user: account.id, p_id: value.requestId, p_cost: cost, p_result: result, p_success: true });
         if (settled.status !== "completed") throw new ServiceError("This analysis expired. Your reserved credits were released.");
         return { result, wallet: await rpc("wallet", { p_user: account.id }) };

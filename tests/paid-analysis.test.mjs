@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { createHmac, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
-import { CREDIT_PACKS, CREDIT_ESTIMATE, CREDIT_MODELS, NANODOLLARS_PER_CREDIT, estimatedAnalyses, onlineModel, usageCost, maximumCost, outputLimit, quoteNeedsCredits } from "../shared/online-models.ts";
+import { CREDIT_PACKS, CREDIT_ESTIMATE, CREDIT_MODELS, NANODOLLARS_PER_CREDIT, estimatedAnalyses, onlineModel, usageCost, maximumCost, creditOutputLimit, quoteNeedsCredits } from "../shared/online-models.ts";
 import { onlineAnalysis } from "../desktop/online-analysis.ts";
 import { CreditsClient } from "../desktop/credits-client.ts";
 import { createService } from "../credits-service/service.ts";
@@ -56,10 +56,14 @@ test("credit pack counts use the sampled Plan baseline with separate estimated t
   assert.equal(CREDIT_ESTIMATE.output, CREDIT_ESTIMATE.visibleOutput + CREDIT_ESTIMATE.thinkingAllowance);
   assert.equal(example / NANODOLLARS_PER_CREDIT, 89);
   assert.deepEqual(CREDIT_PACKS.map((pack) => pack.analyses), [5, 33, 89, 179]);
-  assert.deepEqual(CREDIT_MODELS.map((model) => model.id), ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"]);
+  assert.deepEqual(CREDIT_MODELS.map((model) => model.id), ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]);
   const lunaExample = usageCost(onlineModel("gpt-6-luna"), { input: 0, cached: 0, cacheWrite: CREDIT_ESTIMATE.input, output: CREDIT_ESTIMATE.output });
   assert.equal(lunaExample / NANODOLLARS_PER_CREDIT, 4.45);
   assert.deepEqual(CREDIT_PACKS.map((pack) => estimatedAnalyses(pack.credits, "gpt-6-luna")), [112, 674, 1797, 3595]);
+  assert.deepEqual(CREDIT_PACKS.map((pack) => estimatedAnalyses(pack.credits, "gpt-6-astra")), [0, 22, 64, 121]);
+  assert.deepEqual(CREDIT_PACKS.map((pack) => estimatedAnalyses(pack.credits, "claude-opus-5-5")), [0, 22, 64, 121]);
+  assert.deepEqual(CREDIT_PACKS.map((pack) => estimatedAnalyses(pack.credits, "claude-sonnet-5-5")), [5, 33, 89, 179]);
+  assert.deepEqual(CREDIT_PACKS.map((pack) => estimatedAnalyses(pack.credits, "claude-haiku-5-5")), [112, 674, 1797, 3595]);
   for (const pack of CREDIT_PACKS) {
     assert.ok(pack.analyses * example <= pack.credits * NANODOLLARS_PER_CREDIT);
     assert.ok(pack.credits * NANODOLLARS_PER_CREDIT - pack.analyses * example < example);
@@ -71,6 +75,13 @@ test("credit pack counts use the sampled Plan baseline with separate estimated t
   assert.equal(usageCost(onlineModel("gpt-6-luna"), { input: 100, cached: 50, output: 10 }), 10500);
   assert.throws(() => usageCost(onlineModel("gpt-6-luna"), { input: 1, cached: 2, output: 0 }));
   assert.throws(() => usageCost(onlineModel("gpt-6-luna"), { input: NaN, cached: 0, output: 0 }));
+});
+
+test("Haiku 5.5 accounts for its higher rate above 100,000 input tokens", () => {
+  const model = onlineModel("claude-haiku-5-5");
+  assert.equal(usageCost(model, { input: 100000, cached: 0, output: 500 }), 10_250_000);
+  assert.equal(usageCost(model, { input: 100001, cached: 0, output: 500 }), 51_250_500);
+  assert.equal(usageCost(model, { input: 99999, cached: 500, cacheWrite5m: 2, output: 500 }), 51_025_750);
 });
 test("Stripe signatures reject changes, stale events, and invalid signatures", () => {
   const event = { id: "evt_fixture", livemode: false }, signed = signature(event);
@@ -89,14 +100,14 @@ test("OpenAI cache writes are charged once at the published rate", async () => {
     }) });
   assert.deepEqual(response.usage, { input: 800, cached: 100, cacheWrite: 200, output: 25 });
   assert.equal(usageCost(onlineModel("gpt-6-luna"), response.usage), 108500);
-  assert.ok(maximumCost(onlineModel("gpt-6-luna"), 1000, 0, "match") >= 108500);
+  assert.ok(maximumCost(onlineModel("gpt-6-luna"), 1000, 25) >= 108500);
 });
 
 test("OpenAI maximum quotes cover cache writes and long-context pricing", () => {
   const model = onlineModel("gpt-6-luna");
   assert.equal(usageCost(model, { input: 272000, cached: 0, output: 6000 }), 30200000);
   assert.equal(usageCost(model, { input: 272001, cached: 0, output: 6000 }), 58900200);
-  const bound = maximumCost(model, 268000, 0, "plan");
+  const bound = maximumCost(model, 280000, 6000);
   for (const usage of [
     { input: 0, cached: 0, cacheWrite: 280000, output: 6000 },
     { input: 140000, cached: 100000, cacheWrite: 140000, output: 6000 },
@@ -188,6 +199,105 @@ test("simultaneous wallet refreshes are coalesced", async () => {
   await Promise.all([client.refreshWallet(), client.refreshWallet(), client.refreshWallet()]); assert.equal(calls, 1);
 });
 
+test("wallet totals include every completed analysis and keep recent usage bounded", async () => {
+  const db = new PGlite();
+  try {
+    await db.exec("create role anon; create role authenticated; create role service_role bypassrls;");
+    await db.exec(await readFile(new URL("../credits-service/schema.sql", import.meta.url), "utf8"));
+    await db.query("insert into zebby_wallets(user_id,balance,used,purchased) values($1,470000000,30000000,500000000)", [userId]);
+    for (let index = 0; index < 17; index++) {
+      const quote = randomUUID(), owner = index === 16 ? otherId : userId;
+      const status = index < 13 || index === 16 ? "completed" : index === 13 ? "reserved" : "failed";
+      await db.query("insert into zebby_quotes(id,user_id,model,kind,content_hash,maximum,price_version,expires_at) values($1,$2,'gpt-6.1-sol','plan','fixture',100000000,'fixture',now()+interval '1 hour')", [quote, owner]);
+      await db.query("insert into zebby_runs(id,user_id,quote_id,model,kind,maximum,cost,status,created_at) values($1,$2,$3,'gpt-6.1-sol','plan',100000000,$4,$5,$6)",
+        [randomUUID(), owner, quote, index * 100000, status, new Date(Date.UTC(2026, 9, index + 1)).toISOString()]);
+    }
+    const wallet = async () => (await db.query("select zebby_wallet($1) as result", [userId])).rows[0].result;
+    const before = await wallet();
+    assert.equal(before.completedAnalyses, 13);
+    assert.equal(before.recent.length, 10);
+    assert.equal(before.recent[0].cost, 1200000);
+    assert.equal(before.used, 30000000);
+    const savedRuns = (await db.query("select * from zebby_runs order by id")).rows;
+    const migration = await readFile(new URL("../credits-service/migrations/20261027_wallet_usage.sql", import.meta.url), "utf8");
+    await db.exec(migration); await db.exec(migration);
+    assert.deepEqual(await wallet(), before);
+    assert.deepEqual((await db.query("select * from zebby_runs order by id")).rows, savedRuns);
+    await assert.rejects(db.transaction(async (tx) => { await tx.exec("set local role anon"); await tx.query("select zebby_wallet($1)", [userId]); }), /permission denied/);
+  } finally { await db.close(); }
+});
+
+test("wallet activity covers 84 complete UTC days without recent-row, status or wallet leakage", async () => {
+  const db = new PGlite();
+  try {
+    await db.exec("create role anon; create role authenticated; create role service_role bypassrls; set timezone = 'America/Los_Angeles';");
+    await db.exec(await readFile(new URL("../credits-service/schema.sql", import.meta.url), "utf8"));
+    const today = (await db.query("select to_char((now() at time zone 'UTC')::date,'YYYY-MM-DD') as day")).rows[0].day;
+    const midnight = Date.parse(`${today}T00:00:00Z`), day = 86_400_000;
+    async function run({ owner = userId, status = "completed", at = midnight + 12 * 3600000, cost = 1000000 } = {}) {
+      const quote = randomUUID();
+      await db.query("insert into zebby_quotes(id,user_id,model,kind,content_hash,maximum,price_version,expires_at) values($1,$2,'gpt-6.1-sol','plan','fixture',100000000,'fixture',now()+interval '1 hour')", [quote, owner]);
+      await db.query("insert into zebby_runs(id,user_id,quote_id,model,kind,maximum,cost,status,created_at) values($1,$2,$3,'gpt-6.1-sol','plan',100000000,$4,$5,$6)",
+        [randomUUID(), owner, quote, cost, status, new Date(at).toISOString()]);
+    }
+    for (let index = 0; index < 15; index++) await run();
+    await run({ at: midnight - 83 * day, cost: 2000000 });
+    await run({ at: midnight - 83 * day - 1, cost: 3000000 });
+    await run({ at: midnight + day - 1, cost: 4000000 });
+    await run({ at: midnight + day, cost: 5000000 });
+    await run({ status: "failed", cost: 6000000 });
+    await run({ status: "reserved", cost: 6000000 });
+    await run({ owner: otherId, cost: 7000000 });
+    const wallet = async () => (await db.query("select zebby_wallet($1) as result", [userId])).rows[0].result;
+    const before = await wallet();
+    assert.equal(before.recent.length, 10);
+    assert.equal(before.completedAnalyses, 19);
+    assert.equal(before.dailyUsage.length, 84);
+    assert.deepEqual(before.dailyUsage[0], { date: new Date(midnight - 83 * day).toISOString().slice(0, 10), count: 1, cost: 2000000 });
+    assert.deepEqual(before.dailyUsage.at(-1), { date: today, count: 16, cost: 19000000 });
+    assert.equal(before.dailyUsage.reduce((total, value) => total + value.count, 0), 17);
+    assert.equal(before.dailyUsage.reduce((total, value) => total + value.cost, 0), 21000000);
+    assert.equal(before.dailyUsage.filter((value) => value.count === 0 && value.cost === 0).length, 82);
+    const migration = await readFile(new URL("../credits-service/migrations/20261027_wallet_usage.sql", import.meta.url), "utf8");
+    await db.exec(migration); await db.exec(migration);
+    assert.deepEqual(await wallet(), before);
+  } finally { await db.close(); }
+});
+
+test("credits client retains complete daily usage and accepts older wallets without it", async () => {
+  const base = { balance: 100000000, used: 0, reserved: 0, purchased: 100000000, updatedAt: new Date().toISOString(), recent: [] };
+  const dailyUsage = Array.from({ length: 84 }, (_, index) => ({ date: new Date(Date.UTC(2026, 9, 27) - (83 - index) * 86400000).toISOString().slice(0, 10), count: index % 3, cost: index * 1000 }));
+  let payload = { ...base, dailyUsage };
+  const client = new CreditsClient(config.publicUrl, { save: async () => {}, onChange() {}, fetcher: async () => Response.json(payload) });
+  client.restore(JSON.stringify({ url: config.publicUrl, session: { access: "fixture", refresh: "fixture", expires: Date.now() + 3600000, email: "peer@example.com", id: userId } }));
+  await client.refreshWallet();
+  assert.deepEqual(client.state("gpt-6.1-sol").wallet.dailyUsage, payload.dailyUsage);
+  payload = base;
+  await client.refreshWallet();
+  assert.equal(client.state("gpt-6.1-sol").wallet.dailyUsage, undefined);
+  for (const days of [dailyUsage.slice(1), dailyUsage.map((value, index) => index === 4 ? { ...value, date: "2026-02-31" } : value),
+    dailyUsage.map((value, index) => index === 4 ? dailyUsage[3] : value),
+    dailyUsage.map((value, index) => index === 4 ? dailyUsage[5] : value)]) {
+    payload = { ...base, dailyUsage: days };
+    await assert.rejects(client.refreshWallet());
+  }
+});
+
+test("a delayed refresh cannot replace a newer checkout wallet, including sub-millisecond ledger timestamps", async () => {
+  const oldWallet = { balance: 1000000, used: 0, reserved: 0, purchased: 1000000, updatedAt: "2026-10-27T12:00:00.000001Z", recent: [] };
+  const newWallet = { ...oldWallet, balance: 501000000, purchased: 501000000, updatedAt: "2026-10-27T12:00:00.000002+00:00" };
+  let finish, entered;
+  const waiting = new Promise((resolve) => { entered = resolve; });
+  const client = new CreditsClient(config.publicUrl, { save: async () => {}, onChange() {}, fetcher: async (url) => {
+    if (url.endsWith("/wallet")) { entered(); return new Promise((resolve) => { finish = () => resolve(Response.json(oldWallet)); }); }
+    return Response.json({ status: "paid", wallet: newWallet });
+  } });
+  client.restore(JSON.stringify({ url: config.publicUrl, session: { access: "fixture", refresh: "fixture", expires: Date.now() + 3600000, email: "peer@example.com", id: userId } }));
+  const refresh = client.refreshWallet(); await waiting;
+  await client.checkoutStatus("cs_fixture"); finish(); await refresh;
+  assert.deepEqual(client.state("gpt-6.1-sol").wallet, newWallet);
+});
+
 test("PostgreSQL ledger and service integration", async (t) => {
   const db = new PGlite();
   await db.exec("create role anon; create role authenticated; create role service_role bypassrls;");
@@ -229,12 +339,14 @@ test("PostgreSQL ledger and service integration", async (t) => {
         return Response.json({ id: "cs_test_fixture", url: "https://checkout.stripe.com/c/pay/fixture" }); }
       return Response.json({ status: "open" });
     }
-    assert.equal(url.hostname, "api.openai.com"); providerCalls++;
+    assert.equal(url.hostname, "api.openai.com");
+    if (url.pathname === "/v1/responses/input_tokens") return Response.json({ object: "response.input_tokens", input_tokens: 20000 });
+    providerCalls++;
     const request = JSON.parse(options.body); lastProviderRequest = request; assert.equal(request.model, expectedModel); assert.equal(request.store, false);
     if (abortProvider) { await new Promise((_, reject) => { options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }); }); }
     if (failProvider) return Response.json({ error: { message: "private resume content" } }, { status: 500 });
     return Response.json({ status: "completed", output: [{ content: [{ type: "output_text", text: JSON.stringify(providerResult) }] }],
-      usage: { input_tokens: 20000, input_tokens_details: { cached_tokens: 0 }, output_tokens: 6000 } });
+      usage: { input_tokens: 20000, input_tokens_details: { cached_tokens: 0 }, output_tokens: Math.min(6000, request.max_output_tokens) } });
   };
   const service = createService(config, { fetcher }), controller = new AbortController();
   const handle = (method, path, value, token = "owner", signal = controller.signal) => service.handle(method, path, value, token, signal);
@@ -263,7 +375,7 @@ test("PostgreSQL ledger and service integration", async (t) => {
       assert.equal(high.thinkingLevel, "high"); assert.ok(high.maximum > low.maximum);
       const stored = (await db.query("select thinking_level from zebby_quotes where id=$1", [high.id])).rows[0];
       assert.equal(stored.thinking_level, "high");
-      assert.deepEqual((await handle("GET", "/v1/catalog")).models.map((model) => model.id), ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"]);
+      assert.deepEqual((await handle("GET", "/v1/catalog")).models.map((model) => model.id), ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]);
       for (const model of ["unknown-model", "claude-sonnet-5-5"]) await assert.rejects(handle("POST", "/v1/quotes", { model, kind: "plan", input }));
       await assert.rejects(newQuote("off"));
       await assert.rejects(handle("POST", "/v1/quotes", { model: "gpt-6-astra", thinkingLevel: "off", kind: "plan", input }));
@@ -286,7 +398,7 @@ test("PostgreSQL ledger and service integration", async (t) => {
       await assert.rejects(analyze(quote.id, id, input, "other"), /fresh/);
       await assert.rejects(analyze(quote.id, id, { ...input, resumeText: input.resumeText + "invented" }));
       const response = await analyze(quote.id, id); assert.equal(response.result.score, 68); assert.equal(response.wallet.used, 100 * NANODOLLARS_PER_CREDIT);
-      assert.equal(lastProviderRequest.reasoning.effort, "low"); assert.equal(lastProviderRequest.max_output_tokens, outputLimit("plan", "low"));
+      assert.equal(lastProviderRequest.reasoning.effort, "low"); assert.equal(lastProviderRequest.max_output_tokens, creditOutputLimit("plan", "low"));
       assert.equal(response.wallet.reserved, 0); const calls = providerCalls;
       await analyze(quote.id, id); assert.equal(providerCalls, calls); assert.equal((await wallet()).used, 100 * NANODOLLARS_PER_CREDIT);
       await assert.rejects(analyze(quote.id));
@@ -331,10 +443,11 @@ test("PostgreSQL ledger and service integration", async (t) => {
           const response = await analyze(quote.id);
           assert.equal(lastProviderRequest.model, "gpt-6-luna");
           assert.equal(lastProviderRequest.reasoning.effort, level === "off" ? "none" : "high");
-          assert.equal(lastProviderRequest.max_output_tokens, outputLimit("plan", level));
+          assert.equal(lastProviderRequest.max_output_tokens, creditOutputLimit("plan", level));
           assert.equal(response.result.score, plan.score);
-          assert.equal(response.wallet.used - before.used, 5 * NANODOLLARS_PER_CREDIT);
-          assert.equal(response.wallet.balance, before.balance - 5 * NANODOLLARS_PER_CREDIT);
+          const cost = usageCost(onlineModel("gpt-6-luna"), { input: 20000, cached: 0, output: Math.min(6000, creditOutputLimit("plan", level)) });
+          assert.equal(response.wallet.used - before.used, cost);
+          assert.equal(response.wallet.balance, before.balance - cost);
           assert.equal(response.wallet.reserved, 0);
         }
       } finally { expectedModel = "gpt-6.1-sol"; }
@@ -367,6 +480,36 @@ test("PostgreSQL ledger and service integration", async (t) => {
       const quote = await newQuote(), calls = providerCalls;
       await db.query("update zebby_quotes set expires_at=now()-interval '1 second' where id=$1", [quote.id]);
       await assert.rejects(analyze(quote.id)); await assert.rejects(analyze(quote.id, randomUUID(), input, "invalid")); assert.equal(providerCalls, calls);
+    });
+    await t.test("tailored resumes migrate safely, preserve the chosen model and charge valid edits once", async () => {
+      const migration = await readFile(new URL("../credits-service/migrations/20261031_tailored_resumes.sql", import.meta.url), "utf8");
+      const before = await wallet();
+      await db.exec("alter table zebby_quotes drop constraint zebby_quotes_kind_check; alter table zebby_quotes add constraint zebby_quotes_kind_check check(kind in ('plan','match'));");
+      await db.exec(migration); await db.exec(migration);
+      assert.deepEqual(await wallet(), before);
+      const resumeInput = { ...input, resumeBlocks: [
+        { id: 0, text: "Alex Morgan", style: "name", editable: false },
+        { id: 1, text: "Led customer discovery and partnered with engineering to improve activation by 18%.", style: "bullet", editable: true },
+      ], suggestedSummary: "", keywords: [], themes: [] };
+      expectedModel = "gpt-6-luna";
+      const quote = () => handle("POST", "/v1/quotes", { model: expectedModel, thinkingLevel: "high", kind: "resume", input: resumeInput });
+      try {
+        providerResult = { edits: [{ id: 0, text: "Invented name" }] };
+        await assert.rejects(analyze((await quote()).id, randomUUID(), resumeInput));
+        assert.equal((await wallet()).balance, before.balance);
+        assert.equal((await wallet()).reserved, 0);
+        providerResult = { edits: [{ id: 1, text: "Partnered with engineering on customer discovery, improving activation by 18%." }] };
+        const quoted = await quote(), requestId = randomUUID();
+        const response = await analyze(quoted.id, requestId, resumeInput);
+        assert.deepEqual(response.result, providerResult);
+        assert.equal(lastProviderRequest.model, "gpt-6-luna");
+        assert.equal(lastProviderRequest.reasoning.effort, "high");
+        assert.equal(lastProviderRequest.max_output_tokens, creditOutputLimit("resume", "high"));
+        assert.equal(response.wallet.reserved, 0);
+        const calls = providerCalls, charged = (await wallet()).used;
+        await analyze(quoted.id, requestId, resumeInput);
+        assert.equal(providerCalls, calls); assert.equal((await wallet()).used, charged);
+      } finally { expectedModel = "gpt-6.1-sol"; providerResult = plan; }
     });
     await t.test("refunds are cumulative and idempotent, and disputes freeze spending", async () => {
       const previous = (await wallet()).balance;

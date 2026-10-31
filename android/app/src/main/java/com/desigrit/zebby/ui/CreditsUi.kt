@@ -97,9 +97,9 @@ private fun fraction(wallet:JSONObject)=(available(wallet).toDouble()/wallet.opt
     if(pairing!=null) AlertDialog(onDismissRequest={pairing=null},title={Text("Connect another device")},text={Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {Text(pairing!!.getString("code"),style=MaterialTheme.typography.headlineMedium);Text("In Settings on your other device, choose Connect this device. This code expires after 10 minutes.")}},confirmButton={TextButton(onClick={pairing=null}){Text("Done")}})
     if(manage!=null) AlertDialog(onDismissRequest={manage=null},title={Text("Connected devices")},text={Column {val devices=manage!!.getJSONArray("devices");for(i in 0 until devices.length()) {val device=devices.getJSONObject(i);Text(device.getString("name")+if(device.optBoolean("current")) " · This device" else "",Modifier.padding(vertical=12.dp))}}},confirmButton={TextButton(onClick={manage=null}){Text("Done")}})
 }
-@Composable fun CreditsSheet(vm:ZebbyViewModel,onDismiss:()->Unit) {
+@Composable fun CreditsSheet(vm:ZebbyViewModel,onDismiss:()->Unit,initialPack:String="starter") {
     val uriHandler=LocalUriHandler.current
-    var selection by remember {mutableStateOf("starter")};var working by remember {mutableStateOf(false)};var error by remember {mutableStateOf("")};var checkout by remember {mutableStateOf(false)};var paid by remember {mutableStateOf(false)}
+    var selection by remember(initialPack) {mutableStateOf(initialPack)};var working by remember {mutableStateOf(false)};var error by remember {mutableStateOf("")};var checkout by remember {mutableStateOf(false)};var paid by remember {mutableStateOf(false)}
     val scope=rememberCoroutineScope();val packs=vm.app.contracts.json.getJSONArray("packs")
     LaunchedEffect(Unit) {runCatching {vm.app.credits.warm()}}
     fun checkPayment() {scope.launch {working=true;try {val result=withContext(Dispatchers.IO) {vm.app.credits.checkoutStatus().also {vm.app.credits.refresh()}};paid=result=="paid";if(!paid) error="Payment is still pending. Finish in your browser, then check again.";vm.reload()} catch(e:CancellationException) {throw e} catch(e:Exception) {error=e.message ?: "Could not check payment. Try again."} finally {working=false}}}
@@ -121,8 +121,8 @@ private fun fraction(wallet:JSONObject)=(available(wallet).toDouble()/wallet.opt
                             Column(Modifier.widthIn(min=64.dp)) {Text("$${pack.getInt("dollars")}",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.SemiBold);if(pack.getString("id")=="starter") SmallLabel("Start here")}
                             Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                                 Text("${java.text.NumberFormat.getIntegerInstance().format(pack.getInt("credits"))} credits",style=MaterialTheme.typography.titleSmall)
-                                if(pack.optBoolean("astra")) SmallLabel("Unlocks GPT-6 Astra")
-                                if(pack.optBoolean("astra")) SmallLabel("~${pack.getInt("astraAnalyses")} analyses · Astra (High)")
+                                SmallLabel(if(pack.optBoolean("astra")) "Unlocks Astra and Opus" else "Sol, Luna, Sonnet and Haiku")
+                                if(pack.optBoolean("astra")) SmallLabel("~${pack.getInt("astraAnalyses")} analyses · Astra or Opus (Medium)")
                                 SmallLabel("~${pack.getInt("analyses")} analyses · Sol (High)")
                                 SmallLabel("~${java.text.NumberFormat.getIntegerInstance().format(pack.getInt("lunaAnalyses"))} analyses · Luna (High)")
                             }

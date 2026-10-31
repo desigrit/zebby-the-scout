@@ -1,6 +1,6 @@
 import { randomUUID, createHash } from "node:crypto";
 import { constants, existsSync } from "node:fs";
-import { copyFile, mkdir, readFile, rename, stat, unlink } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync, backup } from "node:sqlite";
 import { z } from "zod";
@@ -11,6 +11,7 @@ import { normalizeJobText } from "../lib/job-text";
 import { normalizedListingUrl } from "../lib/listing-url";
 import { parseLocations } from "../lib/locations";
 import { importanceForTerms } from "./plan-importance";
+import type { TailoredResume } from "../shared/tailored-resume";
 
 export type Plan = {
   id: string;
@@ -36,9 +37,10 @@ export type Plan = {
   matchAnalyzedAt: string;
   createdAt: string;
   updatedAt: string;
+  tailoredResume?: TailoredResume;
 };
 
-export type PlanInput = Omit<Plan, "id" | "createdAt" | "updatedAt" | "snapshotCapturedAt" | "snapshotText" | "snapshotSource" | "overviewRationale" | "matchStrength" | "matchNotes" | "matchAnalyzedAt" | "keywordImportance" | "themeImportance"> & {
+export type PlanInput = Omit<Plan, "id" | "createdAt" | "updatedAt" | "snapshotCapturedAt" | "snapshotText" | "snapshotSource" | "overviewRationale" | "matchStrength" | "matchNotes" | "matchAnalyzedAt" | "keywordImportance" | "themeImportance" | "tailoredResume"> & {
   snapshotText?: string;
   snapshotSource?: Plan["snapshotSource"];
 };
@@ -378,7 +380,11 @@ export class DesktopStore {
       incoming.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = DELETE; PRAGMA busy_timeout = 3000;");
       migrated = migrate(incoming);
     } finally { incoming.close(); }
+    const preservedJournals = await this.preserveWorkingCopy(workingPath, target, sourceHash);
     this.db?.close();
+    for (const suffix of preservedJournals) await unlink(workingPath + suffix).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error;
+    });
     await rename(temp, workingPath);
     this.db = new DatabaseSync(workingPath);
     this.db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = DELETE; PRAGMA busy_timeout = 3000;");
@@ -387,8 +393,53 @@ export class DesktopStore {
     this.syncedHash = sourceHash;
     this.dirty = migrated;
     if (migrated) await this.flush();
+    else await this.recordCleanWorkingCopy();
     this.diagnostic(`Database opened (${target}, schema 10, migrated ${migrated})`);
     return this.status;
+  }
+
+  private async preserveWorkingCopy(workingPath: string, target: string, sourceHash: string) {
+    const recoveryStat = async (file: string) => stat(file).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    if (!(await recoveryStat(workingPath))?.isFile()) return [];
+    const workingHash = await hashFile(workingPath);
+    const companions: string[] = [];
+    for (const suffix of ["-journal", "-wal", "-shm"]) {
+      if ((await recoveryStat(workingPath + suffix))?.isFile()) companions.push(suffix);
+    }
+    let cleanHash = "";
+    try {
+      const saved = JSON.parse(await readFile(workingPath + ".synced.json", "utf8"));
+      if (saved?.version === 1 && typeof saved.hash === "string" && /^[a-f0-9]{64}$/.test(saved.hash)) cleanHash = saved.hash;
+    } catch { /* An unknown working copy must be preserved, not assumed to be synced. */ }
+    if (!companions.length && (workingHash === sourceHash || workingHash === cleanHash)) return [];
+    const recovery = path.join(this.userData, "Recovered", `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID()}`);
+    try {
+      await mkdir(recovery, { recursive: true });
+      const preserved = path.join(recovery, "Zebby Applications.sqlite");
+      await copyFile(workingPath, preserved, constants.COPYFILE_EXCL);
+      for (const suffix of companions) {
+        await copyFile(workingPath + suffix, preserved + suffix, constants.COPYFILE_EXCL);
+        if (await hashFile(workingPath + suffix) !== await hashFile(preserved + suffix)) throw new Error("The recovery journal could not be verified.");
+      }
+      await writeFile(path.join(recovery, "source.json"), JSON.stringify({ originalPath: target, workingHash, recoveredAt: new Date().toISOString() }), { flag: "wx" });
+      if (await hashFile(preserved) !== workingHash || await hashFile(workingPath) !== workingHash) throw new Error("The recovery copy could not be verified.");
+    } catch (cause) {
+      this.diagnostic(`Could not preserve a previous working database (${workingPath})`, cause);
+      throw new Error("Zebby could not preserve pending database changes. Check available disk space, then try again.", { cause });
+    }
+    this.diagnostic(`Previous working database preserved before reopening (${target}, recovery ${recovery})`);
+    return companions;
+  }
+
+  private async recordCleanWorkingCopy() {
+    // Only a successfully synced copy may be replaced without a recovery file.
+    // A missing, stale or interrupted marker safely preserves an extra copy.
+    try {
+      await writeFile(this.workingPath + ".synced.json", JSON.stringify({ version: 1, hash: await hashFile(this.workingPath) }));
+    } catch (error) { this.diagnostic(`Could not record the synced working database (${this.workingPath})`, error); }
   }
 
   private async assertCurrentFile() {
@@ -418,6 +469,7 @@ export class DesktopStore {
     }
     this.syncedHash = await hashFile(this.filePath);
     this.dirty = false;
+    await this.recordCleanWorkingCopy();
     this.diagnostic(`Database save completed (${this.filePath}, ${Date.now() - started} ms)`);
   }
 
@@ -588,12 +640,40 @@ export class DesktopStore {
   }
 
   listPlans(): Plan[] {
-    return (this.requireDb().prepare("SELECT * FROM plans ORDER BY updated_at DESC").all() as Row[]).map(mapPlan);
+    return (this.requireDb().prepare("SELECT * FROM plans ORDER BY updated_at DESC").all() as Row[])
+      .map(row => ({ ...mapPlan(row), tailoredResume: this.getTailoredResume(String(row.id)) }));
   }
 
   getPlan(id: string): Plan | null {
     const row = this.requireDb().prepare("SELECT * FROM plans WHERE id = ?").get(id) as Row | undefined;
-    return row ? mapPlan(row) : null;
+    return row ? { ...mapPlan(row), tailoredResume: this.getTailoredResume(id) } : null;
+  }
+
+  private getTailoredResume(id: string): TailoredResume | undefined {
+    const row = this.requireDb().prepare("SELECT value FROM workspace_preferences WHERE key = ?").get(`tailored_resume:${id}`) as Row | undefined;
+    if (!row) return undefined;
+    try {
+      const file = z.object({ id: z.string().uuid(), filename: z.string().min(1).max(240) });
+      return z.object({ docx: file, pdf: file, generatedAt: z.string(), sourceHash: z.string() }).parse(JSON.parse(String(row.value)));
+    } catch { return undefined; }
+  }
+
+  async saveTailoredResume(id: string, expectedUpdatedAt: string, baseName: string, sourceHash: string,
+    docx: Uint8Array, pdf: Uint8Array): Promise<Plan> {
+    if (!docx.byteLength || !pdf.byteLength || Math.max(docx.byteLength, pdf.byteLength) > 10 * 1024 * 1024) throw new Error("The tailored resume files could not be saved.");
+    const generatedAt = new Date().toISOString();
+    const result: TailoredResume = { docx: { id: randomUUID(), filename: `${baseName}.docx` },
+      pdf: { id: randomUUID(), filename: `${baseName}.pdf` }, generatedAt, sourceHash };
+    await this.mutate(db => {
+      const changed = db.prepare("UPDATE plans SET updated_at = ? WHERE id = ? AND updated_at = ?").run(generatedAt, id, expectedUpdatedAt);
+      if (!changed.changes) throw new Error("This plan changed while the resume was being created. Try again from the latest version.");
+      const insert = db.prepare("INSERT INTO resumes (id, filename, content_type, size, file_data, created_at) VALUES (?, ?, ?, ?, ?, ?)");
+      insert.run(result.docx.id, result.docx.filename, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", docx.byteLength, docx, generatedAt);
+      insert.run(result.pdf.id, result.pdf.filename, "application/pdf", pdf.byteLength, pdf, generatedAt);
+      db.prepare("INSERT INTO workspace_preferences (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+        .run(`tailored_resume:${id}`, JSON.stringify(result));
+    });
+    return this.getPlan(id)!;
   }
 
   getLastCurrentOverview(): string {

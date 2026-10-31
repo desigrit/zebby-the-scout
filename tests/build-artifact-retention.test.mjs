@@ -1,6 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { planArtifactCleanup } from "../scripts/prune-build-artifacts.mjs";
+import { listGithubItems, planArtifactCleanup } from "../scripts/prune-build-artifacts.mjs";
+
+test("build history is fetched one compact page at a time", () => {
+  const calls = [];
+  const runs = Array.from({ length: 205 }, (_, id) => ({ id, status: "completed" }));
+  const result = listGithubItems("repos/example/app/actions/runs", "workflow_runs", ["id", "status"], (args) => {
+    calls.push(args);
+    const page = Number(new URL(args[0], "https://api.github.com/").searchParams.get("page"));
+    return JSON.stringify(runs.slice((page - 1) * 100, page * 100));
+  });
+  assert.deepEqual(result, runs);
+  assert.equal(calls.length, 3);
+  assert.deepEqual(calls[0], ["repos/example/app/actions/runs?per_page=100&page=1", "--jq", "[.workflow_runs[] | {id,status}]"]);
+  assert.deepEqual(listGithubItems("repos/example/app/actions/runs", "workflow_runs", ["id", "status"], () => "[]"), []);
+});
 
 function artifact(id, name, runId, createdAt = "2026-10-01T00:00:00Z", expired = false) {
   return { id, name, workflow_run: { id: runId }, created_at: createdAt, expired };

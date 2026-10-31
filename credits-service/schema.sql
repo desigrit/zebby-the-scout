@@ -11,18 +11,22 @@ create table if not exists public.zebby_purchases (
   created_at timestamptz not null default now(), check(reversed >= 0 and reversed <= amount)
 );
 create table if not exists public.zebby_quotes (
-  id uuid primary key, user_id uuid not null, model text not null, kind text not null check(kind in ('plan','match')),
+  id uuid primary key, user_id uuid not null, model text not null, kind text not null check(kind in ('plan','match','resume')),
   content_hash text not null, maximum bigint not null check(maximum > 0), price_version text not null,
   thinking_level text not null default 'low' check(thinking_level in ('off','low','medium','high','xhigh','max')),
   expires_at timestamptz not null, claimed_by uuid, created_at timestamptz not null default now()
 );
 -- Upgrade existing deployments without changing wallet balances or stored results.
+alter table public.zebby_quotes drop constraint if exists zebby_quotes_kind_check;
+alter table public.zebby_quotes add constraint zebby_quotes_kind_check check(kind in ('plan','match','resume'));
 alter table public.zebby_quotes add column if not exists thinking_level text not null default 'low'
   check(thinking_level in ('off','low','medium','high','xhigh','max'));
 -- Luna also supports Off. Broaden the existing check without changing saved quotes.
 alter table public.zebby_quotes drop constraint if exists zebby_quotes_thinking_level_check;
 alter table public.zebby_quotes add constraint zebby_quotes_thinking_level_check
   check(thinking_level in ('off','low','medium','high','xhigh','max'));
+alter table public.zebby_quotes add column if not exists input_tokens integer check(input_tokens > 0);
+alter table public.zebby_quotes add column if not exists output_limit integer check(output_limit > 0);
 create table if not exists public.zebby_runs (
   id uuid primary key, user_id uuid not null, quote_id uuid not null references public.zebby_quotes(id),
   model text not null, kind text not null, maximum bigint not null, cost bigint not null default 0,
@@ -184,15 +188,28 @@ end $$;
 
 create or replace function public.zebby_wallet(p_user uuid) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
-declare w zebby_wallets; recent jsonb;
+declare w zebby_wallets; recent jsonb; daily jsonb; today date := (now() at time zone 'UTC')::date;
 begin
   insert into zebby_wallets(user_id) values(p_user) on conflict do nothing;
   select * into w from zebby_wallets where user_id = p_user;
   select coalesce(jsonb_agg(item),'[]') into recent from (select jsonb_build_object(
     'id',id,'model',model,'kind',kind,'cost',cost,'createdAt',created_at) item
-    from zebby_runs where user_id=p_user and status='completed' order by created_at desc limit 10) r;
+    from zebby_runs where user_id=p_user and status='completed' order by created_at desc,id desc limit 10) r;
+  with usage as (
+    select (created_at at time zone 'UTC')::date as usage_day, count(*) as analyses, sum(cost) as cost
+    from zebby_runs where user_id=p_user and status='completed'
+      and created_at >= ((today-83)::timestamp at time zone 'UTC')
+      and created_at < ((today+1)::timestamp at time zone 'UTC')
+    group by 1
+  ), days as (select today-83+offset_day as usage_day from generate_series(0,83) offset_day)
+  select jsonb_agg(jsonb_build_object('date',to_char(days.usage_day,'YYYY-MM-DD'),
+    'count',coalesce(usage.analyses,0),'cost',coalesce(usage.cost,0)) order by days.usage_day)
+    into daily from days left join usage using(usage_day);
   return jsonb_build_object('balance',w.balance,'reserved',w.reserved,'used',w.used,'purchased',w.purchased,
-    'updatedAt',w.updated_at,'recent',recent);
+    'updatedAt',w.updated_at,'recent',recent,'dailyUsage',daily,
+    'completedAnalyses',(select count(*) from zebby_runs where user_id=p_user and status='completed'),
+    'astraUnlocked',exists(select 1 from zebby_purchases where user_id=p_user and paid
+      and cents>=2000 and reversed<amount and not disputed));
 end $$;
 
 create or replace function public.zebby_reserve(p_user uuid,p_id uuid,p_quote uuid,p_hash text)
@@ -210,6 +227,10 @@ begin
   if not found or q.user_id<>p_user or q.content_hash<>p_hash then raise exception 'Invalid analysis quote'; end if;
   if q.expires_at<=now() or q.claimed_by is not null then raise exception 'Analysis quote expired or already used'; end if;
   if exists(select 1 from zebby_purchases where user_id=p_user and disputed) then raise exception 'Contact support about a disputed payment'; end if;
+  if q.model in ('gpt-6-astra','claude-opus-5-5') and not exists(select 1 from zebby_purchases where user_id=p_user
+    and paid and cents>=2000 and reversed<amount and not disputed) then
+    raise exception 'GPT-6 Astra and Claude Opus are included with a $20, $50 or $100 pack';
+  end if;
   if w.balance-w.reserved<q.maximum then raise exception 'Not enough credits for this analysis'; end if;
   update zebby_quotes set claimed_by=p_id where id=p_quote;
   update zebby_wallets set reserved=reserved+q.maximum,updated_at=now() where user_id=p_user;

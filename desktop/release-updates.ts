@@ -45,23 +45,24 @@ export function updateFromRelease(payload: unknown, current: string, platform: s
 }
 
 export class ReleaseUpdates {
-  private readonly options: { version: string; platform: string; arch: string;
+  private readonly options: { version: string; platform: string; arch: string; channel?: "direct" | "store";
     fetch?: typeof fetch; onChange?: (value: UpdateState) => void; onError?: (error: unknown) => void; now?: () => number };
   private value: UpdateState;
   private pending: Promise<UpdateState> | null = null;
   private lastAttempt: number | null = null;
-  constructor(options: { version: string; platform: string; arch: string;
+  constructor(options: { version: string; platform: string; arch: string; channel?: "direct" | "store";
     fetch?: typeof fetch; onChange?: (value: UpdateState) => void; onError?: (error: unknown) => void; now?: () => number }) {
     this.options = options;
     this.value = { currentVersion: options.version, checking: false, checkedAt: "", error: "", available: null,
       download: { phase: "idle", received: 0, total: 0, error: "" } };
   }
   get state() { return structuredClone(this.value); }
-  setDownload(download: UpdateState["download"]) { this.change({ download }); }
+  setDownload(download: UpdateState["download"]) { if (this.options.channel !== "store") this.change({ download }); }
   private change(value: Partial<UpdateState>) {
     this.value = { ...this.value, ...value }; this.options.onChange?.(this.state);
   }
   check(force = false): Promise<UpdateState> {
+    if (this.options.channel === "store") return Promise.resolve(this.state);
     if (this.pending) return this.pending;
     if (!["idle", "error"].includes(this.value.download.phase)) return Promise.resolve(this.state);
     const now = this.options.now?.() ?? Date.now();

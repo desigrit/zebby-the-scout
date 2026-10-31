@@ -31,6 +31,13 @@ import { OnlineAnalysisError } from "./online-response";
 import { creditModel, DEFAULT_CREDIT_MODEL, onlineModel, validateOnlineThinking, type AnalysisProvider, type AnalysisSource } from "../shared/online-models";
 import { maskedApiKey, onlineThinkingCapability, selectedThinking, thinkingKey, type ThinkingPreferences } from "../shared/thinking";
 import { writeProfileSettings } from "./settings-persistence";
+import { restoreStartupDatabase } from "./startup-database";
+import { readResumeBlocks, resumeDocx, resumeHtml, tailoredBaseName } from "./tailored-resume";
+import { applyResumeEdits, tailoringInstructions, tailoringSchema } from "../shared/tailored-resume";
+import { printResumePdf } from "./resume-pdf";
+import { materializeTailoredResume } from "./resume-files";
+import { distributionChannel as resolveDistributionChannel, readStorePackageFamily, requireDirectUpdates,
+  requireDurableDatabase, storeDataPaths, STORE_UPDATES_URI } from "./distribution";
 
 protocol.registerSchemesAsPrivileged([{
   scheme: "tracker", privileges: { standard: true, secure: true, supportFetchAPI: true },
@@ -38,6 +45,9 @@ protocol.registerSchemesAsPrivileged([{
 
 const appRoot = __dirname;
 const rendererRoot = path.join(appRoot, "renderer");
+const distributionChannel = resolveDistributionChannel(process.platform, process.windowsStore, process.env.ZEBBY_DISTRIBUTION_CHANNEL);
+const storeEdition = distributionChannel === "store";
+let storePaths: ReturnType<typeof storeDataPaths> | undefined;
 let mainWindow: BrowserWindow | null = null;
 let store: DesktopStore;
 let apiKey = "";
@@ -48,7 +58,7 @@ let startupError = "";
 let modelDownloads: LocalModelDownloads;
 let modelEngine: LocalModelEngine;
 let shuttingDown = false;
-let selfUpdater: SelfUpdater;
+let selfUpdater: SelfUpdater | undefined;
 let installingUpdate = false;
 let activeApiRequests = 0;
 let activeSettingsRequests = 0;
@@ -57,7 +67,7 @@ const analysisRequests = new AnalysisRequests((progress) => {
   try { mainWindow.webContents.send("desktop:analysis-progress", progress); }
   catch (error) { logDiagnostic("Could not send analysis progress", error); }
 });
-const updates = new ReleaseUpdates({ version: app.getVersion(), platform: process.platform, arch: process.arch,
+const updates = new ReleaseUpdates({ version: app.getVersion(), platform: process.platform, arch: process.arch, channel: distributionChannel,
   onChange: (value) => mainWindow?.webContents.send("desktop:updates-changed", value),
   onError: (error) => logDiagnostic("Could not check for updates", error) });
 let settings: { databasePath?: string; encryptedApiKey?: string; appearance?: Appearance; sidebarCollapsed?: boolean;
@@ -70,6 +80,16 @@ const diagnosticLog = new DiagnosticLog(() => logsPath(), () => [apiKey, anthrop
 
 function settingsPath() { return path.join(app.getPath("userData"), "settings.json"); }
 function logsPath() { return path.join(app.getPath("userData"), "Logs"); }
+
+function directUpdater() {
+  requireDirectUpdates(distributionChannel);
+  if (!selfUpdater) throw new Error("The updater is not ready. Reopen Zebby and try again.");
+  return selfUpdater;
+}
+
+function checkDatabaseLocation(filePath: string) {
+  if (storePaths) requireDurableDatabase(filePath, storePaths.packageRoot);
+}
 
 function logDiagnostic(message: string, error?: unknown) {
   diagnosticLog.error(message, error);
@@ -146,22 +166,23 @@ async function loadSettings() {
     try { creditsClient.restore(safeStorage.decryptString(Buffer.from(settings.encryptedCreditSession, "base64"))); }
     catch (error) { creditsClient.restoreFailed(); logDiagnostic("Could not restore wallet access", error); }
   }
-  if (settings.databasePath) {
-    try { await store.open(settings.databasePath); }
-    catch (error) { startupError = error instanceof Error ? error.message : "The last database could not be opened.";
-      logDiagnostic("Could not open the saved database", error); }
-  }
-  if (!store.status.filePath) {
-    if (settings.databasePath) logEvent("Selected database unavailable; opening the local workspace without replacing the selected file");
-    const previousLocal = path.join(app.getPath("userData"), "PM Applications.sqlite");
-    const localPath = (await stat(previousLocal).catch(() => null))?.isFile()
-      ? previousLocal : path.join(app.getPath("userData"), "Zebby Applications.sqlite");
-    if ((await stat(localPath).catch(() => null))?.isFile()) await store.open(localPath);
-    else await store.create(localPath);
-    if (!settings.databasePath) {
-      settings.databasePath = localPath;
+  try {
+    const localPaths = storePaths ? [storePaths.database] : [
+      path.join(app.getPath("userData"), "PM Applications.sqlite"),
+      path.join(app.getPath("userData"), "Zebby Applications.sqlite"),
+    ];
+    const restored = await restoreStartupDatabase(settings.databasePath, localPaths, async (filePath) => {
+      checkDatabaseLocation(filePath);
+      await store.open(filePath);
+    });
+    if (restored && !settings.databasePath) {
+      settings.databasePath = restored;
       await saveSettings();
     }
+    if (!restored) logEvent("First launch: waiting for a database to be created or opened");
+  } catch (error) {
+    startupError = error instanceof Error ? error.message : "The last database could not be opened.";
+    logDiagnostic("Could not restore the database; keeping its saved selection", error);
   }
 }
 
@@ -179,12 +200,15 @@ function state() {
     acceptedModelTerms: LOCAL_MODELS.filter((model) => model.license && modelTermsAccepted(model, settings.acceptedModelTerms))
       .map((model) => model.id),
     localModels: modelDownloads?.list() || [], modelsFolder: modelDownloads?.folder || "",
-    localEngine: { status: modelEngine?.status || "idle", modelId: modelEngine?.modelId || "" },
+    localEngine: { status: modelEngine?.status || "idle", modelId: modelEngine?.modelId || "",
+      backend: modelEngine?.backend || "cpu", cpuFallback: modelEngine?.cpuFallback || false },
+    localCompute: modelEngine?.compute,
     totalMemory: totalmem(), availableMemory: freemem(),
     canSaveApiKey: safeStorage.isEncryptionAvailable(),
     appearance: settings.appearance || "auto", sidebarCollapsed: settings.sidebarCollapsed === true,
     logsPath: logsPath(),
     platform: process.platform,
+    distributionChannel,
     updates: updates.state,
   };
 }
@@ -204,6 +228,7 @@ async function chooseDatabase(kind: "open" | "create") {
     if (result.canceled) return null;
     if (activeApiRequests || analysisRequests.busy) throw new Error("Finish or cancel analysis and saving before switching databases.");
     filePath = result.filePaths[0];
+    checkDatabaseLocation(filePath);
     await store.open(filePath);
   } else {
     const result = await dialog.showSaveDialog(parent!, {
@@ -213,6 +238,7 @@ async function chooseDatabase(kind: "open" | "create") {
     if (result.canceled || !result.filePath) return null;
     if (activeApiRequests || analysisRequests.busy) throw new Error("Finish or cancel analysis and saving before switching databases.");
     filePath = result.filePath;
+    checkDatabaseLocation(filePath);
     await store.create(filePath);
   }
   settings.databasePath = filePath;
@@ -253,10 +279,20 @@ function selectedAnalysis() {
 }
 
 function analysisHash(input: unknown) { return createHash("sha256").update(JSON.stringify(input)).digest("hex"); }
+async function tailoringInput(id: string) {
+  const plan = store.getPlan(id), resume = plan?.resumeId && store.getResume(plan.resumeId);
+  if (!plan || !resume) throw new Error("Save this plan with a resume first.");
+  if (!plan.matchAnalyzedAt && !plan.keywords.length) throw new Error("Analyze this plan before creating a tailored resume.");
+  const resumeBlocks = await readResumeBlocks(resume.resume.filename, resume.data);
+  return { plan, resume, input: { url: plan.listingUrl, company: plan.company, title: plan.title, team: plan.team, locations: plan.locations,
+    jobDescription: plan.description, currentCvOverview: plan.currentOverview, resumeText: resumeBlocks.map(block => block.text).join("\n"),
+    resumeBlocks, suggestedSummary: plan.overview, keywords: plan.keywords, themes: plan.themes } };
+}
 async function quoteAnalysis(source: AnalysisSource) {
-  if (!source || !["plan", "match"].includes(source.kind) || typeof source.id !== "string" || !/^[\da-f-]{36}$/i.test(source.id)) throw new Error("Choose a saved job to analyze.");
+  if (!source || !["plan", "match", "resume"].includes(source.kind) || typeof source.id !== "string" || !/^[\da-f-]{36}$/i.test(source.id)) throw new Error("Choose a saved job to analyze.");
   let input: Record<string, unknown>;
-  if (source.kind === "plan") {
+  if (source.kind === "resume") input = (await tailoringInput(source.id)).input;
+  else if (source.kind === "plan") {
     const plan = store.getPlan(source.id), resume = plan?.resumeId && store.getResume(plan.resumeId);
     if (!plan || !resume) throw new Error("Save the plan with a resume before analyzing it.");
     const description = plan.description.trim();
@@ -295,10 +331,10 @@ async function analyzeWithSelectedProvider(instructions: string, input: unknown,
       return analyzeWithOllama({ baseUrl, model, instructions: prompt, content: JSON.stringify(content), schema: format, thinkingLevel: level, signal, onProgress: progress });
     },
     openai: async (prompt, content, formatName, format) => (await onlineAnalysis({ model: selected.model, key: selected.apiKey, instructions: prompt,
-      input: content, name: formatName, schema: format, kind: formatName === "resume_plan" ? "plan" : "match", thinkingLevel: selected.thinkingLevel, signal })).result,
+      input: content, name: formatName, schema: format, kind: formatName === "tailored_resume" ? "resume" : formatName === "resume_plan" ? "plan" : "match", thinkingLevel: selected.thinkingLevel, signal })).result,
     anthropic: async (prompt, content, formatName, format) => (await onlineAnalysis({ model: selected.model,
       key: selected.apiKey, instructions: prompt, input: content, name: formatName, schema: format,
-      kind: formatName === "resume_plan" ? "plan" : "match", thinkingLevel: selected.thinkingLevel, signal })).result,
+      kind: formatName === "tailored_resume" ? "resume" : formatName === "resume_plan" ? "plan" : "match", thinkingLevel: selected.thinkingLevel, signal })).result,
     credits: async () => {
       const quote = paid && paidQuotes.get(paid.quoteId);
       if (!paid || !quote || quote.source.id !== paid.source.id || quote.source.kind !== paid.source.kind || quote.expires < Date.now()
@@ -313,6 +349,39 @@ async function analyzeWithSelectedProvider(instructions: string, input: unknown,
     },
     local: (id, prompt, content, format, maxTokens) => modelEngine.analyze(id, prompt, content, format, maxTokens, signal, selected.thinkingLevel, progress),
   }, instructions, input, name, schema, failure);
+}
+
+async function createTailoredResume(id: string, signal: AbortSignal, commit: <T>(persist: () => Promise<T>) => Promise<T>, quoteId = "", progress?: ReportAnalysisProgress) {
+  const selected = selectedAnalysis();
+  const { plan, resume, input } = await tailoringInput(id);
+  signal.throwIfAborted();
+  const infer = (value: unknown) => analyzeWithSelectedProvider(tailoringInstructions, value, "tailored_resume", tailoringSchema,
+    "The tailored resume could not be created.", selected, signal, { quoteId, source: { kind: "resume", id } }, progress);
+  let result: Record<string, unknown>;
+  if (selected.provider === "builtin" && getLocalModel(selected.builtInModelId).basic && input.resumeBlocks.some(block => block.editable)) {
+    const edits: unknown[] = [];
+    // Small downloaded models receive one editable paragraph at a time. All
+    // other source paragraphs stay intact in the output document.
+    for (const block of input.resumeBlocks.filter(block => block.editable)) {
+      signal.throwIfAborted();
+      const partial = await infer({ jobDescription: input.jobDescription.slice(0, 1800), keywords: input.keywords.slice(0, 12), resumeBlocks: [block] });
+      applyResumeEdits([block], partial);
+      edits.push(...partial.edits as unknown[]);
+    }
+    result = { edits };
+  } else result = await infer(input);
+  signal.throwIfAborted();
+  progress?.("generating");
+  const blocks = applyResumeEdits(input.resumeBlocks, result);
+  const [docx, pdf] = await Promise.all([resumeDocx(blocks), printResumePdf(resumeHtml(blocks), signal)]);
+  const saved = await commit(() => store.saveTailoredResume(id, plan.updatedAt,
+    tailoredBaseName(resume.resume.filename, plan.listingUrl, id), analysisHash(input), docx, pdf));
+  if (selected.provider === "credits") await creditsClient.acknowledge(quoteId);
+  // The database holds both originals of the generated files, including when
+  // Documents is temporarily unavailable. Revealing the link retries export.
+  try { await Promise.all((["docx", "pdf"] as const).map(format => materializeTailoredResume(store, app.getPath("documents"), id, format))); }
+  catch (error) { logDiagnostic("Tailored resume export will be retried when opened", error); }
+  return saved;
 }
 
 async function analyzePlan(id: string, signal: AbortSignal, commit: <T>(persist: () => Promise<T>) => Promise<T>, quoteId = "", progress?: ReportAnalysisProgress) {
@@ -477,6 +546,10 @@ async function handleApi(request: Request, pathname: string): Promise<Response> 
       const result = await store.applyPlan(applyPlanId, input.expectedUpdatedAt);
       return Response.json(result, { status: result.created ? 201 : 200 });
     }
+    const tailoringId = pathname.match(/^\/api\/plans\/([\da-f-]+)\/tailor$/i)?.[1];
+    if (tailoringId && method === "POST") return Response.json({ plan: await analysisRequests.run(
+      request.headers.get("X-Zebby-Analysis-ID") || randomUUID(), (signal, commit, progress) => createTailoredResume(tailoringId, signal, commit,
+        request.headers.get("X-Zebby-Credit-Quote") || "", progress), `plan:${tailoringId}`) });
     const analysisId = pathname.match(/^\/api\/plans\/([\da-f-]+)\/analyze$/i)?.[1];
     if (analysisId && method === "POST") return Response.json({ plan: await analysisRequests.run(
       request.headers.get("X-Zebby-Analysis-ID") || randomUUID(), (signal, commit, progress) => analyzePlan(analysisId, signal, commit,
@@ -526,7 +599,7 @@ function registerIpc() {
     ipcMain.handle(channel, async (event, ...args: Args) => {
       const started = Date.now();
       const trace = !["desktop:state", "desktop:refresh-credits", "desktop:credit-checkout-status"].includes(channel);
-      const changing = !["desktop:state", "desktop:check-updates", "desktop:download-update", "desktop:install-update",
+      const changing = !["desktop:state", "desktop:check-updates", "desktop:open-store-updates", "desktop:download-update", "desktop:install-update",
         "desktop:list-ollama-models", "desktop:ollama-thinking-capability", "desktop:open-logs", "desktop:open-model-folder", "desktop:download-resume",
         "desktop:warm-credits-service"].includes(channel);
       if (installingUpdate && changing) throw new Error("Zebby is restarting to install an update.");
@@ -638,15 +711,21 @@ function registerIpc() {
     return accepted;
   });
   handle("desktop:check-updates", () => updates.check(true));
-  handle("desktop:confirm-update-loaded", () => selfUpdater.cleanupInstalled(app.getVersion()));
+  handle("desktop:open-store-updates", async () => {
+    if (!storeEdition) throw new Error("This installation receives updates in Zebby.");
+    await shell.openExternal(STORE_UPDATES_URI);
+  });
+  handle("desktop:confirm-update-loaded", async () => { if (!storeEdition) await directUpdater().cleanupInstalled(app.getVersion()); });
   handle("desktop:download-update", async () => {
+    const updater = directUpdater();
     if (!app.isPackaged) throw new Error("Automatic updates are available in the installed app.");
     const available = updates.state.available;
     if (!available) throw new Error("Check for an available update first.");
-    await selfUpdater.download(available);
+    await updater.download(available);
     return updates.state;
   });
   handle("desktop:install-update", async () => {
+    const updater = directUpdater();
     if (installingUpdate) return;
     if (!app.isPackaged || updates.state.download.phase !== "ready") throw new Error("Download the update before restarting.");
     if (activeApiRequests || activeSettingsRequests) throw new Error("Wait for analysis and saving to finish, then restart to update.");
@@ -656,7 +735,7 @@ function registerIpc() {
       await Promise.all([modelDownloads.pause(), modelEngine.shutdown()]);
       await store.retrySync();
       await diagnosticLog.flush();
-      await selfUpdater.install();
+      await updater.install();
       shuttingDown = true;
       setImmediate(() => app.quit());
     } catch (error) { installingUpdate = false; throw error; }
@@ -741,6 +820,10 @@ function registerIpc() {
     return state();
   });
   handle("desktop:open-model-folder", () => shell.openPath(modelDownloads.folder));
+  handle("desktop:reveal-tailored-resume", async (_event, id: string, format: "docx" | "pdf") => {
+    const filePath = await materializeTailoredResume(store, app.getPath("documents"), id, format);
+    shell.showItemInFolder(filePath);
+  });
   handle("desktop:download-resume", async (_event, id: string) => {
     const file = store.getResume(id);
     if (!file) throw new Error("Resume not found.");
@@ -819,22 +902,34 @@ function createWindow() {
     logDiagnostic("Renderer process stopped", `${details.reason}, exit code ${details.exitCode}`));
   void mainWindow.loadURL("tracker://app/");
   mainWindow.on("closed", () => { mainWindow = null; });
-  mainWindow.on("focus", () => { void updates.check(); });
+  mainWindow.on("focus", () => { if (!storeEdition) void updates.check(); });
 }
 
 if (process.env.PM_TRACKER_TEST_USER_DATA) app.setPath("userData", path.resolve(process.env.PM_TRACKER_TEST_USER_DATA));
+let profile: ReturnType<typeof configureApplicationProfile> | undefined;
+let profileError: unknown;
+if (storeEdition) {
+  try {
+    const isolatedFolder = process.env.PM_TRACKER_TEST_USER_DATA;
+    storePaths = storeDataPaths({ packageFamilyName: isolatedFolder ? undefined : readStorePackageFamily(process.resourcesPath),
+      localAppData: process.env.LOCALAPPDATA, home: app.getPath("home"), documents: app.getPath("documents"), isolatedFolder });
+    // Store and direct installations use independent profiles and instance locks.
+    // Do not import private keys or move models out of the direct installation.
+    profile = configureApplicationProfile(app, storePaths.profile);
+  } catch (error) { profileError = error; }
+}
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  let profile: ReturnType<typeof configureApplicationProfile> | undefined;
-  let profileError: unknown;
-  try { profile = configureApplicationProfile(app, process.env.PM_TRACKER_TEST_USER_DATA); }
-  catch (error) { profileError = error; }
+  if (!storeEdition) {
+    try { profile = configureApplicationProfile(app, process.env.PM_TRACKER_TEST_USER_DATA); }
+    catch (error) { profileError = error; }
+  }
   app.on("second-instance", () => { mainWindow?.show(); mainWindow?.focus(); });
   app.whenReady().then(async () => {
     if (!profile) throw profileError || new Error("The Zebby data folder could not be created.");
-    await migrateApplicationProfile(profile);
+    if (!storeEdition) await migrateApplicationProfile(profile);
     logEvent(`Zebby starting (${app.getVersion()}, ${process.platform}/${process.arch}, profile ${app.getPath("userData")})`);
-    store = new DesktopStore(app.getPath("userData"), logEvent);
+    store = new DesktopStore(storePaths?.recovery || app.getPath("userData"), logEvent);
     await loadSettings();
     nativeTheme.themeSource = settings.appearance === "auto" || !settings.appearance ? "system" : settings.appearance;
     nativeTheme.on("updated", updateWindowAppearance);
@@ -851,12 +946,14 @@ else {
     const platformFolder = `${process.platform === "darwin" ? "mac" : "win"}-${process.arch}`;
     const runtimeFolder = app.isPackaged ? path.join(process.resourcesPath, "local-runtime")
       : path.resolve(appRoot, "../build/llama", platformFolder);
-    const localAppData = process.env.PM_TRACKER_TEST_USER_DATA ? undefined : process.env.LOCALAPPDATA;
+    const localAppData = storeEdition || process.env.PM_TRACKER_TEST_USER_DATA ? undefined : process.env.LOCALAPPDATA;
     const modelsFolder = localModelFolder(app.getPath("userData"), process.platform, localAppData);
-    await migrateModelFolder(path.join(profile.folder, "Models"), modelsFolder);
-    if (process.platform === "win32" && localAppData && path.win32.isAbsolute(localAppData)) {
-      for (const name of ["PM Application Tracker", "pm-application-tracker"]) {
-        await migrateModelFolder(path.join(localAppData, name, "Models"), modelsFolder);
+    if (!storeEdition) {
+      await migrateModelFolder(path.join(profile.folder, "Models"), modelsFolder);
+      if (process.platform === "win32" && localAppData && path.win32.isAbsolute(localAppData)) {
+        for (const name of ["PM Application Tracker", "pm-application-tracker"]) {
+          await migrateModelFolder(path.join(localAppData, name, "Models"), modelsFolder);
+        }
       }
     }
     modelDownloads = new LocalModelDownloads(modelsFolder, { onChange: modelsChanged, licensesFolder: path.join(runtimeFolder, "model-licenses") });
@@ -864,13 +961,14 @@ else {
     modelEngine = new LocalModelEngine({ downloads: modelDownloads, onChange: modelsChanged, onDiagnostic: logEvent,
       runtimeFolder,
       workerPath: path.join(appRoot, "local-runtime-worker.cjs") });
-    selfUpdater = new SelfUpdater({ folder: path.join(path.dirname(modelsFolder), "Updates"), platform: process.platform,
+    if (!storeEdition) selfUpdater = new SelfUpdater({ folder: path.join(path.dirname(modelsFolder), "Updates"), platform: process.platform,
       executable: app.getPath("exe"), onChange: (download) => updates.setDownload(download) });
     registerProtocol();
     registerIpc();
     createMenu();
     createWindow();
-    void updates.check();
+    void modelEngine.detectHardware();
+    if (!storeEdition) void updates.check();
     app.on("activate", () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
   }).catch((error) => { console.error("Could not start Zebby", error);
     logDiagnostic("Could not start the app", error);

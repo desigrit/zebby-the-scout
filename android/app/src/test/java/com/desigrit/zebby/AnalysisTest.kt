@@ -27,6 +27,23 @@ private val wallet="""{"balance":500000000,"reserved":0,"purchased":500000000,"u
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[35])
 class AnalysisTest {
+    @Test fun currentClaudeModelsKeepAdaptiveThinkingAndPremiumAccessRules()=runBlocking {
+        val contracts=Contracts(ApplicationProvider.getApplicationContext())
+        assertEquals(setOf("gpt-6-astra","claude-opus-5-5"),contracts.models.filter {it.premium}.map {it.id}.toSet())
+        val packs=contracts.json.getJSONArray("packs")
+        assertEquals(listOf(0,22,64,121),(0 until packs.length()).map {packs.getJSONObject(it).getInt("astraAnalyses")})
+        for(model in listOf("claude-haiku-5-5","claude-sonnet-5-5","claude-opus-5-5")) {
+            assertTrue(contracts.models.single {it.id==model}.paid)
+            val vault=MemorySecrets().apply {put("anthropic","fixture")}
+            val http=fakeHttp {request ->
+                val buffer=okio.Buffer();request.body!!.writeTo(buffer);val body=JSONObject(buffer.readUtf8())
+                assertEquals(model,body.getString("model"));assertEquals("medium",body.getJSONObject("output_config").getString("effort"))
+                assertEquals("adaptive",body.getJSONObject("thinking").getString("type"))
+                200 to """{"stop_reason":"end_turn","content":[{"type":"text","text":"{\"score\":62,\"explanation\":\"Evidence and gaps.\"}"}]}"""
+            }
+            assertEquals(62,AnalysisEngine(http,contracts,vault).analyze("anthropic",model,"medium","",JSONObject().put("resumeText","fixture"),false) {}.score)
+        }
+    }
     @Test fun malformedModelOutputDoesNotBecomeAnInflatedScore() {
         assertThrows(Exception::class.java) {AnalysisResult.parse(JSONObject("""{"score":150,"explanation":"Good"}"""),false)}
         assertThrows(Exception::class.java) {AnalysisResult.parse(JSONObject("""{"score":90.5,"explanation":"Good"}"""),false)}

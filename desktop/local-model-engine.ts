@@ -1,6 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
 import { createServer } from "node:net";
 import { availableParallelism } from "node:os";
 import path from "node:path";
@@ -9,6 +8,8 @@ import { getLocalModel } from "./local-model-catalog.ts";
 import type { LocalModelDownloads } from "./local-model-downloads.ts";
 import { availableModelMemory } from "./local-model-memory.ts";
 import { LocalResponseWatchdog, readLocalCompletion } from "./local-model-response.ts";
+import type { ComputeBackend, LocalCompute } from "./local-compute.ts";
+import { detectLocalCompute, localComputeArguments, localRuntimeEnvironment, readLocalRuntime, type LocalRuntime } from "./local-compute-detection.ts";
 
 export function localModelMessages(id: string, instructions: string, content: string) {
   // Gemma's chat template accepts user/model turns, not a system turn.
@@ -59,6 +60,7 @@ type EngineOptions = {
   onChange?: () => void;
   onDiagnostic?: (message: string, error?: unknown) => void;
   fetcher?: typeof fetch;
+  detectCompute?: typeof detectLocalCompute;
   timeouts?: { loadMs?: number; tokenizeMs?: number; firstTokenMs?: number; stallMs?: number; totalMs?: number };
 };
 
@@ -73,6 +75,11 @@ export class LocalModelEngine {
   private pending = 0;
   private shuttingDown = false;
   private controller = new AbortController();
+  private detection?: Promise<LocalCompute>;
+  compute: LocalCompute = { status: "checking", backend: "cpu", devices: [], availableMemory: 0, recommendedModelIds: [] };
+  backend: ComputeBackend = "cpu";
+  cpuFallback = false;
+  offloadedLayers: number | null = null;
   status: "idle" | "loading" | "analyzing" = "idle";
 
   constructor(options: EngineOptions) { this.options = options; }
@@ -80,6 +87,24 @@ export class LocalModelEngine {
   get modelId() { return this.loadedId; }
   private changed() { this.options.onChange?.(); }
   private diagnostic(message: string, error?: unknown) { this.options.onDiagnostic?.(message, error); }
+
+  async detectHardware(runtime?: LocalRuntime, signal?: AbortSignal) {
+    if (this.detection) return this.detection;
+    this.detection = (async () => {
+      try {
+        const engine = runtime || await readLocalRuntime(this.options.runtimeFolder);
+        this.compute = await (this.options.detectCompute || detectLocalCompute)(engine, {
+          signal, diagnostic: (message, error) => this.diagnostic(message, error),
+        });
+      } catch (error) {
+        signal?.throwIfAborted();
+        this.compute = { status: "unavailable", backend: "cpu", devices: [], availableMemory: await availableModelMemory(), recommendedModelIds: [] };
+        this.diagnostic("Local hardware check unavailable", error);
+      }
+      this.changed(); return this.compute;
+    })();
+    try { return await this.detection; } finally { this.detection = undefined; }
+  }
 
   async stop(force = false) {
     if (this.busy && !force) throw new Error("Wait for the current local analysis to finish, then try again.");
@@ -107,40 +132,67 @@ export class LocalModelEngine {
     await this.stop(true);
     requestSignal?.throwIfAborted();
     const model = getLocalModel(id);
+    const runtime = await readLocalRuntime(this.options.runtimeFolder);
+    const compute = await this.detectHardware(runtime, requestSignal);
+    requestSignal?.throwIfAborted();
     const memory = await availableModelMemory();
-    this.diagnostic(`Local model memory check (${id}, available ${memory}, required ${model.minimumFreeMemory})`);
-    if (memory < model.minimumFreeMemory) {
+    const gpu = compute.backend !== "cpu" && Boolean(runtime.accelerator);
+    const required = gpu && compute.backend !== "metal" ? Math.min(model.minimumFreeMemory, model.bytes + 512 * 1024 ** 2) : model.minimumFreeMemory;
+    this.diagnostic(`Local model memory check (${id}, available ${memory}, required ${required})`);
+    if (memory < required) {
       throw new Error(`Not enough memory to run ${model.name}. Close other apps or choose a smaller model.`);
     }
-    const root = path.resolve(this.options.runtimeFolder);
-    const manifest = await readFile(path.join(root, "runtime.json"), "utf8")
-      .then((text) => JSON.parse(text) as { executable: string }).catch((error) => {
-        this.diagnostic("Local runtime manifest could not be read", error); return null;
-      });
-    if (!manifest?.executable) throw new Error("The local analysis engine is missing. Reinstall the latest app version.");
-    const executable = path.resolve(root, manifest.executable);
-    const relative = path.relative(root, executable);
-    if (relative.startsWith("..") || path.isAbsolute(relative) || !(await stat(executable).catch(() => null))?.isFile()) {
-      throw new Error("The local analysis engine could not be found. Reinstall the app.");
+    this.cpuFallback = false;
+    try {
+      await this.launch(id, modelFile, gpu ? runtime.accelerator!.executable : runtime.executable, compute, !gpu, requestSignal);
+    } catch (error) {
+      if (!gpu || requestSignal?.aborted || this.shuttingDown) throw error;
+      this.diagnostic(`Local GPU startup failed (${id}); retrying the same model on CPU`, error);
+      await this.stop(true);
+      requestSignal?.throwIfAborted();
+      if (await availableModelMemory() < model.minimumFreeMemory) {
+        throw new Error(`GPU analysis could not start and there is not enough free memory for ${model.name} on CPU. Close other apps and try again.`, { cause: error });
+      }
+      this.cpuFallback = true;
+      await this.launch(id, modelFile, runtime.executable, compute, true, requestSignal);
     }
+  }
+
+  private async launch(id: string, modelFile: string, executable: string, compute: LocalCompute, cpu: boolean, requestSignal?: AbortSignal) {
+    const model = getLocalModel(id);
     const port = await availablePort();
     requestSignal?.throwIfAborted();
     if (this.shuttingDown) throw new Error("The app is closing.");
     this.secret = randomBytes(32).toString("hex");
     this.baseUrl = `http://127.0.0.1:${port}`;
-    this.loadedId = id; this.status = "loading"; this.changed();
+    this.loadedId = id; this.status = "loading"; this.backend = cpu ? "cpu" : compute.backend;
+    this.offloadedLayers = null; this.changed();
     this.diagnostic(`Local model loading (${id}, ${process.platform}/${process.arch})`);
     const threads = Math.max(1, Math.min(4, Math.floor(availableParallelism() / 2)));
-    this.diagnostic(`Local model CPU worker starting (${id}, ${threads} threads, context ${model.context})`);
+    this.diagnostic(`Local model worker starting (${id}, ${this.backend}, ${threads} threads, context ${model.context}, device ${cpu ? "CPU" : compute.devices[0]?.id})`);
     const child = spawn(process.execPath, [this.options.workerPath, String(process.pid), executable,
       "--model", modelFile, "--host", "127.0.0.1", "--port", String(port),
       "--ctx-size", String(model.context), "--parallel", "1", "--threads", String(threads),
-      "--threads-batch", String(threads), "--gpu-layers", "0", "--no-kv-offload", "--no-op-offload", "--prio", "-1",
-      "--no-webui", "--no-agent", "--log-disable", "--no-context-shift", "--jinja", "--reasoning", "auto"], {
-      cwd: path.dirname(executable), windowsHide: true, stdio: ["pipe", "ignore", "ignore"],
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", LLAMA_API_KEY: this.secret },
+      "--threads-batch", String(threads), ...localComputeArguments(compute, cpu), "--prio", "-1",
+      "--no-webui", "--no-agent", "--no-context-shift", "--jinja", "--reasoning", "auto", "--log-verbosity", "4"], {
+      cwd: path.dirname(executable), windowsHide: true, stdio: ["pipe", "ignore", "pipe"],
+      env: { ...localRuntimeEnvironment(), ELECTRON_RUN_AS_NODE: "1", LLAMA_API_KEY: this.secret },
     });
     this.child = child;
+    let diagnostics = "";
+    child.stderr?.on("data", (chunk: Buffer) => {
+      const lines = (diagnostics + chunk.toString("utf8")).split(/\r?\n/);
+      diagnostics = (lines.pop() || "").slice(-128);
+      for (const line of lines) {
+        const layers = line.match(/^ZEBBY_GPU_LAYERS=(\d+)\/(\d+)$/);
+        if (layers && this.child === child) {
+          this.offloadedLayers = Number(layers[1]);
+          this.diagnostic(`Local model GPU offload (${id}, ${layers[1]}/${layers[2]} layers)`);
+          if (!this.offloadedLayers && !cpu) { this.backend = "cpu"; this.cpuFallback = true; }
+          this.changed();
+        }
+      }
+    });
     child.stdin?.on("error", () => {});
     const runtimeController = this.controller;
     let failed = false;

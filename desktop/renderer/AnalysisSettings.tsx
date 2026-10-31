@@ -18,7 +18,7 @@ export function providerReady(state: DesktopState, provider = state.analysisProv
     (!LOCAL_MODELS.find((model) => model.id === item.id)?.license || state.acceptedModelTerms.includes(item.id))));
 }
 export function AnalysisSettings({ state, onState, provider: suppliedProvider, openCredits, onPendingChange }: {
-  state: DesktopState; onState: ChangeAnalysisState; provider?: AnalysisProvider; openCredits: () => void;
+  state: DesktopState; onState: ChangeAnalysisState; provider?: AnalysisProvider; openCredits: (pack?: "regular") => void;
   onPendingChange?: (pending: boolean) => void }) {
   const provider = suppliedProvider || state.analysisProvider;
   const [url, setUrl] = useState(state.ollamaUrl), [model, setModel] = useState(state.ollamaModel), [models, setModels] = useState<string[]>([]);
@@ -91,7 +91,8 @@ export function AnalysisSettings({ state, onState, provider: suppliedProvider, o
           onChange={(event) => setModel(event.target.value)} onBlur={() => saveServer()}
           onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); saveServer(); } }} placeholder="qwen3:8b" /></label>}
       </div> : provider === "builtin" ? <LocalModelSelect state={state} onState={onState} disabled={working} onBusy={setWorking} />
-        : <OnlineModelSelect state={state} onState={onState} provider={provider as "openai" | "anthropic" | "credits"} disabled={working} onBusy={setWorking} />}
+        : <OnlineModelSelect state={state} onState={onState} provider={provider as "openai" | "anthropic" | "credits"} disabled={working} onBusy={setWorking}
+          onLockedModel={() => openCredits("regular")} />}
       </div>
       {keyed && <div className="analysis-setting-row"><span className="analysis-setting-label">API key</span><ApiKeyField key={provider} state={state} onState={onState} provider={provider} disabled={working} onBusy={setWorking} onPendingChange={setKeyPending} /></div>}
       <ThinkingSelect key={`${provider}:${provider === "builtin" ? state.builtInModelId : provider === "ollama" ? `${state.ollamaUrl}:${state.ollamaModel}` : onlineId}`}
@@ -99,7 +100,7 @@ export function AnalysisSettings({ state, onState, provider: suppliedProvider, o
         disabled={working || provider === "ollama" && serverModelChanged} onBusy={setWorking} quiet />
     </div>
     {provider === "builtin" && <LocalModelsSettings state={state} onState={onState} hideSelector />}
-    {provider === "credits" && <div className="settings-actions"><SettingsAction variant="primary" icon={CreditCard} onClick={openCredits}
+    {provider === "credits" && <div className="settings-actions"><SettingsAction variant="primary" icon={CreditCard} onClick={() => openCredits()}
       disabled={working || !state.canSaveApiKey}>Buy credits</SettingsAction></div>}
     <ErrorBanner message={error} retry={() => retryAction.current()} busy={working} />
     {(keyed || provider === "credits") && <p className="settings-help analysis-billing">{keyed ? "Billed to your API account." : "Pay only for the tokens used."}</p>}

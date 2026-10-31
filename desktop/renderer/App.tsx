@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ArrowRight, ArrowUpRight, Check, FileText, FolderOpen,
   LoaderCircle, Monitor, Moon, Plus, RefreshCw, RotateCw, Search, Sparkles, Sun, Trash2 } from "lucide-react";
 import ApplicationDashboard from "./ApplicationDashboard";
@@ -11,6 +11,8 @@ import type { DesktopState } from "../bridge";
 import type { Plan, PlanInput } from "../store";
 import type { Application, Resume } from "../../lib/application-types";
 import { AnalysisSettings } from "./AnalysisSettings";
+import AnalysisGuide from "./AnalysisGuide";
+import { useTabTransition } from "./useTabTransition";
 import { AnalysisFlowProvider, SidebarCredits, useAnalysisFlow } from "./AnalysisFlow";
 import { CreditsSettings } from "./CreditsSettings";
 import { onlineModel } from "../../shared/online-models";
@@ -66,6 +68,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   const retryAction = useRef<() => void>(() => undefined);
   const [listingMessage, setListingMessage] = useState("");
   const descriptionInput = useRef<HTMLTextAreaElement>(null);
+  const tailoringSection = useRef<HTMLDivElement>(null);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [resumes, setResumes] = useState<Resume[]>([]);
   const [resumeFile, setResumeFile] = useState<File | null>(null);
@@ -80,7 +83,12 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   const [saving, setSaving] = useState(false);
   const [moving, setMoving] = useState(false);
   const { jobs } = useBackgroundAnalysis();
-  const analysisProgress = selectedId ? jobs.get({ kind: "plan", id: selectedId }) : undefined;
+  const resumeProgress = selectedId ? jobs.get({ kind: "resume", id: selectedId }) : undefined;
+  const tailoring = jobRunning(resumeProgress);
+  useLayoutEffect(() => {
+    if (tailoring) tailoringSection.current?.scrollIntoView({ block: "end", behavior: "instant" });
+  }, [tailoring]);
+  const analysisProgress = tailoring ? resumeProgress : selectedId ? jobs.get({ kind: "plan", id: selectedId }) : undefined;
   const analyzing = jobRunning(analysisProgress);
   const cancelling = Boolean(analysisProgress?.cancelling);
   const [preparing, setPreparing] = useState(false);
@@ -124,7 +132,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
     let active = true;
     const receive = () => { if (!active) return;
     for (const job of jobs.snapshot()) {
-      if (job.kind !== "plan" || jobRunning(job) || handledResults.current.has(job.requestId)) continue;
+      if (job.kind === "match" || jobRunning(job) || handledResults.current.has(job.requestId)) continue;
       handledResults.current.add(job.requestId);
       const plan = job.result?.plan;
       if (plan) {
@@ -140,8 +148,8 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
         if (job.status === "succeeded") savedFeedback();
         if (job.error) retryAction.current = () => {
           setError("");
-          void jobs.start({ kind: "plan", id: job.id }, { modelLabel: job.modelLabel,
-            prepare: (signal) => analysisFlow.prepare({ kind: "plan", id: job.id }, signal) });
+          void jobs.start({ kind: job.kind, id: job.id }, { modelLabel: job.modelLabel,
+            prepare: (signal) => analysisFlow.prepare({ kind: job.kind, id: job.id }, signal) });
         };
       }
     } };
@@ -203,10 +211,10 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
     setDraft(plan ? inputFromPlan(plan) : emptyPlan(lastCurrentOverview));
     setSavedDraft(plan ? inputFromPlan(plan) : emptyPlan(lastCurrentOverview));
     setResumeFile(null);
-    const job = plan ? jobs.get({ kind: "plan", id: plan.id }) : undefined;
+    const job = plan ? jobs.snapshot().filter(job => job.id === plan.id && job.kind !== "match").sort((a,b) => b.startedAt-a.startedAt)[0] : undefined;
     setError(job?.error || "");
     setNotice(""); setListingMessage("");
-    if (job?.error) retryAction.current = () => void analyze();
+    if (job?.error) retryAction.current = () => void analyze(job.kind === "resume");
   }
 
   const readListing = useCallback(async (url: string) => {
@@ -250,7 +258,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   useEffect(() => () => listingController.current?.abort(), []);
 
   async function save(value = draft): Promise<Plan> {
-    if (selectedId && jobRunning(jobs.get({ kind: "plan", id: selectedId }))) throw new Error("Finish or cancel analysis before editing this plan.");
+    if (selectedId && jobs.snapshot().some(job => job.id === selectedId && job.kind !== "match" && jobRunning(job))) throw new Error("Finish or cancel analysis before editing this plan.");
     if (selectedId) jobs.dismiss({ kind: "plan", id: selectedId });
     retryAction.current = () => { void save().catch((cause) => setError(errorText(cause))); };
     setSaving(true); setError("");
@@ -309,10 +317,10 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
     finally { setMoving(false); }
   }
 
-  async function analyze() {
+  async function analyze(tailor = false) {
     if (busy || !canAnalyze) return;
     setError(""); setNotice("");
-    retryAction.current = () => void analyze();
+    retryAction.current = () => void analyze(tailor);
     setPreparing(true);
     try {
       const saved = dirty || !selectedId ? await save() : selectedPlan;
@@ -321,9 +329,9 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
       const modelLabel = analysisProvider === "ollama" ? ollamaModel || "Ollama" : analysisProvider === "builtin"
         ? builtInModel?.name || "Local model" : onlineModel(analysisProvider === "credits" ? analysisFlow.state.credits.model
           : analysisProvider === "anthropic" ? analysisFlow.state.anthropicModel : analysisFlow.state.openaiModel).name;
-      retryAction.current = () => void analyze();
-      void jobs.start({ kind: "plan", id: saved.id }, { modelLabel,
-        prepare: (signal) => analysisFlow.prepare({ kind: "plan", id: saved.id }, signal) });
+      retryAction.current = () => void analyze(tailor);
+      const source = { kind: tailor ? "resume" as const : "plan" as const, id: saved.id };
+      void jobs.start(source, { modelLabel, prepare: (signal) => analysisFlow.prepare(source, signal) });
     } catch (cause) { setError(errorText(cause)); }
     finally { setPreparing(false); }
   }
@@ -331,7 +339,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   async function cancelAnalysis() {
     if (!selectedId) return;
     retryAction.current = () => void cancelAnalysis();
-    try { await jobs.cancel({ kind: "plan", id: selectedId }); }
+    try { await jobs.cancel({ kind: tailoring ? "resume" : "plan", id: selectedId }); }
     catch (cause) { setError(errorText(cause)); }
   }
 
@@ -377,7 +385,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
         <div className="plan-items">{visiblePlans.map((plan) => <button key={plan.id} type="button"
           className={`plan-item ${selectedId === plan.id ? "selected" : ""}`}
           onClick={() => choose(plan)} disabled={navigatingBusy} aria-current={selectedId === plan.id ? "page" : undefined}>
-          <strong>{plan.title || "Untitled role"}{jobRunning(jobs.get({ kind: "plan", id: plan.id })) &&
+          <strong>{plan.title || "Untitled role"}{jobs.snapshot().some(job => job.kind !== "match" && job.id === plan.id && jobRunning(job)) &&
             <LoaderCircle size={13} className="spin plan-item-progress" aria-label="Analysis in progress" />}</strong>
           <span className="plan-item-meta"><span>{plan.company || new URL(plan.listingUrl).hostname}</span><small>Edited {formatUpdated(plan.updatedAt)}</small></span>
         </button>)}</div>
@@ -429,18 +437,18 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
           </fieldset>
           <div className="plan-analyze-actions">
             <button className="button button-primary analysis-button" type="button" onClick={() => void analyze()}
-              disabled={busy || !canAnalyze} aria-label={analyzing ? "Analysis in progress" : "Analyze"}>
-              {analyzing ? <LoaderCircle className="spin" size={17} aria-hidden="true" /> : <Sparkles size={17} aria-hidden="true" />}
+              disabled={busy || !canAnalyze} aria-label={analyzing && !tailoring ? "Analysis in progress" : "Analyze"}>
+              {analyzing && !tailoring ? <LoaderCircle className="spin" size={17} aria-hidden="true" /> : <Sparkles size={17} aria-hidden="true" />}
               Analyze
             </button>
-            {analyzing && <button className="button button-secondary" type="button" onClick={() => void cancelAnalysis()}
+            {analyzing && !tailoring && <button className="button button-secondary" type="button" onClick={() => void cancelAnalysis()}
               disabled={cancelling || analysisProgress?.stage === "saving"}>Cancel</button>}
             <small>{analyzing && analysisProgress?.modelLabel ? analysisProgress.modelLabel : analysisProvider === "ollama" ? (ollamaModel || "Ollama") : analysisProvider === "builtin"
               ? (builtInModel?.name || "Local model") : onlineModel(analysisProvider === "credits" ? analysisFlow.state.credits.model
                 : analysisProvider === "anthropic" ? analysisFlow.state.anthropicModel : analysisFlow.state.openaiModel).name}</small>
           </div>
           <div className="plan-progress-slot">
-            {analyzing && analysisProgress && <PlanAnalysisProgress key={analysisProgress.requestId}
+            {analyzing && !tailoring && analysisProgress && <PlanAnalysisProgress key={analysisProgress.requestId}
               stage={analysisProgress.stage} startedAt={analysisProgress.startedAt} />}
             {!analyzing && !canAnalyze && <p className="analysis-requirements">Add a job link, job description (100+ characters), and a resume to analyze.</p>}
           </div>
@@ -476,14 +484,21 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
             <strong>{overviewUnchanged ? "No wording changes" : "What changed"}</strong>
             <p>{overviewRationale}</p>
           </div>}
-          <details className="analysis-sharing"><summary>Analysis details</summary><p>{analysisProvider === "builtin"
-            ? `Your posting, overview, and resume stay on this computer. Analysis uses ${builtInModel?.name || "the selected local model"}.`
-            : analysisProvider === "ollama"
-            ? `Job text, your overview, and extracted resume text are sent to ${ollamaModel || "your selected model"} on your Ollama server.`
-            : analysisProvider === "credits" ? "Job text, your overview, and resume text are sent to Zebby and your selected online provider. Credits cover actual model usage."
-            : `Job text, your overview, and ${analysisProvider === "openai" ? "the selected resume" : "resume text"} are sent to ${analysisProvider === "openai" ? "OpenAI" : "Anthropic"}. Usage is billed to your API account.`}</p>
-</details>
         </fieldset>
+        {hasAnalysis && <div className="tailored-resume-section" ref={tailoringSection}>
+          <div className="tailored-resume-actions"><button type="button" className="button button-secondary" disabled={busy || !canAnalyze}
+            onClick={() => void analyze(true)}>{tailoring ? <LoaderCircle size={17} className="spin" aria-hidden="true" /> : <Sparkles size={17} aria-hidden="true" />}Create tailored resume</button>
+            {tailoring && <button type="button" className="text-action" disabled={cancelling || resumeProgress?.stage === "saving"} onClick={() => void cancelAnalysis()}>Cancel</button>}
+          </div>
+          {tailoring && resumeProgress && <PlanAnalysisProgress key={resumeProgress.requestId} task="resume" stage={resumeProgress.stage} startedAt={resumeProgress.startedAt} />}
+          {selectedPlan?.tailoredResume && <div className="tailored-resume-files">{(["docx", "pdf"] as const).map(format => {
+            const file = selectedPlan.tailoredResume![format];
+            return <button key={file.id} type="button" className="tailored-resume-file" title="Show in folder" onClick={() => {
+              const reveal = () => { void window.desktop!.revealTailoredResume(selectedPlan.id, format).catch(cause => setError(errorText(cause))); };
+              retryAction.current = reveal; reveal();
+            }}><FileText size={18} aria-hidden="true" /><span>{file.filename}</span><span className="file-format">{format === "docx" ? "Word" : "PDF"}</span><FolderOpen size={15} aria-hidden="true" /></button>;
+          })}</div>}
+        </div>}
         </div>
         </div>
         <div className="plan-actions">
@@ -571,7 +586,7 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking 
       </div>
     </section>
     <section className="settings-section" aria-labelledby="ai-settings">
-      <div className="settings-section-heading"><h2 id="ai-settings">Analysis</h2></div>
+      <div className="settings-section-heading"><h2 id="ai-settings">Analysis</h2><AnalysisGuide /></div>
       <div className="settings-content"><AnalysisSettings state={state} onState={onState} openCredits={openCredits} /></div>
     </section>
     <CreditsSettings />
@@ -600,6 +615,10 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking 
     <section className="settings-section" aria-labelledby="updates-settings">
       <div className="settings-section-heading"><h2 id="updates-settings">Updates</h2><p>Zebby {state.updates.currentVersion}</p></div>
       <div className="settings-content">
+        {state.distributionChannel === "store" ? <>
+          <div className="settings-actions"><SettingsAction icon={ArrowUpRight} onClick={() => void checkUpdates()}>Open Microsoft Store</SettingsAction></div>
+          <p className="settings-help">Updates are managed by Microsoft Store.</p>
+        </> : <>
         <div className="settings-actions">
           {!state.updates.available && !state.updates.error && <SettingsAction icon={RefreshCw} busy={state.updates.checking}
             onClick={() => void checkUpdates()} disabled={state.updates.checking}>Check for updates</SettingsAction>}
@@ -610,6 +629,7 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking 
           Release notes <ArrowUpRight size={15} aria-hidden="true" /></a>}
         <ErrorBanner message={state.updates.download.error || (state.updates.error ? "Could not check for updates." : "")}
           retry={state.updates.download.error ? onUpdate : () => void checkUpdates()} busy={updateWorking || state.updates.checking} />
+        </>}
       </div>
     </section>
   </main>;
@@ -617,7 +637,7 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking 
 
 function Welcome({ state, onState }: { state: DesktopState; onState: (value: DesktopState) => void }) {
   const [error, setError] = useState(state.startupError);
-  const retryAction = useRef<() => void>(() => undefined);
+  const retryAction = useRef<(() => void) | null>(null);
   const [working, setWorking] = useState(false);
   async function choose(kind: "open" | "create") {
     retryAction.current = () => void choose(kind);
@@ -626,10 +646,10 @@ function Welcome({ state, onState }: { state: DesktopState; onState: (value: Des
     catch (cause) { setError(errorText(cause)); }
     finally { setWorking(false); }
   }
-  return <main className="welcome-page"><img className="welcome-graphic" src="./icon.png" alt="" />
+  return <main className="welcome-page" aria-label="Welcome"><img className="welcome-graphic" src="./icon.png" alt="" />
     <div className="welcome-copy"><h1>Your search, in one place.</h1>
       <p>Plan for the roles you want, then track every application and resume you send.</p></div>
-    <ErrorBanner message={error} retry={() => retryAction.current()} busy={working} />
+    <ErrorBanner message={error} retry={() => retryAction.current ? retryAction.current() : void choose("open")} busy={working} />
     <div className="welcome-actions"><button className="button button-primary" onClick={() => void choose("create")} disabled={working}>
       <Plus size={18} aria-hidden="true" /> Create database</button>
       <button className="button button-secondary" onClick={() => void choose("open")} disabled={working}>
@@ -639,11 +659,12 @@ function Welcome({ state, onState }: { state: DesktopState; onState: (value: Des
 }
 
 export default function App() {
-  useWorkspaceShortcuts();
   useInteractiveScrollbars();
   const [state, setState] = useState<DesktopState | null>(null);
   const appearance = state?.appearance;
-  const [tab, setTab] = useState<Tab>("plan");
+  const [tab, setTab, settleTab] = useTabTransition<Tab>("plan");
+  useWorkspaceShortcuts(settleTab);
+  const scrollToAnalysis = useRef(false);
   const [dirtyPlan, setDirtyPlan] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [applicationSelection, setApplicationSelection] = useState<{ id: string; notice: string } | null>(null);
@@ -658,9 +679,21 @@ export default function App() {
   }, [loaded]);
   const navigate = useCallback((target: Tab) => {
     if (target !== "plan" && dirtyPlan && !window.confirm("Discard unsaved changes to this plan?")) return false;
+    scrollToAnalysis.current = false;
     setApplicationSelection(null); setTab(target);
     return true;
-  }, [dirtyPlan]);
+  }, [dirtyPlan, setTab]);
+  useLayoutEffect(() => {
+    if (tab === "settings" && scrollToAnalysis.current) {
+      scrollToAnalysis.current = false;
+      document.getElementById("ai-settings")?.scrollIntoView({ block: "start" });
+    }
+  }, [tab]);
+  function openAnalysisSettings() {
+    if (!navigate("settings")) return;
+    if (tab === "settings") document.getElementById("ai-settings")?.scrollIntoView({ block: "start" });
+    else scrollToAnalysis.current = true;
+  }
 
   async function toggleSidebar() {
     if (!state || sidebarSaving) return;
@@ -692,6 +725,7 @@ export default function App() {
   }
 
   async function checkUpdates() {
+    if (state?.distributionChannel === "store") { await window.desktop!.openStoreUpdates(); return; }
     const updates = await window.desktop!.checkForUpdates();
     setState((current) => current ? { ...current, updates } : current);
   }
@@ -699,6 +733,7 @@ export default function App() {
   useEffect(() => {
     void window.desktop!.state().then(setState);
     const removeChanged = window.desktop!.onDatabaseChanged((next) => {
+      scrollToAnalysis.current = false;
       setState(next); setDatabaseVersion((current) => current + 1); setSelectedPlanId(null); setApplicationSelection(null); setTab("plan");
     });
     const removeNavigate = window.desktop!.onNavigate((target) => {
@@ -707,7 +742,7 @@ export default function App() {
     const removeModelsChanged = window.desktop!.onLocalModelsChanged((next) => {
       setState((current) => current ? { ...current, builtInModelId: next.builtInModelId,
         localModels: next.localModels, acceptedModelTerms: next.acceptedModelTerms,
-        modelsFolder: next.modelsFolder, localEngine: next.localEngine,
+        modelsFolder: next.modelsFolder, localEngine: next.localEngine, localCompute: next.localCompute,
         totalMemory: next.totalMemory, availableMemory: next.availableMemory } : next);
     });
     const removeCreditsChanged = window.desktop!.onCreditsChanged((next) => {
@@ -717,7 +752,7 @@ export default function App() {
       setState((current) => current ? { ...current, updates } : current);
     });
     return () => { removeChanged(); removeNavigate(); removeModelsChanged(); removeUpdatesChanged(); removeCreditsChanged(); };
-  }, [navigate]);
+  }, [navigate, setTab]);
 
   useEffect(() => {
     if (!appearance) return;
@@ -730,7 +765,7 @@ export default function App() {
   }, [appearance]);
 
   if (!state) return <div className="desktop-loading"><LoaderCircle className="spin" size={24} /> Opening workspace...</div>;
-  return <SavedFeedbackProvider><AnalysisFlowProvider state={state} onState={setState} onOpenSettings={() => { if (navigate("settings")) requestAnimationFrame(() => document.getElementById("ai-settings")?.scrollIntoView({ block: "start" })); }}><BackgroundAnalysisProvider key={databaseVersion}><div className={`desktop-shell ${state.platform === "darwin" ? "platform-mac" : "platform-windows"}${state.sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+  return <SavedFeedbackProvider><AnalysisFlowProvider state={state} onState={setState} onOpenSettings={openAnalysisSettings}><BackgroundAnalysisProvider key={databaseVersion}><div className={`desktop-shell ${state.platform === "darwin" ? "platform-mac" : "platform-windows"}${state.sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
     <header className="desktop-titlebar" aria-label="Window title bar">
       <div className="titlebar-sidebar" aria-hidden="true" />
       <div className="titlebar-caption">Zebby</div>
@@ -748,7 +783,7 @@ export default function App() {
       </nav>
       {(state.updates.available || state.credits.wallet?.purchased || state.filePath && !state.sidebarCollapsed) && <div className="sidebar-footer">
         <SidebarCredits />
-        <UpdateButton updates={state.updates} collapsed={state.sidebarCollapsed} working={updateWorking} onClick={() => void applyUpdate()} />
+        {state.distributionChannel !== "store" && <UpdateButton updates={state.updates} collapsed={state.sidebarCollapsed} working={updateWorking} onClick={() => void applyUpdate()} />}
         {state.filePath && !state.sidebarCollapsed && <div className="sidebar-database" title={state.filePath}>
         <span>Current database</span><strong>{state.filename}</strong>
         {state.dirty && <small>Save pending</small>}
@@ -759,9 +794,8 @@ export default function App() {
       <ErrorBanner message={shellError} className="workspace-warning" retry={() => shellRetry.current()} busy={updateWorking || sidebarSaving} />
       {state.dirty && tab !== "settings" && <div className="workspace-warning" role="alert"><span>Changes have not reached {state.filename || "your database file"}.</span>
         <button type="button" onClick={() => navigate("settings")}>Retry save in Settings</button></div>}
-      {state.startupError && <div className="workspace-warning" role="alert">
-        <span>The previous database is unavailable. This workspace is stored locally.</span>
-        <button type="button" onClick={() => navigate("settings")}>Open Settings</button>
+      {state.startupError && tab === "settings" && <div className="workspace-warning" role="alert">
+        <span>The previous database could not be opened. Choose a database to continue.</span>
       </div>}
       {!state.filePath ? (tab === "settings" ? <SettingsView state={state} onState={setState} onUpdate={() => void applyUpdate()} onCheckUpdates={checkUpdates} updateWorking={updateWorking} /> : <Welcome state={state} onState={setState} />)
       : tab === "plan" ? <PlanView key={databaseVersion}

@@ -81,6 +81,7 @@ async function fixture() {
       return Response.json({ status: "open" });
     }
     if (url.hostname === "api.openai.com") {
+      if (url.pathname.endsWith("/input_tokens")) return Response.json({ object: "response.input_tokens", input_tokens: 5000 });
       state.providerCalls++;
       return Response.json({ status: "completed", output: [{ content: [{ type: "output_text", text: JSON.stringify({ score: 68,
         explanation: "The resume demonstrates product strategy, discovery and roadmaps. Enterprise risk is not demonstrated." }) }] }],

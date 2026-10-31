@@ -8,6 +8,8 @@ credits-service/dist/
 !shared/**
 !desktop/
 !desktop/online-analysis.ts
+!desktop/online-response.ts
+!desktop/openai-request.ts
 !desktop/analysis-contracts.ts
 !scripts/
 !scripts/build-credits-service.mjs

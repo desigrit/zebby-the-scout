@@ -1,4 +1,5 @@
 import type { LocalModelStatus } from "./local-model-catalog";
+import type { ComputeBackend, LocalCompute } from "./local-compute";
 import type { UpdateState } from "./release-updates";
 import type { AnalysisProvider, AnalysisSource, CreditQuote, CreditsState } from "../shared/online-models";
 import type { WalletPairing } from "../shared/wallet-access";
@@ -25,7 +26,8 @@ export type DesktopState = {
   acceptedModelTerms: string[];
   localModels: LocalModelStatus[];
   modelsFolder: string;
-  localEngine: { status: "idle" | "loading" | "analyzing"; modelId: string };
+  localEngine: { status: "idle" | "loading" | "analyzing"; modelId: string; backend?: ComputeBackend; cpuFallback?: boolean };
+  localCompute?: LocalCompute;
   totalMemory: number;
   availableMemory: number;
   canSaveApiKey: boolean;
@@ -33,6 +35,7 @@ export type DesktopState = {
   sidebarCollapsed: boolean;
   logsPath: string;
   platform: string;
+  distributionChannel: "direct" | "store";
   updates: UpdateState;
 };
 
@@ -41,6 +44,7 @@ export type DesktopBridge = {
   cancelAnalysis(id: string): Promise<boolean>;
   onAnalysisProgress(callback: (progress: AnalysisProgress) => void): () => void;
   checkForUpdates(): Promise<UpdateState>;
+  openStoreUpdates(): Promise<void>;
   downloadUpdate(): Promise<UpdateState>;
   installUpdate(): Promise<void>;
   confirmUpdateLoaded(): Promise<void>;
@@ -77,6 +81,7 @@ export type DesktopBridge = {
   setSidebarCollapsed(value: boolean): Promise<DesktopState>;
   openLogs(): Promise<void>;
   downloadResume(id: string): Promise<boolean>;
+  revealTailoredResume(id: string, format: "docx" | "pdf"): Promise<void>;
   onDatabaseChanged(callback: (state: DesktopState) => void): () => void;
   onNavigate(callback: (target: string) => void): () => void;
   onLocalModelsChanged(callback: (state: DesktopState) => void): () => void;

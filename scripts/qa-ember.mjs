@@ -274,20 +274,20 @@ try {
   await capture("plan-light-results");
   assert.equal(await page.locator(".analysis-grid").evaluate((e) => getComputedStyle(e).gridTemplateColumns.split(" ").length), 2);
   async function assertPlanExplanationWidth(label) {
-    const sharing = page.locator(".analysis-sharing");
-    if (!(await sharing.evaluate((element) => element.open))) await sharing.locator("summary").click();
-    const measurements = await page.locator(".overview-rationale p, .analysis-sharing p").evaluateAll((paragraphs) => paragraphs.map((paragraph) => ({
+    assert.equal(await page.getByText("Analysis details", { exact: true }).count(), 0);
+    assert.equal(await page.getByRole("button", { name: "Create tailored resume", exact: true }).count(), 1);
+    assert.equal(await page.locator(".tailored-resume-section").evaluate(element => element.scrollWidth > element.clientWidth), false);
+    const measurements = await page.locator(".overview-rationale p").evaluateAll((paragraphs) => paragraphs.map((paragraph) => ({
       width: paragraph.getBoundingClientRect().width,
       available: paragraph.parentElement.getBoundingClientRect().width,
       overflow: paragraph.scrollWidth > paragraph.clientWidth,
     })));
-    assert.equal(measurements.length, 2);
+    assert.equal(measurements.length, 1);
     assert.ok(measurements.every(({ width, available, overflow }) => Math.abs(width - available) <= 1 && !overflow), `${label}: ${JSON.stringify(measurements)}`);
     await page.locator(".plan-document-scroll").evaluate((element) => element.scrollTo(0, element.scrollHeight));
   }
   await assertPlanExplanationWidth("Wide Plan footer"); await capture("plan-footer-light");
   await theme("dark"); await capture("plan-footer-dark"); await theme("light");
-  await page.locator(".analysis-sharing summary").click();
   await page.locator(".analysis-section").evaluate((element) => {
     const scroll = element.closest(".plan-document-scroll");
     scroll.scrollTop += element.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 24;
@@ -385,7 +385,7 @@ try {
     }
     await nav.getByRole("button", { name: "Applications", exact: true }).click();
   }
-  checks.push("Plan overview rationale and analysis details use the document width without horizontal overflow at wide/narrow sizes");
+  checks.push("Plan rationale and tailored resume controls fit wide and narrow document layouts");
   await page.getByRole("button", { name: "Collapse navigation" }).click(); await capture("applications-790-collapsed");
   await page.getByRole("button", { name: "Expand navigation" }).click();
   await selector.click();
@@ -519,8 +519,20 @@ try {
     await nav.getByRole("button", { name: "Settings", exact: true }).click();
   }
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(1));
+  // Hold Chromium's snapshot callback to exercise an immediate keyboard action
+  // while navigation still displays Settings. It must target Applications.
+  await page.evaluate(() => {
+    const original = document.startViewTransition.bind(document);
+    let release;
+    const waiting = new Promise((resolve) => { release = resolve; });
+    document.startViewTransition = (update) => original(async () => { await waiting; await update(); });
+    window.__emberReleaseTab = () => { document.startViewTransition = original; release(); };
+  });
   await nav.getByRole("button", { name: "Applications", exact: true }).click();
   await page.keyboard.press("Control+n"); await page.locator(".editor").waitFor();
+  await page.evaluate(() => window.__emberReleaseTab());
+  assert.equal(await nav.getByRole("button", { name: "Applications", exact: true }).getAttribute("aria-current"), "page");
+  checks.push("Immediate New shortcut during navigation opens the destination form, never the previous page's action");
   await capture("new-application-full-form");
   assert.equal(await page.getByRole("button", { name: "Save application", exact: true }).evaluate((e) => e.getBoundingClientRect().bottom <= innerHeight), true);
   for (const label of ["Job listing link", "Company", "Job title", "Team", "Date applied", "Match strength", "Job description"]) {
@@ -577,6 +589,11 @@ try {
     await page.screenshot({ path: path.join(output, "failure.png") }).catch(() => {});
     await writeFile(path.join(output, "failure-layout.json"), JSON.stringify(await page.evaluate(() => ({
       viewport: { width: innerWidth, height: innerHeight },
+      shellAncestors: ["html", "body", "#root", ".desktop-shell"].map((selector) => {
+        const element = document.querySelector(selector), style = getComputedStyle(element);
+        return { selector, scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight,
+          overflow: style.overflow, position: style.position, scrollBehavior: style.scrollBehavior, rect: element.getBoundingClientRect().toJSON() };
+      }),
       regions: [".desktop-titlebar", ".desktop-workspace", ".application-list", ".application-row-select"].map((selector) => {
         const element = document.querySelector(selector);
         return { selector, rect: element?.getBoundingClientRect().toJSON(), scrollTop: element?.scrollTop };

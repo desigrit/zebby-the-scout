@@ -38,18 +38,28 @@ object TailoredResume {
     fun blocks(context:Context,name:String,bytes:ByteArray):List<ResumeBlock> {
         val lines=when(name.substringAfterLast('.').lowercase()) {
             "docx" -> ZipInputStream(bytes.inputStream()).use { zip ->
-                var entry=zip.nextEntry;var xml:String?=null;var expanded=0;var entries=0
+                var entry=zip.nextEntry;var expanded=0;var entries=0;val parts=mutableMapOf<String,String>()
                 while(entry!=null) {
                     require(++entries<=2000) {"This Word file is too complex to read."}
                     val data=zip.readBounded(8*1024*1024-expanded+1);expanded+=data.size
                     require(expanded<=8*1024*1024) {"This Word file is too large to tailor."}
-                    if(entry.name=="word/document.xml") {xml=String(data,Charsets.UTF_8);break}
+                    if(entry.name=="word/document.xml" || entry.name=="word/_rels/document.xml.rels" || Regex("word/(?:header|footer)[^/]+\\.xml").matches(entry.name)) parts[entry.name]=String(data,Charsets.UTF_8)
                     zip.closeEntry();entry=zip.nextEntry
                 }
-                val doc=Jsoup.parse(requireNotNull(xml) {"This Word file has no readable document."},"",Parser.xmlParser())
-                doc.getElementsByTag("w:p").map { p ->
-                    val text=p.getElementsByTag("w:t").joinToString("") {it.text()}
+                fun document(name:String)=Jsoup.parse(requireNotNull(parts[name]) {"This Word file is missing part of its content."},"",Parser.xmlParser())
+                val doc=document("word/document.xml")
+                val rels=parts["word/_rels/document.xml.rels"]?.let {Jsoup.parse(it,"",Parser.xmlParser())}
+                fun references(kind:String)=doc.getElementsByTag("w:${kind}Reference").map { reference ->
+                    val rel=rels?.getElementsByTag("Relationship")?.firstOrNull {it.attr("Id")==reference.attr("r:id")}
+                    val target=rel?.attr("Target").orEmpty()
+                    require(rel?.attr("TargetMode")!="External" && Regex("^(?:/word/)?(?:header|footer)[^/\\\\]*\\.xml$").matches(target)) {"This Word file has an unreadable header or footer."}
+                    if(target.startsWith('/')) target.drop(1) else "word/$target"
+                }.distinct()
+                val documents=references("header").map(::document)+listOf(doc)+references("footer").map(::document)
+                documents.flatMap { part -> part.getElementsByTag("w:p").map { p ->
+                    val text=p.getAllElements().filter {it.tagName() in listOf("w:t","w:tab","w:br")}.joinToString("") {if(it.tagName()=="w:t") it.text() else " "}
                     if(p.getElementsByTag("w:numPr").isNotEmpty()) "• $text" else text
+                }
                 }
             }
             "pdf" -> {

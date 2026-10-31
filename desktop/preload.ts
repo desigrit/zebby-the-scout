@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("desktop", {
   },
   state: () => ipcRenderer.invoke("desktop:state"),
   checkForUpdates: () => ipcRenderer.invoke("desktop:check-updates"),
+  openStoreUpdates: () => ipcRenderer.invoke("desktop:open-store-updates"),
   downloadUpdate: () => ipcRenderer.invoke("desktop:download-update"),
   installUpdate: () => ipcRenderer.invoke("desktop:install-update"),
   confirmUpdateLoaded: () => ipcRenderer.invoke("desktop:confirm-update-loaded"),
@@ -53,6 +54,7 @@ contextBridge.exposeInMainWorld("desktop", {
   setSidebarCollapsed: (value: boolean) => ipcRenderer.invoke("desktop:set-sidebar-collapsed", value),
   openLogs: () => ipcRenderer.invoke("desktop:open-logs"),
   downloadResume: (id: string) => ipcRenderer.invoke("desktop:download-resume", id),
+  revealTailoredResume: (id: string, format: "docx" | "pdf") => ipcRenderer.invoke("desktop:reveal-tailored-resume", id, format),
   onDatabaseChanged: (callback: (state: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state);
     ipcRenderer.on("desktop:database-changed", listener);

@@ -31,7 +31,7 @@ import org.json.JSONArray
 
 fun thinkingLabel(value:String)=when(value) {"xhigh"->"Extra high";"max"->"Maximum";"default"->"Model default";else->value.removePrefix("level:").replaceFirstChar(Char::uppercase)}
 
-@Composable fun SettingsScreen(vm:ZebbyViewModel,state:UiState,onBuy:()->Unit) {
+@Composable fun SettingsScreen(vm:ZebbyViewModel,state:UiState,onBuy:()->Unit,onBuyPremium:()->Unit=onBuy) {
     val settings=vm.app.preferences;val uriHandler=LocalUriHandler.current
     var server by remember {mutableStateOf(settings["server"])}
     var modelNames by remember {mutableStateOf(jsonArray(settings["server-models"]))}
@@ -53,6 +53,7 @@ fun thinkingLabel(value:String)=when(value) {"xhigh"->"Extra high";"max"->"Maxim
     } }
     val provider=settings.provider;val model=settings.model();val selectedModel=vm.app.contracts.models.firstOrNull {it.id==model}
     val options=vm.app.contracts.models.filter {if(provider=="credits") it.paid else it.provider==provider}
+    val premiumLocked=provider=="credits" && vm.app.credits.cachedWallet()?.optBoolean("astraUnlocked")!=true
     val thinking=if(provider=="ollama") levels else selectedModel?.levels.orEmpty()
     fun testServer() {vm.action {
         settings.put("server",com.desigrit.zebby.network.AnalysisEngine.normalizeServer(server))
@@ -74,7 +75,11 @@ fun thinkingLabel(value:String)=when(value) {"xhigh"->"Extra high";"max"->"Maxim
                 if(modelNames.isEmpty()) SmallLabel("Use your computer's network address. The server and phone must be able to reach each other.")
                 else Selector("Model",model,modelNames.map {it to it}) {value -> vm.action {settings.setModel(value);val capabilities=vm.app.engine.serverThinking(server,value);settings.put("server-thinking",JSONArray(capabilities).toString());withContext(Dispatchers.Main) {levels=capabilities}}}
             } else {
-                Selector("Model",selectedModel?.name ?: model,options.map {it.id to it.name}) {value->vm.action {settings.setModel(value)}}
+                val selectedLabel=(selectedModel?.name ?: model)+if(premiumLocked && selectedModel?.premium==true) " · Locked" else ""
+                Selector("Model",selectedLabel,options.map {it.id to (it.name+if(premiumLocked && it.premium) " · Locked" else "")}) {value->
+                    if(premiumLocked && options.any {it.id==value && it.premium}) onBuyPremium() else vm.action {settings.setModel(value)}
+                }
+                if(premiumLocked) SmallLabel(vm.app.contracts.json.getString("premiumPackMessage"))
             }
             if(thinking.size>1) ThinkingControl(thinking,settings.thinking(selectedModel)) {value -> vm.action {settings.setThinking(value)}}
             if(provider in listOf("openai","anthropic")) {

@@ -12,6 +12,7 @@ const assets = {
   "win-x64": { filename: `llama-${release}-bin-win-cpu-x64.zip`, sha256: "14cf1303ca9ac3abd94816850532f9f9a69ac66fbaca3776fc6f9061c2fac1d1" },
   "win-arm64": { filename: `llama-${release}-bin-win-cpu-arm64.zip`, sha256: "1727d241f3bf6d27360e984e851cf013928fd655bf89f8628e70da027f377b7d" },
   "mac-arm64": { filename: `llama-${release}-bin-macos-arm64.tar.gz`, sha256: "1ad3f9eff80edb9dbef4259ad564d1720612ef7eea48fa4afed0e54f5f3d5711" },
+  "win-x64/vulkan": { filename: `llama-${release}-bin-win-vulkan-x64.zip`, sha256: "55a378aa095b466979d85075234f66d7655c7a7483222af0c006c0e55b4d7bd6" },
 };
 
 async function filesIn(folder) {
@@ -37,6 +38,19 @@ async function includeModelNotices(folder) {
 
 export async function prepareRuntime(platform, arch) {
   const key = `${platform === "darwin" ? "mac" : platform === "win32" ? "win" : platform}-${arch}`;
+  await prepareVariant(key);
+  const destination = path.resolve("build/llama", key);
+  const manifest = JSON.parse(await readFile(path.join(destination, "runtime.json"), "utf8"));
+  manifest.backend = key === "mac-arm64" ? "metal" : "cpu";
+  if (key === "win-x64") {
+    await prepareVariant(`${key}/vulkan`);
+    const gpu = JSON.parse(await readFile(path.join(destination, "vulkan/runtime.json"), "utf8"));
+    manifest.accelerator = { backend: "vulkan", executable: `vulkan/${gpu.executable}`, archiveSha256: gpu.archiveSha256 };
+  }
+  await writeFile(path.join(destination, "runtime.json"), JSON.stringify(manifest, null, 2));
+}
+
+async function prepareVariant(key) {
   const asset = assets[key];
   if (!asset) throw new Error(`Built-in analysis has no packaged runtime for ${key}.`);
   const root = path.resolve("build/llama");
@@ -47,7 +61,7 @@ export async function prepareRuntime(platform, arch) {
     await lstat(path.join(destination, manifest.executable)).catch(() => null)) {
     await includeModelNotices(destination); return;
   }
-  console.log(`Preparing CPU analysis engine for ${key} (${release}).`);
+  console.log(`Preparing local analysis engine for ${key} (${release}).`);
   const response = await fetch(`https://github.com/ggml-org/llama.cpp/releases/download/${release}/${asset.filename}`,
     { signal: AbortSignal.timeout(180_000) });
   if (!response.ok) throw new Error(`Runtime download failed: ${response.status}.`);

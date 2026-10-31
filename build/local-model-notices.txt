@@ -28,4 +28,4 @@ and model-licenses/NOTICE-Gemma.txt for the complete terms, policy, and notice.
 
 The models are optional downloads and are not included in the installer.
 The model terms are also copied next to the corresponding downloaded model.
-The bundled llama.cpp CPU engine has its own MIT license in LICENSE-llama.cpp.txt.
+The bundled llama.cpp engine has its own MIT license in LICENSE-llama.cpp.txt.

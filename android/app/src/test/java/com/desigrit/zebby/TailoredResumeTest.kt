@@ -44,6 +44,22 @@ class TailoredResumeTest {
         val parsed=TailoredResume.blocks(context,"Resume.pdf",pdf).joinToString("\n") {it.text}
         for(text in listOf("Alex Morgan","alex@example.com","18%","2019 - 2022","Example University")) assertTrue(text,parsed.contains(text))
     }
+    @Test fun wordHeadersAndFootersKeepContactDetailsOnce() {
+        val entries=mutableMapOf<String,ByteArray>()
+        java.util.zip.ZipInputStream(TailoredResume.word(blocks.drop(2)).inputStream()).use {zip ->
+            var entry=zip.nextEntry
+            while(entry!=null) {entries[entry.name]=zip.readBytes();zip.closeEntry();entry=zip.nextEntry}
+        }
+        entries["word/document.xml"]=String(entries.getValue("word/document.xml")).replace("<w:sectPr>","""<w:sectPr><w:headerReference r:id="header"/><w:headerReference r:id="header" w:type="first"/><w:footerReference r:id="footer"/>""").toByteArray()
+        entries["word/_rels/document.xml.rels"]="""<Relationships><Relationship Id="header" Target="header1.xml"/><Relationship Id="footer" Target="/word/footer1.xml"/></Relationships>""".toByteArray()
+        entries["word/header1.xml"]="""<w:hdr><w:p><w:r><w:t>Alex Morgan</w:t></w:r></w:p><w:tbl><w:p><w:r><w:t>alex@example.com | Seattle, WA</w:t></w:r></w:p></w:tbl></w:hdr>""".toByteArray()
+        entries["word/footer1.xml"]="""<w:ftr><w:p><w:r><w:t>linkedin.com/in/alex</w:t></w:r></w:p></w:ftr>""".toByteArray()
+        val out=java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use {zip -> entries.forEach {(name,data)->zip.putNextEntry(java.util.zip.ZipEntry(name));zip.write(data);zip.closeEntry()}}
+        val parsed=TailoredResume.blocks(context,"Resume.docx",out.toByteArray())
+        assertEquals(blocks.map {it.text}+"linkedin.com/in/alex",parsed.map {it.text})
+        assertFalse(parsed[1].editable);assertFalse(parsed.last().editable)
+    }
     @Test fun savedPairIsAtomicAndLeavesOriginalResumeAndMatchIntact() {
         val store=Store(context).apply {newWorkspace()};val word=TailoredResume.word(blocks);val pdf=javaClass.getResourceAsStream("/tailored-resume.pdf")!!.readBytes()
         val original=store.addResume("Original.docx","application/vnd.openxmlformats-officedocument.wordprocessingml.document",word)

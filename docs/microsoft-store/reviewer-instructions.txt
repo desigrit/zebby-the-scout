@@ -1,0 +1,39 @@
+Zebby certification notes
+
+Zebby is a free productivity app for planning resumes and tracking job applications. There is no Zebby login. Optional online-analysis credits are sold through Stripe in the user's browser. Tracking, notes, and local-model analysis can be tested without a purchase.
+
+Permissions
+This is a full-trust Electron desktop application. Desktop access is used to open and save the user's SQLite database, read selected PDF or Word resumes, use operating-system protected storage, and run the bundled local inference engine. Downloaded model weights are data files. The Microsoft Store edition sends update management to Microsoft Store.
+
+First run and records
+1. Launch Zebby. Use the default database or Create new database to choose a new file.
+2. Open Plan and choose New plan.
+3. Set the job listing link to https://example.org/careers/senior-product-manager. Fill company Northstar, title Senior Product Manager, and location Seattle, WA. This URL is only a record field for the following test; paste the supplied job description instead of using Fill from link.
+4. Paste Review job description.txt into Job description and Review current summary.txt into Current summary.
+5. Upload Reviewer resume.pdf, then Save plan.
+6. Reopen the plan from the saved-plan list. Confirm the source fields and resume remain available.
+
+Analysis without a credit purchase
+1. In Settings, set Analyze with to Downloaded model.
+2. Choose SmolLM2 360M. It downloads about 271 MB and supports CPU analysis. Wait for Ready. A machine with at least 4 GB RAM is suitable for this compact path.
+3. Return to the plan and select Analyze. Compact mode provides keyword coverage and limited summary suggestions. Larger models offer more detailed analysis.
+4. While analysis runs, switch to Applications and back to Plan. The request should continue. Cancel is available.
+5. Once complete, inspect the match, keywords, themes, and suggested summary. Choose Move to Applied. The application retains the saved score and metadata without another paid request.
+
+Alternative analysis paths
+An existing Ollama server can be configured in Settings using its URL and model. Test connection checks the server before analysis. OpenAI and Anthropic methods accept the reviewer's own funded API keys. No developer credentials are required or included.
+
+Applications
+Open the moved application. Select another hiring status, add notes, and edit its locations. The daily activity chart reflects each application's current status on its applied date. Click a row to open its inspector, then close it with X. Search and filter by company or status. Offer received triggers a brief celebration.
+
+Optional purchases
+Settings > Analysis > Zebby credits > Buy credits shows four one-time USD packs. Continue to checkout opens Stripe. A purchase is not needed to test the free tracking and local-model path. After an actual purchase, Settings > Credits > Manage credits offers a recovery-code export, pairing, connected computers, and usage history. Purchase screens must not be tested with invented payment credentials.
+
+Data and uninstall
+The selected SQLite database and database recovery copies are kept outside package-managed storage. Removing Zebby does not delete these documents. Downloaded models, app settings, and logs belong to the app's local data. Store updates are handled by Microsoft Store.
+
+Support
+https://github.com/desigrit/zebby-the-scout/issues
+
+Privacy
+https://github.com/desigrit/zebby-the-scout/blob/main/docs/privacy.md

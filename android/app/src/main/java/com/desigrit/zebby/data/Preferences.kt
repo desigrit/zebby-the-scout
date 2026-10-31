@@ -3,11 +3,11 @@ package com.desigrit.zebby.data
 import android.content.Context
 import org.json.JSONObject
 
-data class Model(val id:String,val name:String,val provider:String,val paid:Boolean,val levels:List<String>,val default:String)
+data class Model(val id:String,val name:String,val provider:String,val paid:Boolean,val levels:List<String>,val default:String,val premium:Boolean=false)
 class Contracts(context:Context) {
     val json=JSONObject(context.assets.open("contracts.json").bufferedReader().use { it.readText() })
     val models:List<Model> = json.getJSONArray("models").let { a -> (0 until a.length()).map { i -> a.getJSONObject(i).let { o ->
-        Model(o.getString("id"),o.getString("name"),o.getString("provider"),o.getBoolean("paid"),jsonArray(o.getJSONArray("values").toString()),o.getString("defaultValue")) } } }
+        Model(o.getString("id"),o.getString("name"),o.getString("provider"),o.getBoolean("paid"),jsonArray(o.getJSONArray("values").toString()),o.getString("defaultValue"),o.optBoolean("premium")) } } }
 }
 class Preferences(context:Context) {
     private val p=context.getSharedPreferences("settings",Context.MODE_PRIVATE)

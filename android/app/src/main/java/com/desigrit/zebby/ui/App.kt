@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
     var dirty by remember { mutableStateOf(false) }
     var leave by remember { mutableStateOf<(() -> Unit)?>(null) }
     var buy by remember { mutableStateOf(false) }
+    var buyPack by remember { mutableStateOf("starter") }
     var consumedShare by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar=remember { SnackbarHostState() }
     val scope=rememberCoroutineScope()
@@ -73,7 +74,7 @@ import kotlinx.coroutines.launch
                                 editing!=null -> JobEditor(vm,editing,state,wide=expanded,onDirty={dirty=it},onSaved={editor=it.toJson();dirty=false},onApplied={tab=1;editor=null;selected=it.id;dirty=false},onClose={close()})
                                 tab==0 -> PlansScreen(state,vm,onSelect={editor=it.toJson()},onNew={create()})
                                 tab==1 -> ApplicationsScreen(state,vm,selected,expanded,onSelect={selected=it},onEdit={editor=it.toJson()},onNew={create()},onClose={selected=""})
-                                else -> SettingsScreen(vm,state,onBuy={buy=true})
+                                else -> SettingsScreen(vm,state,onBuy={buyPack="starter";buy=true},onBuyPremium={buyPack="regular";buy=true})
                             }
                             }
                             }
@@ -83,6 +84,6 @@ import kotlinx.coroutines.launch
             }
         }
         if(leave!=null) AlertDialog(onDismissRequest={leave=null},title={Text("Discard your changes?")},text={Text("Your saved version will be kept.")},confirmButton={TextButton(onClick={val action=leave;leave=null;dirty=false;action?.invoke()}){Text("Discard")}},dismissButton={TextButton(onClick={leave=null}){Text("Keep editing")}})
-        if(buy) CreditsSheet(vm,onDismiss={buy=false})
+        if(buy) CreditsSheet(vm,onDismiss={buy=false;buyPack="starter"},initialPack=buyPack)
     }
 }

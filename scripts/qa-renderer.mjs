@@ -150,7 +150,7 @@ try {
   }
   async function assertSettingsActions() {
     await settleSidebar();
-    const actions = await page.locator('.settings-page button:not(.settings-link):not([role="switch"]):not([role="radio"]):visible').evaluateAll((buttons) => buttons.map((button) => {
+    const actions = await page.locator('.settings-page button:not(.settings-link):not(.credit-activity-day):not([role="switch"]):not([role="radio"]):visible').evaluateAll((buttons) => buttons.map((button) => {
       const style = getComputedStyle(button), icon = button.querySelector('svg');
       return { label: button.getAttribute('aria-label') || button.innerText, shared: button.classList.contains('settings-action'),
         height: button.getBoundingClientRect().height, size: style.fontSize, weight: style.fontWeight,
@@ -266,12 +266,12 @@ try {
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   }
   await page.addInitScript(({ initialState, licenseVersions }) => {
-    window.controlsQA = { copied: "", failCopy: false };
+    window.controlsQA = { copied: "", failCopy: false, revealed: [] };
     Object.defineProperty(navigator, "clipboard", { value: { writeText: async (text) => {
       if (window.controlsQA.failCopy) throw new Error("Synthetic clipboard failure");
       window.controlsQA.copied = text;
     } }, configurable: true });
-    const listeners = new Set(), updateListeners = new Set(), creditListeners = new Set(), analysisListeners = new Set();
+    const listeners = new Set(), updateListeners = new Set(), creditListeners = new Set(), analysisListeners = new Set(), databaseListeners = new Set();
     window.analysisQA = { cancelled: [], progress: (event) => { for (const listener of analysisListeners) listener(event); } };
     const snapshot = () => structuredClone(initialState);
     const update = (id, change) => { initialState.localModels = initialState.localModels.map((item) =>
@@ -297,8 +297,12 @@ try {
     window.modelQA = { confirmDelete: false, deleteRequests: [], selections: [], rejectSidebarSave: false,
       updateState, installRequests: 0, failInstall: false, failCheck: false, finishDownload: null,
       logOpens: 0, failLogOpen: false, failKeySave: false, keySaveAttempts: 0, thinkingSelections: [], databaseRequests: [], stopRequests: [], update,
-      setPlatform: (platform) => { initialState.platform = platform; } };
-    window.desktop = { state: async () => initialState, onDatabaseChanged: () => () => {}, onNavigate: () => () => {},
+      databaseResult: "cancel",
+      setDatabase: (change) => { Object.assign(initialState, change); for (const listener of databaseListeners) listener(snapshot()); },
+      setPlatform: (platform) => { initialState.platform = platform; },
+      setCompute: (compute) => { initialState.localCompute = compute; for (const listener of listeners) listener(snapshot()); } };
+    window.desktop = { state: async () => initialState,
+      onDatabaseChanged: (listener) => { databaseListeners.add(listener); return () => databaseListeners.delete(listener); }, onNavigate: () => () => {},
       onAnalysisProgress: (listener) => { analysisListeners.add(listener); return () => analysisListeners.delete(listener); },
       cancelAnalysis: async (id) => { window.analysisQA.cancelled.push(id); return true; },
       onLocalModelsChanged: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
@@ -383,7 +387,14 @@ try {
         updateState({ download: { phase: "installing", received: 100, total: 100, error: "" } });
       },
       downloadResume: async () => true,
-      chooseDatabase: async (kind) => { window.modelQA.databaseRequests.push(kind); return null; },
+      revealTailoredResume: async (id, format) => { window.controlsQA.revealed.push({ id, format }); },
+      chooseDatabase: async (kind) => {
+        window.modelQA.databaseRequests.push(kind);
+        if (window.modelQA.databaseResult === "error") throw new Error("The selected database could not be opened.");
+        if (window.modelQA.databaseResult === "cancel") return null;
+        Object.assign(initialState, { filePath: "/fixture/Applications.sqlite", filename: "Applications.sqlite", startupError: "" });
+        return snapshot();
+      },
       openLogs: async () => { if (window.modelQA.failLogOpen) throw new Error("Synthetic logs folder error"); window.modelQA.logOpens++; },
       listOllamaModels: async () => ["qwen3.8:27b", "qwen3:8b"],
       setAnalysisProvider: async (provider) => { initialState.analysisProvider = provider; return snapshot(); },
@@ -464,7 +475,7 @@ try {
       if (!existing) applications = [application, ...applications];
       data = { application, created: !existing };
     }
-    else if (pathname.endsWith("/analyze")) {
+    else if (pathname.endsWith("/analyze") || pathname.endsWith("/tailor")) {
       if (route.request().headers()["x-zebby-credit-quote"]) paidAnalysisRequests.push({ pathname, quoteId: route.request().headers()["x-zebby-credit-quote"] });
       const requestId = route.request().headers()["x-zebby-analysis-id"];
       analysisRequestIds.set(pathname, requestId);
@@ -481,6 +492,12 @@ try {
         const id = pathname.split("/")[3];
         applications = applications.map((item) => item.id === id ? { ...item, matchStrength: 89, updatedAt: "2026-09-30T20:00:00Z" } : item);
         data = { application: applications.find((item) => item.id === id) };
+      } else if (pathname.endsWith("/tailor")) {
+        const id = pathname.split("/")[3];
+        plans = plans.map(item => item.id !== id ? item : { ...item, tailoredResume: {
+          docx: { id: "tailored-word", filename: "Sample Product CV - 123456 - tailored.docx" },
+          pdf: { id: "tailored-pdf", filename: "Sample Product CV - 123456 - tailored.pdf" }, generatedAt: "2026-10-31T20:00:00Z", sourceHash: "fixture" } });
+        plan = plans.find(item => item.id === id); data = { plan };
       } else { plan = { ...plan, matchStrength: 86,
         matchNotes: "Customer discovery and roadmap delivery are well demonstrated in the selected resume. The posting asks for deeper experimentation experience than the resume shows. The candidate has led product strategy, worked with design and engineering, and used customer evidence to prioritize work. The main gaps are direct experience in the posting's domain and clearer examples of experiments that connect product decisions to measured outcomes. The score reflects strong transferable product experience with room to demonstrate those specific requirements more clearly." };
         plans = plans.map((item) => item.id === plan.id ? plan : item); data = { plan }; }
@@ -510,6 +527,31 @@ try {
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   const nav = page.getByRole("navigation", { name: "Workspace" });
   await page.getByRole("main", { name: "Plan", exact: true }).waitFor();
+  const originalDatabase = await page.evaluate(() => window.desktop.state());
+  for (const platform of ["win32", "darwin"]) {
+    await page.evaluate(platform => {
+      document.documentElement.dataset.platform = platform;
+      window.modelQA.setDatabase({ platform, filePath: "", filename: "", startupError: "" });
+    }, platform);
+    const welcome = page.getByRole("main", { name: "Welcome", exact: true });
+    await welcome.getByRole("heading", { name: "Your search, in one place.", exact: true }).waitFor();
+    for (const label of ["Create database", "Open existing database"]) {
+      await welcome.getByRole("button", { name: label, exact: true }).click();
+      assert.equal(await welcome.isVisible(), true, "Canceling the file picker keeps the welcome screen");
+    }
+    await captureSettings(`welcome-${platform === "win32" ? "windows" : "mac"}.png`, false);
+  }
+  await page.evaluate(() => { window.modelQA.databaseResult = "error"; });
+  await page.getByRole("button", { name: "Open existing database", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "The selected database could not be opened." }).waitFor();
+  await page.evaluate(() => { window.modelQA.databaseResult = "success"; });
+  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await page.getByRole("main", { name: "Plan", exact: true }).waitFor();
+  await page.evaluate(original => {
+    window.modelQA.databaseResult = "cancel"; window.modelQA.databaseRequests = [];
+    document.documentElement.dataset.platform = original.platform;
+    window.modelQA.setDatabase(original);
+  }, originalDatabase);
   assert.equal(await page.title(), "Zebby");
   assert.equal(await page.locator(".desktop-titlebar").innerText(), "Zebby");
   assert.equal(await page.locator(".sidebar-brand").innerText(), "");
@@ -892,6 +934,26 @@ try {
   await page.reload();
   await page.getByRole("textbox", { name: "Core ATS keyword 1", exact: true }).waitFor();
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
+  assert.equal(await page.getByText("Analysis details", { exact: true }).count(), 0);
+  const tailorButton = page.getByRole("button", { name: "Create tailored resume", exact: true });
+  const tailoringPath = `/api/plans/${plans[0].id}/tailor`;
+  await tailorButton.click(); await waitForAnalysis(tailoringPath);
+  await page.locator('.tailored-resume-section .plan-analysis-progress').waitFor();
+  await captureSettings("plan-tailoring.png", false);
+  await nav.getByRole("button", { name: "Settings", exact: true }).click();
+  await nav.getByRole("button", { name: "Plan", exact: true }).click();
+  await page.locator('.tailored-resume-section .plan-analysis-progress').waitFor();
+  await completeAnalysis(tailoringPath);
+  await page.locator('.tailored-resume-files').waitFor();
+  await page.getByRole("button", { name: /Sample Product CV.*tailored.docx/ }).click();
+  await page.getByRole("button", { name: /Sample Product CV.*tailored.pdf/ }).click();
+  assert.deepEqual(await page.evaluate(() => window.controlsQA.revealed.map(item => item.format)), ['docx', 'pdf']);
+  await captureSettings("plan-tailored-files.png", false);
+  await tailorButton.click(); await waitForAnalysis(tailoringPath);
+  await page.locator('.tailored-resume-section').getByRole('button', { name: 'Cancel', exact: true }).click();
+  await tailorButton.waitFor();
+  assert.equal(await page.locator('.tailored-resume-files button').count(), 2);
+  await completeAnalysis(tailoringPath);
   await nav.getByRole("button", { name: "Applications", exact: true }).click();
   await page.getByRole("main", { name: "Applications", exact: true }).waitFor();
   const table = page.locator(".application-list");
@@ -1353,14 +1415,55 @@ try {
   await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32"; document.documentElement.dataset.theme = "light"; });
   const emptyCredits = page.getByRole("region", { name: "Credits", exact: true });
   const settingsPage = page.locator(".settings-page");
+  // Rapid changes settle on the last destination without an inert workspace.
+  await page.evaluate(() => {
+    const buttons = [...document.querySelectorAll('.sidebar-nav button')];
+    for (const name of ["Plan", "Applications", "Plan", "Settings"]) buttons.find(button => button.textContent.trim() === name).click();
+  });
+  await settingsPage.waitFor();
+  await page.waitForFunction(() => !document.querySelector('.desktop-workspace')?.inert);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await nav.getByRole("button", { name: "Applications", exact: true }).click();
+  await nav.getByRole("button", { name: "Settings", exact: true }).click();
+  await settingsPage.waitFor();
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const guideLink = settingsPage.getByRole("button", { name: "Need help deciding?", exact: true });
+  await page.mouse.move(0, 0);
+  await page.waitForFunction(() => getComputedStyle(document.querySelector(".analysis-guide-link")).color === "rgb(166, 74, 52)");
+  await guideLink.hover();
+  await page.waitForFunction(() => getComputedStyle(document.querySelector(".analysis-guide-link")).color === "rgb(142, 61, 42)");
+  await guideLink.click();
+  const analysisGuide = page.getByRole("dialog", { name: "Need help deciding?", exact: true });
+  await analysisGuide.waitFor();
+  assert.equal(await analysisGuide.locator("dt").count(), 4);
+  assert.ok((await analysisGuide.boundingBox()).width <= 680);
+  assert.equal(await analysisGuide.locator(".analysis-guide-options > div").evaluateAll(rows => rows.every(row =>
+    row.querySelector("dt").getBoundingClientRect().right < row.querySelector("dd").getBoundingClientRect().left &&
+    getComputedStyle(row).borderTopWidth === "0px")), true);
+  await captureSettings("analysis-guide-windows-light.png", false);
+  await page.keyboard.press("Escape"); await analysisGuide.waitFor({ state: "hidden" });
+  assert.equal(await guideLink.evaluate(element => element === document.activeElement), true);
+  await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption("builtin");
+  const beforeHardware = await page.evaluate(() => window.modelQA.selections.length);
+  for (const backend of ["vulkan", "metal", "cpu"]) {
+    await page.evaluate((backend) => window.modelQA.setCompute({ status: "ready", backend,
+      devices: backend === "cpu" ? [] : [{ id: backend === "metal" ? "Metal" : "Vulkan0", name: backend === "metal" ? "Apple M3" : "NVIDIA RTX", memory: 16e9, freeMemory: 12e9 }],
+      availableMemory: 16e9, recommendedModelIds: backend === "cpu" ? ["qwen3-06b", "lfm25-350m"] : ["qwen3-8b", "qwen3-4b"] }), backend);
+    const picker = page.getByRole("combobox", { name: "Local model", exact: true });
+    await picker.locator(`optgroup[label="Recommended for your ${backend === "cpu" ? "CPU" : "GPU"}"]`).waitFor({ state: "attached" });
+    assert.equal(await picker.locator("option[value]:not([value=''])").count(), LOCAL_MODELS.length);
+    assert.match(await page.locator(".model-compute-hint").innerText(), backend === "cpu" ? /^CPU$/ : backend === "metal" ? /Apple M3.*Metal/ : /NVIDIA RTX.*Vulkan/);
+    if (backend === "vulkan") await captureSettings("analysis-hardware-windows-light.png", false);
+  }
+  assert.equal(await page.evaluate(() => window.modelQA.selections.length), beforeHardware, "Hardware detection must not select or download a model");
   for (const method of ["ollama", "builtin", "openai", "anthropic"]) {
     await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption(method);
-    assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).count(), 0);
+    assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).count(), 1);
   }
   await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption("credits");
-  assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).count(), 1);
-  assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).isEnabled(), true);
-  assert.equal(await emptyCredits.getByRole("button", { name: "Buy credits", exact: true }).count(), 0);
+  assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).count(), 2);
+  assert.equal(await emptyCredits.getByRole("button", { name: "Buy credits", exact: true }).isEnabled(), true);
+  assert.equal(await emptyCredits.getByRole("button", { name: "Buy credits", exact: true }).count(), 1);
   assert.equal(await emptyCredits.getByRole("combobox").count(), 0);
   assert.doesNotMatch(await settingsPage.innerText(), /Paid credits are not|not connected yet/);
   await settingsPage.evaluate(element => { element.scrollTop = 0; });
@@ -1369,19 +1472,21 @@ try {
   await page.setViewportSize({ width: 790, height: 850 });
   await page.evaluate(() => { window.modelQA.setPlatform("darwin"); document.documentElement.dataset.platform = "darwin"; document.documentElement.dataset.theme = "dark"; });
   await captureSettings("credits-empty-mac-dark-narrow.png", false);
-  await emptyCredits.getByRole("button", { name: "Learn more", exact: true }).click();
+  assert.equal(await emptyCredits.getByRole("button", { name: "Restore credits", exact: true }).count(), 0);
+  assert.equal(await emptyCredits.getByRole("button", { name: "Connect this computer", exact: true }).count(), 0);
+  await emptyCredits.getByRole("button", { name: "Manage credits", exact: true }).click();
   const creditHelp = page.locator(".credit-help-dialog");
-  await creditHelp.getByRole("heading", { name: "Restore credits", exact: true }).waitFor();
+  await creditHelp.getByRole("heading", { name: "Manage credits", exact: true }).waitFor();
   assert.match(await creditHelp.innerText(), /saved recovery code/);
-  assert.match(await creditHelp.innerText(), /expire after 10 minutes and work once/);
-  assert.ok((await creditHelp.boundingBox()).width <= 480);
+  assert.equal(await creditHelp.locator("details").count(), 0);
+  assert.ok((await creditHelp.boundingBox()).width > 480);
   await captureSettings("credits-help-empty-mac-dark-narrow.png", false);
   await page.keyboard.press("Escape");
   await creditHelp.waitFor({ state: "hidden" });
-  assert.equal(await emptyCredits.getByRole("button", { name: "Learn more", exact: true }).evaluate(element => element === document.activeElement), true);
+  assert.equal(await emptyCredits.getByRole("button", { name: "Manage credits", exact: true }).evaluate(element => element === document.activeElement), true);
   // A cold or unavailable host must not hold up choosing a pack or cancelling.
   await page.evaluate(() => { window.creditQA.warmupMode = "pending"; });
-  await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).click();
+  await emptyCredits.getByRole("button", { name: "Buy credits", exact: true }).click();
   const pricingDialog = page.getByRole("dialog", { name: "A little fuel for your next move", exact: true });
   await pricingDialog.getByRole("radio", { name: /\$5\b/ }).waitFor();
   assert.equal(await page.evaluate(() => window.creditQA.warmups), 1);
@@ -1390,7 +1495,7 @@ try {
   await pricingDialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await pricingDialog.waitFor({ state: "hidden" });
   await page.evaluate(() => { window.creditQA.finishWarmup(); window.creditQA.finishWarmup = null; window.creditQA.warmupMode = "error"; });
-  await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).click();
+  await emptyCredits.getByRole("button", { name: "Buy credits", exact: true }).click();
   await pricingDialog.getByRole("radio", { name: /\$5\b/ }).waitFor();
   assert.equal(await pricingDialog.getByRole("alert").count(), 0);
   assert.equal(await pricingDialog.getByRole("button", { name: "Continue to checkout · $5", exact: true }).isEnabled(), true);
@@ -1450,6 +1555,10 @@ try {
   await analysisDialog.getByRole("button", { name: "Continue", exact: true }).click();
   assert.equal(await analysisDialog.getByRole("radio").count(), 4);
   assert.equal(await analysisDialog.getByRole("combobox").count(), 0);
+  assert.equal(await analysisDialog.getByText("Unlocks Astra and Opus", { exact: true }).count(), 3);
+  assert.match(await analysisDialog.locator(".credit-pack").nth(1).innerText(), /~22 analyses\s+Astra or Opus \(Medium\)/);
+  assert.deepEqual(await analysisDialog.locator(".credit-pack").nth(1).locator(".credit-estimate-model").allTextContents(), ["Astra or Opus (Medium)", "GPT-6.1 Sol (High)", "GPT-6 Luna (High)"]);
+  assert.deepEqual(await analysisDialog.locator(".credit-pack").first().locator(".credit-estimate-model").allTextContents(), ["GPT-6.1 Sol (High)", "GPT-6 Luna (High)"]);
   assert.match(await analysisDialog.innerText(), /Choose or change your model in Settings after purchase/);
   assert.equal(await analysisDialog.getByRole("button", { name: "Continue to checkout · $5", exact: true }).isEnabled(), true);
   assert.doesNotMatch(await analysisDialog.innerText(), /Paid credits are not|not connected yet/);
@@ -1495,7 +1604,14 @@ try {
   await page.evaluate(() => { window.creditQA.cancelRecovery = false; });
   await analysisDialog.getByRole("button", { name: "Save recovery code", exact: true }).click();
   await analysisDialog.getByText("Recovery code saved.", { exact: true }).waitFor();
-  await analysisDialog.getByRole("button", { name: /^Analyze with GPT/ }).click();
+  await analysisDialog.getByRole("button", { name: "Change in Settings", exact: true }).click();
+  await analysisDialog.waitFor({ state: "hidden" });
+  await page.waitForFunction(() => {
+    const heading = document.getElementById("ai-settings");
+    return heading && heading.getBoundingClientRect().top >= 44 && heading.getBoundingClientRect().top < 120;
+  });
+  await nav.getByRole("button", { name: "Plan", exact: true }).click();
+  await analyze.click();
   await page.waitForFunction(() => window.creditQA.quoteRequests.length > 0);
   const paidPlanSource = await page.evaluate(() => window.creditQA.quoteRequests.at(-1).source);
   const paidPlanPath = `/api/plans/${paidPlanSource.id}/analyze`;
@@ -1528,6 +1644,8 @@ try {
   await analyze.click();
   await analysisDialog.getByRole("heading", { name: "A little fuel for your next move", exact: true }).waitFor();
   assert.equal(paidAnalysisRequests.length, paidCallsBeforeCancel);
+  await analysisDialog.getByRole("alert").filter({ hasText: "needs 20 credits available to start. You have 10." }).waitFor();
+  await captureSettings("credits-counted-budget-error.png", false);
   await analysisDialog.getByRole("button", { name: "Cancel", exact: true }).click();
   // A paid result can be recovered for free even with no balance. An unfinished
   // prior run reports inline and cannot accidentally create a second charge.
@@ -1555,7 +1673,39 @@ try {
   const creditsSettings = page.getByRole("region", { name: "Credits", exact: true });
   const paidSettingsModel = settingsPage.getByRole("combobox", { name: "Model", exact: true });
   await paidSettingsModel.waitFor();
-  assert.deepEqual(await paidSettingsModel.locator("option").evaluateAll(options => options.map(option => option.value)), ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"]);
+  assert.deepEqual(await paidSettingsModel.locator("option").evaluateAll(options => options.map(option => option.value)), ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]);
+  await page.evaluate(() => window.creditQA.update({ wallet: { balance: 450000000, reserved: 0, used: 50000000, purchased: 500000000, recent: [], astraUnlocked: false } }));
+  await settingsPage.getByText("GPT-6 Astra and Claude Opus are included with a $20, $50 or $100 pack.", { exact: true }).waitFor();
+  assert.equal(await paidSettingsModel.locator('option[value="gpt-6-astra"]').innerText(), "GPT-6 Astra · Locked");
+  await captureSettings("credits-astra-locked.png", false);
+  const savedModel = await paidSettingsModel.inputValue();
+  assert.equal(await paidSettingsModel.locator('option[value="claude-opus-5-5"]').innerText(), "Claude Opus 5.5 · Locked");
+  await paidSettingsModel.focus();
+  await paidSettingsModel.selectOption("claude-opus-5-5");
+  await analysisDialog.getByRole("button", { name: "Continue to checkout · $20", exact: true }).waitFor();
+  assert.equal(await paidSettingsModel.inputValue(), savedModel);
+  await analysisDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await analysisDialog.waitFor({ state: "hidden" });
+  await paidSettingsModel.focus();
+  await page.waitForFunction(() => document.activeElement?.tagName === "SELECT");
+  await paidSettingsModel.selectOption("gpt-6-astra");
+  await analysisDialog.getByRole("button", { name: "Continue to checkout · $20", exact: true }).waitFor();
+  assert.equal(await paidSettingsModel.inputValue(), savedModel);
+  await analysisDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await analysisDialog.waitFor({ state: "hidden" });
+  await page.waitForFunction(() => document.activeElement?.tagName === "SELECT");
+  await page.evaluate(() => window.creditQA.update({ model: "gpt-6-astra" }));
+  await page.waitForFunction(() => document.querySelector('select:has(option[value="locked-premium"])')?.value === "locked-premium");
+  await captureSettings("credits-astra-current-locked.png", false);
+  await paidSettingsModel.selectOption("gpt-6-astra");
+  await analysisDialog.getByRole("button", { name: "Continue to checkout · $20", exact: true }).waitFor();
+  await analysisDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await analysisDialog.waitFor({ state: "hidden" });
+  await page.evaluate(() => window.creditQA.update({ wallet: { balance: 3000000000, reserved: 0, used: 0, purchased: 3000000000, recent: [], astraUnlocked: true } }));
+  await page.waitForFunction(() => [...document.querySelectorAll("option")].some(option => option.value === "gpt-6-astra" && option.textContent === "GPT-6 Astra"));
+  await paidSettingsModel.selectOption("claude-opus-5-5");
+  await page.waitForFunction(() => document.querySelector('select:has(option[value="claude-opus-5-5"])')?.value === "claude-opus-5-5");
+  await settingsPage.getByRole("radiogroup", { name: "Thinking level", exact: true }).getByRole("radio", { name: "Medium", exact: true }).waitFor();
   await paidSettingsModel.selectOption("gpt-6-luna");
   await settingsPage.getByRole("radiogroup", { name: "Thinking level", exact: true }).getByRole("radio", { name: "Off", exact: true }).click();
   await paidSettingsModel.selectOption("gpt-6-astra");
@@ -1569,8 +1719,8 @@ try {
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
   assert.equal(await paidSettingsModel.inputValue(), "gpt-6-astra");
   assert.equal(await creditsSettings.getByRole("combobox", { name: "Model", exact: true }).count(), 0);
-  assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).count(), 1);
-  assert.equal(await creditsSettings.getByRole("button", { name: "Buy credits", exact: true }).count(), 0);
+  assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).count(), 2);
+  assert.equal(await creditsSettings.getByRole("button", { name: "Buy credits", exact: true }).count(), 1);
   assert.equal(await creditsSettings.getByRole("button", { name: "Sign out", exact: true }).count(), 0);
   await creditsSettings.getByRole("button", { name: "Manage credits", exact: true }).click();
   await creditsSettings.getByRole("button", { name: "Connect another computer", exact: true }).click();
@@ -1582,7 +1732,6 @@ try {
   assert.equal(await creditsSettings.evaluate(element => element.scrollWidth > element.clientWidth), false);
   await creditsSettings.getByRole("button", { name: "Cancel pairing", exact: true }).click();
   assert.equal(await page.evaluate(() => window.creditQA.pairingCancelled), 1);
-  await creditHelp.getByRole("button", { name: "Close credit help", exact: true }).click();
   assert.equal(await creditsSettings.getByRole("button", { name: "Connect this computer", exact: true }).isEnabled(), true);
   await creditsSettings.getByRole("button", { name: "Connect this computer", exact: true }).click();
   const pairInput = creditsSettings.getByLabel("Pairing code", { exact: true });
@@ -1593,29 +1742,36 @@ try {
   await pairInput.fill("ABCD-2345"); await pairInput.press("Enter");
   await creditsSettings.getByText("Computer connected.", { exact: true }).waitFor();
   assert.equal(await creditsSettings.getByRole("button", { name: "Connect this computer", exact: true }).evaluate(element => element === document.activeElement), true);
-  await creditsSettings.getByRole("button", { name: "Manage credits", exact: true }).click();
-  await creditsSettings.getByText("Connected computers (2)", { exact: true }).click();
+  await creditsSettings.getByRole("heading", { name: "Connected computers", exact: true }).waitFor();
   await creditsSettings.getByText("Mac laptop", { exact: true }).waitFor();
-  await creditsSettings.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await creditsSettings.getByRole("button", { name: "Disconnect Mac laptop", exact: true }).click();
   assert.equal(await creditsSettings.getByText("Mac laptop", { exact: true }).isVisible(), true);
   await page.evaluate(() => { window.creditQA.confirmDisconnect = true; });
-  await creditsSettings.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await creditsSettings.getByRole("button", { name: "Disconnect Mac laptop", exact: true }).click();
   assert.equal(await creditsSettings.getByText("Mac laptop", { exact: true }).count(), 0);
-  await creditHelp.getByRole("button", { name: "Close credit help", exact: true }).click();
   await creditsSettings.getByRole("button", { name: "Restore credits", exact: true }).click();
   const recoveryInput = creditsSettings.getByLabel("Recovery code", { exact: true });
   await recoveryInput.fill("synthetic private recovery code"); await recoveryInput.press("Escape");
   assert.equal(await recoveryInput.count(), 0);
   assert.equal(await creditsSettings.getByRole("button", { name: "Restore credits", exact: true }).evaluate(element => element === document.activeElement), true);
+  await creditHelp.getByRole("button", { name: "Close credits and devices", exact: true }).click();
   await page.setViewportSize({ width: 1550, height: 850 });
   await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32"; document.documentElement.dataset.theme = "light"; });
-  await page.evaluate(() => { window.creditQA.update({ wallet: { balance: 499000000, reserved: 0, used: 1000000, purchased: 500000000,
+  await page.evaluate(() => { window.creditQA.update({ wallet: { astraUnlocked: true, balance: 499000000, reserved: 0, used: 1000000, purchased: 500000000,
     updatedAt: "2026-09-30T20:00:00Z", recent: [] } }); });
   await page.waitForFunction(() => document.querySelector(".sidebar-credit-button")?.getAttribute("aria-label") === "Buy credits. 1 of 500 credits used, 100% remaining.");
   assert.equal(await sidebarWallet.locator(".sidebar-credit-percent").innerText(), "100%");
   assert.equal(await sidebarWallet.locator(".sidebar-credit-track > span").evaluate(element => element.style.width), "99.8%");
-  await page.evaluate(() => { window.creditQA.update({ wallet: { balance: 465000000, reserved: 0, used: 35000000, purchased: 500000000,
-    updatedAt: "2026-09-30T20:00:00Z", recent: [{ id: "usage-fixture", model: "claude-sonnet-5-5", kind: "plan", cost: 35000000, createdAt: "2026-09-30T20:00:00Z" }] } }); });
+  await page.evaluate(() => {
+    const recent = [4.8, 1.3, .9, 3.7, 2.1, 4.2, .5, 6.8, .7, 2].map((cost, index) => ({ id: `usage-${index}`,
+      model: ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"][index % 3], kind: index % 2 ? "match" : "plan", cost: cost * 1000000,
+      createdAt: new Date(Date.parse("2026-09-30T20:00:00Z") - index * 2 * 86400000).toISOString() }));
+    const dailyUsage = Array.from({ length: 84 }, (_, index) => ({ date: new Date(Date.parse("2026-09-30T00:00:00Z") - (83 - index) * 86400000).toISOString().slice(0, 10), count: 0, cost: 0 }));
+    for (const item of recent) { const day = dailyUsage.find(day => item.createdAt.startsWith(day.date)); day.count++; day.cost += item.cost; }
+    [.5, .6, .7, 1, 1.4, 1.8, 2].forEach((cost, index) => { const day = dailyUsage[7 + index * 7]; day.count++; day.cost += cost * 1000000; });
+    window.creditQA.update({ wallet: { astraUnlocked: true, balance: 465000000, reserved: 0, used: 35000000, purchased: 500000000, completedAnalyses: 17,
+      updatedAt: "2026-09-30T20:00:00Z", recent, dailyUsage } });
+  });
   const creditBar = creditsSettings.getByRole("progressbar", { name: "Credits remaining", exact: true });
   await page.waitForFunction(() => document.querySelector('[role="progressbar"][aria-label="Credits remaining"]')?.getAttribute("aria-valuenow") === "93");
   assert.equal(await creditBar.getAttribute("aria-valuenow"), "93");
@@ -1652,8 +1808,37 @@ try {
   await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32"; document.documentElement.dataset.theme = "light"; });
   await creditsSettings.getByRole("button", { name: "Manage credits", exact: true }).click();
   await assertSettingsActions();
+  assert.equal(await creditHelp.locator("details").count(), 0);
+  assert.equal(await creditHelp.getByRole("list", { name: "Credit usage history" }).locator("li").count(), 10);
+  assert.equal(await creditHelp.locator(".credit-history-totals dd").allTextContents().then(values => values.join(",")), "17,35");
+  const activityDays = creditHelp.locator(".credit-activity-day");
+  assert.equal(await activityDays.count(), 84);
+  assert.equal(await creditHelp.locator(".credit-history-bar").count(), 0);
+  await activityDays.last().click();
+  assert.match(await creditHelp.locator(".credit-activity-detail").innerText(), /Sep 30\s+1 analysis · 4.8 credits/);
+  await page.keyboard.press("Home");
+  assert.equal(await activityDays.first().getAttribute("aria-pressed"), "true");
+  await page.keyboard.press("ArrowRight");
+  assert.equal(await activityDays.nth(7).getAttribute("aria-pressed"), "true");
+  assert.match(await creditHelp.locator(".credit-activity-detail").innerText(), /1 analysis · 0.5 credits/);
+  await page.keyboard.press("End");
+  assert.equal(await activityDays.last().getAttribute("aria-pressed"), "true");
+  const accessBox = await creditHelp.locator(".credit-manager-access").boundingBox(), activityBox = await creditHelp.locator(".credit-manager-activity").boundingBox();
+  assert.ok(accessBox.x + accessBox.width < activityBox.x);
+  assert.equal(await creditHelp.evaluate(element => element.scrollWidth > element.clientWidth), false);
   await captureSettings("credits-help-windows-light.png", false);
-  await creditHelp.getByRole("button", { name: "Close credit help", exact: true }).click();
+  await page.setViewportSize({ width: 600, height: 800 });
+  await page.evaluate(() => { window.modelQA.setPlatform("darwin"); document.documentElement.dataset.platform = "darwin"; document.documentElement.dataset.theme = "dark"; });
+  await creditHelp.getByRole("button", { name: "Refresh credits and devices", exact: true }).click();
+  await page.locator(".desktop-shell.platform-mac").waitFor();
+  assert.equal(await creditHelp.evaluate(element => element.scrollWidth > element.clientWidth), false);
+  await captureSettings("credits-manager-mac-dark-narrow.png", false);
+  await creditHelp.locator(".credit-history").scrollIntoViewIfNeeded();
+  await captureSettings("credits-manager-mac-dark-usage.png", false);
+  await page.setViewportSize({ width: 1550, height: 850 });
+  await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32"; document.documentElement.dataset.theme = "light"; });
+  await creditHelp.getByRole("button", { name: "Refresh credits and devices", exact: true }).click();
+  await creditHelp.getByRole("button", { name: "Close credits and devices", exact: true }).click();
   assert.equal(await creditsSettings.evaluate(element => element.scrollWidth > element.clientWidth), false);
   await page.evaluate(() => {
     window.creditQA.resumeMode = "error";
