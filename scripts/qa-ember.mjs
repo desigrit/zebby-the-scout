@@ -274,20 +274,20 @@ try {
   await capture("plan-light-results");
   assert.equal(await page.locator(".analysis-grid").evaluate((e) => getComputedStyle(e).gridTemplateColumns.split(" ").length), 2);
   async function assertPlanExplanationWidth(label) {
-    const sharing = page.locator(".analysis-sharing");
-    if (!(await sharing.evaluate((element) => element.open))) await sharing.locator("summary").click();
-    const measurements = await page.locator(".overview-rationale p, .analysis-sharing p").evaluateAll((paragraphs) => paragraphs.map((paragraph) => ({
+    assert.equal(await page.getByText("Analysis details", { exact: true }).count(), 0);
+    assert.equal(await page.getByRole("button", { name: "Create tailored resume", exact: true }).count(), 1);
+    assert.equal(await page.locator(".tailored-resume-section").evaluate(element => element.scrollWidth > element.clientWidth), false);
+    const measurements = await page.locator(".overview-rationale p").evaluateAll((paragraphs) => paragraphs.map((paragraph) => ({
       width: paragraph.getBoundingClientRect().width,
       available: paragraph.parentElement.getBoundingClientRect().width,
       overflow: paragraph.scrollWidth > paragraph.clientWidth,
     })));
-    assert.equal(measurements.length, 2);
+    assert.equal(measurements.length, 1);
     assert.ok(measurements.every(({ width, available, overflow }) => Math.abs(width - available) <= 1 && !overflow), `${label}: ${JSON.stringify(measurements)}`);
     await page.locator(".plan-document-scroll").evaluate((element) => element.scrollTo(0, element.scrollHeight));
   }
   await assertPlanExplanationWidth("Wide Plan footer"); await capture("plan-footer-light");
   await theme("dark"); await capture("plan-footer-dark"); await theme("light");
-  await page.locator(".analysis-sharing summary").click();
   await page.locator(".analysis-section").evaluate((element) => {
     const scroll = element.closest(".plan-document-scroll");
     scroll.scrollTop += element.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 24;
@@ -385,7 +385,7 @@ try {
     }
     await nav.getByRole("button", { name: "Applications", exact: true }).click();
   }
-  checks.push("Plan overview rationale and analysis details use the document width without horizontal overflow at wide/narrow sizes");
+  checks.push("Plan rationale and tailored resume controls fit wide and narrow document layouts");
   await page.getByRole("button", { name: "Collapse navigation" }).click(); await capture("applications-790-collapsed");
   await page.getByRole("button", { name: "Expand navigation" }).click();
   await selector.click();
