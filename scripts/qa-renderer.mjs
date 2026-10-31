@@ -271,7 +271,7 @@ try {
       if (window.controlsQA.failCopy) throw new Error("Synthetic clipboard failure");
       window.controlsQA.copied = text;
     } }, configurable: true });
-    const listeners = new Set(), updateListeners = new Set(), creditListeners = new Set(), analysisListeners = new Set();
+    const listeners = new Set(), updateListeners = new Set(), creditListeners = new Set(), analysisListeners = new Set(), databaseListeners = new Set();
     window.analysisQA = { cancelled: [], progress: (event) => { for (const listener of analysisListeners) listener(event); } };
     const snapshot = () => structuredClone(initialState);
     const update = (id, change) => { initialState.localModels = initialState.localModels.map((item) =>
@@ -297,9 +297,12 @@ try {
     window.modelQA = { confirmDelete: false, deleteRequests: [], selections: [], rejectSidebarSave: false,
       updateState, installRequests: 0, failInstall: false, failCheck: false, finishDownload: null,
       logOpens: 0, failLogOpen: false, failKeySave: false, keySaveAttempts: 0, thinkingSelections: [], databaseRequests: [], stopRequests: [], update,
+      databaseResult: "cancel",
+      setDatabase: (change) => { Object.assign(initialState, change); for (const listener of databaseListeners) listener(snapshot()); },
       setPlatform: (platform) => { initialState.platform = platform; },
       setCompute: (compute) => { initialState.localCompute = compute; for (const listener of listeners) listener(snapshot()); } };
-    window.desktop = { state: async () => initialState, onDatabaseChanged: () => () => {}, onNavigate: () => () => {},
+    window.desktop = { state: async () => initialState,
+      onDatabaseChanged: (listener) => { databaseListeners.add(listener); return () => databaseListeners.delete(listener); }, onNavigate: () => () => {},
       onAnalysisProgress: (listener) => { analysisListeners.add(listener); return () => analysisListeners.delete(listener); },
       cancelAnalysis: async (id) => { window.analysisQA.cancelled.push(id); return true; },
       onLocalModelsChanged: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
@@ -384,7 +387,13 @@ try {
         updateState({ download: { phase: "installing", received: 100, total: 100, error: "" } });
       },
       downloadResume: async () => true,
-      chooseDatabase: async (kind) => { window.modelQA.databaseRequests.push(kind); return null; },
+      chooseDatabase: async (kind) => {
+        window.modelQA.databaseRequests.push(kind);
+        if (window.modelQA.databaseResult === "error") throw new Error("The selected database could not be opened.");
+        if (window.modelQA.databaseResult === "cancel") return null;
+        Object.assign(initialState, { filePath: "/fixture/Applications.sqlite", filename: "Applications.sqlite", startupError: "" });
+        return snapshot();
+      },
       openLogs: async () => { if (window.modelQA.failLogOpen) throw new Error("Synthetic logs folder error"); window.modelQA.logOpens++; },
       listOllamaModels: async () => ["qwen3.8:27b", "qwen3:8b"],
       setAnalysisProvider: async (provider) => { initialState.analysisProvider = provider; return snapshot(); },
@@ -511,6 +520,31 @@ try {
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   const nav = page.getByRole("navigation", { name: "Workspace" });
   await page.getByRole("main", { name: "Plan", exact: true }).waitFor();
+  const originalDatabase = await page.evaluate(() => window.desktop.state());
+  for (const platform of ["win32", "darwin"]) {
+    await page.evaluate(platform => {
+      document.documentElement.dataset.platform = platform;
+      window.modelQA.setDatabase({ platform, filePath: "", filename: "", startupError: "" });
+    }, platform);
+    const welcome = page.getByRole("main", { name: "Welcome", exact: true });
+    await welcome.getByRole("heading", { name: "Your search, in one place.", exact: true }).waitFor();
+    for (const label of ["Create database", "Open existing database"]) {
+      await welcome.getByRole("button", { name: label, exact: true }).click();
+      assert.equal(await welcome.isVisible(), true, "Canceling the file picker keeps the welcome screen");
+    }
+    await captureSettings(`welcome-${platform === "win32" ? "windows" : "mac"}.png`, false);
+  }
+  await page.evaluate(() => { window.modelQA.databaseResult = "error"; });
+  await page.getByRole("button", { name: "Open existing database", exact: true }).click();
+  await page.getByRole("alert").filter({ hasText: "The selected database could not be opened." }).waitFor();
+  await page.evaluate(() => { window.modelQA.databaseResult = "success"; });
+  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await page.getByRole("main", { name: "Plan", exact: true }).waitFor();
+  await page.evaluate(original => {
+    window.modelQA.databaseResult = "cancel"; window.modelQA.databaseRequests = [];
+    document.documentElement.dataset.platform = original.platform;
+    window.modelQA.setDatabase(original);
+  }, originalDatabase);
   assert.equal(await page.title(), "Zebby");
   assert.equal(await page.locator(".desktop-titlebar").innerText(), "Zebby");
   assert.equal(await page.locator(".sidebar-brand").innerText(), "");
@@ -1397,12 +1431,12 @@ try {
   assert.equal(await page.evaluate(() => window.modelQA.selections.length), beforeHardware, "Hardware detection must not select or download a model");
   for (const method of ["ollama", "builtin", "openai", "anthropic"]) {
     await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption(method);
-    assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).count(), 0);
+    assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).count(), 1);
   }
   await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption("credits");
-  assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).count(), 1);
-  assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).isEnabled(), true);
-  assert.equal(await emptyCredits.getByRole("button", { name: "Buy credits", exact: true }).count(), 0);
+  assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).count(), 2);
+  assert.equal(await emptyCredits.getByRole("button", { name: "Buy credits", exact: true }).isEnabled(), true);
+  assert.equal(await emptyCredits.getByRole("button", { name: "Buy credits", exact: true }).count(), 1);
   assert.equal(await emptyCredits.getByRole("combobox").count(), 0);
   assert.doesNotMatch(await settingsPage.innerText(), /Paid credits are not|not connected yet/);
   await settingsPage.evaluate(element => { element.scrollTop = 0; });
@@ -1425,7 +1459,7 @@ try {
   assert.equal(await emptyCredits.getByRole("button", { name: "Manage credits", exact: true }).evaluate(element => element === document.activeElement), true);
   // A cold or unavailable host must not hold up choosing a pack or cancelling.
   await page.evaluate(() => { window.creditQA.warmupMode = "pending"; });
-  await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).click();
+  await emptyCredits.getByRole("button", { name: "Buy credits", exact: true }).click();
   const pricingDialog = page.getByRole("dialog", { name: "A little fuel for your next move", exact: true });
   await pricingDialog.getByRole("radio", { name: /\$5\b/ }).waitFor();
   assert.equal(await page.evaluate(() => window.creditQA.warmups), 1);
@@ -1434,7 +1468,7 @@ try {
   await pricingDialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await pricingDialog.waitFor({ state: "hidden" });
   await page.evaluate(() => { window.creditQA.finishWarmup(); window.creditQA.finishWarmup = null; window.creditQA.warmupMode = "error"; });
-  await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).click();
+  await emptyCredits.getByRole("button", { name: "Buy credits", exact: true }).click();
   await pricingDialog.getByRole("radio", { name: /\$5\b/ }).waitFor();
   assert.equal(await pricingDialog.getByRole("alert").count(), 0);
   assert.equal(await pricingDialog.getByRole("button", { name: "Continue to checkout · $5", exact: true }).isEnabled(), true);
@@ -1645,8 +1679,8 @@ try {
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
   assert.equal(await paidSettingsModel.inputValue(), "gpt-6-astra");
   assert.equal(await creditsSettings.getByRole("combobox", { name: "Model", exact: true }).count(), 0);
-  assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).count(), 1);
-  assert.equal(await creditsSettings.getByRole("button", { name: "Buy credits", exact: true }).count(), 0);
+  assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).count(), 2);
+  assert.equal(await creditsSettings.getByRole("button", { name: "Buy credits", exact: true }).count(), 1);
   assert.equal(await creditsSettings.getByRole("button", { name: "Sign out", exact: true }).count(), 0);
   await creditsSettings.getByRole("button", { name: "Manage credits", exact: true }).click();
   await creditsSettings.getByRole("button", { name: "Connect another computer", exact: true }).click();

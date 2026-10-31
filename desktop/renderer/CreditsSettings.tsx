@@ -9,7 +9,7 @@ import { useAnalysisFlow } from "./AnalysisFlow";
 import CreditUsage from "./CreditUsage";
 
 export function CreditsSettings() {
-  const { state, updateState } = useAnalysisFlow();
+  const { state, updateState, openCredits } = useAnalysisFlow();
   const credits = state.credits, wallet = credits.wallet;
   const usage = wallet ? creditUsage(wallet) : null;
   const hasCredits = Boolean(wallet && (wallet.purchased || wallet.balance || wallet.used));
@@ -146,6 +146,7 @@ export function CreditsSettings() {
       {credits.pendingConnection && <div className="credit-connection-pending"><p className="settings-help" role="status">Connection interrupted.</p>
         <SettingsAction icon={RefreshCw} busy={working} disabled={!usable} onClick={() => void action(refreshBalance)}>Retry connection</SettingsAction></div>}
       <div className="credit-settings-links">
+        <button className="settings-link" type="button" aria-haspopup="dialog" disabled={!usable || working} onClick={() => openCredits()}>Buy credits</button>
         <button ref={helpOpener} className="settings-link" type="button" aria-haspopup="dialog" disabled={working} onClick={() => setHelpOpen(true)}>Manage credits</button>
       </div>
       {!usable && <p className="form-error">Credit wallets need Windows secure storage or Mac Keychain.</p>}

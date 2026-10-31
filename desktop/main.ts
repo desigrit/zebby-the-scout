@@ -31,6 +31,7 @@ import { OnlineAnalysisError } from "./online-response";
 import { creditModel, DEFAULT_CREDIT_MODEL, onlineModel, validateOnlineThinking, type AnalysisProvider, type AnalysisSource } from "../shared/online-models";
 import { maskedApiKey, onlineThinkingCapability, selectedThinking, thinkingKey, type ThinkingPreferences } from "../shared/thinking";
 import { writeProfileSettings } from "./settings-persistence";
+import { restoreStartupDatabase } from "./startup-database";
 import { distributionChannel as resolveDistributionChannel, readStorePackageFamily, requireDirectUpdates,
   requireDurableDatabase, storeDataPaths, STORE_UPDATES_URI } from "./distribution";
 
@@ -161,22 +162,23 @@ async function loadSettings() {
     try { creditsClient.restore(safeStorage.decryptString(Buffer.from(settings.encryptedCreditSession, "base64"))); }
     catch (error) { creditsClient.restoreFailed(); logDiagnostic("Could not restore wallet access", error); }
   }
-  if (settings.databasePath) {
-    try { checkDatabaseLocation(settings.databasePath); await store.open(settings.databasePath); }
-    catch (error) { startupError = error instanceof Error ? error.message : "The last database could not be opened.";
-      logDiagnostic("Could not open the saved database", error); }
-  }
-  if (!store.status.filePath) {
-    if (settings.databasePath) logEvent("Selected database unavailable; opening the local workspace without replacing the selected file");
-    const previousLocal = path.join(app.getPath("userData"), "PM Applications.sqlite");
-    const localPath = storePaths ? storePaths.database : (await stat(previousLocal).catch(() => null))?.isFile()
-      ? previousLocal : path.join(app.getPath("userData"), "Zebby Applications.sqlite");
-    if ((await stat(localPath).catch(() => null))?.isFile()) await store.open(localPath);
-    else await store.create(localPath);
-    if (!settings.databasePath) {
-      settings.databasePath = localPath;
+  try {
+    const localPaths = storePaths ? [storePaths.database] : [
+      path.join(app.getPath("userData"), "PM Applications.sqlite"),
+      path.join(app.getPath("userData"), "Zebby Applications.sqlite"),
+    ];
+    const restored = await restoreStartupDatabase(settings.databasePath, localPaths, async (filePath) => {
+      checkDatabaseLocation(filePath);
+      await store.open(filePath);
+    });
+    if (restored && !settings.databasePath) {
+      settings.databasePath = restored;
       await saveSettings();
     }
+    if (!restored) logEvent("First launch: waiting for a database to be created or opened");
+  } catch (error) {
+    startupError = error instanceof Error ? error.message : "The last database could not be opened.";
+    logDiagnostic("Could not restore the database; keeping its saved selection", error);
   }
 }
 

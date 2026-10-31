@@ -26,7 +26,7 @@ Then open Zebby from Applications. This clears the download quarantine attribute
 
 ### Database setup
 
-On first launch, the app creates a local SQLite database automatically, so you can use Plan and Applications immediately. **Create new database** in Settings creates an empty file and switches to it, leaving your existing database intact. Save a new file in a cloud synced folder to share it between computers, then use **Open database** on the second computer. To move a database that already contains your jobs, quit Zebby, move or copy the file in Explorer or Finder, then open it in Settings. Wait for your cloud drive to finish syncing before switching computers. Keep only one computer editing the file at a time.
+On first launch, choose **Create database** for a new SQLite file or **Open existing database** to continue with a file you already use. Zebby remembers that choice for future launches. **Create new database** in Settings creates an empty file and switches to it, leaving your existing database intact. Save a new file in a cloud synced folder to share it between computers, then use **Open database** on the second computer. To move a database that already contains your jobs, quit Zebby, move or copy the file in Explorer or Finder, then open it in Settings. Wait for your cloud drive to finish syncing before switching computers. Keep only one computer editing the file at a time.
 
 Install version 1.4.1 or newer on both computers before opening a shared database that has been upgraded by this release. Older versions cannot open the upgraded file.
 

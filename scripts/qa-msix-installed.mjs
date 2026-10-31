@@ -139,9 +139,23 @@ try {
     });
     const nav = page.getByRole("navigation", { name: "Workspace" });
     await nav.waitFor();
-    const initial = await page.evaluate(() => window.desktop.state());
+    let initial = await page.evaluate(() => window.desktop.state());
     assert.equal(initial.distributionChannel, "store");
     assert.equal(initial.startupError, "");
+    assert.equal(initial.filePath, "");
+    const firstDatabase = path.join(native.documents, "Zebby", "Zebby Applications.sqlite");
+    assert.equal(await exists(firstDatabase), false);
+    const welcome = page.getByRole("main", { name: "Welcome", exact: true });
+    await welcome.getByRole("heading", { name: "Your search, in one place.", exact: true }).waitFor();
+    await app.evaluate(({ dialog }) => { dialog.showSaveDialog = async () => ({ canceled: true }); });
+    await welcome.getByRole("button", { name: "Create database", exact: true }).click();
+    assert.equal((await page.evaluate(() => window.desktop.state())).filePath, "");
+    assert.equal(await exists(firstDatabase), false);
+    await app.evaluate(({ dialog }, file) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: file }); }, firstDatabase);
+    await welcome.getByRole("button", { name: "Create database", exact: true }).click();
+    await page.getByRole("main", { name: "Plan", exact: true }).waitFor();
+    initial = await page.evaluate(() => window.desktop.state());
+    checks.push("First launch shows Welcome; cancelling preserves it and Create database explicitly starts the workspace.");
     assert.equal(initial.filePath.toLowerCase(), path.join(native.documents, "Zebby", "Zebby Applications.sqlite").toLowerCase());
     assert.equal(initial.modelsFolder.toLowerCase(), path.join(profile, "Models").toLowerCase());
     assert.equal(initial.logsPath.toLowerCase(), path.join(profile, "Logs").toLowerCase());
@@ -171,7 +185,7 @@ try {
     for (const name of ["credits", "ollama", "builtin", "openai", "anthropic"]) {
       await provider.selectOption(name);
       await page.waitForFunction(async (expected) => (await window.desktop.state()).analysisProvider === expected, name);
-      if (name === "credits") await page.getByRole("button", { name: "Buy credits", exact: true }).waitFor();
+      if (name === "credits") await page.getByRole("region", { name: "Credits", exact: true }).getByRole("button", { name: "Buy credits", exact: true }).waitFor();
       if (name === "ollama") { await page.getByRole("textbox", { name: "Server URL", exact: true }).waitFor(); await page.getByRole("button", { name: "Test connection", exact: true }).click(); await page.getByText("Connected", { exact: true }).waitFor(); }
       if (name === "builtin") await page.getByRole("combobox", { name: "Local model", exact: true }).waitFor();
       if (name === "openai" || name === "anthropic") {

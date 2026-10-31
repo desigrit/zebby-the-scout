@@ -624,7 +624,7 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking 
 
 function Welcome({ state, onState }: { state: DesktopState; onState: (value: DesktopState) => void }) {
   const [error, setError] = useState(state.startupError);
-  const retryAction = useRef<() => void>(() => undefined);
+  const retryAction = useRef<(() => void) | null>(null);
   const [working, setWorking] = useState(false);
   async function choose(kind: "open" | "create") {
     retryAction.current = () => void choose(kind);
@@ -633,10 +633,10 @@ function Welcome({ state, onState }: { state: DesktopState; onState: (value: Des
     catch (cause) { setError(errorText(cause)); }
     finally { setWorking(false); }
   }
-  return <main className="welcome-page"><img className="welcome-graphic" src="./icon.png" alt="" />
+  return <main className="welcome-page" aria-label="Welcome"><img className="welcome-graphic" src="./icon.png" alt="" />
     <div className="welcome-copy"><h1>Your search, in one place.</h1>
       <p>Plan for the roles you want, then track every application and resume you send.</p></div>
-    <ErrorBanner message={error} retry={() => retryAction.current()} busy={working} />
+    <ErrorBanner message={error} retry={() => retryAction.current ? retryAction.current() : void choose("open")} busy={working} />
     <div className="welcome-actions"><button className="button button-primary" onClick={() => void choose("create")} disabled={working}>
       <Plus size={18} aria-hidden="true" /> Create database</button>
       <button className="button button-secondary" onClick={() => void choose("open")} disabled={working}>
@@ -781,9 +781,8 @@ export default function App() {
       <ErrorBanner message={shellError} className="workspace-warning" retry={() => shellRetry.current()} busy={updateWorking || sidebarSaving} />
       {state.dirty && tab !== "settings" && <div className="workspace-warning" role="alert"><span>Changes have not reached {state.filename || "your database file"}.</span>
         <button type="button" onClick={() => navigate("settings")}>Retry save in Settings</button></div>}
-      {state.startupError && <div className="workspace-warning" role="alert">
-        <span>The previous database is unavailable. This workspace is stored locally.</span>
-        <button type="button" onClick={() => navigate("settings")}>Open Settings</button>
+      {state.startupError && tab === "settings" && <div className="workspace-warning" role="alert">
+        <span>The previous database could not be opened. Choose a database to continue.</span>
       </div>}
       {!state.filePath ? (tab === "settings" ? <SettingsView state={state} onState={setState} onUpdate={() => void applyUpdate()} onCheckUpdates={checkUpdates} updateWorking={updateWorking} /> : <Welcome state={state} onState={setState} />)
       : tab === "plan" ? <PlanView key={databaseVersion}

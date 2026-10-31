@@ -8,7 +8,9 @@ I built Zebby while organizing my own job search: reviewing roles, deciding what
 
 Below are the [design exploration and selection](#choosing-a-design-direction), [product decisions](#product-decisions), [how I worked with AI](#working-with-ai), [what I pushed back on](#what-i-pushed-back-on), and [what I'd do next](#what-id-do-next).
 
-**[Download Zebby](https://github.com/desigrit/zebby-the-scout/releases/latest)** · [Getting started](docs/guide.md#install) · [Report an issue](https://github.com/desigrit/zebby-the-scout/issues)
+<a href="https://apps.microsoft.com/detail/9p4qwz4dbf52?hl=en-US&amp;gl=US"><picture><source media="(prefers-color-scheme: dark)" srcset="https://get.microsoft.com/images/en-us%20light.svg" width="200"><img alt="Get Zebby from the Microsoft Store" src="https://get.microsoft.com/images/en-us%20dark.svg" width="200"></picture></a>
+
+**[Windows and Mac installers](https://github.com/desigrit/zebby-the-scout/releases/latest)** · [Getting started](docs/guide.md#install) · [Report an issue](https://github.com/desigrit/zebby-the-scout/issues)
 
 [![Zebby's Plan and Applications screens, showing resume matching, ATS keywords and application tracking](docs/screenshots/zebby-collage.jpg)](docs/screenshots/zebby-collage.png)
 
