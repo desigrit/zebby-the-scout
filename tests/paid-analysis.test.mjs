@@ -11,6 +11,10 @@ import { serviceConfig } from "../credits-service/config.ts";
 import { verifyStripeEvent } from "../credits-service/stripe.ts";
 import { runSelectedAnalysis } from "../desktop/analysis-routing.ts";
 import { creditUsage } from "../shared/credit-usage.ts";
+import { CREDIT_SERVICE_URL, LEGACY_CREDIT_SERVICE_URL } from "../shared/credit-service.ts";
+import { analysisFetch } from "../desktop/analysis-fetch.ts";
+import { createServer } from "node:http";
+import { once } from "node:events";
 
 test("credit usage shows the remaining share of purchased credits", () => {
   const { percentUsed, ...usage } = creditUsage({ balance: 2790_000_000, reserved: 0, used: 210_000_000, purchased: 3000_000_000 });
@@ -134,6 +138,62 @@ test("service configuration defaults to test mode and rejects accidental live ke
   for (const prefix of ["sk_live_", "rk_live_"]) assert.equal(serviceConfig({ ...liveEnv, STRIPE_SECRET_KEY: prefix + "fixture" }).live, true);
   for (const prefix of ["sk_test_", "rk_test_", "pk_live_", "pk_test_"]) assert.throws(() => serviceConfig({ ...liveEnv, STRIPE_SECRET_KEY: prefix + "fixture" }));
   assert.throws(() => serviceConfig({ ...env, ZEBBY_PUBLIC_SERVICE_URL: "http://credits.example" }));
+  assert.equal(serviceConfig(env).bindAddress, "0.0.0.0");
+  assert.equal(serviceConfig({ ...env, ZEBBY_BIND_ADDRESS: "127.0.0.1" }).bindAddress, "127.0.0.1");
+  assert.equal(serviceConfig({ ...env, ZEBBY_BIND_ADDRESS: "::1" }).bindAddress, "::1");
+  assert.throws(() => serviceConfig({ ...env, ZEBBY_BIND_ADDRESS: "untrusted.example" }), /IP address/);
+});
+
+test("Azure carries the existing wallet, recovery code and pending receipts without creating another wallet", async () => {
+  const snapshot = { url: LEGACY_CREDIT_SERVICE_URL,
+    session: { access: "zby_device_" + "a".repeat(64), refresh: "zby_device_" + "a".repeat(64), expires: Number.MAX_SAFE_INTEGER,
+      email: "", id: userId, deviceId: randomUUID(), kind: "guest" },
+    wallet: { balance: 450000000, reserved: 0, used: 50000000, purchased: 500000000, updatedAt: new Date().toISOString(), recent: [] },
+    recovery: { code: "ZEBBY-" + Array(5).fill("ABCDEF12").join("-"), walletId: userId, version: randomUUID(), saved: true },
+    pending: [{ quoteId: randomUUID(), requestId: randomUUID(), userId, hash: "fixture-hash", model: "gpt-6.1-sol",
+      expires: Date.now() + 60000, source: { kind: "match", id: randomUUID() } }] };
+  let saved;
+  const migrated = new CreditsClient(CREDIT_SERVICE_URL, { save: async value => { saved = JSON.parse(value); }, onChange() {},
+    fetcher: async (url, options) => {
+      assert.equal(url, CREDIT_SERVICE_URL + "/v1/wallet");
+      assert.equal(options.headers.Authorization, "Bearer " + snapshot.session.access);
+      return Response.json(snapshot.wallet);
+    } });
+  migrated.restore(JSON.stringify(snapshot));
+  assert.equal(migrated.state("gpt-6.1-sol").signedIn, true);
+  await migrated.refreshWallet();
+  assert.equal(saved.url, LEGACY_CREDIT_SERVICE_URL);
+  assert.deepEqual(saved.session, snapshot.session);
+  assert.deepEqual(saved.wallet, snapshot.wallet);
+  assert.deepEqual(saved.recovery, snapshot.recovery);
+  assert.deepEqual(saved.pending, snapshot.pending);
+  const rollback = new CreditsClient(LEGACY_CREDIT_SERVICE_URL, { save: async () => {}, onChange() {} });
+  rollback.restore(JSON.stringify(saved));
+  assert.equal(rollback.state("gpt-6.1-sol").signedIn, true);
+  for (const url of ["https://other.example", CREDIT_SERVICE_URL + ".example"]) {
+    const unknown = new CreditsClient(url, { save: async () => assert.fail("Preserve wallet access"), onChange() {},
+      fetcher: () => assert.fail("Never send a wallet credential to an unapproved host") });
+    unknown.restore(JSON.stringify(snapshot));
+    await assert.rejects(unknown.checkout("starter"), /could not be read/);
+  }
+});
+
+test("analysis transport uses a compatible dispatcher, preserves POST data and cancels without replay", async () => {
+  const requests = [];
+  const server = createServer(async (request, response) => {
+    let body = ""; for await (const chunk of request) body += chunk;
+    requests.push({ method: request.method, path: request.url, body });
+    if (request.url === "/wait") return;
+    response.setHeader("Content-Type", "application/json"); response.end(JSON.stringify({ ok: true }));
+  });
+  server.listen(0, "127.0.0.1"); await once(server, "listening");
+  const url = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const response = await analysisFetch(url + "/analysis", { method: "POST", body: JSON.stringify({ model: "fixture" }) });
+    assert.deepEqual(await response.json(), { ok: true });
+    await assert.rejects(analysisFetch(url + "/wait", { signal: AbortSignal.timeout(60) }), { name: "TimeoutError" });
+    assert.deepEqual(requests, [{ method: "POST", path: "/analysis", body: '{"model":"fixture"}' }, { method: "GET", path: "/wait", body: "" }]);
+  } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });
 test("Anthropic uses structured Messages output and charges reported cache and output usage", async () => {
   let body;

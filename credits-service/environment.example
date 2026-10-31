@@ -8,6 +8,10 @@ STRIPE_WEBHOOK_SECRET=whsec_
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
 PORT=8080
+# Use 127.0.0.1 behind a reverse proxy on the same VM. Containers use 0.0.0.0.
+ZEBBY_BIND_ADDRESS=0.0.0.0
+# Optional public Git commit identifier for /health.
+ZEBBY_SERVICE_COMMIT=
 # 0 ignores forwarded headers. Set 1-4 only for a verified, fixed proxy chain.
 ZEBBY_TRUST_PROXY_HOPS=0
 # Leave false during sandbox checks. Live credentials must match live mode.

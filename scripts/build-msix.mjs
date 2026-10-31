@@ -29,7 +29,7 @@ const validation = path.join(output, "Validation");
 const payloads = values.payloads ? path.resolve(values.payloads) : path.join(output, "Source and build", "payloads");
 await mkdir(validation, { recursive: true }); await mkdir(payloads, { recursive: true });
 const env = { ...process.env, ZEBBY_DISTRIBUTION_CHANNEL: "store", CSC_IDENTITY_AUTO_DISCOVERY: "false",
-  ZEBBY_CREDITS_SERVICE_URL: process.env.ZEBBY_CREDITS_SERVICE_URL || "https://zebby-credits.onrender.com" };
+  ZEBBY_CREDITS_SERVICE_URL: process.env.ZEBBY_CREDITS_SERVICE_URL || "https://zebby-credits-9d5bde.westus2.cloudapp.azure.com" };
 const endpoint = new URL(env.ZEBBY_CREDITS_SERVICE_URL);
 if (endpoint.protocol !== "https:" || endpoint.username || endpoint.password) throw new Error("The public credits service URL must use HTTPS and cannot contain credentials.");
 

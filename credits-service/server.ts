@@ -7,7 +7,8 @@ import { OnlineAnalysisError } from "../desktop/online-response.ts";
 const config = serviceConfig(), service = createService(config);
 // Public release identifiers only. Never expose the rest of the host environment.
 const version = /^\d+\.\d+\.\d+$/.test(process.env.ZEBBY_SERVICE_VERSION || "") ? process.env.ZEBBY_SERVICE_VERSION : "development";
-const commit = /^[\da-f]{40}$/i.test(process.env.RENDER_GIT_COMMIT || "") ? process.env.RENDER_GIT_COMMIT : undefined;
+const hostCommit = process.env.ZEBBY_SERVICE_COMMIT || process.env.RENDER_GIT_COMMIT || "";
+const commit = /^[\da-f]{40}$/i.test(hostCommit) ? hostCommit : undefined;
 const server = createServer(async (request, response) => {
   response.setHeader("Cache-Control", "no-store"); response.setHeader("X-Content-Type-Options", "nosniff");
   response.setHeader("Referrer-Policy", "no-referrer");
@@ -43,7 +44,7 @@ const server = createServer(async (request, response) => {
   }
 });
 server.requestTimeout = 30000; server.headersTimeout = 15000;
-server.listen(config.port, "0.0.0.0", () => console.info(`Zebby credits service listening on ${config.port}, ${config.live ? "live" : "test"} mode`));
+server.listen(config.port, config.bindAddress, () => console.info(`Zebby credits service listening on ${config.port}, ${config.live ? "live" : "test"} mode`));
 const cleanup = setInterval(() => { void service.cleanup().catch(() => console.error("Credit hold cleanup failed")); }, 60000);
 cleanup.unref(); void service.cleanup().catch(() => console.error("Credit hold cleanup failed"));
 for (const signal of ["SIGTERM", "SIGINT"] as const) process.on(signal, () => { clearInterval(cleanup); server.close(); });

@@ -2,6 +2,7 @@ import { onlineModel, outputLimit, validateOnlineThinking, type AnalysisKind, ty
 import { providerFailure, validStructuredResult } from "./online-response.ts";
 import { openAIAnalysisInput } from "./openai-request.ts";
 import { anthropicAnalysisInput } from "./anthropic-request.ts";
+import { analysisFetch } from "./analysis-fetch.ts";
 type Content = { type: string; text?: string };
 type ProviderPayload = { status?: string; stop_reason?: string; incomplete_details?: { reason?: string }; output?: { content?: Content[] }[]; content?: Content[];
   usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
@@ -16,7 +17,7 @@ export async function onlineAnalysis(options: { model: string; key: string; inst
   const maxOutputTokens = options.maxOutputTokens ?? outputLimit(options.kind, thinkingLevel);
   if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens <= 0) throw new Error("Invalid analysis output budget.");
   if (!options.key) throw new Error(`Add an ${model.provider === "openai" ? "OpenAI" : "Anthropic"} API key in Settings.`);
-  const send = options.fetcher || fetch;
+  const send = options.fetcher || analysisFetch;
   const deadline = ["high", "xhigh", "max"].includes(thinkingLevel) ? 480000 : 180000;
   const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(deadline)]) : AbortSignal.timeout(deadline);
   const isOpenAI = model.provider === "openai";
