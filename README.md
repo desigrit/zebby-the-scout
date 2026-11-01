@@ -4,6 +4,8 @@
 
 **Plan roles. Track applications. Keep your CVs straight.**
 
+**[Visit the Zebby website](https://zebbythescout.com/)**
+
 I built Zebby while organizing my own job search: reviewing roles, deciding what my resume needed, and remembering which version went where. I wanted something my peers could use without a complicated AI setup. The zebra came along for moral support.
 
 Below are the [design exploration and selection](#choosing-a-design-direction), [product decisions](#product-decisions), [how I worked with AI](#working-with-ai), [what I pushed back on](#what-i-pushed-back-on), and [what I'd do next](#what-id-do-next).
