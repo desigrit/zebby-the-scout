@@ -8,6 +8,7 @@ credits-service/dist/
 !shared/**
 !desktop/
 !desktop/online-analysis.ts
+!desktop/analysis-fetch.ts
 !desktop/online-response.ts
 !desktop/openai-request.ts
 !desktop/anthropic-request.ts

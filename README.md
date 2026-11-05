@@ -26,7 +26,8 @@ Below are the [design exploration and selection](#choosing-a-design-direction), 
 - **Tailored resumes:** create Word and PDF copies from an analyzed Plan using your selected model and thinking level. Keep the original resume, with generated copies named for the job.
 - **Applications:** track companies, roles, dates, locations, resumes, notes and statuses. Filter the list, see daily activity by status, and celebrate an offer with Zebby confetti.
 - **Job descriptions:** keep the extracted or pasted description, and edit it as needed. It stays available after the posting closes.
-- **Your files:** keep plans, applications and uploaded resumes together in a database file you choose.
+- **Boards (Beta)** tracks new jobs on saved career pages, including filtered searches and optional role instructions. [Using Boards](docs/boards.md)
+- **Your files** sit together in your chosen folder. Applications and resumes use one database. Boards history uses a companion file.
 
 ![Zebby Plan, showing individual keyword and theme importance, a resume match score and suggested summary edits](docs/screenshots/plan.png?v=2.3.8)
 

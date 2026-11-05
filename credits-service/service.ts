@@ -13,19 +13,21 @@ import { ServiceError } from "./errors.ts";
 import { createWalletAccess } from "./wallet-access.ts";
 import { createWalletUsage } from "./wallet-usage.ts";
 import { z } from "zod";
+import { boardModelContract } from "../shared/boards.ts";
 
 const uuid = z.string().uuid();
-const kindSchema = z.enum(["plan", "match", "resume"]);
-function contract(kind: "plan" | "match" | "resume") {
+const kindSchema = z.enum(["plan", "match", "resume", "board_extract"]);
+function contract(kind: "plan" | "match" | "resume" | "board_extract", input: ReturnType<typeof validateInput>) {
+  if (kind === "board_extract" && "task" in input) return boardModelContract(input);
   return kind === "resume" ? { instructions: tailoringInstructions, schema: tailoringSchema, name: "tailored_resume" }
     : kind === "plan" ? { instructions: planInstructions, schema: planSchema, name: "resume_plan" }
     : { instructions: matchInstructions, schema: matchSchema, name: "resume_match" };
 }
 type PurchaseRow = { id: string; user_id: string; pack: string; cents: number; session_id: string | null; paid: boolean };
-type QuoteRow = { id: string; kind: "plan" | "match" | "resume"; model: string; thinking_level: string; price_version: string;
+type QuoteRow = { id: string; kind: "plan" | "match" | "resume" | "board_extract"; model: string; thinking_level: string; price_version: string;
   input_tokens: number; output_limit: number; maximum: number };
 type RunRow = { status: "reserved" | "completed" | "failed"; fresh?: boolean; result?: Record<string, unknown> | null;
-  id: string; quote_id: string; model: string; kind: "plan" | "match" | "resume"; cost: number };
+  id: string; quote_id: string; model: string; kind: "plan" | "match" | "resume" | "board_extract"; cost: number };
 const stripeCheckout = z.object({ id: z.string().regex(/^cs_[a-zA-Z0-9_]+$/), url: z.string().url() });
 const paidSession = z.object({ id: z.string(), payment_status: z.string(), currency: z.string(), amount_subtotal: z.number().int(),
   client_reference_id: uuid, payment_intent: z.string().startsWith("pi_"), metadata: z.object({ user_id: uuid, purchase_id: uuid, pack: z.string() }) });
@@ -107,7 +109,7 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
     rateLimit("ip:" + ip, 120);
     if (method === "GET" && path === "/health") return { ok: true, mode: config.live ? "live" : "test" };
     if (method === "GET" && path === "/v1/catalog") return { packs: CREDIT_PACKS, models: CREDIT_MODELS,
-      priceVersion: PRICE_VERSION, mode: config.live ? "live" : "test" };
+      priceVersion: PRICE_VERSION, analysisKinds: kindSchema.options, mode: config.live ? "live" : "test" };
     if (method === "POST" && path === "/v1/auth/refresh") {
       const value = z.object({ refreshToken: z.string().min(1).max(8192) }).strict().parse(body);
       return supabase("/auth/v1/token?grant_type=refresh_token", { method: "POST", body: JSON.stringify({ refresh_token: value.refreshToken }) });
@@ -166,7 +168,7 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
         if (!wallet.astraUnlocked) throw new ServiceError(ASTRA_PACK_MESSAGE, 403);
       }
       const countInput = model.provider === "openai" ? countOpenAIAnalysisInput : countAnthropicAnalysisInput;
-      const inputTokens = await countInput({ model: model.id, key: providerKey(model.id), input, ...contract(value.kind),
+      const inputTokens = await countInput({ model: model.id, key: providerKey(model.id), input, ...contract(value.kind, input),
         thinkingLevel, signal, fetcher: send });
       signal.throwIfAborted();
       const outputTokens = creditOutputLimit(value.kind, thinkingLevel);
@@ -200,7 +202,7 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
       try {
         signal.throwIfAborted();
         const response = await onlineAnalysis({ model: model.id, key: providerKey(model.id), kind,
-          ...contract(kind), input, thinkingLevel, signal, fetcher: dependencies.fetcher, billingOwner: "zebby",
+          ...contract(kind, input), input, thinkingLevel, signal, fetcher: dependencies.fetcher, billingOwner: "zebby",
           maxOutputTokens: quote.output_limit });
         signal.throwIfAborted();
         const result = validateResult(response.result, kind, input), cost = usageCost(model, response.usage);

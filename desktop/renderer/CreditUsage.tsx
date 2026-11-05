@@ -55,7 +55,7 @@ export default function CreditUsage({ wallet }: { wallet: Wallet | null }) {
     {!!wallet?.dailyUsage?.length && <ActivityBlocks days={wallet.dailyUsage} />}
     {wallet?.recent.length ? <><p className="credit-history-caption">Latest {wallet.recent.length === 1 ? "analysis" : `${wallet.recent.length} analyses`}</p>
       <ul aria-label="Credit usage history">{wallet.recent.map((item) => <li key={item.id}>
-        <div className="credit-history-item"><div><strong>{item.kind === "resume" ? "Tailored resume" : item.kind === "plan" ? "Plan analysis" : "Resume match"}</strong><span>{formatCredits(item.cost)} credits</span></div>
+        <div className="credit-history-item"><div><strong>{item.kind === "board_extract" ? "Boards analysis" : item.kind === "resume" ? "Tailored resume" : item.kind === "plan" ? "Plan analysis" : item.kind === "match" ? "Resume match" : "Analysis"}</strong><span>{formatCredits(item.cost)} credits</span></div>
           <small>{modelName(item.model)} · <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</time></small>
         </div></li>)}</ul></> : <p className="settings-help">Your analyses will appear here.</p>}
   </section>;
