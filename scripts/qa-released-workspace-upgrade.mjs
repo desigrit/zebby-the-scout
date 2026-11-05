@@ -51,8 +51,18 @@ const saved = await page.evaluate(async () => {
 assert.equal(saved.title, "Product Manager fixture");
 await page.getByRole("navigation", {name:"Workspace"}).getByRole("button", {name:"Settings",exact:true}).click();
 const updates = page.getByRole("region", {name:"Updates",exact:true});
-await page.evaluate(() => window.desktop.checkForUpdates());
-await updates.getByRole("button", {name:"Update to 2.7.0",exact:true}).click();
+await updates.waitFor();
+const update = updates.getByRole("button", {name:"Update to 2.7.0",exact:true});
+for (let attempt = 0; attempt < 15 && !await update.isVisible(); attempt++) {
+  const check = updates.getByRole("button", {name:"Check for updates",exact:true});
+  const retry = updates.getByRole("button", {name:"Try again",exact:true});
+  if (await check.isVisible() && await check.isEnabled()) await check.click();
+  else if (await retry.isVisible() && await retry.isEnabled()) await retry.click();
+  const state = await page.evaluate(() => window.desktop.checkForUpdates());
+  console.log("Public release lookup:", state.currentVersion, state.available?.version || state.error || "up to date");
+  if (!await update.isVisible()) await delay(6000);
+}
+await update.click();
 const restart = updates.getByRole("button", {name:"Restart to update",exact:true});
 await restart.waitFor({state:"visible",timeout:240000});
 await assert.rejects(access(companion), { code: "ENOENT" });
