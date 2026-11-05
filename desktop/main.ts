@@ -56,7 +56,7 @@ let mainWindow: BrowserWindow | null = null;
 let store: DesktopStore;
 let boardsStore: BoardsStore;
 let boards: BoardsService<ReturnType<typeof selectedAnalysis>>;
-let switchingWorkspace = false;
+let switchingWorkspace: { done: Promise<void>; previous: DesktopStore["status"] } | undefined;
 let apiKey = "";
 let anthropicKey = "";
 let creditsClient: CreditsClient;
@@ -195,7 +195,7 @@ async function loadSettings() {
 
 function state() {
   return {
-    ...store.status, startupError, hasApiKey: Boolean(apiKey), hasAnthropicKey: Boolean(anthropicKey),
+    ...(switchingWorkspace?.previous ?? store.status), startupError, hasApiKey: Boolean(apiKey), hasAnthropicKey: Boolean(anthropicKey),
     apiKeyHint: maskedApiKey(apiKey, "openai"), anthropicKeyHint: maskedApiKey(anthropicKey, "anthropic"),
     thinkingLevels: settings.thinkingLevels || {},
     openaiModel: settings.openaiModel || "gpt-6.1-sol", anthropicModel: settings.anthropicModel || "claude-sonnet-5-5",
@@ -220,6 +220,15 @@ function state() {
   };
 }
 
+async function changeWorkspace(action: () => Promise<void>) {
+  if (switchingWorkspace) throw new Error("Wait for the workspace to finish opening.");
+  let finish!: () => void;
+  const done = new Promise<void>(resolve => { finish = resolve; });
+  switchingWorkspace = { done, previous: store.status };
+  try { await action(); }
+  finally { switchingWorkspace = undefined; finish(); }
+}
+
 async function openPairedBoards() {
   try {
     await boardsStore.openCompanion(store.status.filePath);
@@ -227,7 +236,7 @@ async function openPairedBoards() {
   } catch (error) {
     boards.error = error instanceof Error ? error.message : "The Boards companion could not be opened.";
     logDiagnostic("Could not open the paired Boards database", error);
-  } finally { boards.changed(); }
+  }
 }
 
 async function chooseDatabase(kind: "open" | "create") {
@@ -255,19 +264,26 @@ async function chooseDatabase(kind: "open" | "create") {
   if (switchingWorkspace || activeApiRequests || analysisRequests.busy || boards.busy || activeSettingsRequests > 1) {
     throw new Error("Finish or cancel work in the current workspace before switching databases.");
   }
-  switchingWorkspace = true;
+  let opened = false;
   try {
-    await boardsStore.readyToSwitch();
-    checkDatabaseLocation(filePath);
-    if (kind === "create") await store.create(filePath); else await store.open(filePath);
-    settings.databasePath = filePath;
-    startupError = "";
-    await openPairedBoards();
-    await saveSettings();
-    logEvent(`Database selected (${kind}, ${filePath})`);
-    mainWindow?.webContents.send("desktop:database-changed", state());
-    return state();
-  } finally { switchingWorkspace = false; }
+    await changeWorkspace(async () => {
+      await boardsStore.readyToSwitch();
+      checkDatabaseLocation(filePath);
+      if (kind === "create") await store.create(filePath); else await store.open(filePath);
+      settings.databasePath = filePath;
+      startupError = "";
+      await openPairedBoards();
+      opened = true;
+      await saveSettings();
+      logEvent(`Database selected (${kind}, ${filePath})`);
+    });
+  } finally {
+    if (opened) {
+      mainWindow?.webContents.send("desktop:database-changed", state());
+      boards.changed();
+    }
+  }
+  return state();
 }
 
 function jsonError(message: string, status = 400) {
@@ -489,7 +505,10 @@ async function analyzeApplicationMatch(id: string, signal: AbortSignal, commit: 
 async function handleApi(request: Request, pathname: string): Promise<Response> {
   const method = request.method.toUpperCase();
   const started = Date.now();
-  if (switchingWorkspace && method !== "GET") return jsonError("Wait for the workspace to finish opening.", 409);
+  if (switchingWorkspace) {
+    if (method !== "GET") return jsonError("Wait for the workspace to finish opening.", 409);
+    await switchingWorkspace.done;
+  }
   if (installingUpdate && method !== "GET") return jsonError("Zebby is restarting to install an update.", 503);
   activeApiRequests++;
   if (method !== "GET") logEvent(`Request started (${method} ${pathname})`);
@@ -624,7 +643,10 @@ function registerIpc() {
       const changing = !["boards:state", "desktop:state", "desktop:check-updates", "desktop:open-store-updates", "desktop:download-update", "desktop:install-update",
         "desktop:list-ollama-models", "desktop:ollama-thinking-capability", "desktop:open-logs", "desktop:open-model-folder", "desktop:download-resume",
         "desktop:warm-credits-service"].includes(channel);
-      if (switchingWorkspace && channel.startsWith("boards:") && channel !== "boards:state") throw new Error("Wait for the workspace to finish opening.");
+      if (switchingWorkspace) {
+        if (channel === "boards:state" || channel === "desktop:state") await switchingWorkspace.done;
+        else if (channel.startsWith("boards:")) throw new Error("Wait for the workspace to finish opening.");
+      }
       if (installingUpdate && changing) throw new Error("Zebby is restarting to install an update.");
       if (changing) activeSettingsRequests++;
       if (trace) logEvent(`Setting request started (${channel})`);
@@ -640,9 +662,8 @@ function registerIpc() {
   async function changeCompanion(action: () => Promise<void>) {
     boards.assertIdle();
     if (switchingWorkspace || activeSettingsRequests > 1) throw new Error("Finish the current action before changing Boards history.");
-    switchingWorkspace = true;
-    try { await action(); return boards.state; }
-    finally { switchingWorkspace = false; boards.changed(); }
+    try { await changeWorkspace(action); return boards.state; }
+    finally { boards.changed(); }
   }
   handle("boards:state", () => boards.state);
   handle("boards:import-history", async () => {

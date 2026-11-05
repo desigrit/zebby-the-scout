@@ -214,15 +214,25 @@ jobs:
           pattern: zebby-*
           path: release-files
           merge-multiple: true
+      - name: Carry forward the published Android preview
+        if: github.ref_name == 'v2.7.0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          name=Zebby-0.2.0-Android-preview.apk
+          gh release download v2.6.4 -R "$GITHUB_REPOSITORY" -p "$name" -D release-files
+          echo "78da3b019b4b6c196adcbe7f2e9fc376207529f7dfb5b22018ae550e473e6d4d  release-files/$name" | sha256sum --check
       - name: Publish direct installer downloads
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          assets=(release-files/*.exe release-files/*.dmg)
+          if [[ -f release-files/Zebby-0.2.0-Android-preview.apk ]]; then assets+=(release-files/Zebby-0.2.0-Android-preview.apk); fi
           notes="docs/releases/$GITHUB_REF_NAME.md"
           if [ -f "$notes" ]; then
-            gh release create "$GITHUB_REF_NAME" release-files/*.exe release-files/*.dmg --title "Zebby $GITHUB_REF_NAME" --notes-file "$notes" --target "$GITHUB_SHA"
+            gh release create "$GITHUB_REF_NAME" "${assets[@]}" --title "Zebby $GITHUB_REF_NAME" --notes-file "$notes" --target "$GITHUB_SHA"
           else
-            gh release create "$GITHUB_REF_NAME" release-files/*.exe release-files/*.dmg --title "Zebby $GITHUB_REF_NAME" --generate-notes --target "$GITHUB_SHA"
+            gh release create "$GITHUB_REF_NAME" "${assets[@]}" --title "Zebby $GITHUB_REF_NAME" --generate-notes --target "$GITHUB_SHA"
           fi
       - name: Keep only the latest temporary build artifacts
         env:
