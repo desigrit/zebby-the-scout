@@ -489,6 +489,7 @@ async function analyzeApplicationMatch(id: string, signal: AbortSignal, commit: 
 async function handleApi(request: Request, pathname: string): Promise<Response> {
   const method = request.method.toUpperCase();
   const started = Date.now();
+  if (switchingWorkspace && method !== "GET") return jsonError("Wait for the workspace to finish opening.", 409);
   if (installingUpdate && method !== "GET") return jsonError("Zebby is restarting to install an update.", 503);
   activeApiRequests++;
   if (method !== "GET") logEvent(`Request started (${method} ${pathname})`);
@@ -620,7 +621,7 @@ function registerIpc() {
     ipcMain.handle(channel, async (event, ...args: Args) => {
       const started = Date.now();
       const trace = !["desktop:state", "desktop:refresh-credits", "desktop:credit-checkout-status"].includes(channel);
-      const changing = !["desktop:state", "desktop:check-updates", "desktop:open-store-updates", "desktop:download-update", "desktop:install-update",
+      const changing = !["boards:state", "desktop:state", "desktop:check-updates", "desktop:open-store-updates", "desktop:download-update", "desktop:install-update",
         "desktop:list-ollama-models", "desktop:ollama-thinking-capability", "desktop:open-logs", "desktop:open-model-folder", "desktop:download-resume",
         "desktop:warm-credits-service"].includes(channel);
       if (switchingWorkspace && channel.startsWith("boards:") && channel !== "boards:state") throw new Error("Wait for the workspace to finish opening.");
@@ -636,6 +637,13 @@ function registerIpc() {
     });
   }
   handle("desktop:state", () => state());
+  async function changeCompanion(action: () => Promise<void>) {
+    boards.assertIdle();
+    if (switchingWorkspace || activeSettingsRequests > 1) throw new Error("Finish the current action before changing Boards history.");
+    switchingWorkspace = true;
+    try { await action(); return boards.state; }
+    finally { switchingWorkspace = false; boards.changed(); }
+  }
   handle("boards:state", () => boards.state);
   handle("boards:import-history", async () => {
     boards.assertIdle();
@@ -646,15 +654,15 @@ function registerIpc() {
     if (result.canceled || !result.filePaths[0]) return null;
     boards.assertIdle();
     if (generation !== boardsStore.generation) throw new Error("The workspace changed. Open Import Boards history again.");
-    await boardsStore.importHistory(result.filePaths[0]);
-    boards.error = ""; boards.changed(); return boards.state;
+    return changeCompanion(async () => { await boardsStore.importHistory(result.filePaths[0]); boards.error = ""; });
   });
   handle("boards:retry-save", async () => {
     boards.assertIdle();
     if (!store.status.filePath) throw new Error("Open a workspace first.");
-    if (boardsStore.status.dirty) await boardsStore.retrySave();
-    await openPairedBoards();
-    return boards.state;
+    return changeCompanion(async () => {
+      if (boardsStore.status.dirty) await boardsStore.retrySave();
+      await openPairedBoards();
+    });
   });
   handle("boards:save-recovery", async () => {
     boards.assertIdle();
@@ -665,9 +673,11 @@ function registerIpc() {
     boards.assertIdle();
     if (generation !== boardsStore.generation) throw new Error("The workspace changed. Save the recovery copy again.");
     checkDatabaseLocation(result.filePath);
-    await boardsStore.saveRecoveryCopy(result.filePath);
-    await openPairedBoards();
-    return boards.state;
+    const recoveryPath = result.filePath;
+    return changeCompanion(async () => {
+      await boardsStore.saveRecoveryCopy(recoveryPath);
+      await openPairedBoards();
+    });
   });
   handle("boards:add", async (_event, inputs: BoardInput[]) => {
     if (!Array.isArray(inputs)) throw new Error("Add one board link per line.");

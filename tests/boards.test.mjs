@@ -13,11 +13,11 @@ const bundle = path.join(root, "boards.mjs");
 await build({ stdin: { contents: `
   export * from './desktop/boards-store'; export * from './desktop/boards-scan';
   export * from './desktop/boards-service'; export * from './desktop/board-page'; export * from './desktop/netflix-board';
-  export * from './lib/board-identity';
+  export * from './lib/board-identity'; export * from './desktop/online-analysis';
   export * from './shared/boards';`, resolveDir: process.cwd() },
   outfile: bundle, bundle: true, platform: "node", format: "esm", target: "node22" });
 const { BoardsStore, BoardsService, NetflixBoardPages, scanBoard, boardJobIdentity, boardSearchKey, boardUrl,
-  boardsCompanionPath, validatedBoardExtraction } = await import(pathToFileURL(bundle).href);
+  boardsCompanionPath, onlineAnalysis, boardModelContract, validatedBoardExtraction } = await import(pathToFileURL(bundle).href);
 after(async () => { assert.ok(root.startsWith(path.resolve(tmpdir()) + path.sep)); await rm(root, { recursive: true, force: true }); });
 
 async function fixture(work) {
@@ -350,6 +350,51 @@ test("coordinator deduplicates concurrent checks and reuses validated extraction
   assert.equal(runs, 1); assert.equal(calls, 1); assert.equal(acknowledgements, 1); assert.equal(store.get(id).totalCount, 1);
   service.check([id]); while (service.busy) await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(runs, 2); assert.equal(calls, 1); assert.equal(store.get(id).newCount, 0);
+  await service.stop();
+}));
+
+test("personal keys send Boards decisions directly to the selected online provider", async () => {
+  const input = { task: "roles", criteria: "Product managers only", candidates: [{ id: "l0", url: saved.url, text: "Product Manager" }] };
+  const decisions = { decisions: { l0: true } };
+  for (const [provider, model] of [["openai", "gpt-6-luna"], ["anthropic", "claude-haiku-5-5"]]) {
+    const isOpenAI = provider === "openai";
+    let request;
+    const result = await onlineAnalysis({ ...boardModelContract(input), kind: "board_extract", model, key: "test-personal-key",
+      thinkingLevel: "low", input, fetcher: async (url, options) => {
+        request = { url: String(url), headers: options.headers, json: JSON.parse(options.body) };
+        const text = JSON.stringify(decisions);
+        return Response.json(isOpenAI ? { status: "completed", output: [{ content: [{ type: "output_text", text }] }] }
+          : { stop_reason: "end_turn", content: [{ type: "text", text }] });
+      } });
+    assert.equal(new URL(request.url).hostname, isOpenAI ? "api.openai.com" : "api.anthropic.com");
+    assert.equal(isOpenAI ? request.headers.Authorization : request.headers["x-api-key"], isOpenAI ? "Bearer test-personal-key" : "test-personal-key");
+    assert.equal(request.json.model, model); assert.match(JSON.stringify(request.json), /Product managers only/);
+    assert.deepEqual(validatedBoardExtraction(result.result, input), decisions);
+  }
+});
+
+test("a low wallet stops the remaining paid batches and retries reuse completed work", () => fixture(async ({ store, profile }) => {
+  const [id] = await store.add([saved]);
+  const ids = Array.from({ length: 45 }, (_, index) => index + 1);
+  const dispatches = [];
+  let funded = false;
+  const service = new BoardsService(store, {
+    profile, selection: () => ({ provider: "credits", model: "selected-model", thinkingLevel: "low" }),
+    reader: () => readerFor([page(ids, { expectedTotal: ids.length })]), changed() {},
+    extract: async (_selected, input) => {
+      dispatches.push(input.candidates.length);
+      if (!funded && input.candidates.length < 40) throw Object.assign(new Error("Top up to continue."), { status: 402 });
+      return { value: await allLinks(input) };
+    },
+  });
+  const wait = async () => { while (service.busy) await new Promise(resolve => setTimeout(resolve, 10)); };
+  await complete(store, id, 1);
+  const baseline = store.get(id);
+  service.check([id]); await wait();
+  assert.deepEqual(dispatches, [40, 5]); assert.match(store.get(id).error, /Insufficient Zebby credits/);
+  assert.equal(store.get(id).lastCheckId, baseline.lastCheckId);
+  funded = true; service.check([id]); await wait();
+  assert.deepEqual(dispatches, [40, 5, 5]); assert.equal(store.get(id).newCount, 44);
   await service.stop();
 }));
 

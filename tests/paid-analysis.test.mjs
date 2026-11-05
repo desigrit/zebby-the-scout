@@ -602,6 +602,9 @@ test("PostgreSQL ledger and service integration", async (t) => {
         await assert.rejects(call("POST", "/v1/analysis", { quoteId: (await quote()).id, requestId: randomUUID(), input: boardInput }));
         assert.equal((await wallet()).balance, before.balance); assert.equal((await wallet()).reserved, 0);
         providerResult = { listingIds: ["l0"], nextControlId: "" };
+        const emptyWalletQuote = await call("POST", "/v1/quotes", payload, "other");
+        await assert.rejects(call("POST", "/v1/analysis", { quoteId: emptyWalletQuote.id, requestId: randomUUID(), input: boardInput }, "other"),
+          error => error.status === 402);
         const quoted = await quote(), request = { quoteId: quoted.id, requestId: randomUUID(), input: boardInput };
         await assert.rejects(call("POST", "/v1/analysis", request, "other"));
         const response = await call("POST", "/v1/analysis", request);
