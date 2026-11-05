@@ -7,17 +7,18 @@ import { pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { build } from "esbuild";
+import { onlineAnalysis } from "../desktop/online-analysis.ts";
 
 const root = await mkdtemp(path.join(tmpdir(), "zebby-boards-"));
 const bundle = path.join(root, "boards.mjs");
 await build({ stdin: { contents: `
   export * from './desktop/boards-store'; export * from './desktop/boards-scan';
   export * from './desktop/boards-service'; export * from './desktop/board-page'; export * from './desktop/netflix-board';
-  export * from './lib/board-identity'; export * from './desktop/online-analysis';
+  export * from './lib/board-identity';
   export * from './shared/boards';`, resolveDir: process.cwd() },
   outfile: bundle, bundle: true, platform: "node", format: "esm", target: "node22" });
 const { BoardsStore, BoardsService, NetflixBoardPages, scanBoard, boardJobIdentity, boardSearchKey, boardUrl,
-  boardsCompanionPath, onlineAnalysis, boardModelContract, validatedBoardExtraction } = await import(pathToFileURL(bundle).href);
+  boardsCompanionPath, boardModelContract, validatedBoardExtraction } = await import(pathToFileURL(bundle).href);
 after(async () => { assert.ok(root.startsWith(path.resolve(tmpdir()) + path.sep)); await rm(root, { recursive: true, force: true }); });
 
 async function fixture(work) {

@@ -52,6 +52,28 @@ Set `ZEBBY_SERVICE_COMMIT` to the deployed Git commit. `/health` exposes only th
 
 The unit restarts on failure and at boot. Its 512 MB memory limit and one-core CPU limit leave capacity for other VM projects. The nine-minute proxy header timeout accommodates the app's analysis deadline. Disable VM auto-shutdown if this is an always-on service.
 
+## Release public Boards
+
+The **Verify the Boards service and release desktop** workflow builds the exact main commit and publishes a service prerelease containing the standalone server, a direct-provider smoke test and a promotion script. Desktop clients receive stable desktop tags only.
+
+1. In the production Supabase SQL Editor, run [the Boards ledger migration](../migrations/20261104_boards.sql). It extends the existing quote kinds and preserves balances, reservations and history.
+2. On the credits VM, use Azure Run Command or an existing administrative session. Set `sha` to the full main commit and `digest` to the tarball SHA-256 shown by the workflow. Run the following in Bash.
+
+```bash
+set -euo pipefail
+stage=$(mktemp -d /tmp/zebby-upload.XXXXXXXX)
+tag="credits-2.7.0-${sha:0:12}"
+curl --fail --silent --show-error --location --proto '=https' \
+  "https://github.com/desigrit/zebby-the-scout/releases/download/$tag/zebby-credits-$sha.tar.gz" -o "$stage/bundle.tar.gz"
+cd "$stage"
+printf '%s  bundle.tar.gz\n' "$digest" | sha256sum --check --status
+tar --no-same-owner -xzf bundle.tar.gz server.mjs provider-smoke.mjs promote.sh SHA256SUMS
+sha256sum --check SHA256SUMS
+bash promote.sh "$sha" "$stage" "$(sha256sum server.mjs | cut -d' ' -f1)" "$(sha256sum provider-smoke.mjs | cut -d' ' -f1)"
+```
+
+The script verifies both configured provider keys with synthetic role data, restarts the service and checks the running commit. A failed health check restores the previous release. Rerun the workflow's failed verification job after promotion. It checks the deployed commit and confirms that an unfunded ordinary wallet can quote both models and recover from insufficient funds. Once those checks pass, GitHub tags that main commit and starts the desktop installer and Microsoft Store builds.
+
 ## Update and roll back
 
 GitHub pushes do not deploy to the VM automatically. Upload a new bundle, update the `current` symlink and run `sudo systemctl restart zebby-credits`. Existing requests get up to nine minutes to finish during a graceful stop. Check health before announcing the deployment.

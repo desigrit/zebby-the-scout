@@ -558,16 +558,20 @@ try {
   }, originalDatabase);
   await page.getByRole("main", { name: "Plan", exact: true }).waitFor();
   await page.waitForFunction(() => document.querySelector(".desktop-sidebar nav button")?.getBoundingClientRect().height > 0);
+  await page.waitForFunction(() => document.querySelector(".desktop-shell.platform-windows .desktop-titlebar")?.getBoundingClientRect().height === 44);
   assert.equal(await page.title(), "Zebby");
   assert.equal(await page.locator(".desktop-titlebar").innerText(), "Zebby");
   assert.equal(await page.locator(".sidebar-brand").innerText(), "");
-  const chrome = await page.locator(".desktop-titlebar").evaluate((element) => ({
+  const chrome = await page.evaluate(() => {
+    const element = document.querySelector(".desktop-titlebar");
+    return {
     height: element.getBoundingClientRect().height,
     background: getComputedStyle(element).backgroundColor,
     drag: getComputedStyle(element).getPropertyValue("-webkit-app-region"),
     sidebar: getComputedStyle(document.querySelector(".titlebar-sidebar")).backgroundColor,
     sidebarBody: getComputedStyle(document.querySelector(".desktop-sidebar")).backgroundColor,
-  }));
+    };
+  });
   assert.equal(chrome.height, 44);
   assert.equal(chrome.background, "rgb(248, 246, 243)");
   assert.equal(chrome.drag, "drag");
@@ -1129,7 +1133,7 @@ try {
   assert.equal(await page.getByRole("switch", { name: /logs|errors/i }).count(), 0);
   assert.equal(await page.getByRole("button", { name: "Create database copy", exact: true }).count(), 0);
   assert.doesNotMatch(await page.locator(".settings-page").innerText(), /weekly backups|Logs may include/i);
-  assert.equal(await page.getByText("Quit Zebby and wait for file sync before switching computers.", { exact: true }).count(), 1);
+  assert.equal(await page.getByText("Quit Zebby and let both files sync before switching computers.", { exact: true }).count(), 1);
   await page.getByRole("button", { name: "Create new database", exact: true }).click();
   await page.getByRole("button", { name: "Open database", exact: true }).click();
   assert.deepEqual(await page.evaluate(() => window.modelQA.databaseRequests), ["create", "open"]);

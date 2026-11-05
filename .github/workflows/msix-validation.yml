@@ -75,6 +75,12 @@ jobs:
       - name: Require the registered Store identity for a release build
         if: startsWith(github.ref, 'refs/tags/') && steps.identity.outcome != 'success'
         run: throw 'Set ZEBBY_STORE_IDENTITY_JSON to the registered Partner Center identity and retry this run.'
+      - name: Show the installed package failure
+        if: failure()
+        shell: pwsh
+        run: |
+          $log = 'work/msix/ci/Validation/installed/smoke.log'
+          if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 70 }
       - name: Save validation results and diagnostic logs
         if: always()
         uses: actions/upload-artifact@v4
