@@ -46,6 +46,7 @@ export function AnalysisFlowProvider({ state, onState, children, onOpenSettings 
     const element = dialog.current; if (!element) return;
     if (dialogOpen && !element.open) element.showModal();
     else if (!dialogOpen && element.open) {
+      // Scene owns visibility. A native close event can arrive after the next opening.
       element.close();
       // The authorizing job releases its record lock after prepare resolves.
       // Restore focus after that render, when the Analyze button is enabled.
@@ -159,7 +160,7 @@ export function AnalysisFlowProvider({ state, onState, children, onOpenSettings 
     openCredits: (preferredPack) => { if (!pending.current) { if (preferredPack) setPack(preferredPack); show("buy"); } }, openSettings, state, updateState };
   return <AnalysisContext.Provider value={flow}>{children}
     <dialog ref={dialog} className={`analysis-dialog ${scene === "buy" ? "analysis-dialog-pricing" : ""}`} aria-labelledby="analysis-dialog-title"
-      onCancel={(event) => { event.preventDefault(); if (!working) close(); }} onClose={() => { if (scene) close(); }}>
+      onCancel={(event) => { event.preventDefault(); if (!working) close(); }}>
       <header className="analysis-dialog-header">
         {scene !== "choose" && scene !== "ready" && <button className="icon-button" type="button" aria-label="Back" disabled={working}
           onClick={() => show(scene === "setup" ? "choose" : ["checkout", "restore", "connect"].includes(scene || "") ? "buy" : "choose")}><ArrowLeft size={20} /></button>}

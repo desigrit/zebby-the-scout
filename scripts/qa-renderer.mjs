@@ -1698,6 +1698,15 @@ try {
   await paidSettingsModel.selectOption("gpt-6-astra");
   await analysisDialog.getByRole("button", { name: "Continue to checkout · $20", exact: true }).waitFor();
   assert.equal(await paidSettingsModel.inputValue(), savedModel);
+  // A native close notification can arrive after the same dialog is reopened.
+  await analysisDialog.evaluate(async dialog => {
+    const notified = new Promise(resolve => dialog.addEventListener("close", resolve, { once: true }));
+    dialog.close();
+    dialog.showModal();
+    await notified;
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+  assert.equal(await page.locator("dialog.analysis-dialog:modal").count(), 1, "A previous close must not dismiss the reopened credit picker");
   await analysisDialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await analysisDialog.waitFor({ state: "hidden" });
   await page.waitForFunction(() => document.activeElement?.tagName === "SELECT");
