@@ -211,7 +211,7 @@ export class BoardsStore {
       sourceHash = await hash(incoming);
       if (sourceHash !== await hash(target)) { await unlink(incoming); throw new Error("The Boards database changed while opening. Wait for OneDrive and try again."); }
     }
-    const check = new DatabaseSync(incoming, { readOnly: !recovered });
+    const check = new DatabaseSync(incoming, { readOnly: true });
     try { validate(check); } finally { check.close(); }
     // SQLite backup changes header counters. Compare records, not file bytes,
     // when recovering a crash after publication but before marker removal.

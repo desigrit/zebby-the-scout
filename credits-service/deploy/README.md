@@ -72,7 +72,7 @@ sha256sum --check SHA256SUMS
 bash promote.sh "$sha" "$stage" "$(sha256sum server.mjs | cut -d' ' -f1)" "$(sha256sum provider-smoke.mjs | cut -d' ' -f1)"
 ```
 
-The script verifies both configured provider keys with synthetic role data, restarts the service and checks the running commit. A failed health check restores the previous release. Rerun the workflow's failed verification job after promotion. It checks the deployed commit and confirms that an unfunded ordinary wallet can quote both models and recover from insufficient funds. Once those checks pass, GitHub tags that main commit and starts the desktop installer and Microsoft Store builds.
+The script verifies both configured provider keys against a small sample of public Figma postings captured by the release runner, restarts the service and checks the running commit. A failed health check restores the previous release. Rerun the workflow's failed verification job after promotion. It checks the deployed commit and confirms that an unfunded ordinary wallet can quote both models and recover from insufficient funds. Once those checks pass, GitHub tags that main commit and starts the desktop installer and Microsoft Store builds.
 
 ## Update and roll back
 

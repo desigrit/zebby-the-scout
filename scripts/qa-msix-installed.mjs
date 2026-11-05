@@ -161,6 +161,10 @@ try {
     assert.equal(initial.logsPath.toLowerCase(), path.join(profile, "Logs").toLowerCase());
     assert.equal(inside(packageRoot, initial.filePath), false);
     assert.equal(initial.hasApiKey, false);
+    const firstBoards = await page.evaluate(() => window.desktop.boardsState());
+    assert.equal(firstBoards.filePath, path.join(path.dirname(firstDatabase), "Zebby Applications-boards.sqlite"));
+    assert.equal(firstBoards.error, "");
+    assert.equal(await exists(firstBoards.filePath), true);
     const recovery = path.join(native.home, "Zebby", "Recovery");
     assert.equal(inside(packageRoot, recovery), false);
     assert.equal(await exists(path.join(recovery, "working")), true);
@@ -212,6 +216,10 @@ try {
     await app.evaluate(({ dialog }, file) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: file }); }, selectedDatabase);
     await page.getByRole("button", { name: "Create new database", exact: true }).click();
     await page.waitForFunction(async (file) => (await window.desktop.state()).filePath === file, selectedDatabase);
+    const selectedBoards = await page.evaluate(() => window.desktop.boardsState());
+    assert.equal(selectedBoards.filePath, path.join(path.dirname(selectedDatabase), "Applications-boards.sqlite"));
+    assert.equal(selectedBoards.error, "");
+    assert.equal(await exists(selectedBoards.filePath), true);
     const saved = await page.evaluate(async () => {
       const response = await fetch("/api/applications", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
         company: "Store QA", title: "Durable Store application", matchStrength: 84, status: "Applied", locations: "Seattle, WA",
@@ -269,7 +277,10 @@ try {
     await app.close(); app = undefined;
     const workingFiles = (await readdir(path.join(recovery, "working"))).filter((name) => name.endsWith(".sqlite")).map((name) => path.join(recovery, "working", name));
     assert.equal(workingFiles.length, 2);
-    report.durableFiles = await Promise.all([initial.filePath, selectedDatabase, ...workingFiles].map(async (file) => ({ file, sha256: await sha256(file) })));
+    const boardsWorking = (await readdir(recovery)).filter(name => /^boards-[0-9a-f]{64}\.sqlite$/.test(name)).map(name => path.join(recovery, name));
+    assert.equal(boardsWorking.length, 2);
+    const files = [firstDatabase, firstBoards.filePath, selectedDatabase, selectedBoards.filePath, ...workingFiles, ...boardsWorking];
+    report.durableFiles = await Promise.all(files.map(async file => ({ file, sha256: await sha256(file) })));
     for (const { file, sha256: expected } of report.standaloneFiles) assert.equal(await sha256(file), expected);
     await cp(path.join(profile, "Logs"), path.join(output, "profile-logs"), { recursive: true });
     checks.push("No GitHub updater calls or renderer failures occurred, and the standalone installation's files were unchanged.");
@@ -278,6 +289,7 @@ try {
 } catch (error) {
   report.status = "failed";
   report.error = error.stack || error.message;
+  console.error(report.error);
   if (page) await page.screenshot({ path: path.join(output, "failure.png"), fullPage: true }).catch(() => {});
   process.exitCode = 1;
 } finally {

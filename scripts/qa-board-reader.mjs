@@ -41,9 +41,10 @@ await build({ stdin: { resolveDir: process.cwd(), contents: `
       reader = new BoardBrowser(controller.signal);
       const originalRead = reader.read.bind(reader);
       const figmaCheck = !model && isFigmaCareers(new URL(url));
-      const productUrls = new Set();
+      const productUrls = new Set(), observedRoles = new Map();
       reader.read = async () => { const page = await originalRead();
         if (figmaCheck) for (const job of page.candidates) {
+          if (job.department && new URL(job.url).pathname.startsWith('/figma/jobs/')) observedRoles.set(job.url, job);
           if (job.department?.trim().toLowerCase() === 'product' && /product manager/i.test(job.title)) productUrls.add(job.url);
         }
         await writeFile(${JSON.stringify(root)} + '/page-' + index + '.json', JSON.stringify(page, null, 2));
@@ -60,6 +61,16 @@ await build({ stdin: { resolveDir: process.cwd(), contents: `
       const matches = scan.jobs.filter(job => job.matches);
       if (figmaCheck && (!productUrls.size || matches.length !== productUrls.size || matches.some(job => !productUrls.has(job.url)))) {
         throw new Error('The live Product heading and the matched Product Manager links differ.');
+      }
+      if (figmaCheck) {
+        const rows = [...observedRoles.values()];
+        const selected = [...rows.filter(job => productUrls.has(job.url)).slice(0, 3),
+          ...rows.filter(job => !productUrls.has(job.url) && job.department.trim().toLowerCase() !== 'product').slice(0, 2)];
+        if (!selected.some(job => !productUrls.has(job.url))) throw new Error('No contrasting department for provider verification.');
+        const candidates = selected.map((job, i) => ({ ...job, id: 'l' + i }));
+        const sample = { input: { task: 'roles', criteria: 'Look under the Product heading for product manager roles.', candidates },
+          expected: Object.fromEntries(candidates.map(job => [job.id, productUrls.has(job.url)])) };
+        await writeFile(${JSON.stringify(root)} + '/figma-sample.json', JSON.stringify(sample));
       }
       await writeFile(${JSON.stringify(root)} + '/matches-' + index + '.json', JSON.stringify(matches, null, 2));
       console.log(JSON.stringify({ host: new URL(url).hostname, pages: scan.pages, jobs: scan.jobs.length, matches: matches.length, model: model || 'coverage-test', status: 'complete' }));

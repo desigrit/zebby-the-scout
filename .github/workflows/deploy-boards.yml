@@ -14,7 +14,29 @@ permissions:
   contents: read
 
 jobs:
+  figma:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/qa-board-reader.mjs "https://www.figma.com/careers/#job-openings"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: figma-provider-sample
+          path: qa-output/boards-reader/figma-sample.json
+          if-no-files-found: error
+          retention-days: 2
+
   bundle:
+    needs: figma
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -35,12 +57,19 @@ jobs:
           test "$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)" = "$GITHUB_SHA"
           test "$(node -p "require('./package.json').version")" = 2.7.0
       - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: figma-provider-sample
+          path: qa-output/boards-reader
       - name: Build the service and provider check
         run: |
           node scripts/build-credits-service.mjs --standalone
           node --input-type=module <<'JS'
+          import { readFile } from 'node:fs/promises';
           import { build } from 'esbuild';
+          const sample = await readFile('qa-output/boards-reader/figma-sample.json', 'utf8');
           await build({ entryPoints: ['scripts/qa-boards-direct.mjs'], bundle: true, platform: 'node', format: 'esm',
+            define: { 'process.env.ZEBBY_QA_FIGMA_SAMPLE': JSON.stringify(sample) },
             target: 'node22', outfile: 'credits-service/dist/provider-smoke.mjs', banner: {
               js: "import { createRequire as qaCreateRequire } from 'node:module'; const require = qaCreateRequire(import.meta.url);" } });
           JS
@@ -59,7 +88,10 @@ jobs:
             test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.sha)" = "$GITHUB_SHA"
             mkdir verified
             gh release download "$tag" -R "$GITHUB_REPOSITORY" -p "$name" -D verified
-            cmp "$name" "verified/$name"
+            tar -xOf "verified/$name" server.mjs | cmp server.mjs -
+            tar -xOf "verified/$name" promote.sh | cmp promote.sh -
+            sha256sum "verified/$name" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           else
             gh release create "$tag" "$name" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false --title "Credits service ${GITHUB_SHA:0:12}" --notes "Standalone Azure service bundle for the public Boards release."
           fi
