@@ -1,0 +1,42 @@
+name: Verify installed 2.6.4 upgrades
+
+on:
+  push:
+    branches: [release/upgrade-test-v2.7.0]
+
+permissions:
+  contents: read
+
+jobs:
+  upgrade:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-latest, macos-26]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Wait for all four public release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          for attempt in {1..80}; do
+            if gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name == "v2.7.0" and ([.assets[] | select(.state=="uploaded")]|length >= 4)' | jq -e . >/dev/null; then exit 0; fi
+            sleep 15
+          done
+          exit 1
+      - name: Install 2.6.4, use Settings to update, and verify the restored workspace
+        run: node --experimental-strip-types scripts/qa-released-workspace-upgrade.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
