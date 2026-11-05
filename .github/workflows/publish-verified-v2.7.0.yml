@@ -1,0 +1,373 @@
+name: Build verified 2.7.0 installers
+
+on:
+  push:
+    branches: [release/build-v2.7.0]
+
+permissions:
+  contents: read
+
+env:
+  RELEASE_TAG: v2.7.0
+  RELEASE_COMMIT: 916cc3f3f730a8be498fb0beb4cb91a3ad35564c
+  # Public endpoint only. Payment, auth, and model keys belong on the service host.
+  ZEBBY_CREDITS_SERVICE_URL: ${{ vars.ZEBBY_CREDITS_SERVICE_URL }}
+
+jobs:
+  desktop-visual-review:
+    if: github.event_name == 'workflow_dispatch' && inputs.review_only
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 916cc3f3f730a8be498fb0beb4cb91a3ad35564c
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node node_modules/electron/install.js
+      - run: npm test
+      - run: npx tsc --noEmit
+      - run: npm run lint -- --quiet
+      - run: npm run desktop:build
+      - name: Capture isolated Windows desktop and keyboard flows
+        run: npm run test:desktop:windows
+        env:
+          ZEBBY_QA_OUTPUT: work/desktop-visual-review
+      - run: node node_modules/playwright-core/cli.js install chromium
+      - run: npm run test:renderer
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-visual-review
+          retention-days: 1
+          path: |
+            work/desktop-visual-review/manifest.json
+            work/desktop-visual-review/failure.json
+            work/desktop-visual-review/captures/*.png
+            qa-output/renderer-1.5.0/*.png
+          if-no-files-found: error
+
+  windows-x64:
+    if: github.event_name != 'workflow_dispatch' || (!inputs.mac_only && !inputs.review_only)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 916cc3f3f730a8be498fb0beb4cb91a3ad35564c
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node node_modules/electron/install.js
+      - run: npm test
+      - run: npx tsc --noEmit
+      - run: npm run lint -- --quiet
+      - run: npm run desktop:build
+      - name: Check native analysis cancellation and keyboard flows
+        run: npm run test:desktop:windows
+        env:
+          ZEBBY_QA_CHECKS_ONLY: "1"
+          ZEBBY_QA_OUTPUT: work/ember-native-qa
+      - run: npm run test:resume-files
+      - name: Save native failure details
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-windows-failure
+          retention-days: 1
+          path: work/ember-native-qa/failure*
+          if-no-files-found: ignore
+      - run: node --experimental-strip-types scripts/qa-local-engine.mjs smollm2-360m
+      - name: Check Qwen thinking mode on local hardware
+        run: node --experimental-strip-types scripts/qa-local-engine.mjs qwen3-06b --thinking
+      - run: node node_modules/playwright-core/cli.js install chromium
+      - run: npm run test:renderer
+      - name: Save credits flow review captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: credits-renderer-qa-windows
+          retention-days: 1
+          path: qa-output/renderer-1.5.0/credits-*.png
+          if-no-files-found: ignore
+      - run: npm run credits:build
+      - run: npx electron-builder --win nsis --x64 --publish never -c electron-builder.local.cjs
+      - run: node scripts/qa-self-update-windows.mjs
+      - run: node scripts/qa-packaged-engine.mjs
+      - run: node scripts/qa-packaged-engine.mjs lfm25-350m
+      - run: node scripts/qa-packaged-engine.mjs gemma3-270m
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: local-engine-qa-windows
+          retention-days: 1
+          path: work/local-engine-qa/*-response.json
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zebby-windows-x64
+          retention-days: 1
+          path: desktop-packages/*-win-x64.exe
+          if-no-files-found: error
+      - run: node scripts/download-electron-arm64.mjs
+      - run: npx electron-builder --win nsis --arm64 --publish never -c electron-builder.arm64.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zebby-windows-arm64
+          retention-days: 1
+          path: desktop-packages/*-win-arm64.exe
+          if-no-files-found: error
+
+  macos-arm64:
+    if: github.event_name != 'workflow_dispatch' || !inputs.review_only
+    runs-on: macos-26
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      # Only ad-hoc signing is configured; this job has no signing credentials.
+      CSC_FOR_PULL_REQUEST: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 916cc3f3f730a8be498fb0beb4cb91a3ad35564c
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npx tsc --noEmit
+      - run: npm run desktop:build
+      - run: npm run test:resume-files
+      - run: node --experimental-strip-types scripts/qa-local-engine.mjs smollm2-360m
+      - name: Check Qwen thinking mode on local hardware
+        run: node --experimental-strip-types scripts/qa-local-engine.mjs qwen3-06b --thinking
+      - run: node node_modules/playwright-core/cli.js install chromium
+      - run: npm run test:renderer
+      - name: Save credits flow review captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: credits-renderer-qa-macos
+          retention-days: 1
+          path: qa-output/renderer-1.5.0/credits-*.png
+          if-no-files-found: ignore
+      - run: npx electron-builder --mac dmg --arm64 --publish never
+      - name: Verify distributed Mac bundle and first launch on Tahoe
+        run: node scripts/qa-mac-distribution.mjs
+        env:
+          ZEBBY_MAC_COMPARE_RELEASE: ${{ inputs.compare_mac_release }}
+          GH_TOKEN: ${{ github.token }}
+      - run: node --experimental-strip-types scripts/qa-self-update-mac.mjs
+      - run: node scripts/qa-packaged-engine.mjs
+      - run: node scripts/qa-packaged-engine.mjs lfm25-350m
+      - run: node scripts/qa-packaged-engine.mjs gemma3-270m
+      - name: Check streamed Mac analysis with full-length synthetic postings and resumes
+        run: |
+          node scripts/qa-packaged-engine.mjs smollm2-360m --long-input
+          node scripts/qa-packaged-engine.mjs lfm25-350m --long-input
+          node scripts/qa-packaged-engine.mjs gemma3-270m --long-input
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mac-distribution-qa
+          retention-days: 1
+          path: work/mac-distribution-qa/report.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: local-engine-qa-macos
+          retention-days: 1
+          path: work/local-engine-qa/*-response.json
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zebby-macos-arm64
+          retention-days: 1
+          path: desktop-packages/*-mac-arm64.dmg
+          if-no-files-found: error
+
+  release:
+    if: github.ref == 'refs/heads/release/build-v2.7.0'
+    needs: [windows-x64, macos-arm64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 916cc3f3f730a8be498fb0beb4cb91a3ad35564c
+          persist-credentials: false
+      - name: Check release version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "v$(node -p "require('./package.json').version")" = "$RELEASE_TAG"
+          test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq .object.sha)" = "$RELEASE_COMMIT"
+          curl --fail --silent --show-error https://zebby-credits-9d5bde.westus2.cloudapp.azure.com/health | jq -e --arg sha "$RELEASE_COMMIT" '.ok and .mode == "live" and .commit == $sha'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: zebby-*
+          path: release-files
+          merge-multiple: true
+      - name: Carry forward the published Android preview
+        if: github.ref == 'refs/heads/release/build-v2.7.0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          name=Zebby-0.2.0-Android-preview.apk
+          gh release download v2.6.4 -R "$GITHUB_REPOSITORY" -p "$name" -D release-files
+          echo "78da3b019b4b6c196adcbe7f2e9fc376207529f7dfb5b22018ae550e473e6d4d  release-files/$name" | sha256sum --check
+      - name: Publish direct installer downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          assets=(release-files/*.exe release-files/*.dmg)
+          if [[ -f release-files/Zebby-0.2.0-Android-preview.apk ]]; then assets+=(release-files/Zebby-0.2.0-Android-preview.apk); fi
+          notes="docs/releases/$RELEASE_TAG.md"
+          if [ -f "$notes" ]; then
+            gh release create "$RELEASE_TAG" "${assets[@]}" --title "Zebby $RELEASE_TAG" --notes-file "$notes" --verify-tag --target "$RELEASE_COMMIT"
+          else
+            gh release create "$RELEASE_TAG" "${assets[@]}" --title "Zebby $RELEASE_TAG" --generate-notes --verify-tag --target "$RELEASE_COMMIT"
+          fi
+      - name: Keep only the latest temporary build artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/prune-build-artifacts.mjs --apply
+
+  verify-boards-update:
+    needs: release
+    if: github.ref == 'refs/heads/release/build-v2.7.0'
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2.6.4
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Open a disposable copy of the previous Mac distribution for the updater
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v2.6.4 -R "$GITHUB_REPOSITORY" --pattern 'Zebby-2.6.4-mac-arm64.dmg' --dir "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/previous" "$RUNNER_TEMP/original-volume"
+          hdiutil attach "$RUNNER_TEMP/Zebby-2.6.4-mac-arm64.dmg" -readonly -nobrowse -mountpoint "$RUNNER_TEMP/original-volume"
+          ditto "$RUNNER_TEMP/original-volume/Zebby.app" "$RUNNER_TEMP/previous/Zebby.app"
+          hdiutil detach "$RUNNER_TEMP/original-volume"
+      - name: Verify all three downloads through the 2.6.4 Settings updater
+        run: |
+          node --experimental-strip-types --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { mkdtemp } from 'node:fs/promises';
+          import os from 'node:os';
+          import path from 'node:path';
+          import { setTimeout as delay } from 'node:timers/promises';
+          import { ReleaseUpdates } from './desktop/release-updates.ts';
+          import { SelfUpdater } from './desktop/self-update.ts';
+          for (const [platform, arch] of [['win32','x64'], ['win32','arm64'], ['darwin','arm64']]) {
+            const checker = new ReleaseUpdates({ version: '2.6.4', platform, arch });
+            let release;
+            for (let attempt = 0; attempt < 8; attempt++) {
+              release = (await checker.check(true)).available;
+              if (release?.version === '2.7.0') break;
+              await delay(10000);
+            }
+            assert.equal(release?.version, '2.7.0');
+            const folder = await mkdtemp(path.join(os.tmpdir(), 'zebby-update-'));
+            let phase;
+            const executable = path.join(process.env.RUNNER_TEMP, 'previous/Zebby.app/Contents/MacOS/Zebby');
+            const updater = new SelfUpdater({ platform, arch, folder, executable, onChange: state => { phase = state.phase; } });
+            await updater.download(release);
+            assert.equal(phase, 'ready');
+            console.log(platform, arch, 'download verified');
+          }
+          JS
+
+  installed-x64:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      ZEBBY_CREDITS_SERVICE_URL: https://zebby-credits-9d5bde.westus2.cloudapp.azure.com
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 916cc3f3f730a8be498fb0beb4cb91a3ad35564c
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node node_modules/electron/install.js
+      - name: Resolve the published Zebby identity
+        id: identity
+        continue-on-error: true
+        env:
+          ZEBBY_STORE_IDENTITY_JSON: ${{ vars.ZEBBY_STORE_IDENTITY_JSON }}
+        run: node scripts/published-store-identity.mjs public-store-identity.json
+      - name: Prepare temporary package identity
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path work/msix -Force | Out-Null
+          @{
+            identityName = 'Zebby.StoreQA'
+            publisher = 'CN=Zebby Store QA'
+            publisherDisplayName = 'Zebby Store QA'
+          } | ConvertTo-Json | Set-Content -LiteralPath work/msix/qa-identity.json -Encoding utf8NoBOM
+      - name: Build an unsigned Store package for validation
+        run: node scripts/build-msix.mjs --identity work/msix/qa-identity.json --output work/msix/ci
+      - name: Verify interactive Windows PowerShell finalization for both architectures
+        run: node scripts/qa-msix-finalizer.mjs --output work/msix/ci
+        env:
+          ZEBBY_MSIX_QA_RUNNER: ${{ runner.environment }}
+      - name: Install, exercise and remove the temporary signed copy
+        shell: powershell
+        run: ./scripts/qa-msix-installed.ps1 -BuildOutput work/msix/ci
+        env:
+          ZEBBY_MSIX_QA_RUNNER: ${{ runner.environment }}
+      - name: Package the unsigned Partner Center bundle
+        if: steps.identity.outcome == 'success'
+        run: node scripts/build-msix.mjs --reuse-payloads --payloads "work/msix/ci/Source and build/payloads" --identity public-store-identity.json --output work/msix/public
+      - name: Save the Partner Center upload
+        if: steps.identity.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-submission-bundle
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            work/msix/public/Packages/*.msixbundle
+            work/msix/public/Validation/package-status.json
+      - name: Require the registered Store identity for a release build
+        if: steps.identity.outcome != 'success'
+        run: throw 'Set ZEBBY_STORE_IDENTITY_JSON to the registered Partner Center identity and retry this run.'
+      - name: Show the installed package failure
+        if: failure()
+        shell: pwsh
+        run: |
+          $log = 'work/msix/ci/Validation/installed/smoke.log'
+          if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 70 }
+          $report = 'work/msix/ci/Validation/installed/smoke-report.json'
+          if (Test-Path -LiteralPath $report) { (Get-Content -LiteralPath $report -Raw | ConvertFrom-Json).error }
+      - name: Save validation results and diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: msix-installed-x64-validation
+          retention-days: 1
+          path: |
+            work/msix/ci/Validation/**/*.json
+            work/msix/ci/Validation/**/*.log
+            work/msix/ci/Validation/**/*.png
+          if-no-files-found: error
