@@ -4,6 +4,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 import { chromium } from "playwright-core";
+import { checkBoardsRenderer } from "./qa-boards-renderer.mjs";
 import { LOCAL_MODELS } from "../desktop/local-model-catalog.ts";
 import { importanceForTerms } from "../desktop/plan-importance.ts";
 import { parseLocations } from "../lib/locations.ts";
@@ -302,6 +303,8 @@ try {
       setPlatform: (platform) => { initialState.platform = platform; },
       setCompute: (compute) => { initialState.localCompute = compute; for (const listener of listeners) listener(snapshot()); } };
     window.desktop = { state: async () => initialState,
+      boardsState: async () => ({ filePath: "", filename: "", dirty: false, error: "", boards: [], progress: [] }),
+      onBoardsChanged: () => () => {},
       onDatabaseChanged: (listener) => { databaseListeners.add(listener); return () => databaseListeners.delete(listener); }, onNavigate: () => () => {},
       onAnalysisProgress: (listener) => { analysisListeners.add(listener); return () => analysisListeners.delete(listener); },
       cancelAnalysis: async (id) => { window.analysisQA.cancelled.push(id); return true; },
@@ -527,6 +530,7 @@ try {
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   const nav = page.getByRole("navigation", { name: "Workspace" });
   await page.getByRole("main", { name: "Plan", exact: true }).waitFor();
+  await checkBoardsRenderer(page, nav);
   const originalDatabase = await page.evaluate(() => window.desktop.state());
   for (const platform of ["win32", "darwin"]) {
     await page.evaluate(platform => {
@@ -554,16 +558,20 @@ try {
   }, originalDatabase);
   await page.getByRole("main", { name: "Plan", exact: true }).waitFor();
   await page.waitForFunction(() => document.querySelector(".desktop-sidebar nav button")?.getBoundingClientRect().height > 0);
+  await page.waitForFunction(() => document.querySelector(".desktop-shell.platform-windows .desktop-titlebar")?.getBoundingClientRect().height === 44);
   assert.equal(await page.title(), "Zebby");
   assert.equal(await page.locator(".desktop-titlebar").innerText(), "Zebby");
   assert.equal(await page.locator(".sidebar-brand").innerText(), "");
-  const chrome = await page.locator(".desktop-titlebar").evaluate((element) => ({
+  const chrome = await page.evaluate(() => {
+    const element = document.querySelector(".desktop-titlebar");
+    return {
     height: element.getBoundingClientRect().height,
     background: getComputedStyle(element).backgroundColor,
     drag: getComputedStyle(element).getPropertyValue("-webkit-app-region"),
     sidebar: getComputedStyle(document.querySelector(".titlebar-sidebar")).backgroundColor,
     sidebarBody: getComputedStyle(document.querySelector(".desktop-sidebar")).backgroundColor,
-  }));
+    };
+  });
   assert.equal(chrome.height, 44);
   assert.equal(chrome.background, "rgb(248, 246, 243)");
   assert.equal(chrome.drag, "drag");
@@ -584,62 +592,65 @@ try {
   });
   assert.deepEqual(sidebarPosition, { padding: "22px", brandBottom: "12px", zebraTop: 26, zebraLeft: 26, iconSize: 24, navHeight: 48 });
   await page.waitForFunction(() => [...document.querySelectorAll('.navigation-icon')].every(icon => icon.dataset.ready === "true"));
-  assert.equal(await nav.locator('.navigation-icon-player svg').count(), 3);
-  const animatedPlan = nav.locator('[data-kind="plan"]');
-  // Compare painted geometry with subpixel tolerance rather than serialized
-  // SVG bookkeeping, which need not be identical after an animation.
-  await animatedPlan.evaluate((element) => {
-    const number = (value) => String(Math.round(Number(value) * 1000) / 1000);
-    const geometry = () => JSON.stringify([...element.querySelectorAll('.navigation-icon-player svg :is(g, path)')].map((shape) => ({
-      kind: shape.tagName,
-      path: (shape.getAttribute('d') || '').replace(/[-+]?(?:\d*\.)?\d+(?:e[-+]?\d+)?/gi, number),
-      transform: (shape.getAttribute('transform') || '').replace(/[-+]?(?:\d*\.)?\d+(?:e[-+]?\d+)?/gi, number),
-      opacity: number(getComputedStyle(shape).opacity),
-      strokeWidth: number(Number.parseFloat(getComputedStyle(shape).strokeWidth)),
-    })));
-    window.__zebbyIconGeometry = geometry;
-    window.__zebbyRestGeometry = geometry();
-  });
-  // Observe real SVG changes inside the browser before clicking. A fixed delay
-  // between remote calls can miss this short animation on a busy CI runner.
-  await animatedPlan.evaluate((element) => {
-    const player = element.querySelector('.navigation-icon-player');
-    const probe = { changed: false, returnedToRest: false };
-    const observer = new MutationObserver(() => {
-      const geometry = window.__zebbyIconGeometry();
-      if (geometry !== window.__zebbyRestGeometry) probe.changed = true;
-      else if (probe.changed) probe.returnedToRest = true;
+  assert.equal(await nav.locator('.navigation-icon-player svg').count(), 4);
+  for (const label of ["Boards", "Plan"]) {
+    const button = nav.getByRole("button", { name: label, exact: true });
+    const animatedIcon = button.locator(".navigation-icon");
+    // Compare painted geometry with subpixel tolerance rather than serialized
+    // SVG bookkeeping, which need not be identical after an animation.
+    await animatedIcon.evaluate((element) => {
+      const number = (value) => String(Math.round(Number(value) * 1000) / 1000);
+      const geometry = () => JSON.stringify([...element.querySelectorAll('.navigation-icon-player svg :is(g, path)')].map((shape) => ({
+        kind: shape.tagName,
+        path: (shape.getAttribute('d') || '').replace(/[-+]?(?:\d*\.)?\d+(?:e[-+]?\d+)?/gi, number),
+        transform: (shape.getAttribute('transform') || '').replace(/[-+]?(?:\d*\.)?\d+(?:e[-+]?\d+)?/gi, number),
+        opacity: number(getComputedStyle(shape).opacity),
+        strokeWidth: number(Number.parseFloat(getComputedStyle(shape).strokeWidth)),
+      })));
+      window.__zebbyIconGeometry = geometry;
+      window.__zebbyRestGeometry = geometry();
     });
-    observer.observe(player, { childList: true, subtree: true, attributes: true });
-    window.__zebbyMotionProbe = probe;
-    window.__stopZebbyMotionProbe = () => observer.disconnect();
-  });
-  await nav.getByRole("button", { name: "Plan", exact: true }).click();
-  await page.waitForFunction(() => window.__zebbyMotionProbe.changed, null, { timeout: 5000 });
-  await captureSettings("navigation-click-motion.png", false);
-  await page.waitForFunction(() => window.__zebbyMotionProbe.returnedToRest &&
-    document.querySelector('[data-kind="plan"]').dataset.playing === "false", null, { timeout: 5000 }).catch(async (error) => {
-    const diagnostic = await page.evaluate(() => ({
-      probe: window.__zebbyMotionProbe,
-      playing: document.querySelector('[data-kind="plan"]').dataset.playing,
-      expected: window.__zebbyRestGeometry,
-      actual: window.__zebbyIconGeometry(),
-    }));
-    throw new Error(`Navigation icon did not return to rest: ${JSON.stringify(diagnostic)}`, { cause: error });
-  });
-  assert.equal(await page.evaluate(() => window.__zebbyIconGeometry() === window.__zebbyRestGeometry), true);
-  await page.evaluate(() => {
-    window.__stopZebbyMotionProbe();
-    delete window.__stopZebbyMotionProbe;
-    delete window.__zebbyMotionProbe;
-    delete window.__zebbyIconGeometry;
-    delete window.__zebbyRestGeometry;
-  });
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await nav.getByRole("button", { name: "Plan", exact: true }).focus();
-  await page.keyboard.press("Enter");
-  assert.equal(await animatedPlan.getAttribute("data-playing"), "false");
-  await page.emulateMedia({ reducedMotion: "no-preference" });
+    // Observe real SVG changes inside the browser before clicking. A fixed delay
+    // between remote calls can miss this short animation on a busy CI runner.
+    await animatedIcon.evaluate((element) => {
+      const player = element.querySelector('.navigation-icon-player');
+      const probe = { changed: false, returnedToRest: false };
+      const observer = new MutationObserver(() => {
+        const geometry = window.__zebbyIconGeometry();
+        if (geometry !== window.__zebbyRestGeometry) probe.changed = true;
+        else if (probe.changed) probe.returnedToRest = true;
+      });
+      observer.observe(player, { childList: true, subtree: true, attributes: true });
+      window.__zebbyMotionProbe = probe;
+      window.__stopZebbyMotionProbe = () => observer.disconnect();
+    });
+    await button.click();
+    await page.waitForFunction(() => window.__zebbyMotionProbe.changed, null, { timeout: 5000 });
+    if (label === "Plan") await captureSettings("navigation-click-motion.png", false);
+    await page.waitForFunction(kind => window.__zebbyMotionProbe.returnedToRest &&
+      document.querySelector(`[data-kind="${kind}"]`).dataset.playing === "false", label.toLowerCase(), { timeout: 5000 }).catch(async (error) => {
+      const diagnostic = await animatedIcon.evaluate(element => ({
+        probe: window.__zebbyMotionProbe,
+        playing: element.dataset.playing,
+        expected: window.__zebbyRestGeometry,
+        actual: window.__zebbyIconGeometry(),
+      }));
+      throw new Error(`${label} icon did not return to rest: ${JSON.stringify(diagnostic)}`, { cause: error });
+    });
+    assert.equal(await page.evaluate(() => window.__zebbyIconGeometry() === window.__zebbyRestGeometry), true);
+    await page.evaluate(() => {
+      window.__stopZebbyMotionProbe();
+      delete window.__stopZebbyMotionProbe;
+      delete window.__zebbyMotionProbe;
+      delete window.__zebbyIconGeometry;
+      delete window.__zebbyRestGeometry;
+    });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await button.focus();
+    await page.keyboard.press("Enter");
+    assert.equal(await animatedIcon.getAttribute("data-playing"), "false");
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+  }
   for (const control of [page.locator('.sidebar-toggle'), nav.getByRole('button', { name: 'Plan', exact: true }),
     page.locator('.match-why summary'), page.getByRole('button', { name: 'Analyze', exact: true })]) {
     assert.equal(await control.evaluate(element => getComputedStyle(element).cursor), "default");
@@ -1122,7 +1133,7 @@ try {
   assert.equal(await page.getByRole("switch", { name: /logs|errors/i }).count(), 0);
   assert.equal(await page.getByRole("button", { name: "Create database copy", exact: true }).count(), 0);
   assert.doesNotMatch(await page.locator(".settings-page").innerText(), /weekly backups|Logs may include/i);
-  assert.equal(await page.getByText("Quit Zebby and wait for file sync before switching computers.", { exact: true }).count(), 1);
+  assert.equal(await page.getByText("Quit Zebby and let both files sync before switching computers.", { exact: true }).count(), 1);
   await page.getByRole("button", { name: "Create new database", exact: true }).click();
   await page.getByRole("button", { name: "Open database", exact: true }).click();
   assert.deepEqual(await page.evaluate(() => window.modelQA.databaseRequests), ["create", "open"]);

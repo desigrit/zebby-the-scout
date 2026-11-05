@@ -214,17 +214,77 @@ jobs:
           pattern: zebby-*
           path: release-files
           merge-multiple: true
+      - name: Carry forward the published Android preview
+        if: github.ref_name == 'v2.7.0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          name=Zebby-0.2.0-Android-preview.apk
+          gh release download v2.6.4 -R "$GITHUB_REPOSITORY" -p "$name" -D release-files
+          echo "78da3b019b4b6c196adcbe7f2e9fc376207529f7dfb5b22018ae550e473e6d4d  release-files/$name" | sha256sum --check
       - name: Publish direct installer downloads
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          assets=(release-files/*.exe release-files/*.dmg)
+          if [[ -f release-files/Zebby-0.2.0-Android-preview.apk ]]; then assets+=(release-files/Zebby-0.2.0-Android-preview.apk); fi
           notes="docs/releases/$GITHUB_REF_NAME.md"
           if [ -f "$notes" ]; then
-            gh release create "$GITHUB_REF_NAME" release-files/*.exe release-files/*.dmg --title "Zebby $GITHUB_REF_NAME" --notes-file "$notes" --target "$GITHUB_SHA"
+            gh release create "$GITHUB_REF_NAME" "${assets[@]}" --title "Zebby $GITHUB_REF_NAME" --notes-file "$notes" --target "$GITHUB_SHA"
           else
-            gh release create "$GITHUB_REF_NAME" release-files/*.exe release-files/*.dmg --title "Zebby $GITHUB_REF_NAME" --generate-notes --target "$GITHUB_SHA"
+            gh release create "$GITHUB_REF_NAME" "${assets[@]}" --title "Zebby $GITHUB_REF_NAME" --generate-notes --target "$GITHUB_SHA"
           fi
       - name: Keep only the latest temporary build artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/prune-build-artifacts.mjs --apply
+
+  verify-boards-update:
+    needs: release
+    if: github.ref_name == 'v2.7.0'
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v2.6.4
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Open a disposable copy of the previous Mac distribution for the updater
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v2.6.4 -R "$GITHUB_REPOSITORY" --pattern 'Zebby-2.6.4-mac-arm64.dmg' --dir "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/previous" "$RUNNER_TEMP/original-volume"
+          hdiutil attach "$RUNNER_TEMP/Zebby-2.6.4-mac-arm64.dmg" -readonly -nobrowse -mountpoint "$RUNNER_TEMP/original-volume"
+          ditto "$RUNNER_TEMP/original-volume/Zebby.app" "$RUNNER_TEMP/previous/Zebby.app"
+          hdiutil detach "$RUNNER_TEMP/original-volume"
+      - name: Verify all three downloads through the 2.6.4 Settings updater
+        run: |
+          node --experimental-strip-types --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { mkdtemp } from 'node:fs/promises';
+          import os from 'node:os';
+          import path from 'node:path';
+          import { setTimeout as delay } from 'node:timers/promises';
+          import { ReleaseUpdates } from './desktop/release-updates.ts';
+          import { SelfUpdater } from './desktop/self-update.ts';
+          for (const [platform, arch] of [['win32','x64'], ['win32','arm64'], ['darwin','arm64']]) {
+            const checker = new ReleaseUpdates({ version: '2.6.4', platform, arch });
+            let release;
+            for (let attempt = 0; attempt < 8; attempt++) {
+              release = (await checker.check(true)).available;
+              if (release?.version === '2.7.0') break;
+              await delay(10000);
+            }
+            assert.equal(release?.version, '2.7.0');
+            const folder = await mkdtemp(path.join(os.tmpdir(), 'zebby-update-'));
+            let phase;
+            const executable = path.join(process.env.RUNNER_TEMP, 'previous/Zebby.app/Contents/MacOS/Zebby');
+            const updater = new SelfUpdater({ platform, arch, folder, executable, onChange: state => { phase = state.phase; } });
+            await updater.download(release);
+            assert.equal(phase, 'ready');
+            console.log(platform, arch, 'download verified');
+          }
+          JS

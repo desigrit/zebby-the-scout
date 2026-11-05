@@ -143,6 +143,10 @@ Configure hosting logs without request-body or Authorization-header capture. No 
 
 The checked-in Node tests use an isolated PostgreSQL engine and mocked network requests. Remote renderer checks use a synthetic wallet and mock native dialogs. Hosted connection checks can create and expire an unpaid Checkout session without entering card details or granting credits. Never use real card details for payment tests in live mode. A completed customer payment and receipt delivery are not proven by an unpaid session. See [Stripe's testing guide](https://docs.stripe.com/testing).
 
+## Boards
+
+Apply [the Boards migration](migrations/20261104_boards.sql) to the existing ledger before deploying. It adds `board_extract` to quote kinds. The existing wallet, model entitlements, price schedule and checkout handle each validated batch. The public catalog lists enabled analysis kinds. An authenticated wallet can recover its own result using the original request ID. Personal API keys call the provider directly from the desktop.
+
 ## Packs and estimates
 
 | Price | Credits | Astra / Opus (Medium) | Sol / Sonnet (High) | Luna / Haiku (High) |

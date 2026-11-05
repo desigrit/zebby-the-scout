@@ -7,7 +7,7 @@ import { OnlineAnalysisError } from "../desktop/online-response.ts";
 const config = serviceConfig(), service = createService(config);
 // Public release identifiers only. Never expose the rest of the host environment.
 const version = /^\d+\.\d+\.\d+$/.test(process.env.ZEBBY_SERVICE_VERSION || "") ? process.env.ZEBBY_SERVICE_VERSION : "development";
-const hostCommit = process.env.ZEBBY_SERVICE_COMMIT || process.env.RENDER_GIT_COMMIT || "";
+const hostCommit = process.env.ZEBBY_BUILD_COMMIT || process.env.ZEBBY_SERVICE_COMMIT || process.env.RENDER_GIT_COMMIT || "";
 const commit = /^[\da-f]{40}$/i.test(hostCommit) ? hostCommit : undefined;
 const server = createServer(async (request, response) => {
   response.setHeader("Cache-Control", "no-store"); response.setHeader("X-Content-Type-Options", "nosniff");

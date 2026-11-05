@@ -31,6 +31,10 @@ import { OnlineAnalysisError } from "./online-response";
 import { creditModel, DEFAULT_CREDIT_MODEL, onlineModel, validateOnlineThinking, type AnalysisProvider, type AnalysisSource } from "../shared/online-models";
 import { maskedApiKey, onlineThinkingCapability, selectedThinking, thinkingKey, type ThinkingPreferences } from "../shared/thinking";
 import { writeProfileSettings } from "./settings-persistence";
+import { BoardsStore } from "./boards-store";
+import { BoardsService } from "./boards-service";
+import { BoardBrowser } from "./board-browser";
+import { boardModelContract, type BoardInput } from "../shared/boards";
 import { restoreStartupDatabase } from "./startup-database";
 import { readResumeBlocks, resumeDocx, resumeHtml, tailoredBaseName } from "./tailored-resume";
 import { applyResumeEdits, tailoringInstructions, tailoringSchema } from "../shared/tailored-resume";
@@ -50,6 +54,9 @@ const storeEdition = distributionChannel === "store";
 let storePaths: ReturnType<typeof storeDataPaths> | undefined;
 let mainWindow: BrowserWindow | null = null;
 let store: DesktopStore;
+let boardsStore: BoardsStore;
+let boards: BoardsService<ReturnType<typeof selectedAnalysis>>;
+let switchingWorkspace: { done: Promise<void>; previous: DesktopStore["status"] } | undefined;
 let apiKey = "";
 let anthropicKey = "";
 let creditsClient: CreditsClient;
@@ -188,7 +195,7 @@ async function loadSettings() {
 
 function state() {
   return {
-    ...store.status, startupError, hasApiKey: Boolean(apiKey), hasAnthropicKey: Boolean(anthropicKey),
+    ...(switchingWorkspace?.previous ?? store.status), startupError, hasApiKey: Boolean(apiKey), hasAnthropicKey: Boolean(anthropicKey),
     apiKeyHint: maskedApiKey(apiKey, "openai"), anthropicKeyHint: maskedApiKey(anthropicKey, "anthropic"),
     thinkingLevels: settings.thinkingLevels || {},
     openaiModel: settings.openaiModel || "gpt-6.1-sol", anthropicModel: settings.anthropicModel || "claude-sonnet-5-5",
@@ -213,6 +220,25 @@ function state() {
   };
 }
 
+async function changeWorkspace(action: () => Promise<void>) {
+  if (switchingWorkspace) throw new Error("Wait for the workspace to finish opening.");
+  let finish!: () => void;
+  const done = new Promise<void>(resolve => { finish = resolve; });
+  switchingWorkspace = { done, previous: store.status };
+  try { await action(); }
+  finally { switchingWorkspace = undefined; finish(); }
+}
+
+async function openPairedBoards() {
+  try {
+    await boardsStore.openCompanion(store.status.filePath);
+    boards.error = "";
+  } catch (error) {
+    boards.error = error instanceof Error ? error.message : "The Boards companion could not be opened.";
+    logDiagnostic("Could not open the paired Boards database", error);
+  }
+}
+
 async function chooseDatabase(kind: "open" | "create") {
   if (activeApiRequests || analysisRequests.busy) throw new Error("Finish or cancel analysis and saving before switching databases.");
   if (kind !== "open" && kind !== "create") throw new Error("Choose whether to open or create a database.");
@@ -226,26 +252,37 @@ async function chooseDatabase(kind: "open" | "create") {
       filters: [{ name: "SQLite databases", extensions: ["sqlite", "db"] }],
     });
     if (result.canceled) return null;
-    if (activeApiRequests || analysisRequests.busy) throw new Error("Finish or cancel analysis and saving before switching databases.");
     filePath = result.filePaths[0];
-    checkDatabaseLocation(filePath);
-    await store.open(filePath);
   } else {
     const result = await dialog.showSaveDialog(parent!, {
       title: "Create new database", defaultPath: path.join(defaultPath, "Zebby Applications.sqlite"),
       filters: [{ name: "SQLite database", extensions: ["sqlite"] }],
     });
     if (result.canceled || !result.filePath) return null;
-    if (activeApiRequests || analysisRequests.busy) throw new Error("Finish or cancel analysis and saving before switching databases.");
-    filePath = result.filePath;
-    checkDatabaseLocation(filePath);
-    await store.create(filePath);
+    filePath = /\.(sqlite|db)$/i.test(result.filePath) ? result.filePath : result.filePath + ".sqlite";
   }
-  settings.databasePath = filePath;
-  startupError = "";
-  await saveSettings();
-  logEvent(`Database selected (${kind}, ${filePath})`);
-  mainWindow?.webContents.send("desktop:database-changed", state());
+  if (switchingWorkspace || activeApiRequests || analysisRequests.busy || boards.busy || activeSettingsRequests > 1) {
+    throw new Error("Finish or cancel work in the current workspace before switching databases.");
+  }
+  let opened = false;
+  try {
+    await changeWorkspace(async () => {
+      await boardsStore.readyToSwitch();
+      checkDatabaseLocation(filePath);
+      if (kind === "create") await store.create(filePath); else await store.open(filePath);
+      settings.databasePath = filePath;
+      startupError = "";
+      await openPairedBoards();
+      opened = true;
+      await saveSettings();
+      logEvent(`Database selected (${kind}, ${filePath})`);
+    });
+  } finally {
+    if (opened) {
+      mainWindow?.webContents.send("desktop:database-changed", state());
+      boards.changed();
+    }
+  }
   return state();
 }
 
@@ -331,10 +368,10 @@ async function analyzeWithSelectedProvider(instructions: string, input: unknown,
       return analyzeWithOllama({ baseUrl, model, instructions: prompt, content: JSON.stringify(content), schema: format, thinkingLevel: level, signal, onProgress: progress });
     },
     openai: async (prompt, content, formatName, format) => (await onlineAnalysis({ model: selected.model, key: selected.apiKey, instructions: prompt,
-      input: content, name: formatName, schema: format, kind: formatName === "tailored_resume" ? "resume" : formatName === "resume_plan" ? "plan" : "match", thinkingLevel: selected.thinkingLevel, signal })).result,
+      input: content, name: formatName, schema: format, kind: formatName === "board_extract" ? "board_extract" : formatName === "tailored_resume" ? "resume" : formatName === "resume_plan" ? "plan" : "match", thinkingLevel: selected.thinkingLevel, signal })).result,
     anthropic: async (prompt, content, formatName, format) => (await onlineAnalysis({ model: selected.model,
       key: selected.apiKey, instructions: prompt, input: content, name: formatName, schema: format,
-      kind: formatName === "tailored_resume" ? "resume" : formatName === "resume_plan" ? "plan" : "match", thinkingLevel: selected.thinkingLevel, signal })).result,
+      kind: formatName === "board_extract" ? "board_extract" : formatName === "tailored_resume" ? "resume" : formatName === "resume_plan" ? "plan" : "match", thinkingLevel: selected.thinkingLevel, signal })).result,
     credits: async () => {
       const quote = paid && paidQuotes.get(paid.quoteId);
       if (!paid || !quote || quote.source.id !== paid.source.id || quote.source.kind !== paid.source.kind || quote.expires < Date.now()
@@ -468,6 +505,10 @@ async function analyzeApplicationMatch(id: string, signal: AbortSignal, commit: 
 async function handleApi(request: Request, pathname: string): Promise<Response> {
   const method = request.method.toUpperCase();
   const started = Date.now();
+  if (switchingWorkspace) {
+    if (method !== "GET") return jsonError("Wait for the workspace to finish opening.", 409);
+    await switchingWorkspace.done;
+  }
   if (installingUpdate && method !== "GET") return jsonError("Zebby is restarting to install an update.", 503);
   activeApiRequests++;
   if (method !== "GET") logEvent(`Request started (${method} ${pathname})`);
@@ -591,7 +632,7 @@ function registerProtocol() {
 
 function registerIpc() {
   function walletChangesAllowed() {
-    if (analysisRequests.busy) throw new Error("Finish or cancel analysis before changing credit access.");
+    if (analysisRequests.busy || boards.busy) throw new Error("Finish or cancel analysis and board checks before changing credit access.");
     if (!safeStorage.isEncryptionAvailable()) throw new Error("Secure storage is unavailable. Restore access to Windows secure storage or Mac Keychain before using paid credits.");
   }
   function handle<Args extends unknown[], Result>(channel: string,
@@ -599,9 +640,13 @@ function registerIpc() {
     ipcMain.handle(channel, async (event, ...args: Args) => {
       const started = Date.now();
       const trace = !["desktop:state", "desktop:refresh-credits", "desktop:credit-checkout-status"].includes(channel);
-      const changing = !["desktop:state", "desktop:check-updates", "desktop:open-store-updates", "desktop:download-update", "desktop:install-update",
+      const changing = !["boards:state", "desktop:state", "desktop:check-updates", "desktop:open-store-updates", "desktop:download-update", "desktop:install-update",
         "desktop:list-ollama-models", "desktop:ollama-thinking-capability", "desktop:open-logs", "desktop:open-model-folder", "desktop:download-resume",
         "desktop:warm-credits-service"].includes(channel);
+      if (switchingWorkspace) {
+        if (channel === "boards:state" || channel === "desktop:state") await switchingWorkspace.done;
+        else if (channel.startsWith("boards:")) throw new Error("Wait for the workspace to finish opening.");
+      }
       if (installingUpdate && changing) throw new Error("Zebby is restarting to install an update.");
       if (changing) activeSettingsRequests++;
       if (trace) logEvent(`Setting request started (${channel})`);
@@ -614,6 +659,71 @@ function registerIpc() {
     });
   }
   handle("desktop:state", () => state());
+  async function changeCompanion(action: () => Promise<void>) {
+    boards.assertIdle();
+    if (switchingWorkspace || activeSettingsRequests > 1) throw new Error("Finish the current action before changing Boards history.");
+    try { await changeWorkspace(action); return boards.state; }
+    finally { boards.changed(); }
+  }
+  handle("boards:state", () => boards.state);
+  handle("boards:import-history", async () => {
+    boards.assertIdle();
+    if (!store.status.filePath || !boardsStore.status.filePath) throw new Error("Open a workspace before importing Boards history.");
+    const generation = boardsStore.generation;
+    const result = await dialog.showOpenDialog(mainWindow!, { title: "Import Boards history",
+      defaultPath: path.dirname(store.status.filePath), properties: ["openFile"], filters: [{ name: "SQLite database", extensions: ["sqlite", "db"] }] });
+    if (result.canceled || !result.filePaths[0]) return null;
+    boards.assertIdle();
+    if (generation !== boardsStore.generation) throw new Error("The workspace changed. Open Import Boards history again.");
+    return changeCompanion(async () => { await boardsStore.importHistory(result.filePaths[0]); boards.error = ""; });
+  });
+  handle("boards:retry-save", async () => {
+    boards.assertIdle();
+    if (!store.status.filePath) throw new Error("Open a workspace first.");
+    return changeCompanion(async () => {
+      if (boardsStore.status.dirty) await boardsStore.retrySave();
+      await openPairedBoards();
+    });
+  });
+  handle("boards:save-recovery", async () => {
+    boards.assertIdle();
+    const generation = boardsStore.generation;
+    const result = await dialog.showSaveDialog(mainWindow!, { title: "Save Boards recovery copy", defaultPath: "Zebby Boards Recovery.sqlite",
+      filters: [{ name: "SQLite database", extensions: ["sqlite"] }] });
+    if (result.canceled || !result.filePath) return null;
+    boards.assertIdle();
+    if (generation !== boardsStore.generation) throw new Error("The workspace changed. Save the recovery copy again.");
+    checkDatabaseLocation(result.filePath);
+    const recoveryPath = result.filePath;
+    return changeCompanion(async () => {
+      await boardsStore.saveRecoveryCopy(recoveryPath);
+      await openPairedBoards();
+    });
+  });
+  handle("boards:add", async (_event, inputs: BoardInput[]) => {
+    if (!Array.isArray(inputs)) throw new Error("Add one board link per line.");
+    try { const ids = await boardsStore.add(inputs); return boards.check(ids); }
+    finally { boards.changed(); }
+  });
+  handle("boards:update", async (_event, id: string, input: BoardInput) => {
+    boards.assertIdle(id);
+    try { await boardsStore.update(id, input); return boards.state; }
+    finally { boards.changed(); }
+  });
+  handle("boards:remove", async (_event, id: string) => {
+    boards.assertIdle(id);
+    const board = boardsStore.get(id);
+    const response = await dialog.showMessageBox(mainWindow!, { type: "question", title: "Remove board?",
+      message: `Remove ${board.company} and its check history?`, buttons: ["Cancel", "Remove board"], defaultId: 0, cancelId: 0 });
+    if (response.response === 1) { boards.assertIdle(id); await boardsStore.remove(id); boards.changed(); }
+    return boards.state;
+  });
+  handle("boards:check", (_event, ids?: string[]) => boards.check(ids));
+  handle("boards:cancel", (_event, id: string) => boards.cancel(id));
+  handle("boards:reviewed", async (_event, id: string, through: number) => {
+    try { await boardsStore.reviewed(id, through); return boards.state; }
+    finally { boards.changed(); }
+  });
   handle("desktop:warm-credits-service", () => creditsClient.warmService());
   handle("desktop:refresh-credits", async () => { await creditsClient.refreshWallet(); return state(); });
   handle("desktop:refresh-credit-access", async () => { walletChangesAllowed(); await creditsClient.refreshAccess(); return state(); });
@@ -728,10 +838,10 @@ function registerIpc() {
     const updater = directUpdater();
     if (installingUpdate) return;
     if (!app.isPackaged || updates.state.download.phase !== "ready") throw new Error("Download the update before restarting.");
-    if (activeApiRequests || activeSettingsRequests) throw new Error("Wait for analysis and saving to finish, then restart to update.");
+    if (activeApiRequests || activeSettingsRequests || analysisRequests.busy || boards.busy) throw new Error("Wait for board checks, analysis and saving to finish before restarting.");
     installingUpdate = true;
     try {
-      await store.retrySync();
+      await Promise.all([store.retrySync(), boardsStore.retrySave()]);
       await Promise.all([modelDownloads.pause(), modelEngine.shutdown()]);
       await store.retrySync();
       await diagnosticLog.flush();
@@ -901,7 +1011,7 @@ function createWindow() {
   mainWindow.webContents.on("render-process-gone", (_event, details) =>
     logDiagnostic("Renderer process stopped", `${details.reason}, exit code ${details.exitCode}`));
   void mainWindow.loadURL("tracker://app/");
-  mainWindow.on("closed", () => { mainWindow = null; });
+  mainWindow.on("closed", () => { mainWindow = null; void boards?.stop(); });
   mainWindow.on("focus", () => { if (!storeEdition) void updates.check(); });
 }
 
@@ -931,6 +1041,28 @@ else {
     logEvent(`Zebby starting (${app.getVersion()}, ${process.platform}/${process.arch}, profile ${app.getPath("userData")})`);
     store = new DesktopStore(storePaths?.recovery || app.getPath("userData"), logEvent);
     await loadSettings();
+    boardsStore = new BoardsStore(storePaths?.recovery || app.getPath("userData"));
+    boards = new BoardsService(boardsStore, {
+      profile: app.getPath("userData"), selection: selectedAnalysis, reader: signal => new BoardBrowser(signal),
+      changed: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("boards:changed", boards.state); },
+      acknowledgeCached: async (selected, input, sourceId) => {
+        if (selected.provider === "credits") await creditsClient.acknowledgeCachedSource({ kind: "board_extract", id: sourceId }, input);
+      },
+      extract: async (selected, input, signal, sourceId) => {
+        if (selected.provider === "credits") {
+          const source = { kind: "board_extract" as const, id: sourceId };
+          const quote = await creditsClient.recoveryQuote(source, input) || await creditsClient.quote("board_extract", input, selected.model, selected.thinkingLevel);
+          signal.throwIfAborted();
+          const value = await creditsClient.analyze(quote.id, input, signal, source, quote.model);
+          return { value, acknowledge: () => creditsClient.acknowledge(quote.id) };
+        }
+        const contract = boardModelContract(input);
+        const value = await analyzeWithSelectedProvider(contract.instructions, input, contract.name, contract.schema,
+          "The board links could not be read.", selected, signal);
+        return { value };
+      },
+    });
+    if (store.status.filePath) await openPairedBoards();
     nativeTheme.themeSource = settings.appearance === "auto" || !settings.appearance ? "system" : settings.appearance;
     nativeTheme.on("updated", updateWindowAppearance);
     const downloadErrors = new Map<string, string>();
@@ -984,9 +1116,9 @@ else {
       event.preventDefault(); shuttingDown = true;
       logEvent("Zebby closing; stopping model workers and flushing logs");
       analysisRequests.cancelAll();
-      void Promise.all([modelDownloads?.pause(), modelEngine?.shutdown(), selfUpdater?.cancel()])
+      void Promise.all([boards?.stop(), modelDownloads?.pause(), modelEngine?.shutdown(), selfUpdater?.cancel()])
         .catch((error) => logDiagnostic("Could not stop the local model", error))
-        .then(async () => { store?.close(); await diagnosticLog.flush(); })
+        .then(async () => { store?.close(); await boardsStore?.close(); await diagnosticLog.flush(); })
         .finally(() => app.quit());
     } else store?.close();
   });

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { ArrowRight, ArrowUpRight, Check, FileText, FolderOpen,
   LoaderCircle, Monitor, Moon, Plus, RefreshCw, RotateCw, Search, Sparkles, Sun, Trash2 } from "lucide-react";
 import ApplicationDashboard from "./ApplicationDashboard";
+import BoardsView, { BoardsDatabaseSettings } from "./BoardsView";
 import LocationEditor from "./LocationEditor";
 import ResumePicker from "./ResumePicker";
 import AnalysisErrorBanner from "./AnalysisErrorBanner";
@@ -27,7 +28,7 @@ import { LOCAL_MODELS } from "../local-model-catalog";
 import { importanceForTerms } from "../plan-importance";
 import { useInteractiveScrollbars, useWorkspaceShortcuts } from "./useWorkspaceShortcuts";
 
-type Tab = "plan" | "applications" | "settings";
+type Tab = "plan" | "applications" | "boards" | "settings";
 
 function emptyPlan(currentOverview = ""): PlanInput {
   return { listingUrl: "", company: "", title: "", team: "", locations: "",
@@ -577,14 +578,15 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking 
     <section className="settings-section" aria-labelledby="database-settings">
       <div className="settings-section-heading"><h2 id="database-settings">Database</h2></div>
       <div className="settings-content">
-        <div className="database-location"><span>Current file</span><strong>{state.filename || "No database selected"}</strong>
+        <div className="database-location"><span>Applications file</span><strong>{state.filename || "No database selected"}</strong>
           {state.filePath && <code title={state.filePath}>{state.filePath}</code>}</div>
         {state.dirty && <p className="sync-warning">Changes have not reached {state.filename || "your database file"}. Retry the save before switching computers.</p>}
         <div className="settings-actions"><SettingsAction icon={FolderOpen} onClick={() => void choose("open")} disabled={working}>Open database</SettingsAction>
           <SettingsAction icon={Plus} data-command="new" onClick={() => void choose("create")} disabled={working}>Create new database</SettingsAction>
           {state.dirty && <SettingsAction variant="primary" icon={RotateCw} onClick={() => void retry()} disabled={working}>Retry save</SettingsAction>}
         </div>
-        <p className="settings-help">Quit Zebby and wait for file sync before switching computers.</p>
+        {state.filePath && <BoardsDatabaseSettings />}
+        <p className="settings-help">Quit Zebby and let both files sync before switching computers.</p>
       </div>
     </section>
     <section className="settings-section" aria-labelledby="ai-settings">
@@ -656,7 +658,7 @@ function Welcome({ state, onState }: { state: DesktopState; onState: (value: Des
       <Plus size={18} aria-hidden="true" /> Create database</button>
       <button className="button button-secondary" onClick={() => void choose("open")} disabled={working}>
       <FolderOpen size={18} aria-hidden="true" /> Open existing database</button></div>
-    <p className="welcome-foot">Choose a folder that syncs across your computers if you want to share one database between them.</p>
+    <p className="welcome-foot">Choose one name and folder. Zebby keeps your applications and Boards history in two files together.</p>
   </main>;
 }
 
@@ -668,6 +670,7 @@ export default function App() {
   useWorkspaceShortcuts(settleTab);
   const scrollToAnalysis = useRef(false);
   const [dirtyPlan, setDirtyPlan] = useState(false);
+  const [dirtyBoard, setDirtyBoard] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [applicationSelection, setApplicationSelection] = useState<{ id: string; notice: string } | null>(null);
   const [databaseVersion, setDatabaseVersion] = useState(0);
@@ -681,10 +684,11 @@ export default function App() {
   }, [loaded]);
   const navigate = useCallback((target: Tab) => {
     if (target !== "plan" && dirtyPlan && !window.confirm("Discard unsaved changes to this plan?")) return false;
+    if (target !== "boards" && dirtyBoard && !window.confirm("Discard unsaved changes to this board?")) return false;
     scrollToAnalysis.current = false;
     setApplicationSelection(null); setTab(target);
     return true;
-  }, [dirtyPlan, setTab]);
+  }, [dirtyPlan, dirtyBoard, setTab]);
   useLayoutEffect(() => {
     if (tab === "settings" && scrollToAnalysis.current) {
       scrollToAnalysis.current = false;
@@ -717,6 +721,7 @@ export default function App() {
     if (restart && document.querySelector('[role="dialog"], .desktop-dashboard .editor')) {
       setShellError("Finish editing the open form or dialog before updating."); return;
     }
+    if (restart && dirtyBoard && !window.confirm("Restart to update and discard unsaved changes to this board?")) return;
     if (restart && dirtyPlan && !window.confirm("Restart to update and discard unsaved changes to this plan?")) return;
     setUpdateWorking(true); setShellError("");
     try {
@@ -739,7 +744,7 @@ export default function App() {
       setState(next); setDatabaseVersion((current) => current + 1); setSelectedPlanId(null); setApplicationSelection(null); setTab("plan");
     });
     const removeNavigate = window.desktop!.onNavigate((target) => {
-      if (target === "plan" || target === "applications" || target === "settings") navigate(target);
+      if (target === "plan" || target === "applications" || target === "boards" || target === "settings") navigate(target);
     });
     const removeModelsChanged = window.desktop!.onLocalModelsChanged((next) => {
       setState((current) => current ? { ...current, builtInModelId: next.builtInModelId,
@@ -781,6 +786,7 @@ export default function App() {
       <nav id="desktop-navigation" className="sidebar-nav" aria-label="Workspace">
         <NavigationButton kind="plan" label="Plan" selected={tab === "plan"} collapsed={state.sidebarCollapsed} onActivate={() => navigate("plan")} />
         <NavigationButton kind="applications" label="Applications" selected={tab === "applications"} collapsed={state.sidebarCollapsed} onActivate={() => navigate("applications")} />
+        <NavigationButton kind="boards" label="Boards" selected={tab === "boards"} collapsed={state.sidebarCollapsed} onActivate={() => navigate("boards")} />
         <NavigationButton kind="settings" label="Settings" selected={tab === "settings"} collapsed={state.sidebarCollapsed} onActivate={() => navigate("settings")} />
       </nav>
       {(state.updates.available || state.credits.wallet?.purchased || state.filePath && !state.sidebarCollapsed) && <div className="sidebar-footer">
@@ -800,6 +806,7 @@ export default function App() {
       {state.startupError && tab === "settings" && <ErrorBanner variant="inline"
         message="The previous database could not be opened. Choose a database to continue." />}
       {!state.filePath ? (tab === "settings" ? <SettingsView state={state} onState={setState} onUpdate={() => void applyUpdate()} onCheckUpdates={checkUpdates} updateWorking={updateWorking} /> : <Welcome state={state} onState={setState} />)
+      : tab === "boards" ? <BoardsView key={databaseVersion} onDirtyChange={setDirtyBoard} />
       : tab === "plan" ? <PlanView key={databaseVersion}
         analysisProvider={state.analysisProvider} ollamaModel={state.ollamaModel}
         builtInModelId={state.builtInModelId} builtInReady={Boolean(state.localModels?.some((model) =>
