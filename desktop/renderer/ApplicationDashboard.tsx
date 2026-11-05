@@ -770,6 +770,10 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
               </button>
             </div>
             <form onSubmit={saveApplication}>
+              <ErrorBanner message={actionError} retry={() => retryAction.current()} busy={saving || Boolean(deletingId)} />
+              {!actionError && !lookingUp && lookupMessage !== "Details added" && !form.jobDescription.trim() && <ErrorBanner message={lookupMessage}
+                retry={() => void lookupJobDetails(form.listingUrl, true)} busy={saving}
+                recovery={<button type="button" className="text-action" onClick={() => descriptionInput.current?.focus()}>Go to description</button>} />}
               <fieldset className="form-grid" disabled={saving || Boolean(editingId && analyzingIds.has(editingId))}>
                 <div className="field field-wide listing-field">
                   <label htmlFor="listing-url">Job listing link</label>
@@ -836,14 +840,11 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
                     maxLength={80000} />
                   {matchingPlan && !form.jobDescription.trim() && <button type="button" className="text-action"
                     onClick={() => updateField("jobDescription", matchingPlan.description)}>Use description from saved plan</button>}
-                  {lookupMessage && lookupMessage !== "Details added" && !form.jobDescription.trim() && <span className="listing-feedback" role="status">{lookupMessage}
-                    <button type="button" className="text-action" onClick={() => descriptionInput.current?.focus()}>Paste description</button></span>}
                 </label>
                 {editingId && applications.find((item) => item.id === editingId)?.matchNotes &&
                   <div className="field-wide match-explanation"><strong>Match analysis</strong>
                     <p>{applications.find((item) => item.id === editingId)?.matchNotes}</p></div>}
               </fieldset>
-              <ErrorBanner message={actionError} retry={() => retryAction.current()} busy={saving || Boolean(deletingId)} />
               <div className="form-actions">
                 <button className="button button-secondary" type="button" onClick={closeForm} disabled={saving}>Cancel</button>
                 <button className="button button-primary" type="submit" data-command="save" disabled={saving}>
@@ -886,12 +887,7 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
 
           {notice && <p className="notice" role="status">{notice}</p>}
           {!formOpen && <AnalysisErrorBanner message={actionError} retry={() => retryAction.current()} busy={saving || Boolean(deletingId)} />}
-          {loadError && (
-            <div className="state-panel" role="alert">
-              <p>{loadError}</p>
-              <button className="button button-secondary" type="button" onClick={() => void loadData()}>Try again</button>
-            </div>
-          )}
+          <ErrorBanner message={loadError} retry={() => void loadData()} busy={loading} />
           {!loadError && loading && <div className="state-panel"><p>Loading your applications...</p></div>}
           {!loadError && !loading && applications.length === 0 && (
             <div className="empty-state">

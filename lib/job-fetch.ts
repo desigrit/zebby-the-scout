@@ -3,6 +3,7 @@ import { load } from "cheerio";
 import { Agent, fetch as safeFetch } from "undici";
 import { isPublicAddress } from "./public-address.ts";
 import { normalizeJobText } from "./job-text.ts";
+import { atlassianJobContent } from "./atlassian-job.ts";
 import {
   companyFromBoardName,
   detailsFromAshby,
@@ -52,6 +53,26 @@ async function readBounded(response: Awaited<ReturnType<typeof safeFetch>>): Pro
   }
 }
 
+export async function readListingResponse(response: Awaited<ReturnType<typeof safeFetch>>, url: URL) {
+  // Cloudflare marks verification responses explicitly, including challenges
+  // returned with a successful HTTP status. They must never become job content.
+  const challenged = response.headers.get("cf-mitigated")?.toLowerCase() === "challenge";
+  if (!response.ok || challenged) {
+    await response.body?.cancel();
+    const message = challenged
+      ? "This site requires browser verification. Open the listing in your browser and paste the job description into Zebby."
+      : response.status === 403
+        ? "This site blocked automatic import. Open the listing in your browser and paste the job description into Zebby."
+        : "The listing could not be read.";
+    // Error causes are captured by the diagnostic log. Keep URLs, cookies and
+    // challenge HTML out of the log; the hostname and response status suffice.
+    throw new Error(message, { cause: new Error(
+      `Job listing response: host=${url.hostname}, status=${response.status}, browserVerification=${challenged}`,
+    ) });
+  }
+  return { body: await readBounded(response), contentType: response.headers.get("content-type") || "" };
+}
+
 async function fetchText(url: URL, signal: AbortSignal, ownHost: string, accept: string) {
   let current = url;
   for (let redirects = 0; redirects < 4; redirects++) {
@@ -85,11 +106,7 @@ async function fetchText(url: URL, signal: AbortSignal, ownHost: string, accept:
         current = publicHttpsUrl(new URL(location, current).href, ownHost);
         continue;
       }
-      if (!response.ok) {
-        await response.body?.cancel();
-        throw new Error("The listing could not be read.");
-      }
-      return { body: await readBounded(response), contentType: response.headers.get("content-type") || "" };
+      return await readListingResponse(response, current);
     } finally {
       await agent.close();
     }
@@ -151,6 +168,11 @@ export function descriptionFromHtml(html: string): string {
         for (const key of ["@graph", "mainEntity", "itemListElement"]) if (item[key]) queue.push(item[key]);
       }
     } catch { /* Continue with visible HTML. */ }
+  }
+  const atlassian = atlassianJobContent($);
+  if (atlassian) {
+    const description = formattedJobText(atlassian.descriptionHtml, true);
+    if (description.length >= 80) return description;
   }
   // Amazon renders the description and both qualification sections together,
   // followed by a separate sidebar for locations and recruiting categories.

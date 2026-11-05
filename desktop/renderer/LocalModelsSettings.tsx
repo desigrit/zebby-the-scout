@@ -131,7 +131,7 @@ export default function LocalModelsSettings({ state, onState, hideSelector = fal
         </div>{controls(selected, current)}
       </div>
       {progress(selected, current)}
-      {current.error && <p className="model-download-error" role="alert">{current.error.replace("Choose Retry download to continue.", "Resume to continue.")}</p>}
+      <ErrorBanner message={current.error?.replace("Choose Retry download to continue.", "Resume to continue.") || ""} />
       <details className="selected-model-about" key={selected.id} open={selected.license && !state.acceptedModelTerms?.includes(selected.id) || undefined}>
         <summary>{selected.license && !state.acceptedModelTerms?.includes(selected.id) ? "Model terms" : "About this model"}</summary>
         <p className="model-description">{selected.description}</p>
@@ -147,7 +147,7 @@ export default function LocalModelsSettings({ state, onState, hideSelector = fal
         </p>{!state.acceptedModelTerms?.includes(selected.id) && <p className="settings-help">Choosing {current.status === "ready" ? "Agree and use" : "Agree and download"} accepts these terms and any linked use restrictions.</p>}</div>}
       </details>
     </>}
-    <ErrorBanner className="model-download-error" message={error} retry={() => retryAction.current()} busy={working} />
+    <ErrorBanner message={error} retry={() => retryAction.current()} busy={working} />
     <details className="local-model-library">
       <summary><span>Downloaded models</span><span className="model-library-summary">{readyCount} installed · {formatModelBytes(usedBytes)} used<ChevronDown size={16} aria-hidden="true" /></span></summary>
       {stored.length ? <ul>{stored.map((status) => {

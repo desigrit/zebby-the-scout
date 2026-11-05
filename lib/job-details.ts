@@ -1,6 +1,7 @@
 import { load } from "cheerio";
 import { decodeJobEntities, normalizeJobText } from "./job-text.ts";
 import { parseLocations, serializeLocations } from "./locations.ts";
+import { atlassianJobContent } from "./atlassian-job.ts";
 
 export type JobDetails = {
   company: string;
@@ -243,6 +244,16 @@ export async function detailsFromHtml(html: string): Promise<JobDetails> {
     team: text(pick("job:team", "team", "job:department", "department"), 160) || fromDescription.team,
     locations: joinedLocations([pick("job:location", "job_location", "location")]) || joinedLocations(headerLocations) || fromDescription.locations,
   };
+  const atlassian = atlassianJobContent($);
+  if (atlassian) {
+    fallback.company = "Atlassian";
+    fallback.title = text(atlassian.title, 160);
+    fallback.locations = joinedLocations(atlassian.locations) || fallback.locations;
+    // A specific title suffix takes precedence over the broad recruiting category.
+    const role = separateTitleAndTeam(fallback);
+    fallback.title = role.title;
+    fallback.team = role.team || text(atlassian.department, 160);
+  }
   if (/^(?:www\.)?amazon\.jobs$/i.test(siteName) && $("#job-detail").length) {
     fallback.company = "Amazon";
     fallback.title = text($("#job-detail .apply-header h1.title").first().text(), 160) || fallback.title;

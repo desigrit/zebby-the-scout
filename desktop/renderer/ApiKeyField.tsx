@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Pencil, RotateCw, Trash2 } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import type { DesktopState } from "../bridge";
 import type { ChangeAnalysisState } from "./ThinkingSettings";
 import SettingsAction from "./SettingsAction";
+import { ErrorBanner } from "./WorkspaceFeedback";
 
 export default function ApiKeyField({ state, onState, provider, disabled, onBusy, onPendingChange }: {
   state: DesktopState; onState: ChangeAnalysisState; provider: "openai" | "anthropic"; disabled: boolean; onBusy: (busy: boolean) => void;
@@ -55,9 +56,8 @@ export default function ApiKeyField({ state, onState, provider, disabled, onBusy
           onChange={(event) => { setDraft(event.target.value); setError(""); }} placeholder={provider === "openai" ? "sk-…" : "sk-ant-…"} /></label>
         {hasKey && <div className="key-editor-actions"><SettingsAction className="settings-action-slim" disabled={disabled || working} onClick={cancel}>Cancel</SettingsAction></div>}
       </form>}
-    {error && <p className="key-error" role="alert"><span>{error}</span>
-      {!error.startsWith("Enter a valid") && <button className="banner-retry" type="button" disabled={working || disabled}
-        onClick={() => void save(editing || !hasKey ? draft.trim() : lastAttempt.current)}><RotateCw size={14} strokeWidth={1.5} aria-hidden="true" />Retry</button>}</p>}
+    <ErrorBanner variant="inline" message={error} busy={working || disabled}
+      retry={error.startsWith("Enter a valid") ? undefined : () => void save(editing || !hasKey ? draft.trim() : lastAttempt.current)} />
     {!state.canSaveApiKey && <p className="settings-help">Secure storage is unavailable. Your key stays for this session only.</p>}
   </div>;
 }

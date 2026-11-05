@@ -776,7 +776,7 @@ try {
   // A previous save confirmation can still be visible while this request settles.
   // Wait for this analysis to finish before asserting its feedback and unlocked UI.
   await planProgress.waitFor({ state: 'hidden' });
-  await page.locator('.workspace-save-feedback').getByText('Saved', { exact: true }).waitFor();
+  await page.getByRole('status').filter({ hasText: /^Saved$/ }).waitFor();
   assert.equal(await planProgress.count(), 0);
   await page.locator(".match-why summary").focus();
   await page.keyboard.press("Enter");
@@ -878,7 +878,7 @@ try {
   await currentOverview.fill("I lead discovery and turn evidence into clear product decisions.");
   await page.getByRole("textbox", { name: "Job listing link", exact: true }).fill("https://example.org/new-role");
   await page.getByRole("button", { name: "Save plan", exact: true }).click();
-  await page.locator(".workspace-save-feedback").getByText("Saved", { exact: true }).waitFor();
+  await page.getByRole("status").filter({ hasText: /^Saved$/ }).waitFor();
   await page.getByRole("button", { name: "New plan", exact: true }).click();
   assert.equal(await currentOverview.inputValue(), lastCurrentOverview);
   assert.equal(lastCurrentOverview, "I lead discovery and turn evidence into clear product decisions.");
@@ -1052,10 +1052,10 @@ try {
   await notes.fill(`${description}\n\nRecruiter: Sam`);
   await captureSettings("notes.png", false);
   await page.getByRole("button", { name: "Save notes" }).click();
-  await page.locator(".workspace-save-feedback").getByText("Saved", { exact: true }).waitFor();
+  await page.getByRole("status").filter({ hasText: /^Saved$/ }).waitFor();
   assert.equal(applications[0].notes, `${description}\n\nRecruiter: Sam`);
   await page.getByRole("button", { name: "Save changes" }).click();
-  await page.locator('.workspace-save-feedback').getByText('Saved', { exact: true }).waitFor();
+  await page.getByRole('status').filter({ hasText: /^Saved$/ }).waitFor();
   assert.equal(applications[0].notes, `${description}\n\nRecruiter: Sam`);
   await table.getByRole("button", { name: "Refresh match for Senior Product Manager at Expedia Group" }).click();
   await table.getByRole("status", { name: "Analyzing resume match" }).first().waitFor();
@@ -1414,7 +1414,7 @@ try {
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
   await assertLocationKeyboard(page.locator(".location-editor"), "Mac Plan");
   await page.getByRole("button", { name: "Save plan", exact: true }).click();
-  await page.locator(".workspace-save-feedback").getByText("Saved", { exact: true }).waitFor();
+  await page.getByRole("status").filter({ hasText: /^Saved$/ }).waitFor();
   // All payment and guest-wallet traffic below uses the synthetic desktop bridge.
   // These checks send no email, open no checkout, and request no provider inference.
   await nav.getByRole("button", { name: "Settings", exact: true }).click();

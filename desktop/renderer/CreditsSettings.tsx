@@ -149,7 +149,7 @@ export function CreditsSettings() {
         <button className="settings-link" type="button" aria-haspopup="dialog" disabled={!usable || working} onClick={() => openCredits()}>Buy credits</button>
         <button ref={helpOpener} className="settings-link" type="button" aria-haspopup="dialog" disabled={working} onClick={() => setHelpOpen(true)}>Manage credits</button>
       </div>
-      {!usable && <p className="form-error">Credit wallets need Windows secure storage or Mac Keychain.</p>}
+      {!usable && <ErrorBanner message="Credit wallets need Windows secure storage or Mac Keychain." />}
       {!helpOpen && feedback}
       <dialog ref={helpDialog} className="analysis-dialog credit-help-dialog credit-manager-dialog" aria-labelledby="credit-help-title"
         onCancel={(event) => { event.preventDefault(); if (!working) closeManager(); }} onClose={() => setHelpOpen(false)}>

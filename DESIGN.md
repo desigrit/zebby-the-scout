@@ -499,7 +499,7 @@ Requests belong to the workspace rather than the active page. Protect only the a
 
 ## Approved polish, October 12, 2026
 
-The Ember palette and composition remain unchanged. Saved feedback is a quiet 11px status in one fixed workspace position for 2.2 seconds. Error banners retain their placement, with a thin 15px retry icon and Try again aligned at the far right. Dialogs share the warm neutral backdrop and flat close controls.
+The Ember palette and composition remain unchanged. Save confirmation uses a visually hidden live region, with no top-right Saved label or checkmark. Plan and Applications share tinted error banners with a thin 15px retry icon and Try again aligned at the far right. Listing-import failures sit above the form fields. Settings uses the API-key error style throughout: 12px accent text, transparent background, no padding, a 6px gap below the control, and a thin 14px Retry icon at the far right. Dialogs share the warm neutral backdrop and flat close controls.
 
 Plan retains its empty result structure and transparent editable recommendation rows. Importance sits above the percentage column, on the count line. Not analyzed uses an 11px rust badge. Saved-plan metadata shares a compact company/date row. The summary labels are Current summary and Suggested edits - Resume summary; the remembered-summary helper is absent.
 

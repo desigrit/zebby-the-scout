@@ -102,7 +102,7 @@ The purchase flow keeps pack selection and Continue usable before the owner conf
 
 ## Approved polish, October 12, 2026
 
-- Ordinary record saves announce Saved briefly in one fixed workspace position. Cancellation has no notice. Errors retain their current location and message, with a compact Try again action at the far right. No technical-details disclosure is added.
+- Ordinary record saves have no visible Saved indicator. A brief screen-reader announcement confirms completion. Cancellation has no notice. Plan and Applications use tinted error banners, with listing-import failures above the form and a compact Try again action at the far right. Settings errors use the API-key pattern: plain accent text, no tinted container, and a compact Retry action. Preserve recovery actions and field associations. No technical-details disclosure is added.
 - Plan uses Current summary and Suggested edits - Resume summary. Keep the empty result structure and editable recommendation rows; show a smaller rust Not analyzed badge. Counts and Importance share each recommendation header. Saved-plan entries place Edited beside the company.
 - Plan analysis needs a link, at least 100 characters of editable description, and a resume. Its exact prerequisite hint appears below Analyze in the progress slot. Current summary is optional. The shared resume picker reports empty, unsupported and oversized files beside its upload control.
 - At narrow ledger widths, role identity receives a full first row, with date, match, status and actions below. Wide rows retain their distributed alignment. Unfiltered views omit duplicate counts; filtered empty results offer Clear filters. Notes has no green indicator.

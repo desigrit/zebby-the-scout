@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
+import { Response } from "undici";
 import {
   detailsFromAshby,
   detailsFromDescription,
@@ -10,8 +11,107 @@ import {
   detailsFromStructuredData,
   mergeJobDetails,
 } from "../lib/job-details.ts";
-import { descriptionFromHtml, descriptionText, formattedJobText } from "../lib/job-fetch.ts";
+import { descriptionFromHtml, descriptionText, formattedJobText, readListingResponse } from "../lib/job-fetch.ts";
 import { parseLocations, serializeLocations } from "../lib/locations.ts";
+
+test("Uber's Cloudflare challenge explains the import block and logs only response diagnostics", async () => {
+  const response = new Response("<title>Just a moment...</title><p>private-challenge-body</p>", {
+    status: 403,
+    headers: { "content-type": "text/html", server: "cloudflare", "cf-mitigated": "challenge", "set-cookie": "private-cookie" },
+  });
+  await assert.rejects(readListingResponse(response, new URL("https://jobs.uber.com/en/jobs/304089/?ref=private-referral")), (error) => {
+    assert.match(error.message, /requires browser verification/);
+    assert.match(error.message, /Open the listing in your browser and paste the job description/);
+    assert.match(error.cause.message, /host=jobs\.uber\.com, status=403, browserVerification=true/);
+    assert.doesNotMatch(`${error.stack}\n${error.cause.stack}`, /private-challenge-body|private-cookie|private-referral/);
+    return true;
+  });
+  assert.equal(response.bodyUsed, true);
+});
+
+test("a successful HTTP status cannot turn a Cloudflare challenge into a saved job description", async () => {
+  const response = new Response("<title>Just a moment...</title><main>Checking your browser before continuing.</main>", {
+    status: 200, headers: { "content-type": "text/html", "cf-mitigated": "challenge" },
+  });
+  await assert.rejects(readListingResponse(response, new URL("https://jobs.uber.com/en/jobs/304089/")), /requires browser verification/);
+  assert.equal(response.bodyUsed, true);
+});
+
+test("blocked imports are distinguished from other HTTP failures", async () => {
+  for (const status of [403, 404, 429, 503]) {
+    const response = new Response("untrusted response body", { status });
+    await assert.rejects(readListingResponse(response, new URL("https://jobs.uber.com/en/jobs/304089/")), (error) => {
+      assert.match(error.message, status === 403 ? /blocked automatic import/ : /The listing could not be read/);
+      assert.doesNotMatch(error.message, /requires browser verification/);
+      assert.match(error.cause.message, new RegExp(`status=${status}, browserVerification=false`));
+      return true;
+    });
+    assert.equal(response.bodyUsed, true);
+  }
+});
+
+test("ordinary listings served through Cloudflare and public API responses remain readable", async () => {
+  for (const [body, contentType] of [
+    ["<main><h1>Product Manager</h1><p>Build tools that help teams work together.</p></main>", "text/html; charset=utf-8"],
+    [JSON.stringify({ title: "Product Manager", content: "Build useful products." }), "application/json"],
+  ]) {
+    const response = new Response(body, { headers: { server: "cloudflare", "content-type": contentType } });
+    assert.deepEqual(await readListingResponse(response, new URL("https://jobs.uber.com/en/jobs/304089/")), { body, contentType });
+  }
+});
+
+test("Atlassian reads the role header and every job section without recruiting page chrome", async () => {
+  // The observed page structure and role metadata, with short test descriptions.
+  const html = await readFile(new URL("./fixtures/atlassian-job.html", import.meta.url), "utf8");
+  assert.deepEqual(await detailsFromHtml(html), {
+    company: "Atlassian", title: "Principal Product Manager", team: "Confluence Aggregation",
+    locations: "San Francisco, United States; Remote",
+  });
+  assert.equal(descriptionFromHtml(html), [
+    "Working at Atlassian", "Choose an office, home, or a combination of both.",
+    "About the team", "Build shared knowledge tools with product, design, and engineering.",
+    "What you'll do", "• Define the roadmap.\n• Improve content quality.",
+    "What we're looking for", "• Experience shipping useful products.\n• Clear written communication.",
+    "Compensation reflects location and experience.", "Pay zones", "Zone A: $100,000 - $150,000",
+    "Benefits & Perks", "Support for health and wellbeing.",
+  ].join("\n\n"));
+});
+
+test("Atlassian uses the recruiting category only when the role has no specific team", async () => {
+  const html = await readFile(new URL("./fixtures/atlassian-job.html", import.meta.url), "utf8");
+  for (const title of ["Principal Product Manager", "Principal Product Manager, San Francisco", "Principal Product Manager, Remote"]) {
+    const details = await detailsFromHtml(html.replace("Principal Product Manager, Confluence Aggregation", title));
+    assert.equal(details.title, title);
+    assert.equal(details.team, "Product Management");
+  }
+});
+
+test("Atlassian keeps geographic remote restrictions and separate advertised locations", async () => {
+  const html = await readFile(new URL("./fixtures/atlassian-job.html", import.meta.url), "utf8");
+  const details = await detailsFromHtml(html.replace("San Francisco, United States | Remote, Remote",
+    "Sydney, Australia | Melbourne, Australia | Remote, Australia | Sydney, Australia"));
+  assert.equal(details.locations, "Sydney, Australia; Melbourne, Australia; Remote, Australia");
+});
+
+test("Atlassian never invents missing location metadata from description paragraphs", async () => {
+  const html = await readFile(new URL("./fixtures/atlassian-job.html", import.meta.url), "utf8");
+  const details = await detailsFromHtml(html.replace("<div><p>Product Management | San Francisco, United States | Remote, Remote</p></div>", ""));
+  assert.equal(details.title, "Principal Product Manager");
+  assert.equal(details.team, "Confluence Aggregation");
+  assert.equal(details.locations, "");
+});
+
+test("Atlassian extraction is scoped to its career detail pages", async () => {
+  const html = await readFile(new URL("./fixtures/atlassian-job.html", import.meta.url), "utf8");
+  for (const page of [
+    html.replaceAll("https://www.atlassian.com/company/careers/details/27291", "https://www.atlassian.com/products/confluence"),
+    html.replaceAll("https://www.atlassian.com/", "https://www.atlassian.com.example.org/"),
+  ]) {
+    assert.notEqual((await detailsFromHtml(page)).title, "Principal Product Manager");
+    assert.match(descriptionFromHtml(page), /Join the Atlassian Talent Community/);
+  }
+  assert.equal((await detailsFromHtml(html.replace(/<link rel="canonical"[^>]+>/, ""))).title, "Principal Product Manager");
+});
 
 test("Amazon's server-rendered job keeps the role, team, locations and all description sections", async () => {
   // Observed page structure and public role metadata, with synthetic description

@@ -5,7 +5,7 @@ import ApplicationDashboard from "./ApplicationDashboard";
 import LocationEditor from "./LocationEditor";
 import ResumePicker from "./ResumePicker";
 import AnalysisErrorBanner from "./AnalysisErrorBanner";
-import { ErrorBanner, SavedFeedbackProvider, useSavedFeedback } from "./WorkspaceFeedback";
+import { ErrorBanner, ErrorStyleProvider, SavedFeedbackProvider, useSavedFeedback } from "./WorkspaceFeedback";
 import { pasteJobDescription } from "../../lib/job-text-paste";
 import type { DesktopState } from "../bridge";
 import type { Plan, PlanInput } from "../store";
@@ -241,7 +241,8 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
       setListingMessage(text ? "Details added" : "Could not get the job description. Paste it below.");
     } catch (cause) {
       if (controller.signal.aborted) return;
-      setError(`${errorText(cause)} You can paste the job description below.`);
+      const message = errorText(cause);
+      setError(/paste the job description/i.test(message) ? message : `${message} You can paste the job description below.`);
     } finally {
       if (listingController.current === controller) { listingController.current = null; setReading(false); }
     }
@@ -398,6 +399,9 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
         </div>
         <div className="plan-document-scroll">
         <AnalysisErrorBanner message={error} retry={() => retryAction.current()} busy={busy} />
+        {!error && !draft.description.trim() && listingMessage !== "Details added" && <ErrorBanner message={listingMessage}
+          retry={() => void readListing(draft.listingUrl)} busy={busy}
+          recovery={<button className="text-action" type="button" onClick={() => descriptionInput.current?.focus()}>Go to description</button>} />}
         {notice && <p className="notice" role="status">{notice}</p>}
         <div className="plan-document">
         <div className="plan-inputs">
@@ -420,8 +424,6 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
             onChange={(event) => update("description", event.target.value)}
             onPaste={(event) => pasteJobDescription(event, (value) => update("description", value))}
             placeholder="Paste job description" maxLength={80000} /></label>
-          {listingMessage && listingMessage !== "Details added" && !draft.description.trim() && <p className="listing-feedback" role="status">
-            {listingMessage} <button className="text-action" type="button" onClick={() => descriptionInput.current?.focus()}>Paste description</button></p>}
         </fieldset>
         <div className="plan-section cv-section">
           <fieldset className="plan-fields" disabled={analyzing || saving || moving}>
@@ -569,7 +571,7 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking 
     catch (cause) { setError(errorText(cause)); }
   }
 
-  return <main className="desktop-main settings-page" aria-label="Settings">
+  return <ErrorStyleProvider variant="inline"><main className="desktop-main settings-page" aria-label="Settings">
     <ErrorBanner message={error} retry={() => retryAction.current()} busy={working} />
     {notice && <p className="notice" role="status">{notice}</p>}
     <section className="settings-section" aria-labelledby="database-settings">
@@ -632,7 +634,7 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking 
         </>}
       </div>
     </section>
-  </main>;
+  </main></ErrorStyleProvider>;
 }
 
 function Welcome({ state, onState }: { state: DesktopState; onState: (value: DesktopState) => void }) {
@@ -791,12 +793,12 @@ export default function App() {
       </div>}
     </aside>
     <div className="desktop-workspace" inert={updateWorking && state.updates.download.phase === "ready" || state.updates.download.phase === "installing"}>
-      <ErrorBanner message={shellError} className="workspace-warning" retry={() => shellRetry.current()} busy={updateWorking || sidebarSaving} />
+      <ErrorBanner message={shellError} className="workspace-warning" variant={tab === "settings" ? "inline" : "banner"}
+        retry={() => shellRetry.current()} busy={updateWorking || sidebarSaving} />
       {state.dirty && tab !== "settings" && <div className="workspace-warning" role="alert"><span>Changes have not reached {state.filename || "your database file"}.</span>
         <button type="button" onClick={() => navigate("settings")}>Retry save in Settings</button></div>}
-      {state.startupError && tab === "settings" && <div className="workspace-warning" role="alert">
-        <span>The previous database could not be opened. Choose a database to continue.</span>
-      </div>}
+      {state.startupError && tab === "settings" && <ErrorBanner variant="inline"
+        message="The previous database could not be opened. Choose a database to continue." />}
       {!state.filePath ? (tab === "settings" ? <SettingsView state={state} onState={setState} onUpdate={() => void applyUpdate()} onCheckUpdates={checkUpdates} updateWorking={updateWorking} /> : <Welcome state={state} onState={setState} />)
       : tab === "plan" ? <PlanView key={databaseVersion}
         analysisProvider={state.analysisProvider} ollamaModel={state.ollamaModel}

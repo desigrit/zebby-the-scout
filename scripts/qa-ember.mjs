@@ -442,7 +442,7 @@ try {
   assert.equal(await page.getByText("Analysis cancelled.", { exact: true }).count(), 0);
   await page.evaluate(() => window.__deliverAnalysis());
   checks.push("Cancel after persistence keeps response delivery and UI consistent");
-  await page.locator(".workspace-save-feedback").getByText("Saved", { exact: true }).waitFor();
+  await page.getByRole("status").filter({ hasText: /^Saved$/ }).waitFor();
   assert.equal((await api("/api/plans")).plans[0].matchStrength, 85); checks.push("Successful analysis still saves all structured results");
   const planToApply = (await api("/api/plans")).plans[0];
   const appliedBefore = (await api("/api/applications")).applications.length;
@@ -539,7 +539,7 @@ try {
     assert.ok(await page.getByLabel(label, { exact: label !== "Job description" }).count(), `${label} stays in the full form`);
   }
   await page.getByLabel("Date applied", { exact: true }).fill("");
-  await page.keyboard.press("Control+s"); await page.locator(".workspace-save-feedback").getByText("Saved", { exact: true }).waitFor();
+  await page.keyboard.press("Control+s"); await page.getByRole("status").filter({ hasText: /^Saved$/ }).waitFor();
   assert.equal((await api("/api/applications")).applications.length, appliedBefore + 1); checks.push("New and Save shortcuts, and saving a blank optional application");
   const blank = page.locator(".application-row").filter({ has: page.getByRole("button", { name: "View details for untitled role at unknown company", exact: true }) });
   assert.equal(await blank.locator(".application-applied-date").getAttribute("datetime"), null);

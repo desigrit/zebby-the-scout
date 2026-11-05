@@ -1,6 +1,7 @@
 import { useId, useRef, useState } from "react";
 import { Upload } from "lucide-react";
 import type { Resume } from "../../lib/application-types";
+import { ErrorBanner } from "./WorkspaceFeedback";
 
 export default function ResumePicker({ resumes, value, file, onSelect, onFile, disabled = false }: {
   resumes: Resume[]; value: string; file: File | null; onSelect: (id: string) => void;
@@ -30,7 +31,7 @@ export default function ResumePicker({ resumes, value, file, onSelect, onFile, d
         }
         event.target.value = "";
       }} />
-    {error && <span id={`${id}-error`} className="field-validation" role="alert">{error}</span>}
+    <ErrorBanner id={`${id}-error`} message={error} />
     <small>PDF or Word · Up to 10 MB</small>
   </div>;
 }
