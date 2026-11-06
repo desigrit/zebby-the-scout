@@ -41,6 +41,7 @@ for (const phase of ["tokenizing", "first-token", "stalled-stream", "worker-exit
     ${phase === "worker-exit" ? "setTimeout(() => process.exit(7), 50);" : "setInterval(() => {}, 1000);"}`);
   let blocked = true;
   const engine = new LocalModelEngine({ runtimeFolder: folder, workerPath: worker,
+    memory: async () => ({ available: 24 * 1024 ** 3, total: 32 * 1024 ** 3, pressure: "normal" }),
     downloads: { readyPath: async () => path.join(folder, "test.gguf") },
     timeouts: { tokenizeMs: 40, firstTokenMs: phase === "worker-exit" ? 2000 : 40, stallMs: 40 },
     fetcher: async (url, options) => {
@@ -135,6 +136,7 @@ for (const phase of ["loading", "generating"]) test(`CPU cancellation stops the 
   let blocked = true, entered;
   const reached = new Promise((resolve) => { entered = resolve; });
   const engine = new LocalModelEngine({ runtimeFolder: folder, workerPath: worker,
+    memory: async () => ({ available: 24 * 1024 ** 3, total: 32 * 1024 ** 3, pressure: "normal" }),
     downloads: { readyPath: async () => path.join(folder, "test.gguf") },
     fetcher: async (url, options) => {
       if (url.endsWith("/apply-template")) return Response.json({ prompt: "Full formatted prompt" });

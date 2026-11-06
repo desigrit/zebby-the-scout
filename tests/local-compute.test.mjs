@@ -90,6 +90,7 @@ for (const cancel of [false, true]) test(`GPU startup ${cancel ? "cancellation n
     process.stdin.on('data', () => process.exit(0)); setInterval(() => {}, 1000);`);
   const controller = new AbortController(), input = { jobDescription: "Whole posting", resume: "Whole resume", currentCvOverview: "Unedited summary" };
   const engine = new LocalModelEngine({ runtimeFolder: folder, workerPath: worker,
+    memory: async () => ({ available: 24 * 1024 ** 3, total: 32 * 1024 ** 3, pressure: "normal" }),
     downloads: { readyPath: async () => path.join(folder, "qwen.gguf") }, detectCompute: async () => structuredClone(gpu),
     fetcher: async (url, options) => {
       if (url.endsWith("/health")) {
