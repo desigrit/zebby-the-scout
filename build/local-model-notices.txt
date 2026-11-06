@@ -4,11 +4,14 @@ SmolLM2 360M Instruct, Hugging Face Smol Models Research.
 Source: https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct
 GGUF conversion: https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF
 
-Qwen3 0.6B, Qwen3 4B, and Qwen3 8B, Qwen Team, Alibaba Cloud.
+Qwen3 0.6B, Qwen3 4B, Qwen3 8B, Qwen3 14B, Qwen3 30B A3B, and Qwen3 32B, Qwen Team, Alibaba Cloud.
 Sources:
 https://huggingface.co/Qwen/Qwen3-0.6B-GGUF
 https://huggingface.co/Qwen/Qwen3-4B-GGUF
 https://huggingface.co/Qwen/Qwen3-8B-GGUF
+https://huggingface.co/Qwen/Qwen3-14B-GGUF
+https://huggingface.co/Qwen/Qwen3-30B-A3B-GGUF
+https://huggingface.co/Qwen/Qwen3-32B-GGUF
 
 SmolLM2 and Qwen3 are distributed under the Apache License, Version 2.0.
 See LICENSE-Apache-2.0.txt in this folder for their license text.

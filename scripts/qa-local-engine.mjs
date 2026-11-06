@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { promisify, stripVTControlCharacters } from "node:util";
 import { copyFile, mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { hashModelFile, LocalModelDownloads } from "../desktop/local-model-downloads.ts";
 import { LocalModelEngine } from "../desktop/local-model-engine.ts";
+import { detectLocalCompute } from "../desktop/local-compute-detection.ts";
 import { analyzeBasicLocal } from "../desktop/basic-local-analysis.ts";
 import { getLocalModel } from "../desktop/local-model-catalog.ts";
 import { planInstructions, planSchema, matchInstructions, matchSchema } from "../desktop/analysis-contracts.ts";
@@ -15,6 +18,7 @@ const model = getLocalModel(id);
 const output = path.resolve("work/local-engine-qa");
 await mkdir(output, { recursive: true });
 const packaged = process.argv.includes("--packaged");
+const reportName = id + (packaged ? "-packaged" : "") + (process.argv.includes("--long-input") ? "-long" : "");
 if (!packaged) await prepareRuntime(process.platform, process.arch);
 const platformFolder = `${process.platform === "darwin" ? "mac" : "win"}-${process.arch}`;
 const resources = process.platform === "darwin"
@@ -40,8 +44,43 @@ const downloads = new LocalModelDownloads(path.join(output, "Models"), {
 await downloads.initialize();
 await downloads.start(id); await downloads.waitForDownload();
 assert.equal(downloads.status(id).status, "ready", downloads.status(id).error);
-const events = [];
+const events = [], probes = [];
+const execute = promisify(execFile);
+function verifyCompute() {
+  assert.ok(probes.length, "Native device discovery must run before inference.");
+  for (const probe of probes) {
+    assert.equal(probe.status, "ready", "Native device discovery failed: " + JSON.stringify(probe));
+    if (probe.accelerator) {
+      assert.ok(probe.output.includes("Available devices:"), "The native device list must be present.");
+      if (probe.deviceIds.length) {
+        assert.equal(probe.backend, probe.accelerator, "Zebby ignored a GPU reported by its native runtime.");
+        assert.ok(probe.deviceIds.includes(probe.selectedDevice), "Selected device must match a native identifier.");
+      } else assert.match(probe.output, /^\s*\(none\)\s*$/m, "Missing GPUs must be explicit in native output.");
+    }
+  }
+  if (probes.some(probe => probe.deviceIds.length) || process.argv.includes("--require-gpu")) {
+    assert.notEqual(engine.backend, "cpu", "Inference fell back to CPU despite a reported GPU.");
+    assert.ok(engine.offloadedLayers > 0, "The native runtime must confirm GPU layer offload.");
+  }
+}
 const engine = new LocalModelEngine({ downloads,
+  detectCompute: async (runtime, options) => {
+    let nativeOutput = "";
+    const compute = await detectLocalCompute(runtime, { ...options,
+      execute: async (executable, args, execOptions) => {
+        const result = await execute(executable, args, execOptions);
+        if (args.includes("--list-devices")) nativeOutput = stripVTControlCharacters([result.stdout, result.stderr].filter(Boolean).join("\n"));
+        return result;
+      },
+    });
+    // Independently inspect native IDs. Reusing the app parser here would
+    // let a new backend prefix silently pass every inference check on CPU.
+    const deviceIds = [...nativeOutput.matchAll(/^\s*([\w-]+):[^\n]+\(\d+ MiB, \d+ MiB free\)\s*$/gm)].map(match => match[1]);
+    probes.push({ accelerator: runtime.accelerator?.backend, status: compute.status, backend: compute.backend,
+      deviceIds, selectedDevice: compute.devices[0]?.id, output: nativeOutput.slice(0, 8192) });
+    console.log("Native device check: " + (compute.status !== "ready" ? "probe failed" : deviceIds.join(", ") || "no GPU reported; CPU checks only"));
+    return compute;
+  },
   runtimeFolder: packaged ? path.join(resources, "local-runtime") : path.resolve("build/llama", platformFolder),
   workerPath: packaged ? path.join(resources, "app.asar/desktop-dist/local-runtime-worker.cjs")
     : path.resolve("desktop-dist/local-runtime-worker.cjs"),
@@ -62,7 +101,11 @@ const currentCvOverview = "I lead product strategy and customer discovery to bui
 const input = { jobDescription, resumeText, currentCvOverview };
 const started = Date.now();
 try {
-  const generate = (...args) => engine.analyze(id, ...args);
+  const generate = async (...args) => {
+    const result = await engine.analyze(id, ...args);
+    verifyCompute();
+    return result;
+  };
   console.log(`${model.name}: running Plan (${jobDescription.length} job characters, ${resumeText.length} resume characters)`);
   const plan = model.basic ? await analyzeBasicLocal(input, true, generate)
     : await generate(planInstructions, input, planSchema);
@@ -78,15 +121,13 @@ try {
   assert.ok(plan.overview && plan.overviewRationale && plan.explanation);
   assert.ok(Number.isInteger(plan.score) && plan.score >= 0 && plan.score <= 100);
   assert.ok(Number.isInteger(match.score) && match.score >= 0 && match.score <= 100 && match.explanation);
-  if (process.argv.includes("--require-gpu")) {
-    assert.notEqual(engine.backend, "cpu", "This check requires a working GPU backend.");
-    assert.ok(engine.offloadedLayers > 0, "The native runtime must confirm GPU layer offload.");
-  }
+  verifyCompute();
   if (process.argv.includes("--thinking")) {
     assert.equal(model.supportsThinking, true, "The thinking check requires a supported model.");
     console.log(`${model.name}: checking thinking-enabled structured output`);
     const thoughtMatch = await engine.analyze(id, "Compare the resume evidence with the role. Return a score from 0 to 100 and one short explanation. Do not claim experience absent from the resume.",
       { jobDescription, resumeText }, matchSchema, 800, undefined, "on");
+    verifyCompute();
     assert.ok(Number.isInteger(thoughtMatch.score) && thoughtMatch.score >= 0 && thoughtMatch.score <= 100 && thoughtMatch.explanation);
     assert.ok(events.some((event) => event.message.includes("first token")), "Thinking generation must report progress.");
   }
@@ -96,12 +137,13 @@ try {
   assert.equal(unauthorized.status, 401, "The native engine must require the app's random secret.");
   await engine.stop();
   await assert.rejects(fetch(`${engineUrl}/health`, { signal: AbortSignal.timeout(2000) }));
-  await writeFile(path.join(output, `${id}.json`), JSON.stringify({ model: model.name,
+  await writeFile(path.join(output, `${reportName}.json`), JSON.stringify({ model: model.name,
     seconds: Math.round((Date.now() - started) / 1000), backend: engine.backend, offloadedLayers: engine.offloadedLayers,
-    plan, match, events, authentication: "required", shutdown: "verified" }, null, 2));
+    gpuCheck: probes.some(probe => probe.deviceIds.length) ? "offload verified" : "unavailable on this host",
+    probes, plan, match, events, authentication: "required", shutdown: "verified" }, null, 2));
   console.log(`${model.name}: Plan, match, authenticated loopback access, and shutdown passed (${Math.round((Date.now() - started) / 1000)} seconds).`);
 } catch (error) {
-  await writeFile(path.join(output, `${id}-response.json`), JSON.stringify({ model: model.name, events,
+  await writeFile(path.join(output, `${reportName}-response.json`), JSON.stringify({ model: model.name, events, probes,
     error: error instanceof Error ? error.stack || error.message : String(error),
     jobCharacters: jobDescription.length, resumeCharacters: resumeText.length }, null, 2));
   throw error;

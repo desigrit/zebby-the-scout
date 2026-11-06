@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { recommendedLocalModels } from "../desktop/local-compute.ts";
+import { computeLabel, recommendedLocalModels } from "../desktop/local-compute.ts";
 import { detectLocalCompute, localComputeArguments, parseComputeDevices, readLocalRuntime } from "../desktop/local-compute-detection.ts";
 import { LocalModelEngine } from "../desktop/local-model-engine.ts";
 
@@ -36,6 +36,76 @@ test("recommendations respect VRAM, shared Apple memory and CPU capacity", () =>
   assert.deepEqual(recommendedLocalModels(metal), ["qwen3-8b", "qwen3-4b"]);
   assert.deepEqual(recommendedLocalModels({ ...metal, availableMemory: 7 * GiB }), ["qwen3-4b", "qwen3-06b"]);
   assert.equal(parseComputeDevices("Vulkan0: broken", "vulkan").length, 0);
+});
+
+// Captured format from llama.cpp b11146's Metal backend and --list-devices.
+test("M1 Max native Metal IDs drive GPU selection and 32 GB model recommendations", async () => {
+  const controller = new AbortController();
+  const result = await detectLocalCompute({ executable: "llama-server", accelerator: { executable: "llama-server", backend: "metal" } }, {
+    execute: async (exe, args, options) => {
+      if (exe === "/usr/sbin/sysctl") return { stdout: "8", stderr: "" };
+      assert.deepEqual(args, ["--list-devices"]);
+      assert.equal(options.timeout, 60_000);
+      assert.equal(options.signal, controller.signal);
+      return { stdout: "Available devices:\n  MTL0: Apple M1 Max (24576 MiB, 22528 MiB free)\n", stderr: "" };
+    }, memory: async () => 22 * GiB, signal: controller.signal,
+  });
+  assert.equal(result.status, "ready");
+  assert.equal(result.backend, "metal");
+  assert.equal(result.devices[0].id, "MTL0");
+  assert.deepEqual(result.recommendedModelIds, ["qwen3-14b", "qwen3-8b"]);
+  assert.equal(computeLabel(result), "Apple M1 Max · Metal");
+  const args = localComputeArguments(result);
+  assert.equal(args[args.indexOf("--device") + 1], "MTL0");
+  assert.equal(args[args.indexOf("--gpu-layers") + 1], "auto");
+});
+
+test("Metal device parsing supports current and legacy IDs without accepting unrelated devices", () => {
+  const devices = parseComputeDevices("Available devices:\n"
+    + "  MTL1: Apple M4 Max (49152 MiB, 46080 MiB free)\n"
+    + "  MTL0: Apple M1 Max (24576 MiB, 22528 MiB free)\n"
+    + "  Metal: Apple M3 (16384 MiB, 14336 MiB free)\n"
+    + "  Metal0: Apple M2 (12288 MiB, 10240 MiB free)\n"
+    + "  Vulkan0: Other GPU (65536 MiB, 65536 MiB free)\n"
+    + "  RPC0: Remote (65536 MiB, 65536 MiB free)\n"
+    + "  MTLInvalid: Invalid (65536 MiB, 65536 MiB free)\n"
+    + "  MetalUnknown: Invalid (65536 MiB, 65536 MiB free)\n", "metal");
+  assert.deepEqual(devices.map(device => device.id), ["MTL1", "MTL0", "Metal", "Metal0"]);
+  assert.deepEqual(recommendedLocalModels({ ...gpu, backend: "metal", devices, availableMemory: 44 * GiB }),
+    ["qwen3-32b", "qwen3-30b-a3b"]);
+});
+
+test("GPU discovery accepts stderr and strips ANSI terminal formatting", async () => {
+  const result = await detectLocalCompute({ executable: "llama-server", accelerator: { executable: "llama-server", backend: "metal" } }, {
+    execute: async (exe) => exe === "/usr/sbin/sysctl" ? { stdout: "8" } : {
+      stdout: "Initializing native runtime...",
+      stderr: "\u001b[32mAvailable devices:\n  MTL0: Apple M1 Max (24576 MiB, 22528 MiB free)\u001b[0m\n",
+    }, memory: async () => 22 * GiB,
+  });
+  assert.equal(result.backend, "metal");
+  assert.equal(result.devices[0].id, "MTL0");
+});
+
+test("an unfamiliar or malformed GPU listing is reported as unavailable, not as no GPU", async () => {
+  for (const listing of ["FutureGPU0: Apple M1 Max (24576 MiB, 22528 MiB free)", "MTL0: invalid memory", ""]) {
+    const diagnostics = [];
+    const result = await detectLocalCompute({ executable: "llama-server", accelerator: { executable: "llama-server", backend: "metal" } }, {
+      execute: async (exe) => exe === "/usr/sbin/sysctl" ? { stdout: "8" } : { stdout: "Available devices:\n  " + listing + "\n" },
+      memory: async () => 22 * GiB, diagnostic: (message, error) => diagnostics.push({ message, error }),
+    });
+    assert.equal(result.status, "unavailable");
+    assert.equal(result.backend, "cpu");
+    assert.equal(computeLabel(result), "CPU · GPU acceleration unavailable");
+    assert.match(diagnostics[0].error.message, /devices that Zebby could not use/);
+  }
+});
+
+test("cancelling a running Metal probe propagates instead of starting CPU inference", async () => {
+  const controller = new AbortController();
+  await assert.rejects(detectLocalCompute({ executable: "llama-server", accelerator: { executable: "llama-server", backend: "metal" } }, {
+    execute: async () => { controller.abort(); throw controller.signal.reason; },
+    memory: async () => 22 * GiB, signal: controller.signal,
+  }), { name: "AbortError" });
 });
 
 test("missing drivers and malformed probes fall back without claiming no GPU exists", async () => {

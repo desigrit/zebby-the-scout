@@ -25,6 +25,12 @@ The 30B model uses a mixture of experts. Fewer parameters are active for each ge
 
 Ollama owns its own server process. Zebby requests a 30-second keep-alive, an explicit context and task output budget. Ollama has no public tokenizer endpoint, so its input budget uses a conservative UTF-8 byte bound and checks the model's reported native context limit when available. Zebby does not terminate a shared Ollama server. Active streams use progress-aware timeouts, with a 30-minute overall deadline.
 
+## Verify Apple GPU detection
+
+Use Zebby 2.9.2 or newer. Settings should show the Apple chip followed by **Metal** beneath the downloaded model. Earlier builds could miss the native runtime's MTL0 device identifier, incorrectly recommend CPU models and explicitly run inference on the CPU. Existing model downloads can be reused after updating.
+
+Native package checks now compare the runtime's device list against Zebby's selection and require confirmed layer offload whenever a GPU is reported. A runner with no GPU records that limitation explicitly.
+
 ## Benchmark on an M1 Max or a newer Mac
 
 Use Node 22.13 or newer in the Zebby checkout. Download the model through Settings first, then quit Zebby so it does not compete with the benchmark.

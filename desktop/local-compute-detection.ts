@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { totalmem } from "node:os";
-import { promisify } from "node:util";
+import { promisify, stripVTControlCharacters } from "node:util";
 import type { ComputeBackend, ComputeDevice, LocalCompute } from "./local-compute.ts";
 import { recommendedLocalModels } from "./local-compute.ts";
 import { availableModelMemory } from "./local-model-memory.ts";
@@ -41,11 +41,13 @@ export function localRuntimeEnvironment(): NodeJS.ProcessEnv {
 }
 
 export function parseComputeDevices(output: string, backend: ComputeBackend): ComputeDevice[] {
-  const prefix = backend === "metal" ? "Metal" : backend === "vulkan" ? "Vulkan" : null;
-  if (!prefix) return [];
-  return output.split(/\r?\n/).flatMap((line) => {
+  // llama.cpp b11146 reports Apple GPUs as MTL0, not Metal. Preserve the
+  // native identifier because it is also the value accepted by --device.
+  const deviceId = backend === "metal" ? /^(?:MTL\d+|Metal\d*)$/ : backend === "vulkan" ? /^Vulkan\d+$/ : null;
+  if (!deviceId) return [];
+  return stripVTControlCharacters(output).split(/\r?\n/).flatMap((line) => {
     const match = line.match(/^\s*([\w-]+):\s+(.+?)\s+\((\d+) MiB, (\d+) MiB free\)\s*$/);
-    if (!match || !match[1].startsWith(prefix)) return [];
+    if (!match || !deviceId.test(match[1])) return [];
     const memory = Number(match[3]) * 1024 ** 2, freeMemory = Number(match[4]) * 1024 ** 2;
     if (!Number.isSafeInteger(memory) || !Number.isSafeInteger(freeMemory) || memory <= 0) return [];
     return [{ id: match[1], name: match[2], memory, freeMemory: Math.min(memory, freeMemory) }];
@@ -71,12 +73,19 @@ export async function detectLocalCompute(runtime: LocalRuntime, options: {
     try {
       const result = await (options.execute || execute)(runtime.accelerator.executable, ["--list-devices"], {
         cwd: path.dirname(runtime.accelerator.executable), windowsHide: true,
-        timeout: 15_000, maxBuffer: 128 * 1024, signal: options.signal, env: localRuntimeEnvironment(),
+        // The first Metal initialization can compile kernels on a cold Mac.
+        // Device discovery loads no model and remains cancellable.
+        timeout: runtime.accelerator.backend === "metal" ? 60_000 : 15_000, maxBuffer: 128 * 1024, signal: options.signal, env: localRuntimeEnvironment(),
       });
-      const output = String(result.stdout);
-      if (!output.includes("Available devices:")) throw new Error("The runtime did not report its devices.");
-      compute.devices = parseComputeDevices(output, runtime.accelerator.backend);
+      const output = stripVTControlCharacters([result.stdout, result.stderr].filter(Boolean).join("\n"));
+      const header = output.indexOf("Available devices:");
+      if (header < 0) throw new Error("The runtime did not report its devices.");
+      const listing = output.slice(header);
+      compute.devices = parseComputeDevices(listing, runtime.accelerator.backend);
       if (compute.devices.length) compute.backend = runtime.accelerator.backend;
+      else if (!/^\s*\(none\)\s*$/m.test(listing)) {
+        throw new Error("The runtime reported devices that Zebby could not use: " + listing.slice(0, 4096));
+      }
       options.diagnostic?.(`Local compute detected (${compute.backend}, ${compute.devices.map((d) => `${d.id}: ${d.name}, free ${d.freeMemory}, total ${d.memory}`).join("; ") || "no supported GPU"})`);
     } catch (error) {
       options.signal?.throwIfAborted();
