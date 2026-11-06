@@ -86,7 +86,11 @@ const visualInput = z.object({ task: z.literal("visual"), pageUrl: z.string().ur
   pageTitle: z.string().max(300), summary: z.string().max(4000), image: boardImageSchema,
   candidates: z.array(candidateSchema).max(60), controls: pageExtractionInput.shape.controls,
   atBottom: z.boolean(), expectedTotal: z.number().int().nonnegative().max(10000).nullable(),
-}).strict();
+  coverage: z.object({ verifiedCount: z.number().int().nonnegative().max(10000),
+    alreadyVerifiedIds: z.array(z.string().max(40)).max(60), hasNextPage: z.boolean() }).strict().optional(),
+}).strict().refine(input => !input.coverage || input.coverage.alreadyVerifiedIds.length <= input.coverage.verifiedCount &&
+  new Set(input.coverage.alreadyVerifiedIds).size === input.coverage.alreadyVerifiedIds.length &&
+  input.coverage.alreadyVerifiedIds.every(id => input.candidates.some(candidate => candidate.id === id)), "Invalid visual coverage evidence.");
 export const boardExtractionInput = z.union([pageExtractionInput, roleInput, inventoryInput, documentInput, visualInput]);
 export type BoardExtractionInput = z.infer<typeof boardExtractionInput>;
 export type BoardVisualInput = z.infer<typeof visualInput>;
@@ -168,6 +172,13 @@ export function validatedBoardExtraction(value: unknown, input: BoardExtractionI
         result.empty && (result.listings.length > 0 || result.nextControlId || result.expectedTotal !== 0 || (input.expectedTotal !== null && input.expectedTotal !== 0)) ||
         result.expectedTotal !== null && input.expectedTotal !== null && result.expectedTotal !== input.expectedTotal) {
       throw new Error("The visual read could not verify every visible job and control. The last successful check is unchanged.");
+    }
+    if (input.coverage) {
+      const count = input.coverage.verifiedCount + result.listings.filter(item => !input.coverage!.alreadyVerifiedIds.includes(item.id)).length;
+      const expected = input.expectedTotal ?? result.expectedTotal;
+      if (expected !== null && (count > expected || input.atBottom && count < expected && !result.nextControlId && !input.coverage.hasNextPage)) {
+        throw new Error("The visual read could not account for all listings or the next page. The last successful check is unchanged.");
+      }
     }
     return result;
   }

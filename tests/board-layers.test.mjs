@@ -106,6 +106,18 @@ test("counting and generation use identical image inputs for both personal-key p
   }
   assert.ok(creditOutputLimit("board_extract", "off", true) >= 8192);
 });
+
+test("visual coverage rejects omitted continuation before charging or caching without double-counting previous pages", () => {
+  const input = { ...visual, expectedTotal: 2, controls: [{ id: "c0", text: "", context: "", disabled: false }],
+    coverage: { verifiedCount: 0, alreadyVerifiedIds: [], hasNextPage: false } };
+  const result = { ...visualResult, expectedTotal: 2 };
+  assert.throws(() => validatedBoardExtraction(result, input), /next page/);
+  assert.equal(validatedBoardExtraction({ ...result, nextControlId: "c0" }, input).nextControlId, "c0");
+  assert.equal(validatedBoardExtraction(result, { ...input, coverage: { ...input.coverage, verifiedCount: 1 } }).listings.length, 1);
+  assert.throws(() => validatedBoardExtraction(result, { ...input, coverage: { ...input.coverage, verifiedCount: 1, alreadyVerifiedIds: ["l0"] } }), /next page/);
+  assert.equal(validatedBoardExtraction(result, { ...input, coverage: { ...input.coverage, hasNextPage: true } }).complete, true);
+  assert.equal(boardExtractionInput.safeParse({ ...input, coverage: { ...input.coverage, alreadyVerifiedIds: ["invented"] } }).success, false);
+});
 test("Ollama visual support is explicit and does not switch providers", async () => {
   for (const capabilities of [["completion", "vision"], ["completion"]]) assert.equal(
     await ollamaSupportsVision("http://localhost:11434", "selected", signal(), async () => Response.json({ capabilities })), capabilities.includes("vision"));
@@ -175,5 +187,35 @@ test("insufficient funds during visual reading preserve the baseline and reuse c
     service.check([id]); await wait(); assert.equal(store.get(id).lastCheckId, 0); assert.match(store.get(id).error, /Insufficient/);
     funded = true; service.check([id]); await wait();
     assert.deepEqual(paid, ["l0", "l1", "l1"]); assert.equal(store.get(id).checkedCount, 2); assert.equal(store.get(id).newCount, 0);
+  } finally { await service.stop(); await store.close(); }
+});
+
+test("a skipped visual next button is retried instead of becoming a permanently cached incomplete scan", async () => {
+  const profile = path.join(folder, "visual-continuation"), store = new BoardsStore(profile);
+  await store.create(path.join(folder, "Continuation.sqlite"));
+  const [id] = await store.add([{ company: "Example", url: visual.pageUrl }]);
+  const next = { id: "c0", text: "", context: "", disabled: false };
+  let calls = 0;
+  const service = new BoardsService(store, { profile, selection: () => ({ provider: "credits", model: "gpt-6-luna", thinkingLevel: "off" }), changed() {},
+    reader: () => {
+      let page = 1;
+      const current = () => ({ ...candidate, url: "https://example.org/jobs/" + page });
+      return { open: async () => {}, close() {}, next: async () => { page++; },
+        read: async () => ({ ...rendered, expectedTotal: 2, pageNumber: page, pageCount: 2, candidates: [current()], controls: page === 1 ? [next] : [] }),
+        async *visual() { yield { ...visual, expectedTotal: 2, candidates: [current()], controls: page === 1 ? [next] : [] }; } };
+    },
+    extract: async (_selected, input) => {
+      if (input.task === "inventory") return { value: { decisions: { l0: "uncertain" } } };
+      if (input.task === "navigation") return { value: { listingIds: [], nextControlId: "" } };
+      calls++;
+      return { value: { ...visualResult, expectedTotal: 2, nextControlId: calls > 1 && input.candidates[0].url.endsWith("/1") ? "c0" : "" } };
+    },
+  });
+  const wait = async () => { while (service.busy) await new Promise(resolve => setTimeout(resolve, 10)); };
+  try {
+    service.check([id]); await wait();
+    assert.equal(store.get(id).error, ""); assert.equal(store.get(id).checkedCount, 2); assert.equal(calls, 3);
+    service.check([id]); await wait();
+    assert.equal(store.get(id).error, ""); assert.equal(calls, 3, "Only verified visual batches should be reused");
   } finally { await service.stop(); await store.close(); }
 });

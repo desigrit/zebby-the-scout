@@ -635,6 +635,13 @@ test("PostgreSQL ledger and service integration", async (t) => {
         await assert.rejects(call("POST", "/v1/analysis", { quoteId: (await visualQuote()).id, requestId: randomUUID(), input: visualInput }));
         assert.equal((await wallet()).used, visualBefore.used); assert.equal((await wallet()).reserved, 0);
         providerResult.listings[0].id = "l0";
+        const incompleteVisual = { ...visualInput, expectedTotal: 2,
+          coverage: { verifiedCount: 0, alreadyVerifiedIds: [], hasNextPage: false } };
+        providerResult.expectedTotal = 2;
+        const incompleteQuote = await call("POST", "/v1/quotes", { ...payload, input: incompleteVisual, thinkingLevel: "off" });
+        await assert.rejects(call("POST", "/v1/analysis", { quoteId: incompleteQuote.id, requestId: randomUUID(), input: incompleteVisual }));
+        assert.equal((await wallet()).used, visualBefore.used); assert.equal((await wallet()).reserved, 0);
+        providerResult.expectedTotal = 1;
         const visualQuoteValue = await visualQuote(), visualRequest = { quoteId: visualQuoteValue.id, requestId: randomUUID(), input: visualInput };
         assert.ok(visualQuoteValue.outputTokens >= 8192);
         const visualResponse = await call("POST", "/v1/analysis", visualRequest);
