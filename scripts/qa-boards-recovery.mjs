@@ -61,7 +61,10 @@ try {
       return { viewportWidth: window.innerWidth, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth, headingSize: heading.fontSize, marginTop: style.marginTop, actions };
     });
     assert.ok(metrics.scrollWidth <= metrics.clientWidth + 1, name + " wraps paths");
-    for (const action of metrics.actions) assert.ok(action.height >= 36 && action.width >= 96);
+    for (const action of metrics.actions) {
+      assert.ok(Math.round(action.height) >= 36 && Math.round(action.width) >= 96,
+        name + " preserves action targets at fractional zoom: " + JSON.stringify(action));
+    }
     assert.equal(await page.locator(".desktop-workspace").evaluate(element => element.scrollWidth > element.clientWidth), false);
     const png = path.join(output, name + ".png"); await page.screenshot({ path: png });
     captures.push({ name, width, height, theme, metrics });
