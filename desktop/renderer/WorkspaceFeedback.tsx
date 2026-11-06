@@ -34,7 +34,8 @@ export function ErrorBanner({ message, retry, busy = false, className = "form-er
   const inheritedVariant = useContext(ErrorStyleContext);
   const inline = (variant || inheritedVariant) === "inline";
   if (!message) return null;
-  return <div id={id} className={`${inline ? "inline-error" : className} retry-banner`} role="alert"><span>{message}</span>
+  const readableMessage = message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
+  return <div id={id} className={`${inline ? "inline-error" : className} retry-banner`} role="alert"><span>{readableMessage}</span>
     {(recovery || retry) && <span className="banner-actions">{recovery}{retry && <button type="button" className="banner-retry" disabled={busy} onClick={retry}>
       <RotateCw size={inline ? 14 : 15} strokeWidth={1.5} className={busy ? "spin" : undefined} aria-hidden="true" />{inline ? "Retry" : "Try again"}
     </button>}</span>}

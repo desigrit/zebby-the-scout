@@ -10,7 +10,7 @@ import CreditUsage from "./CreditUsage";
 
 export function CreditsSettings() {
   const { state, updateState, openCredits } = useAnalysisFlow();
-  const credits = state.credits, wallet = credits.wallet;
+  const credits = state.credits, wallet = credits.needsReconnect || credits.stale ? null : credits.wallet;
   const usage = wallet ? creditUsage(wallet) : null;
   const hasCredits = Boolean(wallet && (wallet.purchased || wallet.balance || wallet.used));
   const [helpOpen, setHelpOpen] = useState(false);
@@ -24,14 +24,14 @@ export function CreditsSettings() {
   const restoreFocus = useRef(false);
   const feedbackEpoch = useRef(0);
   const usable = state.canSaveApiKey;
-  const pairingActive = Boolean(pairing) && remaining > 0;
+  const pairingActive = !credits.needsReconnect && Boolean(pairing) && remaining > 0;
   useEffect(() => {
-    if (!credits.signedIn) return;
+    if (!credits.signedIn || credits.needsReconnect) return;
     let active = true;
     void window.desktop!.refreshCreditAccess().then((next) => { if (active) updateState(next); })
       .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "Could not load wallet access."); });
     return () => { active = false; };
-  }, [credits.signedIn, updateState]);
+  }, [credits.signedIn, credits.needsReconnect, updateState]);
   useLayoutEffect(() => {
     if (editor) input.current?.focus({ preventScroll: true });
     else if (!working && restoreFocus.current) { restoreFocus.current = false; opener.current?.focus({ preventScroll: true }); }
@@ -77,7 +77,7 @@ export function CreditsSettings() {
     if (isActive() && !broadcastOnly) updateState(access);
   }, [updateState]);
   useEffect(() => {
-    if (!helpOpen || !credits.signedIn) return;
+    if (!helpOpen || !credits.signedIn || credits.needsReconnect) return;
     let active = true;
     const epoch = ++feedbackEpoch.current;
     // The main-process broadcasts are authoritative. Ignoring returned snapshots
@@ -91,7 +91,7 @@ export function CreditsSettings() {
       }
     });
     return () => { active = false; };
-  }, [helpOpen, credits.signedIn, refreshBalance]);
+  }, [helpOpen, credits.signedIn, credits.needsReconnect, refreshBalance]);
   function openEditor(kind: "restore" | "connect", button: HTMLButtonElement) {
     opener.current = button; setCode(""); setError(""); setNotice(""); setEditor(kind);
   }
@@ -136,17 +136,16 @@ export function CreditsSettings() {
             aria-valuenow={Number(usage.percentRemaining.toFixed(2))} aria-valuetext={`${formatCredits(usage.available)} credits available, ${formatCredits(wallet.used)} used${wallet.reserved ? `, ${formatCredits(wallet.reserved)} reserved for running analysis` : ""}`}>
             <span style={{ width: `${usage.percentRemaining}%` }} /></div>
         </div>
-        {credits.stale && <p className="settings-help">Last updated {new Date(wallet.updatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>}
         {!!wallet.reserved && <p className="settings-help">{formatCredits(wallet.reserved)} credits reserved for running analysis.</p>}
-      </> : credits.pendingConnection ? null : credits.signedIn && !wallet ? <div className="credit-wallet-loading">
-        {!credits.stale && !credits.error ? <span role="status"><LoaderCircle size={16} className="spin" aria-hidden="true" />Loading credits</span>
+      </> : credits.pendingConnection || credits.needsReconnect ? null : credits.signedIn && !wallet ? <div className="credit-wallet-loading">
+        {!credits.error ? <span role="status"><LoaderCircle size={16} className="spin" aria-hidden="true" />Loading credits</span>
           : <p className="settings-help">Could not load your credits.</p>}
         <SettingsAction icon={RefreshCw} busy={working} disabled={!usable} onClick={() => void action(refreshBalance)}>Refresh balance</SettingsAction>
       </div> : <p className="settings-help credit-empty">No credits found. Buy a pack or restore your existing credits.</p>}
       {credits.pendingConnection && <div className="credit-connection-pending"><p className="settings-help" role="status">Connection interrupted.</p>
         <SettingsAction icon={RefreshCw} busy={working} disabled={!usable} onClick={() => void action(refreshBalance)}>Retry connection</SettingsAction></div>}
       <div className="credit-settings-links">
-        <button className="settings-link" type="button" aria-haspopup="dialog" disabled={!usable || working} onClick={() => openCredits()}>Buy credits</button>
+        {!credits.needsReconnect && <button className="settings-link" type="button" aria-haspopup="dialog" disabled={!usable || working} onClick={() => openCredits()}>Buy credits</button>}
         <button ref={helpOpener} className="settings-link" type="button" aria-haspopup="dialog" disabled={working} onClick={() => setHelpOpen(true)}>Manage credits</button>
       </div>
       {!usable && <ErrorBanner message="Credit wallets need Windows secure storage or Mac Keychain." />}
@@ -186,7 +185,7 @@ export function CreditsSettings() {
                 <SettingsAction icon={RefreshCw} disabled={working} onClick={() => void action(startPairing)}>New code</SettingsAction></div>
             </div>}
             </div>}
-            <div className="credit-manager-task"><h4>{hasCredits ? "Restore or connect a wallet" : "Already have credits?"}</h4>
+            <div className="credit-manager-task"><h4>{credits.needsReconnect ? "Reconnect this computer" : hasCredits ? "Restore or connect a wallet" : "Already have credits?"}</h4>
               <p>Restore with a saved recovery code, or enter a pairing code from your other computer.</p>
               <div className="credit-access-actions"><SettingsAction icon={KeyRound} aria-expanded={editor === "restore"} disabled={!usable || working || pairingActive}
                 onClick={(event) => openEditor("restore", event.currentTarget)}>Restore credits</SettingsAction>
@@ -198,14 +197,17 @@ export function CreditsSettings() {
           </section>
           <div className="credit-manager-activity">
             <section className="credit-devices" aria-labelledby="credit-devices-title"><div className="credit-manager-section-title"><h3 id="credit-devices-title">Connected computers</h3>
-              {credits.access && <span>{credits.access.devices.length}</span>}</div>
-              {credits.access ? <ul>{credits.access.devices.map((device) => <li key={device.id}><Monitor size={17} aria-hidden="true" />
+              {credits.access && !credits.needsReconnect && <span>{credits.access.devices.length}</span>}</div>
+              {credits.access && !credits.needsReconnect ? <ul>{credits.access.devices.map((device) => <li key={device.id}><Monitor size={17} aria-hidden="true" />
                 <span><strong>{device.name}</strong><small>{device.current ? "This computer" : `Last used ${new Date(device.lastSeenAt).toLocaleDateString()}`}</small></span>
                 {!device.current && <SettingsAction className="credit-device-disconnect" variant="danger" icon={Unplug} iconOnly title={`Disconnect ${device.name}`} aria-label={`Disconnect ${device.name}`} disabled={working} onClick={() => void action(async () => {
                   updateState(await window.desktop!.removeCreditDevice(device.id));
-                })} />}</li>)}</ul> : <p className="settings-help">{credits.signedIn ? "Refresh to load connected computers." : "No computers connected."}</p>}
+                })} />}</li>)}</ul> : <p className="settings-help">{credits.needsReconnect ? "Reconnect to see your computers." : credits.signedIn ? "Refresh to load connected computers." : "No computers connected."}</p>}
             </section>
-            <CreditUsage wallet={wallet} />
+            {credits.needsReconnect ? <section className="credit-history" aria-labelledby="credit-history-title">
+              <div className="credit-manager-section-title"><h3 id="credit-history-title">Credit usage</h3></div>
+              <p className="settings-help">Reconnect to see your usage.</p>
+            </section> : <CreditUsage wallet={wallet} />}
           </div>
         </div>
       </dialog>

@@ -745,17 +745,16 @@ function registerIpc() {
   handle("desktop:connect-credit-wallet", async (_event, kind: "restore" | "connect", code: string) => {
     walletChangesAllowed();
     if (!["restore", "connect"].includes(kind) || typeof code !== "string" || code.length > 100) throw new Error("Enter a valid recovery or pairing code.");
-    if (state().credits.signedIn && state().credits.wallet?.purchased) {
-      const access = await creditsClient.refreshAccess();
-      if (!access.hasRecoveryCode) throw new Error("Save a recovery code for your current wallet before switching wallets.");
-      if (creditsClient.hasCurrentRecoveryCode() && !state().credits.recoverySaved) throw new Error("Save your current wallet's recovery code to a file before switching wallets.");
-      const response = await dialog.showMessageBox(mainWindow!, { type: "question", title: "Switch credit wallets?",
-        message: "Connect this computer to another credit wallet?", detail: "Your current wallet keeps its credits. You can reconnect using its recovery code.",
-        buttons: ["Cancel", "Switch wallet"], defaultId: 0, cancelId: 0, noLink: true });
-      if (response.response !== 1) return { connected: false, state: state() };
-    }
-    walletChangesAllowed(); paidQuotes.clear();
-    await creditsClient.connectWallet(kind, code); return { connected: true, state: state() };
+    const connected = await creditsClient.connectWallet(kind, code, async (switchingWallet) => {
+      if (switchingWallet) {
+        const response = await dialog.showMessageBox(mainWindow!, { type: "question", title: "Switch credit wallets?",
+          message: "Connect this computer to another credit wallet?", detail: "Your current wallet keeps its credits. You can reconnect using its recovery code.",
+          buttons: ["Cancel", "Switch wallet"], defaultId: 0, cancelId: 0, noLink: true });
+        if (response.response !== 1) return false;
+      }
+      walletChangesAllowed(); paidQuotes.clear(); return true;
+    });
+    return { connected, state: state() };
   });
   handle("desktop:save-credit-recovery", async (_event, rotate = false) => {
     walletChangesAllowed();

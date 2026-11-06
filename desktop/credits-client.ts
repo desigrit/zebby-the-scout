@@ -41,12 +41,13 @@ const recoverySchema = z.object({ code: recoveryCodeSchema, walletId: z.string()
 // With no service origin, no request could have registered this pending guest.
 // Keep its persisted credential when the first configured build supplies an origin.
 const unconfiguredGuestSchema = z.object({ url: z.literal(""), session: z.null(), wallet: z.null(),
-  pending: z.array(z.never()).max(0), recovery: z.null(), candidate: candidateSchema })
+  pending: z.array(z.never()).max(0), recovery: z.null(), candidate: candidateSchema, needsReconnect: z.literal(false).optional() })
   .strict().refine((value) => value.candidate.kind === "guest" && !value.candidate.code && !value.candidate.intentHash);
 type Session = z.infer<typeof storedSessionSchema>;
 type Candidate = z.infer<typeof candidateSchema>;
 type ClientOptions = { save: (value: string) => Promise<void>; onChange: () => void; fetcher?: typeof fetch; deviceName?: string };
 class HttpError extends Error { status: number; constructor(message: string, status: number) { super(message); this.status = status; } }
+const reconnectMessage = "This computer was disconnected. Restore credits or connect it again in Settings.";
 const hashInput = (input: unknown) => createHash("sha256").update(JSON.stringify(input)).digest("hex");
 export class CreditsClient {
   private session: Session | null = null;
@@ -65,6 +66,7 @@ export class CreditsClient {
   private pairing: WalletPairing | null = null;
   private secretHistory: string[] = [];
   private unreadableStorage = false;
+  private needsReconnect = false;
   private lastServiceResponse = 0;
   private serviceWarmup: { controller: AbortController; promise: Promise<void>; waiters: number } | null = null;
   readonly url: string;
@@ -85,6 +87,8 @@ export class CreditsClient {
         return;
       }
       this.session = stored.session ? storedSessionSchema.parse(stored.session) : null;
+      this.needsReconnect = Boolean(this.session && stored.needsReconnect === true);
+      if (this.needsReconnect) this.error = reconnectMessage;
       this.wallet = this.session ? walletSchema.safeParse(stored.wallet).data || null : null;
       this.candidate = candidateSchema.safeParse(stored.candidate).data || null;
       if (stored.candidate && !this.candidate) this.restoreFailed();
@@ -97,9 +101,9 @@ export class CreditsClient {
   }
   restoreFailed() { this.unreadableStorage = true; this.error = "Saved wallet access could not be read. Restore credits with your recovery code or connect this computer again."; }
   state(model: string): CreditsState { return { available: Boolean(this.url), signedIn: Boolean(this.session),
-    email: this.session?.email || "", wallet: this.wallet, stale: this.stale, error: this.error, model, access: this.access,
+    email: this.session?.email || "", wallet: this.needsReconnect ? null : this.wallet, stale: this.stale, error: this.error, model, access: this.access,
     recoverySaved: Boolean(this.recovery?.saved && this.recovery.walletId === this.session?.id && this.access?.recoveryVersion === this.recovery.version),
-    pendingConnection: Boolean(this.candidate) }; }
+    pendingConnection: Boolean(this.candidate), needsReconnect: this.needsReconnect }; }
   secrets() { return [this.session?.access || "", this.session?.refresh || "", this.candidate?.token || "", this.candidate?.code || "",
     this.candidate?.kind === "connect" ? this.candidate.code?.replace(/(.{4})(.{4})/, "$1-$2") || "" : "", this.recovery?.code || "", this.pairing?.code || "",
     this.pairing?.code.replace(/(.{4})(.{4})/, "$1-$2") || "", ...this.secretHistory]; }
@@ -108,13 +112,13 @@ export class CreditsClient {
   private invalidate(clearPending = false) {
     this.generation++; for (const controller of this.controllers) controller.abort(); this.controllers.clear();
     this.session = null; this.wallet = null; this.stale = true; this.error = "";
-    this.access = null; this.pairing = null;
+    this.access = null; this.pairing = null; this.needsReconnect = false;
     if (clearPending) this.pending.clear();
   }
   private async persist() {
     for (const [id, run] of this.pending) if (run.expires < Date.now()) this.pending.delete(id);
     await this.options.save(this.session || this.pending.size || this.candidate || this.recovery ? JSON.stringify({ url: walletStorageOrigin(this.url), session: this.session,
-      wallet: this.wallet, pending: [...this.pending.values()], candidate: this.candidate, recovery: this.recovery }) : "");
+      wallet: this.wallet, pending: [...this.pending.values()], candidate: this.candidate, recovery: this.recovery, needsReconnect: this.needsReconnect }) : "");
   }
   // Public health only. Opening the purchase flow must not create a wallet or checkout.
   async warmService(signal?: AbortSignal) {
@@ -179,12 +183,22 @@ export class CreditsClient {
       if (!response.ok) {
         // Keep the credential and cached balance on authentication or network failures.
         // An automatic empty replacement wallet could strand a purchase.
-        if (response.status === 401 && authenticated) { this.stale = true; this.error = "Restore credits or reconnect this computer in Settings."; this.options.onChange(); }
+        if (response.status === 401 && authenticated) await this.requireReconnect();
         const error = z.object({ error: z.string() }).safeParse(result);
         throw new HttpError(error.success ? error.data.error.slice(0, 400) : "The credit service is unavailable. Try again.", response.status);
       }
+      if (authenticated && this.needsReconnect) { this.needsReconnect = false; this.error = ""; this.options.onChange(); }
       return result;
     } finally { this.controllers.delete(controller); }
+  }
+  private async requireReconnect() {
+    const changed = !this.needsReconnect;
+    this.needsReconnect = true; this.stale = true; this.access = null; this.pairing = null;
+    this.error = reconnectMessage;
+    this.options.onChange();
+    // Keep a disconnected balance hidden after restart too. A full disk must not
+    // block entering a recovery code or replace the original authentication error.
+    if (changed) await this.persist().catch(() => undefined);
   }
   private async setSession(value: unknown, generation: number, expectedUser?: string) {
     this.checkGeneration(generation);
@@ -200,7 +214,7 @@ export class CreditsClient {
     const session = this.session!;
     try { await this.setSession(await this.request("/v1/auth/refresh", { refreshToken: session.refresh }, false), generation, session.id); }
     catch (error) {
-      if (generation === this.generation && error instanceof HttpError && error.status === 401) { this.stale = true; this.error = "Restore credits or reconnect this computer in Settings."; this.options.onChange(); }
+      if (generation === this.generation && error instanceof HttpError && error.status === 401) await this.requireReconnect();
       throw error;
     }
   }
@@ -242,19 +256,22 @@ export class CreditsClient {
   }
   private async acceptConnection(candidate: Candidate, value: unknown) {
     const next = guestSessionSchema.parse(value);
-    const previous = { session: this.session, wallet: this.wallet, access: this.access, pending: new Map(this.pending) };
+    const previous = { session: this.session, wallet: this.wallet, access: this.access, pending: new Map(this.pending),
+      needsReconnect: this.needsReconnect, error: this.error, stale: this.stale, unreadableStorage: this.unreadableStorage };
     this.generation++;
     for (const controller of this.controllers) controller.abort();
     this.controllers.clear();
     this.session = { id: next.walletId, deviceId: next.deviceId, access: candidate.token, refresh: candidate.token,
       expires: Number.MAX_SAFE_INTEGER, email: "", kind: "guest" };
-    if (previous.session?.id !== next.walletId) { this.wallet = null; this.access = null; }
+    if (previous.session?.id !== next.walletId) this.wallet = null;
+    this.access = null; this.needsReconnect = false;
     for (const [id, run] of this.pending) if (run.userId !== next.walletId) this.pending.delete(id);
     this.stale = true; this.error = ""; this.candidate = null;
     this.unreadableStorage = false;
     try { await this.persist(); }
     catch (error) {
       this.session = previous.session; this.wallet = previous.wallet; this.access = previous.access; this.pending = previous.pending;
+      this.needsReconnect = previous.needsReconnect; this.error = previous.error; this.stale = previous.stale; this.unreadableStorage = previous.unreadableStorage;
       this.candidate = candidate;
       throw error;
     }
@@ -314,20 +331,36 @@ export class CreditsClient {
     const access = walletAccessSchema.parse(await this.request("/v1/wallet/access"));
     this.checkGeneration(generation); this.access = access; this.options.onChange(); return access;
   }
-  async connectWallet(kind: "restore" | "connect", suppliedCode: string) {
+  private async protectCurrentWallet(): Promise<boolean> {
+    if (!this.session || !this.wallet?.purchased) return false;
+    let access: WalletAccess;
+    try { access = walletAccessSchema.parse(await this.request("/v1/wallet/access")); }
+    catch (error) {
+      // A revoked installation cannot export recovery or authorize a wallet switch.
+      // Let the supplied code prove access, retaining the old credential and balance
+      // until the replacement has been accepted and saved. Outages still block a switch.
+      if (error instanceof HttpError && error.status === 401) return false;
+      throw error;
+    }
+    if (!access.hasRecoveryCode) throw new Error("Save a recovery code for your current wallet before switching wallets.");
+    if (this.recovery?.walletId === this.session.id && !this.recovery.saved &&
+      (this.recovery.version === null || this.recovery.version === access.recoveryVersion)) {
+      throw new Error("Save your current wallet's recovery code to a file before switching wallets.");
+    }
+    return true;
+  }
+  async connectWallet(kind: "restore" | "connect", suppliedCode: string, confirm?: (switchingWallet: boolean) => Promise<boolean>) {
     this.rememberSecret(suppliedCode);
     const code = (kind === "restore" ? recoveryCodeSchema : pairingCodeSchema).parse(suppliedCode);
     this.rememberSecret(code);
-    if (this.session && this.wallet?.purchased) {
-      const access = walletAccessSchema.parse(await this.request("/v1/wallet/access"));
-      if (!access.hasRecoveryCode) throw new Error("Save a recovery code for your current wallet before switching wallets.");
-      if (this.recovery?.walletId === this.session.id && !this.recovery.saved &&
-        (this.recovery.version === null || this.recovery.version === access.recoveryVersion)) {
-        throw new Error("Save your current wallet's recovery code to a file before switching wallets.");
-      }
-    }
-    await this.accessAction(() => this.connect(kind, code));
+    const connected = await this.accessAction(async () => {
+      const switchingWallet = await this.protectCurrentWallet();
+      if (confirm && !await confirm(switchingWallet)) return false;
+      await this.connect(kind, code); return true;
+    });
+    if (!connected) return false;
     await this.refreshWallet(); await this.refreshAccess();
+    return true;
   }
   hasCurrentRecoveryCode() {
     return Boolean(this.recovery && this.recovery.walletId === this.session?.id &&

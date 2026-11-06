@@ -294,7 +294,8 @@ try {
     window.creditQA = { update: updateCredits, checkouts: [], models: [], connections: [], recoverySaves: [],
       cancelRecovery: false, confirmDisconnect: false, disconnects: [], pairingCancelled: 0, payment: "open", quote: null,
       resumeMode: "none", failedResumes: 0, warmups: 0, warmupMode: "ready", finishWarmup: null,
-      quoteRequests: [], quoteMode: "ready", finishQuote: null, finishedQuotes: 0 };
+      quoteRequests: [], quoteMode: "ready", finishQuote: null, finishedQuotes: 0, walletRefreshes: 0, accessRefreshes: 0,
+      deferConnectionRefresh: false, finishConnectionRefresh: null };
     window.modelQA = { confirmDelete: false, deleteRequests: [], selections: [], rejectSidebarSave: false,
       updateState, installRequests: 0, failInstall: false, failCheck: false, finishDownload: null,
       logOpens: 0, failLogOpen: false, failKeySave: false, keySaveAttempts: 0, thinkingSelections: [], databaseRequests: [], stopRequests: [], update,
@@ -312,11 +313,17 @@ try {
       onUpdatesChanged: (listener) => { updateListeners.add(listener); return () => updateListeners.delete(listener); },
       onCreditsChanged: (listener) => { creditListeners.add(listener); return () => creditListeners.delete(listener); },
       refreshCredits: async () => {
+        window.creditQA.walletRefreshes++;
+        if (initialState.credits.needsReconnect) throw new Error("Error invoking remote method 'desktop:refresh-credits': Error: This computer was disconnected. Restore credits or connect it again in Settings.");
         if (window.creditQA.resumeMode === "error") { window.creditQA.failedResumes++; throw new Error("Connection interrupted. Retry when online."); }
         if (window.creditQA.resumeMode === "complete") updateCredits({ signedIn: true, pendingConnection: false, wallet: { ...wallet }, access: walletAccess, error: "", stale: false });
         return snapshot();
       },
-      refreshCreditAccess: async () => snapshot(),
+      refreshCreditAccess: async () => {
+        window.creditQA.accessRefreshes++;
+        if (initialState.credits.needsReconnect) throw new Error("Error invoking remote method 'desktop:refresh-credit-access': Error: This computer was disconnected. Restore credits or connect it again in Settings.");
+        return snapshot();
+      },
       saveCreditRecoveryCode: async (rotate = false) => {
         window.creditQA.recoverySaves.push(rotate);
         if (window.creditQA.cancelRecovery) return { saved: false, state: snapshot() };
@@ -327,7 +334,11 @@ try {
       connectCreditWallet: async (kind, code) => {
         window.creditQA.connections.push({ kind, code });
         if (code === "BAD-CODE") throw new Error("That pairing code was used or expired. Generate a new code on your other computer.");
-        updateCredits({ access: { ...initialState.credits.access, devices: [firstDevice, secondDevice] } });
+        if (window.creditQA.deferConnectionRefresh) {
+          updateCredits({ needsReconnect: false, stale: true, error: "" });
+          await new Promise(resolve => { window.creditQA.finishConnectionRefresh = resolve; });
+        }
+        updateCredits({ needsReconnect: false, stale: false, error: "", access: { ...initialState.credits.access, devices: [firstDevice, secondDevice] } });
         return { connected: true, state: snapshot() };
       },
       createCreditPairing: async () => ({ code: "ABCD2345", expiresAt: new Date(Date.now() + 600000).toISOString() }),
@@ -1867,6 +1878,58 @@ try {
   await creditHelp.getByRole("button", { name: "Refresh credits and devices", exact: true }).click();
   await creditHelp.getByRole("button", { name: "Close credits and devices", exact: true }).click();
   assert.equal(await creditsSettings.evaluate(element => element.scrollWidth > element.clientWidth), false);
+  // Disconnected installations retain their encrypted cache, but never display
+  // its balance or block recovery on the old credential. Focus cannot retry-loop.
+  const beforeFocus = await page.evaluate(() => window.creditQA.walletRefreshes);
+  await page.evaluate(async () => {
+    for (let i = 0; i < 20; i++) window.dispatchEvent(new Event("focus"));
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+  assert.ok(await page.evaluate(() => window.creditQA.walletRefreshes) <= beforeFocus + 1);
+  await page.evaluate(() => window.creditQA.update({ needsReconnect: true, stale: true, access: null,
+    error: "This computer was disconnected. Restore credits or connect it again in Settings." }));
+  await creditsSettings.getByRole("alert").filter({ hasText: "This computer was disconnected." }).waitFor();
+  assert.equal(await creditsSettings.getByRole("progressbar").count(), 0);
+  assert.equal(await sidebarWallet.count(), 0);
+  assert.doesNotMatch(await creditsSettings.innerText(), /credits available|used of|% left|No credits found/);
+  const disconnectedRefreshes = await page.evaluate(() => [window.creditQA.walletRefreshes, window.creditQA.accessRefreshes]);
+  await page.evaluate(async () => {
+    for (let i = 0; i < 20; i++) window.dispatchEvent(new Event("focus"));
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+  await creditsSettings.scrollIntoViewIfNeeded();
+  await captureSettings("credits-disconnected-windows-light.png", false);
+  await creditsSettings.getByRole("button", { name: "Manage credits", exact: true }).click();
+  await creditHelp.getByRole("heading", { name: "Reconnect this computer", exact: true }).waitFor();
+  assert.deepEqual(await page.evaluate(() => [window.creditQA.walletRefreshes, window.creditQA.accessRefreshes]), disconnectedRefreshes);
+  assert.equal(await creditHelp.locator(".credit-usage-track,.credit-history-totals,.credit-manager-balance,.credit-activity-calendar").count(), 0);
+  assert.equal(await creditHelp.getByRole("button", { name: "Save recovery code", exact: true }).count(), 0);
+  assert.equal(await creditHelp.getByRole("button", { name: "Connect another computer", exact: true }).count(), 0);
+  assert.equal(await creditHelp.getByRole("button", { name: "Restore credits", exact: true }).isEnabled(), true);
+  await creditHelp.getByRole("button", { name: "Refresh credits and devices", exact: true }).click();
+  await creditHelp.getByRole("alert").getByText("This computer was disconnected. Restore credits or connect it again in Settings.", { exact: true }).waitFor();
+  assert.doesNotMatch(await creditHelp.innerText(), /Error invoking remote|desktop:refresh/);
+  await creditHelp.getByRole("button", { name: "Connect this computer", exact: true }).click();
+  const reconnectInput = creditHelp.getByLabel("Pairing code", { exact: true });
+  assert.equal(await reconnectInput.evaluate(element => element === document.activeElement), true);
+  await page.setViewportSize({ width: 600, height: 800 });
+  await page.evaluate(() => { window.modelQA.setPlatform("darwin"); document.documentElement.dataset.platform = "darwin"; document.documentElement.dataset.theme = "dark"; });
+  await captureSettings("credits-reconnect-mac-dark-narrow.png", false);
+  assert.equal(await creditHelp.evaluate(element => element.scrollWidth > element.clientWidth), false);
+  await page.evaluate(() => { window.creditQA.deferConnectionRefresh = true; });
+  await reconnectInput.fill("ABCD-2345"); await reconnectInput.press("Enter");
+  await page.waitForFunction(() => Boolean(window.creditQA.finishConnectionRefresh));
+  assert.equal(await creditHelp.locator(".credit-manager-balance").count(), 0);
+  assert.equal(await sidebarWallet.count(), 0);
+  await page.evaluate(() => { window.creditQA.deferConnectionRefresh = false; window.creditQA.finishConnectionRefresh(); });
+  await creditHelp.getByText("Computer connected.", { exact: true }).waitFor();
+  await creditHelp.locator(".credit-manager-balance").waitFor();
+  assert.equal(await creditHelp.getByRole("alert").count(), 0);
+  await creditHelp.getByRole("button", { name: "Close credits and devices", exact: true }).click();
+  await creditsSettings.getByRole("progressbar", { name: "Credits remaining", exact: true }).waitFor();
+  await sidebarWallet.waitFor();
+  await page.setViewportSize({ width: 1550, height: 850 });
+  await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32"; document.documentElement.dataset.theme = "light"; });
   await page.evaluate(() => {
     window.creditQA.resumeMode = "error";
     window.creditQA.update({ signedIn: false, pendingConnection: true, wallet: null, access: null, error: "Connection interrupted. Retry when online." });

@@ -342,7 +342,86 @@ test("desktop wallet connections survive lost replies and local persistence fail
       const original = JSON.parse(stored).session.access;
       reject = true; await assert.rejects(client.refreshWallet(), /disconnected/); await assert.rejects(client.checkout("starter"), /disconnected/);
       assert.equal(JSON.parse(stored).session.access, original); assert.equal(creations, 1);
-      assert.equal(client.state("gpt-6-luna").wallet.balance, 500000000); assert.equal(client.state("gpt-6-luna").stale, true);
+      assert.equal(JSON.parse(stored).wallet.balance, 500000000); assert.equal(client.state("gpt-6-luna").wallet, null);
+      assert.equal(client.state("gpt-6-luna").stale, true);
+      assert.equal(client.state("gpt-6-luna").needsReconnect, true);
+      assert.equal(client.state("gpt-6-luna").access, null);
+    });
+    for (const kind of ["connect", "restore"]) {
+      await t.test(`a revoked paid installation can ${kind} from another computer without its old authorization`, async () => {
+        let stored = "";
+        const client = new CreditsClient(config.publicUrl, { save: async value => { stored = value; }, onChange() {}, fetcher: f.bridge() });
+        await client.checkout("starter");
+        const original = JSON.parse(stored).session;
+        await f.pay(original.access); await client.refreshWallet(); await client.refreshAccess();
+        const mac = token(), firstPairing = await f.request(original.access, "/v1/wallet/pairing", {});
+        await f.request("", "/v1/wallet/connect", { deviceToken: mac, name: "Mac", code: firstPairing.code });
+        await f.request(mac, `/v1/wallet/devices/${original.deviceId}/remove`, {});
+        const code = kind === "connect" ? (await f.request(mac, "/v1/wallet/pairing", {})).code : recovery();
+        if (kind === "restore") await f.request(mac, "/v1/wallet/recovery", { code });
+        await assert.rejects(client.refreshAccess(), /disconnected/);
+        assert.equal(client.state("gpt-6-luna").needsReconnect, true);
+        assert.equal(client.state("gpt-6-luna").access, null);
+        assert.equal(client.state("gpt-6-luna").wallet, null); assert.equal(JSON.parse(stored).wallet.balance, 500000000);
+        const reopened = new CreditsClient(config.publicUrl, { save: async () => {}, onChange() {}, fetcher: f.bridge() });
+        reopened.restore(stored);
+        assert.equal(reopened.state("gpt-6-luna").needsReconnect, true); assert.equal(reopened.state("gpt-6-luna").wallet, null);
+        const confirmations = [];
+        assert.equal(await client.connectWallet(kind, code, async switching => { confirmations.push(switching); return true; }), true);
+        assert.deepEqual(confirmations, [false], "Repair must not require exporting recovery using the revoked credential");
+        const next = JSON.parse(stored).session, visible = client.state("gpt-6-luna");
+        assert.equal(next.id, original.id); assert.notEqual(next.access, original.access); assert.notEqual(next.deviceId, original.deviceId);
+        assert.equal(visible.wallet.balance, 500000000); assert.equal(visible.wallet.purchased, 500000000);
+        assert.equal(visible.needsReconnect, false); assert.equal(visible.stale, false); assert.equal(visible.error, "");
+        assert.equal(visible.access.devices.find(item => item.current).id, next.deviceId);
+        assert.equal(visible.access.devices.some(item => item.id === original.deviceId), false);
+        await assert.rejects(f.request(original.access, "/v1/wallet"), error => error.status === 401);
+      });
+    }
+    await t.test("a bad pairing code preserves disconnected access and a lost retry can recover after restart", async () => {
+      let stored = "", loseReply = false;
+      const client = new CreditsClient(config.publicUrl, { save: async value => { stored = value; }, onChange() {},
+        fetcher: f.bridge(route => { if (route === "/v1/wallet/connect" && loseReply) { loseReply = false; throw new TypeError("Lost repair reply"); } }) });
+      await client.checkout("starter"); const original = JSON.parse(stored).session;
+      await f.pay(original.access); await client.refreshWallet();
+      const mac = token(), first = await f.request(original.access, "/v1/wallet/pairing", {});
+      await f.request("", "/v1/wallet/connect", { deviceToken: mac, name: "Mac", code: first.code });
+      await f.request(mac, `/v1/wallet/devices/${original.deviceId}/remove`, {});
+      await assert.rejects(client.connectWallet("connect", "ABCD-2345"), /used or expired/);
+      assert.deepEqual(JSON.parse(stored).session, original); assert.equal(JSON.parse(stored).candidate, null);
+      assert.equal(client.state("gpt-6-luna").needsReconnect, true);
+      const pairing = await f.request(mac, "/v1/wallet/pairing", {}); loseReply = true;
+      await assert.rejects(client.connectWallet("connect", pairing.code), /Lost repair reply/);
+      assert.deepEqual(JSON.parse(stored).session, original); assert.ok(JSON.parse(stored).candidate);
+      const restarted = new CreditsClient(config.publicUrl, { save: async value => { stored = value; }, onChange() {}, fetcher: f.bridge() });
+      restarted.restore(stored); await restarted.refreshWallet(); await restarted.refreshAccess();
+      assert.equal(JSON.parse(stored).session.id, original.id); assert.equal(JSON.parse(stored).candidate, null);
+      assert.equal(restarted.state("gpt-6-luna").wallet.balance, 500000000); assert.equal(restarted.state("gpt-6-luna").needsReconnect, false);
+    });
+    await t.test("a funded wallet still requires saved recovery and confirmation, and outages cannot bypass protection", async () => {
+      let stored = "", status = 200, confirms = 0;
+      const client = new CreditsClient(config.publicUrl, { save: async value => { stored = value; }, onChange() {}, fetcher: (url, options) => {
+        if (status !== 200 && new URL(url).pathname === "/v1/wallet/access") return Response.json({ error: "Access temporarily unavailable" }, { status });
+        return f.bridge()(url, options);
+      } });
+      await client.checkout("starter"); const original = JSON.parse(stored).session;
+      await f.pay(original.access); await client.refreshWallet();
+      const other = token(); await f.request("", "/v1/wallet/guest", { deviceToken: other, name: "Other wallet" });
+      const pairing = await f.request(other, "/v1/wallet/pairing", {});
+      const cancel = async switching => { confirms++; assert.equal(switching, true); return false; };
+      await assert.rejects(client.connectWallet("connect", pairing.code, cancel), /Save a recovery code/);
+      assert.equal(confirms, 0); await client.recoveryCode(); await client.markRecoverySaved();
+      assert.equal(await client.connectWallet("connect", pairing.code, cancel), false);
+      assert.equal(confirms, 1); assert.deepEqual(JSON.parse(stored).session, original); assert.equal(JSON.parse(stored).candidate, null);
+      for (status of [403, 429, 503]) {
+        await assert.rejects(client.connectWallet("connect", pairing.code, cancel), /temporarily unavailable/);
+        assert.equal(confirms, 1); assert.deepEqual(JSON.parse(stored).session, original);
+        assert.equal(client.state("gpt-6-luna").needsReconnect, false);
+      }
+      status = 200;
+      assert.equal(await client.connectWallet("connect", pairing.code, async switching => { assert.equal(switching, true); return true; }), true);
+      assert.notEqual(JSON.parse(stored).session.id, original.id);
+      assert.equal((await f.request(original.access, "/v1/wallet")).balance, 500000000);
     });
     await t.test("malformed optional recovery metadata cannot discard valid wallet access", async () => {
       let stored = ""; const client = new CreditsClient(config.publicUrl, { save: async (value) => { stored = value; }, onChange() {}, fetcher: f.bridge() });

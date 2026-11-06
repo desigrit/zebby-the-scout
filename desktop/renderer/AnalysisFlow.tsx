@@ -39,6 +39,7 @@ export function AnalysisFlowProvider({ state, onState, children, onOpenSettings 
   const pending = useRef<{ resolve: (value: Authorization | null) => void } | null>(null);
   const dialogOpen = scene !== null;
   const updateState = useCallback((next: DesktopState) => { current.current = next; onState(next); }, [onState]);
+  const lastWalletRefresh = useRef(0), refreshingWallet = useRef(false);
   function close(value: Authorization | null = null) { pending.current?.resolve(value); pending.current = null; setHasPending(false); setScene(null); setError(""); }
   const show = useCallback((next: Scene) => { if (next === "buy") warmCreditsService();
     if (!scene) opener.current = document.activeElement as HTMLElement; setError(""); setScene(next); }, [scene]);
@@ -56,11 +57,17 @@ export function AnalysisFlowProvider({ state, onState, children, onOpenSettings 
   }, [dialogOpen]);
   useEffect(() => { return () => { pending.current?.resolve(null); pending.current = null; }; }, []);
   useEffect(() => {
-    if (!state.credits.signedIn && !state.credits.pendingConnection) return;
-    const refresh = () => { void window.desktop!.refreshCredits().then(updateState).catch(() => undefined); };
-    refresh(); window.addEventListener("focus", refresh);
-    return () => window.removeEventListener("focus", refresh);
-  }, [state.credits.signedIn, state.credits.pendingConnection, updateState]);
+    if ((!state.credits.signedIn || state.credits.needsReconnect) && !state.credits.pendingConnection) return;
+    const refresh = (force = false) => {
+      if (refreshingWallet.current || !force && Date.now() - lastWalletRefresh.current < 10000) return;
+      if (current.current.credits.needsReconnect && !current.current.credits.pendingConnection) return;
+      lastWalletRefresh.current = Date.now(); refreshingWallet.current = true;
+      void window.desktop!.refreshCredits().then(updateState).catch(() => undefined).finally(() => { refreshingWallet.current = false; });
+    };
+    const onFocus = () => refresh();
+    refresh(true); window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [state.credits.signedIn, state.credits.pendingConnection, state.credits.needsReconnect, updateState]);
   async function prepare(source: AnalysisSource, signal: AbortSignal): Promise<Authorization | null> {
     signal.throwIfAborted();
     const next = current.current;
@@ -234,7 +241,7 @@ export function AnalysisFlowProvider({ state, onState, children, onOpenSettings 
 }
 export function SidebarCredits() {
   const { state, openCredits } = useAnalysisFlow();
-  if (!state.credits.signedIn || !state.credits.wallet?.purchased) return null;
+  if (!state.credits.signedIn || state.credits.needsReconnect || state.credits.stale || !state.credits.wallet?.purchased) return null;
   const { used, total, percentRemaining } = creditUsage(state.credits.wallet);
   const percent = `${Math.round(percentRemaining).toLocaleString()}%`;
   const usage = `${formatCredits(used)} used of ${formatCredits(total)}`;

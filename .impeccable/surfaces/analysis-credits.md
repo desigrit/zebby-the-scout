@@ -1,6 +1,10 @@
 # Analysis and credits
 
-Date: 2026-10-27
+Date: 2026-11-06
+
+## Credit reconnection, 2026-11-06
+
+Disconnected computers hide their saved balance, usage bar and history in Settings, Credits and devices, and the sidebar. Manage credits retains Restore credits and Connect this computer. Recovery and pairing accept a fresh code without requiring authorization from the revoked device. Saved credentials remain encrypted until the replacement connection commits. A successful reconnection refreshes the balance and connected computers before restoring their display. The disconnected state survives restart. Automatic focus refreshes stop while disconnected; manual retry remains available. Error surfaces omit Electron's IPC wrapper text and retain the existing inline Settings treatment.
 
 ## Surface strategy
 

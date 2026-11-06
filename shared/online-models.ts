@@ -126,7 +126,8 @@ export type Wallet = { balance: number; reserved: number; used: number; purchase
   dailyUsage?: DailyCreditUsage[];
   recent: { id: string; model: string; kind: string; cost: number; createdAt: string }[]; astraUnlocked?: boolean };
 export type CreditsState = { available: boolean; signedIn: boolean; email: string; wallet: Wallet | null;
-  stale: boolean; error: string; model: string; access: WalletAccess | null; recoverySaved: boolean; pendingConnection: boolean };
+  stale: boolean; error: string; model: string; access: WalletAccess | null; recoverySaved: boolean; pendingConnection: boolean;
+  needsReconnect?: boolean };
 export type CreditQuote = { id: string; model: string; thinkingLevel?: CreditThinkingLevel; maximum: number; expiresAt: string;
   inputTokens?: number; outputTokens?: number; recovery?: boolean; pending?: boolean; cost?: number };
 export type AnalysisSource = { kind: AnalysisKind; id: string };
