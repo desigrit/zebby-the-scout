@@ -10,13 +10,15 @@ OWN-WORLD: Extend Zebby's existing Ember rows, platform typography, rust actions
 
 STORY: Read the count of matching roles, inspect new discoveries, then mark them reviewed. An interrupted scan preserves the last successful results.
 
-FIRST VIEWPORT: Keep the company, saved URL and instructions, last check date, matching count and check or retry action visible, with the new-listing link and Mark as reviewed when discoveries exist. Show error details on hover, focus or tap of Check incomplete without expanding the row.
+FIRST VIEWPORT: Keep the company, saved URL, a Custom instructions indicator when applicable, last check date, matching count and check or retry action visible, with the new-listing link and Mark as reviewed when discoveries exist. Read or change the complete instructions through Edit board. Show error details on hover, focus or tap of Check incomplete without expanding the row.
 
 FORM: Local extension. Use the incumbent tokens and controls, an inline list of new listings, existing 50-listing pagination, an accessible tooltip and existing focus recovery. No new identity, assets or system changes.
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
 
 ## Compact board status
+
+The company name and an optional Custom instructions indicator share one line above the saved URL. The indicator pairs a 13px sliders icon with 11px muted text and has no filled badge, hover preview or separate action. Long company names truncate with native hover text. Full instructions appear in the existing Edit board form, so their length does not change the summary row height. Boards without instructions have no indicator.
 
 Boards uses a centered BETA badge in the page heading and navigation label, with solid Ember rust and white text in both appearances. Each completed board shows one count labeled "x listings checked": roles matching its saved instructions, or all openings at its saved URL when instructions are blank. This count remains visible while a subsequent scan runs and after an interrupted scan, until a complete result replaces it.
 
@@ -47,3 +49,7 @@ Verification covers restored history, an empty replacement, unchanged Applicatio
 The compact-status finish review returned **ship** for commit `a2c4ad6`, with no material fixes. The reviewer checked TYPE, MATERIAL and GROUND, the first viewport, count and discovery behavior, error disclosure, new-listing pagination and focus, and accessibility. All nine captures in `slack-evidence-a2c4/.impeccable/review/` were valid: `boards-desktop-light.png`, `boards-desktop-dark.png`, `boards-tooltip-light.png`, `boards-tooltip-dark.png`, `boards-tooltip-compact-light.png`, `boards-tooltip-compact-dark.png`, `boards-listings-compact-light.png`, `boards-listings-compact-dark.png` and `boards-error-with-new.png`. Hosted renderer checks passed in run `42281665083`.
 
 The implemented behavior is recorded from `desktop/renderer/BoardsView.tsx`, `desktop/renderer/desktop.css` and the existing matching-listing semantics in `desktop/boards-store.ts`. This local extension preserves `DESIGN.md` and `.impeccable/design.json` and introduces no new visual assets. File recovery, Settings, the sidebar and analysis-provider behavior retain their existing contracts.
+
+The Custom instructions finish review returned **ship** for commit `0f1e51f9` in version `2.9.1`, with no material fixes. All seven captures in `instructions-evidence-0f1e/.impeccable/review/` were valid: `boards-instructions-1550-light.png`, `boards-instructions-1550-dark.png`, `boards-instructions-1050-light.png`, `boards-instructions-1050-dark.png`, `boards-instructions-790-light.png`, `boards-instructions-790-dark.png` and `boards-instructions-edit.png`. Rows with matching status retained equal heights with long, short or blank instructions at 1550px, 1050px and 790px in light and dark appearances.
+
+The source and review confirm the quiet company-line indicator, its absence for blank or whitespace-only instructions, full text absent from the summary and hover, company-name ellipsis with a native title, and the existing Edit board form with Cancel preserving saved instructions. Ember colors, native typography, flat ruled rows, other controls and responsive structure remain intact. Hosted renderer, Boards and credits checks passed in GitHub run `42308484465`; renderer coverage is recorded in `scripts/qa-boards-renderer.mjs`. The static detector returned `[]`. This scoped refinement adds no visual assets or system changes and preserves the compact error disclosure and File recovery contracts above.
