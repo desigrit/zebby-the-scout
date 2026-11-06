@@ -7,7 +7,7 @@ export async function checkBoardsRenderer(page, nav) {
   await page.evaluate(() => {
     let state = { filePath: "OneDrive/Work-boards.sqlite", filename: "Work-boards.sqlite", dirty: false, error: "", boards: [], progress: [] };
     const listeners = new Set(), publish = () => { for (const listener of listeners) listener(structuredClone(state)); };
-    window.boardsQA = { get: () => state, set: change => { state = { ...state, ...change }; publish(); }, checks: [], reviews: [], failedAdd: false };
+    window.boardsQA = { get: () => state, set: change => { state = { ...state, ...change }; publish(); }, checks: [], reviews: [], listingCalls: [], failedAdd: false };
     Object.assign(window.desktop, {
       boardsState: async () => structuredClone(state), onBoardsChanged: listener => { listeners.add(listener); return () => listeners.delete(listener); },
       addBoards: async inputs => {
@@ -24,12 +24,13 @@ export async function checkBoardsRenderer(page, nav) {
       cancelBoardCheck: async id => { state.progress = state.progress.filter(entry => entry.boardId !== id); publish(); return true; },
       markBoardReviewed: async (id, through) => { window.boardsQA.reviews.push({ id, through }); state.boards.find(board => board.id === id).newCount = 0; publish(); return state; },
       boardListings: async (id, checkId, filter, offset = 0) => {
+        window.boardsQA.listingCalls.push({ id, filter, offset });
         if (window.boardsQA.listingError) throw new Error("The saved listings could not be opened. Try again.");
         const board = state.boards.find(item => item.id === id), count = filter === "new" ? board.newCount : filter === "matches" ? 7 : 59;
         return { checkId, total: count, offset, listings: Array.from({ length: Math.min(50, Math.max(0, count - offset)) }, (_, i) => ({
           key: String(offset + i), url: "https://example.org/jobs/" + (offset + i), title: i < 3 ? "Senior Product Manager, Commerce" : "Sr. Product Manager, Premium Content Experience",
           department: "Community Growth", location: ["San Francisco, CA", "Seattle, WA", "Irvine, CA", "Los Angeles, CA", "New York City"][i % 5],
-          matches: i < 7, current: true, unread: filter === "new" })) };
+          matches: filter === "new" || i < 7, current: true, unread: filter === "new" })) };
       },
       retryBoardsSave: async () => { state.dirty = false; state.error = ""; publish(); return state; },
       saveBoardsRecovery: async () => { state.dirty = false; state.error = ""; publish(); return state; },
@@ -88,31 +89,59 @@ export async function checkBoardsRenderer(page, nav) {
   assert.equal(await company.inputValue(), "Slack Product", "Editing another row cannot silently replace a draft");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await first.getByText(seniorRoles, { exact: true }).waitFor();
-  await first.getByText("20 listings checked · 20 match your instructions").waitFor();
+  await first.getByText("20 listings checked", { exact: true }).waitFor();
   await page.evaluate(() => window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => index === 0 ? { ...board, totalCount: 7, checkedCount: 59 } : board) }));
-  await first.getByRole("button", { name: "View matches", exact: true }).click();
-  const listingSection = first.getByRole("region", { name: "Slack listings" });
-  await listingSection.getByText("1-7 of 7", { exact: true }).waitFor();
-  assert.equal(await listingSection.locator(".board-listing-items li").count(), 7);
+  await first.getByText("7 listings checked", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: /^View (listings|matches)$/ }).count(), 0);
+  assert.equal(await page.getByText("59 listings checked", { exact: false }).count(), 0, "Only matching listings contribute to the visible count");
+  assert.equal(await page.locator(".board-check-error").count(), 0);
+  const incomplete = third.getByRole("button", { name: "Check incomplete", exact: true });
+  const tip = page.getByRole("tooltip"), errorMessage = "The board's results did not finish loading. The last successful check is unchanged.";
+  const rowHeight = await third.evaluate(element => element.getBoundingClientRect().height);
+  assert.equal(await tip.count(), 0, "Error details stay hidden until requested");
+  await incomplete.hover(); await tip.getByText(errorMessage, { exact: true }).waitFor();
+  assert.equal(await third.evaluate(element => element.getBoundingClientRect().height), rowHeight, "Error disclosure never expands the row");
+  await tip.hover(); await page.waitForTimeout(180); assert.equal(await tip.isVisible(), true, "The pointer can move into the tooltip");
+  await capture("boards-tooltip-light");
+  await page.keyboard.press("Escape"); await tip.waitFor({ state: "hidden" });
+  await incomplete.focus(); await tip.waitFor();
+  assert.equal(await incomplete.getAttribute("aria-describedby"), await tip.getAttribute("id"));
+  await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; }); await capture("boards-tooltip-dark");
+  await page.keyboard.press("Escape"); await tip.waitFor({ state: "hidden" });
+  assert.equal(await incomplete.evaluate(node => node === document.activeElement), true, "Escape keeps focus on the status");
+  await page.setViewportSize({ width: 790, height: 620 });
+  await incomplete.click(); await tip.waitFor();
+  const box = await tip.boundingBox(); assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= 790 && box.y + box.height <= 620);
+  await capture("boards-tooltip-compact-dark");
+  assert.equal(await tip.isVisible(), true, "The tooltip remains open after focus scrolls its row into view");
+  await page.evaluate(() => { document.documentElement.dataset.theme = "light"; }); await capture("boards-tooltip-compact-light");
+  assert.equal(await tip.isVisible(), true);
+  await page.keyboard.press("Escape"); await page.setViewportSize({ width: 1550, height: 850 });
+  await first.getByRole("button", { name: "4 new listings", exact: true }).click();
+  const listingSection = first.getByRole("region", { name: "Slack new listings" });
+  await listingSection.getByText("1-4 of 4", { exact: true }).waitFor();
+  assert.equal(await listingSection.locator(".board-listing-items li").count(), 4);
+  assert.equal(await listingSection.getByRole("button", { name: /^(All checked|Matches|New)$/ }).count(), 0);
   assert.equal(await listingSection.getByRole("heading").evaluate(node => node === document.activeElement), true);
   await capture("boards-listings-light");
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; }); await capture("boards-listings-dark");
   await page.setViewportSize({ width: 790, height: 620 }); await capture("boards-listings-compact-dark");
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; }); await capture("boards-listings-compact-light");
   await page.setViewportSize({ width: 1550, height: 850 });
-  await listingSection.getByRole("button", { name: "All checked", exact: true }).click();
+  await page.evaluate(() => window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => index === 0 ? { ...board, newCount: 59, totalCount: 59 } : board) }));
   await listingSection.getByText("1-50 of 59", { exact: true }).waitFor();
   await listingSection.getByRole("button", { name: "Next", exact: true }).click();
   await listingSection.getByText("51-59 of 59", { exact: true }).waitFor();
   assert.equal(await listingSection.getByRole("button", { name: "Next", exact: true }).isEnabled(), false);
-  await page.evaluate(() => { window.boardsQA.listingError = true; });
-  await listingSection.getByRole("button", { name: "New", exact: true }).click();
+  await page.evaluate(() => { window.boardsQA.listingError = true;
+    window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => index === 0 ? { ...board, newCount: 4, totalCount: 7 } : board) }); });
   await listingSection.getByRole("alert").waitFor(); await capture("boards-listings-error");
   await page.evaluate(() => { window.boardsQA.listingError = false; });
   await listingSection.getByRole("button", { name: "Retry", exact: true }).click();
   await listingSection.getByText("1-4 of 4", { exact: true }).waitFor();
   await listingSection.getByRole("button", { name: "Close listings", exact: true }).click();
-  assert.equal(await first.getByRole("button", { name: "View matches", exact: true }).evaluate(node => node === document.activeElement), true);
+  assert.equal(await first.getByRole("button", { name: "4 new listings", exact: true }).evaluate(node => node === document.activeElement), true);
+  assert.ok((await page.evaluate(() => window.boardsQA.listingCalls)).every(call => call.filter === "new"), "Only new matching listings are requested");
   await page.evaluate(() => window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => index === 0 ? { ...board, totalCount: 20, checkedCount: undefined } : board) }));
   await capture("boards-desktop-light"); await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
   await capture("boards-desktop-dark"); await page.setViewportSize({ width: 790, height: 620 }); await capture("boards-compact-dark");
@@ -129,20 +158,35 @@ export async function checkBoardsRenderer(page, nav) {
   }
   await page.evaluate(() => { window.modelQA.setDatabase({ platform: "win32" }); document.documentElement.dataset.theme = "light"; });
   await nav.getByRole("button", { name: "Boards", exact: true }).click();
+  await first.getByRole("button", { name: "4 new listings", exact: true }).click(); await listingSection.waitFor();
   await first.getByRole("button", { name: "Mark as reviewed" }).click();
   assert.deepEqual(await page.evaluate(() => window.boardsQA.reviews), [{ id: "0", through: 10 }]); await first.getByText("No new listings").waitFor();
+  await listingSection.waitFor({ state: "hidden" });
+  await page.waitForFunction(() => document.activeElement?.id === "board-check-0");
   await first.getByRole("button", { name: "Check for updates" }).click(); await first.getByText("Reading page 2").waitFor();
-  await first.getByText("20 listings checked · 20 match your instructions").waitFor();
+  await first.getByText("20 listings checked", { exact: true }).waitFor();
   assert.equal(await first.getByRole("button", { name: "Edit Slack board" }).isEnabled(), false); await capture("boards-checking");
   await first.getByRole("button", { name: "Cancel check" }).click(); await first.getByRole("button", { name: "Check for updates" }).waitFor();
-  await first.getByText("20 listings checked · 20 match your instructions").waitFor();
+  await first.getByText("20 listings checked", { exact: true }).waitFor();
   await first.getByRole("button", { name: "Check for updates" }).click();
   await page.evaluate(() => window.boardsQA.set({ progress: [], boards: window.boardsQA.get().boards.map((board, index) => ({ ...board,
     totalCount: [19, 1, 0][index], newCount: [2, 1, 0][index], error: "", lastCheckId: 20 + index, lastCheckedAt: "2026-11-05T16:30:00Z" })) }));
-  await first.getByText("2 new listings", { exact: true }).waitFor(); await first.getByText("19 listings checked · 19 match your instructions").waitFor();
+  await first.getByText("2 new listings", { exact: true }).waitFor(); await first.getByText("19 listings checked", { exact: true }).waitFor();
   const second = page.getByRole("article", { name: "Uber", exact: true });
-  await second.getByText("1 new listing", { exact: true }).waitFor(); await second.getByText("1 listing checked · 1 tracked").waitFor();
-  await third.getByText("0 listings checked · 0 tracked").waitFor(); await capture("boards-updated-counts");
+  await second.getByText("1 new listing", { exact: true }).waitFor(); await second.getByText("1 listing checked", { exact: true }).waitFor();
+  await third.getByText("0 listings checked", { exact: true }).waitFor();
+  assert.equal(await third.getByRole("button", { name: /new listings?/ }).count(), 0, "Zero matches never show a discovery link");
+  await capture("boards-updated-counts");
+  await page.evaluate(() => window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => ({ ...board,
+    error: index === 0 || index === 2 ? "This careers website is temporarily unavailable. Try again later. Your last successful check is unchanged." : "",
+    ...(index === 2 ? { lastCheckedAt: "", lastCheckId: 0 } : {}) })) }));
+  await first.getByRole("button", { name: "2 new listings", exact: true }).waitFor();
+  await first.getByRole("button", { name: "Check incomplete", exact: true }).waitFor();
+  await first.getByText("19 listings checked", { exact: true }).waitFor();
+  await third.getByRole("button", { name: "Check incomplete", exact: true }).waitFor();
+  assert.equal(await third.locator(".board-match-total").count(), 0, "A failed first check has no successful count");
+  await capture("boards-error-with-new");
+  await page.evaluate(() => window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => ({ ...board, error: "", lastCheckId: 20 + index, lastCheckedAt: "2026-11-05T16:30:00Z" })) }));
   await page.evaluate(() => window.boardsQA.set({ dirty: true, error: "Boards changes are saved on this computer. Use Retry save when OneDrive is ready." }));
   await page.locator(".boards-save-pending").waitFor();
   assert.equal(await first.getByRole("button", { name: "Check for updates" }).isEnabled(), false); await capture("boards-recovery");

@@ -5,6 +5,7 @@ import { isPublicAddress } from "../lib/public-address";
 import { boardUrl } from "../lib/board-identity";
 import { actOnBoardPage, captureBoardPage, isFigmaCareers, knownListing, type BoardPage } from "./board-page";
 import { boardFeed, readBoardFeed } from "./board-feeds";
+import { boardRetryDelay } from "./board-request";
 import type { BoardVisualInput, BoardControl } from "../shared/boards";
 import { isNetflixSearch, NetflixBoardPages } from "./netflix-board";
 import { greenhouseBoard, sameGreenhouseSearch } from "./greenhouse-board";
@@ -27,6 +28,18 @@ const pause = (milliseconds: number, signal: AbortSignal) => new Promise<void>((
   signal.addEventListener("abort", abort, { once: true });
 });
 
+class BoardWebsiteError extends Error {
+  constructor(readonly status: number, readonly retryAfter: string | null) {
+    super(status === 404 || status === 410
+      ? "This board link could not be found. Open it to check the address, then edit the saved link if it has changed."
+      : status === 401 || status === 403
+        ? "This careers website could not be opened. Open its link to check whether sign-in or a browser check is required."
+        : status === 429
+          ? "This careers website is limiting requests. Try again later."
+          : "This careers website is temporarily unavailable. Try again later.");
+  }
+}
+
 export class BoardBrowser implements BoardReader {
   private window: BrowserWindow;
   private source = "";
@@ -41,12 +54,18 @@ export class BoardBrowser implements BoardReader {
   private chosenDocument = false;
   private documentFrames = new Map<string, { frame: Electron.WebFrameMain; source: string }>();
   private screenshots = 0;
+  private responses = new Map<string, { status: number; retryAfter: string | null }>();
   private abort: () => void;
   constructor(private signal: AbortSignal) {
     const isolated = session.fromPartition(`boards-${randomUUID()}`, { cache: false });
     isolated.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     isolated.setPermissionCheckHandler(() => false);
     isolated.on("will-download", event => event.preventDefault());
+    isolated.webRequest.onCompleted(details => {
+      if (details.resourceType !== "mainFrame" && details.resourceType !== "subFrame") return;
+      const key = Object.keys(details.responseHeaders || {}).find(name => name.toLowerCase() === "retry-after");
+      this.responses.set(details.url, { status: details.statusCode, retryAfter: key ? details.responseHeaders?.[key]?.[0] || null : null });
+    });
     const checked = new Map<string, boolean>();
     isolated.webRequest.onBeforeRequest((details, callback) => {
       if (signal.aborted) { callback({ cancel: true }); return; }
@@ -64,6 +83,9 @@ export class BoardBrowser implements BoardReader {
       webPreferences: { session: isolated, sandbox: true, contextIsolation: true, nodeIntegration: false,
         webSecurity: true, backgroundThrottling: false, devTools: false } });
     this.window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    this.window.webContents.on("did-frame-navigate", (_event, url, status) => {
+      this.responses.set(url, { status, retryAfter: this.responses.get(url)?.retryAfter || null });
+    });
     const guard = (event: Electron.Event, target: string) => {
       try {
         if (!sameSearch(target, this.source)) throw new Error();
@@ -81,6 +103,7 @@ export class BoardBrowser implements BoardReader {
     this.frame = null; this.embeddedSource = "";
     this.netflix = null; this.lastPage = null; this.previous = ""; this.navigationError = "";
     this.feed = null; this.prefetched = null; this.chosenDocument = false; this.documentFrames.clear(); this.screenshots = 0;
+    this.responses.clear();
     if (isNetflixSearch(target)) {
       const isolated = this.window.webContents.session;
       this.netflix = new NetflixBoardPages(target, (input, init) => isolated.fetch(input, init), this.signal);
@@ -91,7 +114,14 @@ export class BoardBrowser implements BoardReader {
       try { this.feed = await readBoardFeed(feed, (input, init) => this.window.webContents.session.fetch(input, init), this.signal); return; }
       catch { this.signal.throwIfAborted(); /* Discard the entire feed before trying the rendered page. */ }
     }
+    await this.loadPage();
+  }
+  private async loadPage() {
     await Promise.race([this.window.loadURL(this.source), pause(30000, this.signal).then(() => { throw new Error("The board took too long to load. Try again."); })]);
+  }
+  private assertAvailable(page: BoardPage) {
+    const response = this.responses.get(page.url);
+    if (page.unavailable || response && response.status >= 400) throw new BoardWebsiteError(response && response.status >= 400 ? response.status : 503, response?.retryAfter || null);
   }
   private async snapshot(): Promise<BoardPage> {
     this.signal.throwIfAborted();
@@ -102,6 +132,7 @@ export class BoardBrowser implements BoardReader {
       throw new Error("The board changed its search filters. Save the direct results link and try again.");
     }
     if (result.blocked) throw new Error("This board is asking for a browser check. Open its link and try again later.");
+    this.assertAvailable(result);
     if (this.chosenDocument) {
       if (this.frame) {
         if (this.frame.isDestroyed() || !sameSearch(this.frame.url, this.embeddedSource)) throw new Error("The embedded results changed or disappeared. Try the check again.");
@@ -138,6 +169,7 @@ export class BoardBrowser implements BoardReader {
         !result.candidates.some(candidate => knownListing(candidate.url, result.url))) result.loading = true;
     if (result.candidates.length > 1000 || result.controls.length > 100) throw new Error("This page has too many links to check completely. Save a more specific filtered link.");
     if (result.blocked) throw new Error("This board is asking for a browser check. Open its link and try again later.");
+    this.assertAvailable(result);
     return result;
   }
   async read() {
@@ -145,6 +177,20 @@ export class BoardBrowser implements BoardReader {
     return this.collect();
   }
   private async collect() {
+    for (let attempt = 0; ; attempt++) {
+      try { return await this.collectPage(); }
+      catch (error) {
+        this.signal.throwIfAborted();
+        // Reload only the initial saved URL. Retrying after pagination or a
+        // selected embedded document could silently reset the results scope.
+        if (!(error instanceof BoardWebsiteError) || this.lastPage || this.previous || this.frame || this.chosenDocument) throw error;
+        const wait = boardRetryDelay(error.status, attempt, error.retryAfter);
+        if (wait === null) throw error;
+        await pause(wait, this.signal); await this.loadPage();
+      }
+    }
+  }
+  private async collectPage() {
     if (this.netflix) return this.netflix.read();
     if (this.feed) return this.feed;
     const started = Date.now();

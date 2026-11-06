@@ -1,0 +1,44 @@
+name: Slack Boards verification
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['desktop/board-*.ts', 'desktop/boards-scan.ts', 'scripts/qa-slack-board.mjs', 'scripts/qa-board-unavailable.mjs', '.github/workflows/boards-slack.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: slack-boards-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  slack:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node node_modules/electron/install.js
+      - name: Verify unavailable pages and retry behavior
+        run: |
+          node --input-type=module -e "import { build } from 'esbuild'; await build({ entryPoints:['scripts/qa-board-unavailable.mjs'], outfile:'qa-output/slack-board/unavailable.mjs', bundle:true, platform:'node', format:'esm', target:'node22', external:['electron'] });"
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          & .\node_modules\.bin\electron.cmd qa-output/slack-board/unavailable.mjs
+      - name: Bundle the isolated Slack check
+        run: node --input-type=module -e "import { build } from 'esbuild'; await build({ entryPoints:['scripts/qa-slack-board.mjs'], outfile:'qa-output/slack-board/runner.mjs', bundle:true, platform:'node', format:'esm', target:'node22', external:['electron'] });"
+      - name: Check the saved Slack Product URL
+        run: |
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          & .\node_modules\.bin\electron.cmd qa-output/slack-board/runner.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: slack-board-evidence
+          retention-days: 7
+          path: qa-output/slack-board/*.json

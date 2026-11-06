@@ -8,6 +8,7 @@ export type BoardPage = { url: string; title: string; summary: string; candidate
   embeddedDocuments?: { id: string; url: string; title: string }[];
   layer?: "structured" | "dom"; complete?: boolean; visualNeeded?: boolean;
   viewportCandidates?: string[]; viewportControls?: string[];
+  unavailable?: boolean;
   empty: boolean; loading: boolean; blocked: boolean; atBottom: boolean; scrollY: number; height: number };
 
 // Serialized into an isolated webContents. Keep this function self-contained.
@@ -133,13 +134,16 @@ export function captureBoardPage(sectionId?: string): BoardPage {
     !element.closest("nav,header,footer") && element.querySelector("a[href],[role=link],canvas"));
   for (const [index, element] of scrollable.entries()) element.setAttribute("data-zebby-board-scroll", String(index));
   const height = document.documentElement.scrollHeight + scrollable.reduce((sum, element) => sum + element.scrollHeight, 0);
+  const errorHeading = /^(?:(?:internal )?server error|service (?:temporarily )?unavailable|bad gateway|gateway timeout|page not found|something went wrong|temporarily unavailable|(?:http )?[45]\d\d(?:\s+error)?)(?:\s*[|:-]\s*.*)?[.!]?$/i;
+  const unavailable = [document.title, document.querySelector('h1,[role="heading"][aria-level="1"]')?.textContent || ""]
+    .some(value => errorHeading.test(clean(value, 200)));
   return { url: location.href, title: document.title.slice(0, 300),
     summary: (text.slice(0, 1500) + "\n" + text.slice(-2500)).slice(0, 4000), candidates, controls,
     expectedTotal: total ? Number(total[1].replace(/,/g, "")) : empty ? 0 : null,
     pageNumber: page ? Number(page[1]) : pageLinks.length ? Number(new URL(location.href).searchParams.get("page")) || 1 : null,
     pageCount: page ? Number(page[2]) : pageLinks.length ? Math.max(...pageLinks) : null,
     embeddedBoards, embeddedBoardPending, embeddedDocuments, viewportCandidates, viewportControls, layer: "dom", visualNeeded: opaque,
-    empty, loading: /\bloading (?:jobs|results|opportunities)/i.test(text),
+    empty, unavailable, loading: /\bloading (?:jobs|results|opportunities)/i.test(text),
     blocked: /\b(verify (?:that )?you are human|unusual traffic|access denied|checking your browser|complete the captcha)\b/i.test(document.body?.innerText || ""),
     atBottom: window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 8 &&
       scrollable.every(element => element.scrollTop + element.clientHeight >= element.scrollHeight - 8),

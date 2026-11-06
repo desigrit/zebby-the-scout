@@ -1,7 +1,8 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, FolderOpen, LoaderCircle, Pencil, Plus, RefreshCw, X } from "lucide-react";
 import { useAnalysisFlow } from "./AnalysisFlow";
-import { BOARDS_MISSING_FILE, BOARD_CREDIT_MESSAGE, type Board, type BoardsState, type BoardListings, type BoardListingFilter } from "../../shared/boards";
+import { BOARDS_MISSING_FILE, BOARD_CREDIT_MESSAGE, type Board, type BoardsState, type BoardListings } from "../../shared/boards";
 import SettingsAction from "./SettingsAction";
 import { ErrorBanner } from "./WorkspaceFeedback";
 
@@ -125,29 +126,63 @@ function companyFromUrl(value: string) {
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
-function BoardResults({ board, initialFilter, onClose }: { board: Board; initialFilter: BoardListingFilter; onClose(): void }) {
-  const [filter, setFilter] = useState(initialFilter), [offset, setOffset] = useState(0), [retry, setRetry] = useState(0);
+function BoardCheckStatus({ error }: { error: string }) {
+  const id = useId(), trigger = useRef<HTMLButtonElement>(null), tooltip = useRef<HTMLDivElement>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null), focused = useRef(false);
+  const [open, setOpen] = useState(false), [position, setPosition] = useState({ left: 0, top: 0 });
+  function clearClose() { if (closeTimer.current) clearTimeout(closeTimer.current); }
+  function show() { clearClose(); setOpen(true); }
+  function leave() { clearClose(); closeTimer.current = setTimeout(() => { if (!focused.current) setOpen(false); }, 120); }
+  useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
+  useLayoutEffect(() => {
+    if (!open || !trigger.current || !tooltip.current) return;
+    const place = () => {
+      if (!trigger.current || !tooltip.current) return;
+      const anchor = trigger.current.getBoundingClientRect(), tip = tooltip.current.getBoundingClientRect();
+      if (anchor.bottom <= 0 || anchor.top >= window.innerHeight) { setOpen(false); return; }
+      const next = { left: Math.max(16, Math.min(anchor.left, window.innerWidth - tip.width - 16)),
+        top: anchor.bottom + 8 + tip.height <= window.innerHeight - 16 ? anchor.bottom + 8 : Math.max(16, anchor.top - tip.height - 8) };
+      setPosition(previous => previous.left === next.left && previous.top === next.top ? previous : next);
+    };
+    place(); window.addEventListener("resize", place); window.addEventListener("scroll", place, true);
+    return () => { window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
+  }, [open, error]);
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = () => setOpen(false);
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { event.stopPropagation(); dismiss(); } };
+    const outside = (event: PointerEvent) => { if (!trigger.current?.contains(event.target as Node) && !tooltip.current?.contains(event.target as Node)) dismiss(); };
+    window.addEventListener("keydown", escape, true); window.addEventListener("pointerdown", outside);
+    return () => { window.removeEventListener("keydown", escape, true); window.removeEventListener("pointerdown", outside); };
+  }, [open]);
+  return <>
+    <button ref={trigger} type="button" className="board-check-status" aria-describedby={open ? id : undefined}
+      onPointerEnter={show} onPointerLeave={leave} onClick={show}
+      onFocus={() => { focused.current = true; show(); }} onBlur={() => { focused.current = false; leave(); }}>Check incomplete</button>
+    {open && createPortal(<div ref={tooltip} id={id} role="tooltip" className="board-error-tooltip" style={position}
+      onPointerEnter={clearClose} onPointerLeave={leave}>{error}</div>, document.body)}
+  </>;
+}
+
+function BoardResults({ board, onClose }: { board: Board; onClose(): void }) {
+  const [requestedOffset, setOffset] = useState(0), [retry, setRetry] = useState(0);
+  const offset = Math.min(requestedOffset, Math.floor(Math.max(0, board.newCount - 1) / 50) * 50);
   const [loaded, setLoaded] = useState<{ key: string; result?: BoardListings; error?: string } | null>(null);
-  const requestKey = JSON.stringify([board.id, board.lastCheckId, board.newCount, filter, offset, retry]);
+  const requestKey = JSON.stringify([board.id, board.lastCheckId, board.newCount, offset, retry]);
   const result = loaded?.key === requestKey ? loaded.result : null, error = loaded?.key === requestKey ? loaded.error : "";
   const heading = useId(), focus = useRef<HTMLHeadingElement>(null);
   useEffect(() => { focus.current?.focus(); }, []);
   useEffect(() => {
     let active = true;
-    void window.desktop!.boardListings(board.id, board.lastCheckId, filter, offset)
+    void window.desktop!.boardListings(board.id, board.lastCheckId, "new", offset)
       .then(value => { if (active) setLoaded({ key: requestKey, result: value }); })
       .catch(error => { if (active) setLoaded({ key: requestKey, error: message(error) }); });
     return () => { active = false; };
-  }, [board.id, board.lastCheckId, board.newCount, filter, offset, retry, requestKey]);
-  function choose(value: BoardListingFilter) { setFilter(value); setOffset(0); }
+  }, [board.id, board.lastCheckId, board.newCount, offset, retry, requestKey]);
   return <section id={"board-results-" + board.id} className="board-listings" aria-labelledby={heading}>
-    <div className="board-listings-heading"><div><h2 id={heading} ref={focus} tabIndex={-1}>{board.company} listings</h2>
+    <div className="board-listings-heading"><div><h2 id={heading} ref={focus} tabIndex={-1}>{board.company} new listings</h2>
       <p>From the last successful check. Opening a listing does not mark it reviewed.</p></div>
       <button type="button" className="board-icon-action" onClick={onClose} aria-label="Close listings"><X size={17} aria-hidden="true" /></button></div>
-    <div className="board-listing-filters" aria-label="Show listings">
-      {([['matches', 'Matches'], ['new', 'New'], ['all', 'All checked']] as const).map(([value, label]) =>
-        <button key={value} type="button" aria-pressed={filter === value} onClick={() => choose(value)}>{label}</button>)}
-    </div>
     {error ? <div className="board-listings-feedback"><p role="alert">{error}</p>
       <button type="button" className="boards-text-action" onClick={() => setRetry(value => value + 1)}>Retry</button></div>
       : !result ? <p className="board-listings-feedback" role="status"><LoaderCircle size={14} className="spin" aria-hidden="true" />Loading listings</p>
@@ -155,10 +190,8 @@ function BoardResults({ board, initialFilter, onClose }: { board: Board; initial
         {result.listings.length ? <ul className="board-listing-items">{result.listings.map(listing => <li key={listing.key}>
           <div><a href={listing.url} target="_blank" rel="noopener noreferrer">{listing.title || listing.url}</a>
             {(listing.department || listing.location) && <p>{[listing.department, listing.location].filter(Boolean).join(" · ")}</p>}</div>
-          <span className="board-listing-status">{!listing.current ? "No longer listed" : listing.unread ? "New" : listing.matches ? "Matches" : "Outside your instructions"}</span>
-        </li>)}</ul> : <p className="board-listings-feedback" role="status">{filter === "new" ? "No new listings to review."
-          : filter === "matches" ? "No listings matched your instructions at the last check. Choose All checked to see what was read."
-          : "This board had no openings at the last check."}</p>}
+          {!listing.current && <span className="board-listing-status">No longer listed</span>}
+        </li>)}</ul> : <p className="board-listings-feedback" role="status">No new listings to review.</p>}
         {result.total > 0 && <div className="board-listings-pagination"><span role="status">{offset + 1}-{Math.min(offset + result.listings.length, result.total)} of {result.total}</span>
           {result.total > 50 && <div><button type="button" className="button button-secondary" disabled={offset === 0} onClick={() => setOffset(value => Math.max(0, value - 50))}>Previous</button>
             <button type="button" className="button button-secondary" disabled={offset + 50 >= result.total} onClick={() => setOffset(value => value + 50)}>Next</button></div>}</div>}
@@ -172,13 +205,22 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
   const [adding, setAdding] = useState(false), [editing, setEditing] = useState<Board | null>(null);
   const [links, setLinks] = useState(""), [company, setCompany] = useState("");
   const [instructions, setInstructions] = useState("");
-  const [inspection, setInspecting] = useState<{ id: string; filter: BoardListingFilter; filePath: string } | null>(null);
-  const inspecting = inspection?.filePath === state.filePath ? inspection : null;
+  const [inspection, setInspecting] = useState<{ id: string; filePath: string } | null>(null);
+  const inspecting = inspection?.filePath === state.filePath && state.boards.some(board => board.id === inspection.id && board.lastCheckedAt && board.newCount > 0) ? inspection : null;
   const inspectionButton = useRef<HTMLButtonElement | null>(null);
-  function inspect(board: Board, filter: BoardListingFilter, button: HTMLButtonElement) {
-    inspectionButton.current = button; setInspecting({ id: board.id, filter, filePath: state.filePath });
+  function inspect(board: Board, button: HTMLButtonElement) {
+    inspectionButton.current = button; setInspecting({ id: board.id, filePath: state.filePath });
   }
-  function closeInspection() { setInspecting(null); inspectionButton.current?.focus({ preventScroll: true }); }
+  function closeInspection() {
+    setInspecting(null);
+    const target = inspectionButton.current?.isConnected ? inspectionButton.current : document.getElementById("board-check-" + inspecting?.id);
+    target?.focus({ preventScroll: true });
+  }
+  async function markReviewed(board: Board) {
+    if (!await act(() => window.desktop!.markBoardReviewed(board.id, board.lastCheckId))) return;
+    if (inspecting?.id === board.id) setInspecting(null);
+    requestAnimationFrame(() => document.getElementById("board-check-" + board.id)?.focus({ preventScroll: true }));
+  }
   const analysis = useAnalysisFlow();
   const dirty = editing ? links !== editing.url || company !== editing.company || instructions !== (editing.instructions || "")
     : adding && Boolean(links || company || instructions);
@@ -263,32 +305,28 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
                   {board.newCount > 0
                     ? <button type="button" className="boards-text-action board-discoveries" aria-expanded={inspecting?.id === board.id}
                         aria-controls={inspecting?.id === board.id ? "board-results-" + board.id : undefined}
-                        onClick={event => inspect(board, "new", event.currentTarget)}>{board.newCount} new {board.newCount === 1 ? "listing" : "listings"}</button>
-                    : <span className="board-no-updates">{board.error && !progress ? "Check incomplete" : "No new listings"}</span>}
-                  <span className="board-match-total">{board.checkedCount ?? board.totalCount} {(board.checkedCount ?? board.totalCount) === 1 ? "listing" : "listings"} checked · {board.totalCount} {board.instructions ? board.totalCount === 1 ? "matches your instructions" : "match your instructions" : "tracked"}</span>
+                        onClick={event => inspecting?.id === board.id ? closeInspection() : inspect(board, event.currentTarget)}>{board.newCount} new {board.newCount === 1 ? "listing" : "listings"}</button>
+                    : !board.error && <span className="board-no-updates">No new listings</span>}
+                  {board.error && !progress && <BoardCheckStatus error={board.error} />}
+                  <span className="board-match-total">{board.totalCount} {board.totalCount === 1 ? "listing" : "listings"} checked</span>
                 </div>
-                <button type="button" className="boards-text-action board-view-listings" aria-expanded={inspecting?.id === board.id}
-                  aria-controls={inspecting?.id === board.id ? "board-results-" + board.id : undefined}
-                  onClick={event => inspecting?.id === board.id ? closeInspection() : inspect(board, board.instructions ? "matches" : "all", event.currentTarget)}>
-                  {inspecting?.id === board.id ? "Close listings" : board.instructions ? "View matches" : "View listings"}</button>
-                {board.newCount > 0 && <button type="button" className="boards-text-action" disabled={working || state.dirty} onClick={() => void act(() => window.desktop!.markBoardReviewed(board.id, board.lastCheckId))}>
+                {board.newCount > 0 && <button type="button" className="boards-text-action" disabled={working || state.dirty} onClick={() => void markReviewed(board)}>
                   <Check size={14} aria-hidden="true" />Mark as reviewed</button>}
-              </> : !progress && <span className="board-no-updates">{board.error ? "Check incomplete" : "Not indexed"}</span>}
+              </> : !progress && <span role="status">{board.error ? <BoardCheckStatus error={board.error} /> : <span className="board-no-updates">Not indexed</span>}</span>}
               {progress && <span className="board-progress" role="status" title={progress.message}>
                 <LoaderCircle size={13} className="spin" aria-hidden="true" />{board.lastCheckedAt ? progress.message : "Indexing"}</span>}
             </div>
             <div className="board-actions">{progress ? <button type="button" className="button button-secondary" disabled={progress.phase === "saving"}
               onClick={() => void act(() => window.desktop!.cancelBoardCheck(board.id))}>Cancel check</button>
-              : <button type="button" className="button button-secondary" disabled={working || state.dirty} onClick={() => void act(() => window.desktop!.checkBoards([board.id]))}>
+              : <button id={"board-check-" + board.id} type="button" className="button button-secondary" disabled={working || state.dirty} onClick={() => void act(() => window.desktop!.checkBoards([board.id]))}>
                 <RefreshCw size={15} aria-hidden="true" />{board.error ? "Retry" : "Check for updates"}</button>}
               {analysis.state.analysisProvider === "credits" && board.error.startsWith(BOARD_CREDIT_MESSAGE) && !progress &&
                 <button type="button" className="boards-text-action" onClick={() => analysis.openCredits()}>Top up</button>}
               <button type="button" className="board-icon-action" aria-label={`Edit ${board.company} board`} title="Edit board" disabled={working || Boolean(progress) || state.dirty} onClick={() => edit(board)}><Pencil size={15} aria-hidden="true" /></button>
               <button type="button" className="board-icon-action" aria-label={`Remove ${board.company} board`} title="Remove board" disabled={working || Boolean(progress) || state.dirty} onClick={() => void act(() => window.desktop!.removeBoard(board.id))}><X size={17} aria-hidden="true" /></button>
             </div>
-            {board.error && !progress && <p className="board-check-error" role="alert">{board.error}</p>}
-            {inspecting?.id === board.id && <BoardResults key={board.id + ":" + inspecting.filter + ":" + board.lastCheckId}
-              board={board} initialFilter={inspecting.filter} onClose={closeInspection} />}
+            {inspecting?.id === board.id && <BoardResults key={board.id + ":" + board.lastCheckId}
+              board={board} onClose={closeInspection} />}
           </article>;
         })}
       </div>}
