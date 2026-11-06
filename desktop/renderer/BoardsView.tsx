@@ -98,20 +98,21 @@ export function BoardsDatabaseSettings() {
   const recoveryFocus = useRecoveryFocus(state);
   const location = state.filePath || state.expectedPath;
   const busy = working || state.progress.length > 0;
+  const hasActions = Boolean(state.filePath && !state.boards.length && !state.dirty || state.error || state.dirty || state.canRecover);
   return <div className="boards-database" ref={recoveryFocus} tabIndex={-1}>
     {state.fileMissing ? <BoardsFileRecovery controls={controls} compact /> : <>
       <div className="database-location"><span>Boards file</span><strong>{state.filename || "Boards file unavailable"}</strong>
         {location && <code title={location}>{location}</code>}</div>
       <ErrorBanner variant="inline" message={error || state.error} />
       {state.dirty && <p className="sync-warning" role="status">Boards changes are waiting to reach the selected file.</p>}
-      <div className="settings-actions">
+      {hasActions && <div className="settings-actions">
         {state.filePath && !state.boards.length && !state.dirty && <SettingsAction icon={FolderOpen} disabled={busy}
           onClick={() => void act(() => window.desktop!.importBoardsHistory())}>Import Boards history</SettingsAction>}
         {(state.error || state.dirty) && <SettingsAction icon={RefreshCw} busy={working} disabled={busy}
           onClick={() => void act(() => window.desktop!.retryBoardsSave())}>Retry</SettingsAction>}
         {(state.dirty || state.canRecover) && <SettingsAction icon={FolderOpen} disabled={busy}
           onClick={() => void act(() => window.desktop!.saveBoardsRecovery())}>Save recovery copy</SettingsAction>}
-      </div>
+      </div>}
       <BoardsSavedCopy path={state.savedCopyPath} />
     </>}
   </div>;
@@ -154,7 +155,7 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
     setEditing(board); setCompany(board.company); setLinks(board.url); setInstructions(board.instructions || ""); setAdding(false);
   }
   return <main className="desktop-main boards-page" aria-label="Boards">
-    <div className="boards-toolbar"><div className="boards-title" ref={recoveryFocus} tabIndex={-1}><h1>Boards</h1><span className="boards-beta">Beta</span></div>
+    <div className="boards-toolbar"><div className="boards-title" ref={recoveryFocus} tabIndex={-1}><h1>Boards</h1><span className="boards-beta">BETA</span></div>
       {state.filePath && !state.fileMissing && <div className="boards-toolbar-actions">
         <button type="button" className="button button-secondary" disabled={working || state.dirty || !state.boards.length || state.progress.length > 0}
           onClick={() => void act(() => window.desktop!.checkBoards())}><RefreshCw size={16} aria-hidden="true" />Check all</button>
@@ -209,11 +210,18 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
               ? <time dateTime={board.lastCheckedAt} title={new Date(board.lastCheckedAt).toLocaleString()}>{new Date(board.lastCheckedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</time>
               : <span>Never checked</span>}</div>
             <div className="board-result">
-              {board.newCount > 0 ? <><span className="board-discoveries" role="status">{board.newCount} new {board.newCount === 1 ? "listing" : "listings"} found</span>
-                <button type="button" className="boards-text-action" disabled={working || state.dirty} onClick={() => void act(() => window.desktop!.markBoardReviewed(board.id, board.lastCheckId))}>
-                  <Check size={14} aria-hidden="true" />Mark as reviewed</button></> : board.lastCheckedAt && <span className="board-no-updates">{board.error ? "Check incomplete" : "No new listings"}</span>}
-              {board.instructions && board.lastCheckedAt && <span className="board-match-total">{board.totalCount} matching {board.totalCount === 1 ? "role" : "roles"} at last check</span>}
-              {progress && <span className="board-progress" role="status"><LoaderCircle size={13} className="spin" aria-hidden="true" />{progress.message}</span>}
+              {board.lastCheckedAt ? <>
+                <div className="board-update-summary" role="status">
+                  {board.newCount > 0
+                    ? <span className="board-discoveries">{board.newCount} new {board.newCount === 1 ? "listing" : "listings"}.</span>
+                    : <span className="board-no-updates">{board.error && !progress ? "Check incomplete" : "No new listings"}</span>}
+                  <span className="board-match-total">{board.totalCount} matching {board.totalCount === 1 ? "role" : "roles"} at last check</span>
+                </div>
+                {board.newCount > 0 && <button type="button" className="boards-text-action" disabled={working || state.dirty} onClick={() => void act(() => window.desktop!.markBoardReviewed(board.id, board.lastCheckId))}>
+                  <Check size={14} aria-hidden="true" />Mark as reviewed</button>}
+              </> : !progress && <span className="board-no-updates">{board.error ? "Check incomplete" : "Not indexed"}</span>}
+              {progress && <span className="board-progress" role="status" title={progress.message}>
+                <LoaderCircle size={13} className="spin" aria-hidden="true" />{board.lastCheckedAt ? progress.message : "Indexing"}</span>}
             </div>
             <div className="board-actions">{progress ? <button type="button" className="button button-secondary" disabled={progress.phase === "saving"}
               onClick={() => void act(() => window.desktop!.cancelBoardCheck(board.id))}>Cancel check</button>

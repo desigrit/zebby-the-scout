@@ -1,6 +1,6 @@
 # Boards (Beta)
 
-Use **Add boards** to save public careers searches, including their filters. Paste one link per line, optionally enter a company and describe the roles you want. For example, “Look under the Product heading for product manager roles.” **Add and check** saves a starting point with zero new listings. Future checks count matching jobs when Zebby first sees them. **Mark as reviewed** clears the discoveries you have seen.
+Use **Add boards** to save public careers searches, including their filters. Paste one link per line, optionally enter a company and describe the roles you want. For example, “Look under the Product heading for product manager roles.” **Add and check** shows **Indexing** while saving your starting point. Every board shows its matching-role total after a successful check. Future checks update that total and count newly discovered listings. **Mark as reviewed** clears the discoveries you have seen.
 
 Zebby collects every results page before comparing job IDs. On Netflix, each batch must confirm the saved filters and the final count. On Figma, the reader captures the department heading and vacancy title. Changing a link or tracking instructions starts a new baseline. An interrupted or incomplete scan keeps its previous successful check.
 

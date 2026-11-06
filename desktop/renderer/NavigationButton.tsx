@@ -57,6 +57,6 @@ export default function NavigationButton({ kind, label, selected, collapsed, onA
     aria-label={label} title={collapsed ? label : undefined} aria-current={selected ? "page" : undefined}>
     <span className="navigation-icon" data-kind={kind} ref={host} aria-hidden="true">
       <Icon className="navigation-icon-fallback" size={24} /><span className="navigation-icon-player" ref={player} />
-    </span><span className="nav-label">{label}{kind === "boards" && <span className="nav-beta-tag">Beta</span>}</span>
+    </span><span className="nav-label">{label}{kind === "boards" && <span className="nav-beta-tag">BETA</span>}</span>
   </button>;
 }

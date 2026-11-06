@@ -41,7 +41,7 @@ try {
   const errors = []; page.on("pageerror", error => errors.push(error.message));
   const nav = page.getByRole("navigation", { name: "Workspace" });
   await nav.getByRole("button", { name: "Boards", exact: true }).click();
-  await page.getByText("1 new listing found", { exact: true }).waitFor();
+  await page.getByText("1 new listing.", { exact: true }).waitFor();
   assert.deepEqual((await page.evaluate(() => window.desktop.boardsState())).boards[0], expected);
   const appBytes = await readFile(applications), boardBytes = await readFile(companion);
   async function capture(name, width = 1550, height = 850, theme = "light") {
