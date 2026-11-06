@@ -1,8 +1,8 @@
-name: Twitch board reader
+name: Embedded Boards checks
 
 on:
-  push:
-    branches: [fix/twitch-board-reader]
+  pull_request:
+    branches: [main]
     paths: ['desktop/**', 'shared/boards.ts', 'lib/board-identity.ts', 'scripts/qa-twitch-board.mjs', 'tests/boards.test.mjs', '.github/workflows/twitch-reader.yml']
   workflow_dispatch:
 
