@@ -29,7 +29,7 @@
   "support": "https://github.com/desigrit/zebby-the-scout/issues",
   "privacyPolicy": "https://github.com/desigrit/zebby-the-scout/blob/main/docs/privacy.md",
   "firstSubmissionWhatsNew": "",
-  "updateWhatsNew": "Hardware-aware local models with GPU acceleration on supported Windows PCs. A clearer Analysis guide, refreshed Credits and devices view, and daily credit usage history. Microsoft Store manages updates for this edition.",
+  "updateWhatsNew": "Boards now shows Indexing during the first scan and matching-role totals for every saved board. Later checks show new listings alongside updated totals. Clearer recovery controls help restore a missing Boards file or start fresh while preserving cached history. Bolder BETA badges and tighter database spacing complete this update.",
   "additionalSystemRequirements": [
     "Internet access for job imports, model downloads, and online analysis",
     "Local models download separately and need additional disk space and memory",
