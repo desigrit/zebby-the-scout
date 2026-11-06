@@ -11,11 +11,7 @@ const message = (error: unknown) => (error instanceof Error ? error.message : "T
 
 function useBoards() {
   const [state, setState] = useState<BoardsState>(initial), [error, setError] = useState(""), [working, setWorking] = useState(false);
-  const recoveryFocus = useRef<HTMLDivElement>(null), wasMissing = useRef(false), inFlight = useRef(false);
-  useEffect(() => {
-    if (wasMissing.current && !state.fileMissing && state.filePath) recoveryFocus.current?.focus({ preventScroll: true });
-    wasMissing.current = Boolean(state.fileMissing);
-  }, [state.fileMissing, state.filePath]);
+  const inFlight = useRef(false);
   useEffect(() => {
     let active = true, received = false;
     const remove = window.desktop!.onBoardsChanged(next => { received = true; if (active) setState(next); });
@@ -29,7 +25,16 @@ function useBoards() {
     catch (error) { setError(message(error)); return false; }
     finally { inFlight.current = false; setWorking(false); }
   }
-  return { state, error, working, act, recoveryFocus };
+  return { state, error, working, act };
+}
+
+function useRecoveryFocus(state: BoardsState) {
+  const focusRef = useRef<HTMLDivElement>(null), wasMissing = useRef(false);
+  useEffect(() => {
+    if (wasMissing.current && !state.fileMissing && state.filePath) focusRef.current?.focus({ preventScroll: true });
+    wasMissing.current = Boolean(state.fileMissing);
+  }, [state.fileMissing, state.filePath]);
+  return focusRef;
 }
 
 function BoardsFileRecovery({ controls, compact = false, onCreated }: {
@@ -89,7 +94,8 @@ function BoardsSavedCopy({ path }: { path?: string }) {
 }
 
 export function BoardsDatabaseSettings() {
-  const controls = useBoards(), { state, working, error, act, recoveryFocus } = controls;
+  const controls = useBoards(), { state, working, error, act } = controls;
+  const recoveryFocus = useRecoveryFocus(state);
   const location = state.filePath || state.expectedPath;
   const busy = working || state.progress.length > 0;
   return <div className="boards-database" ref={recoveryFocus} tabIndex={-1}>
@@ -120,6 +126,7 @@ function companyFromUrl(value: string) {
 
 export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
   const controls = useBoards(), { state, error, working, act } = controls;
+  const recoveryFocus = useRecoveryFocus(state);
   const [adding, setAdding] = useState(false), [editing, setEditing] = useState<Board | null>(null);
   const [links, setLinks] = useState(""), [company, setCompany] = useState("");
   const [instructions, setInstructions] = useState("");
@@ -147,7 +154,7 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
     setEditing(board); setCompany(board.company); setLinks(board.url); setInstructions(board.instructions || ""); setAdding(false);
   }
   return <main className="desktop-main boards-page" aria-label="Boards">
-    <div className="boards-toolbar"><div className="boards-title" ref={controls.recoveryFocus} tabIndex={-1}><h1>Boards</h1><span className="boards-beta">Beta</span></div>
+    <div className="boards-toolbar"><div className="boards-title" ref={recoveryFocus} tabIndex={-1}><h1>Boards</h1><span className="boards-beta">Beta</span></div>
       {state.filePath && !state.fileMissing && <div className="boards-toolbar-actions">
         <button type="button" className="button button-secondary" disabled={working || state.dirty || !state.boards.length || state.progress.length > 0}
           onClick={() => void act(() => window.desktop!.checkBoards())}><RefreshCw size={16} aria-hidden="true" />Check all</button>
