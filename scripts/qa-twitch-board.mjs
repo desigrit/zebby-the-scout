@@ -1,6 +1,8 @@
 import { app } from "electron";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { lookup } from "node:dns/promises";
+import { isPublicAddress } from "../lib/public-address.ts";
 import { BoardBrowser } from "../desktop/board-browser.ts";
 import { captureBoardPage } from "../desktop/board-page.ts";
 
@@ -44,6 +46,10 @@ async function inspect(label) {
     text: dom.text, anchors: dom.anchors, iframes: dom.iframes, roleNodes: dom.roleNodes, scripts: dom.scripts, shadowRoots: dom.shadowRoots }));
 }
 try {
+  const addresses = await lookup(new URL(source).hostname, { all: true });
+  console.log(JSON.stringify({ stage: "dns", addresses: addresses.map(item => ({ ...item, public: isPublicAddress(item.address) })) }));
+  const response = await fetch(source, { redirect: "manual", signal: AbortSignal.timeout(20000) });
+  console.log(JSON.stringify({ stage: "http", status: response.status, location: response.headers.get("location"), body: (await response.text()).slice(0, 1500) }));
   await reader.open(source);
   console.log(JSON.stringify({ stage: "opened", elapsed: Date.now() - started }));
   try {
@@ -56,7 +62,11 @@ try {
   console.log(JSON.stringify({ events }));
   await writeFile(path.join(output, "network.json"), JSON.stringify(events, null, 2));
 } catch(error) { console.error(error); process.exitCode = 1; }
-finally { reader.close(); app.exit(process.exitCode || 0); }
+finally {
+  console.log(JSON.stringify({ stage: "final", navigationError: reader.navigationError, events }));
+  await writeFile(path.join(output, "network.json"), JSON.stringify(events, null, 2));
+  reader.close(); app.exit(process.exitCode || 0);
+}
 
 }
 void run().catch(error => { console.error(error); app.exit(1); });
