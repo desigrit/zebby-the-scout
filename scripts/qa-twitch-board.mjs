@@ -4,11 +4,15 @@ import path from "node:path";
 import { BoardBrowser } from "../desktop/board-browser.ts";
 import { captureBoardPage } from "../desktop/board-page.ts";
 
+async function run() {
+console.log("Twitch diagnostic starting");
+setTimeout(() => { console.error("Twitch diagnostic exceeded its two-minute limit"); app.exit(1); }, 120000).unref();
 const output = path.resolve("qa-output/twitch-reader");
 await mkdir(path.join(output, "profile"), { recursive: true });
 app.setPath("userData", path.join(output, "profile"));
 app.on("window-all-closed", () => {});
 await app.whenReady();
+console.log("Twitch diagnostic Electron ready");
 const source = "https://careers.twitch.tv/en/careers";
 const controller = new AbortController(), reader = new BoardBrowser(controller.signal);
 const events = [], started = Date.now();
@@ -53,3 +57,6 @@ try {
   await writeFile(path.join(output, "network.json"), JSON.stringify(events, null, 2));
 } catch(error) { console.error(error); process.exitCode = 1; }
 finally { reader.close(); app.exit(process.exitCode || 0); }
+
+}
+void run().catch(error => { console.error(error); app.exit(1); });
