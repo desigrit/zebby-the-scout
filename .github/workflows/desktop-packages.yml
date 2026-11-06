@@ -240,7 +240,7 @@ jobs:
 
   verify-boards-update:
     needs: release
-    if: github.ref_name == 'v2.7.0'
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
@@ -269,15 +269,16 @@ jobs:
           import { setTimeout as delay } from 'node:timers/promises';
           import { ReleaseUpdates } from './desktop/release-updates.ts';
           import { SelfUpdater } from './desktop/self-update.ts';
+          const expectedVersion = process.env.GITHUB_REF_NAME.replace(/^v/, '');
           for (const [platform, arch] of [['win32','x64'], ['win32','arm64'], ['darwin','arm64']]) {
             const checker = new ReleaseUpdates({ version: '2.6.4', platform, arch });
             let release;
             for (let attempt = 0; attempt < 8; attempt++) {
               release = (await checker.check(true)).available;
-              if (release?.version === '2.7.0') break;
+              if (release?.version === expectedVersion) break;
               await delay(10000);
             }
-            assert.equal(release?.version, '2.7.0');
+            assert.equal(release?.version, expectedVersion);
             const folder = await mkdtemp(path.join(os.tmpdir(), 'zebby-update-'));
             let phase;
             const executable = path.join(process.env.RUNNER_TEMP, 'previous/Zebby.app/Contents/MacOS/Zebby');

@@ -13,7 +13,7 @@ import { ServiceError } from "./errors.ts";
 import { createWalletAccess } from "./wallet-access.ts";
 import { createWalletUsage } from "./wallet-usage.ts";
 import { z } from "zod";
-import { boardModelContract } from "../shared/boards.ts";
+import { BOARDS_READER_VERSION, boardModelContract } from "../shared/boards.ts";
 
 const uuid = z.string().uuid();
 const kindSchema = z.enum(["plan", "match", "resume", "board_extract"]);
@@ -109,7 +109,7 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
     rateLimit("ip:" + ip, 120);
     if (method === "GET" && path === "/health") return { ok: true, mode: config.live ? "live" : "test" };
     if (method === "GET" && path === "/v1/catalog") return { packs: CREDIT_PACKS, models: CREDIT_MODELS,
-      priceVersion: PRICE_VERSION, analysisKinds: kindSchema.options, mode: config.live ? "live" : "test" };
+      priceVersion: PRICE_VERSION, analysisKinds: kindSchema.options, boardsReaderVersion: BOARDS_READER_VERSION, mode: config.live ? "live" : "test" };
     if (method === "POST" && path === "/v1/auth/refresh") {
       const value = z.object({ refreshToken: z.string().min(1).max(8192) }).strict().parse(body);
       return supabase("/auth/v1/token?grant_type=refresh_token", { method: "POST", body: JSON.stringify({ refresh_token: value.refreshToken }) });
@@ -171,7 +171,7 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
       const inputTokens = await countInput({ model: model.id, key: providerKey(model.id), input, ...contract(value.kind, input),
         thinkingLevel, signal, fetcher: send });
       signal.throwIfAborted();
-      const outputTokens = creditOutputLimit(value.kind, thinkingLevel);
+      const outputTokens = creditOutputLimit(value.kind, thinkingLevel, "task" in input && input.task === "visual");
       const maximum = maximumCost(model, inputTokens, outputTokens);
       const quote = { id: randomUUID(), user_id: account.id, model: model.id, kind: value.kind, thinking_level: thinkingLevel,
         input_tokens: inputTokens, output_limit: outputTokens,
@@ -185,7 +185,7 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
       if (!quote || quote.price_version !== PRICE_VERSION) throw new ServiceError("Request a fresh analysis quote.");
       const kind = kindSchema.parse(quote.kind), model = configuredModel(quote.model), input = validateInput(value.input, kind);
       const thinkingLevel = validateOnlineThinking(model, quote.thinking_level);
-      if (quote.output_limit !== creditOutputLimit(kind, thinkingLevel) ||
+      if (quote.output_limit !== creditOutputLimit(kind, thinkingLevel, "task" in input && input.task === "visual") ||
           quote.maximum !== maximumCost(model, quote.input_tokens, quote.output_limit)) throw new ServiceError("Request a fresh analysis quote.");
       const run = await rpc<RunRow>("reserve", { p_user: account.id, p_id: value.requestId, p_quote: quote.id, p_hash: digest(JSON.stringify(input)) })
         .catch(async (error: unknown) => {

@@ -3,6 +3,7 @@ import { providerFailure, validStructuredResult } from "./online-response.ts";
 import { openAIAnalysisInput } from "./openai-request.ts";
 import { anthropicAnalysisInput } from "./anthropic-request.ts";
 import { analysisFetch } from "./analysis-fetch.ts";
+import { boardVisualParts } from "../shared/analysis-images.ts";
 type Content = { type: string; text?: string };
 type ProviderPayload = { status?: string; stop_reason?: string; incomplete_details?: { reason?: string }; output?: { content?: Content[] }[]; content?: Content[];
   usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
@@ -14,7 +15,7 @@ export async function onlineAnalysis(options: { model: string; key: string; inst
   maxOutputTokens?: number }) {
   const model = onlineModel(options.model);
   const thinkingLevel = validateOnlineThinking(model, options.thinkingLevel);
-  const maxOutputTokens = options.maxOutputTokens ?? outputLimit(options.kind, thinkingLevel);
+  const maxOutputTokens = options.maxOutputTokens ?? Math.max(boardVisualParts(options.input) ? 8192 : 0, outputLimit(options.kind, thinkingLevel));
   if (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens <= 0) throw new Error("Invalid analysis output budget.");
   if (!options.key) throw new Error(`Add an ${model.provider === "openai" ? "OpenAI" : "Anthropic"} API key in Settings.`);
   const send = options.fetcher || analysisFetch;

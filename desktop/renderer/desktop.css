@@ -63,6 +63,29 @@
 .board-icon-action:hover:not(:disabled) { color: var(--ink); background: var(--surface-hover); }
 .board-check-error { grid-column: 1 / -1; margin: -4px 0 0; }
 .boards-file-footer { margin-top: 24px; }
+.board-listings { grid-column: 1 / -1; min-width: 0; margin-top: 6px; padding: 20px 0 4px; border-top: 1px solid var(--line); }
+.board-listings-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.board-listings h2 { margin: 0; color: var(--ink); font-size: 17px; font-weight: 650; letter-spacing: -.015em; }
+.board-listings-heading p { margin: 7px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.6; max-width: 70ch; }
+.board-listing-filters { display: flex; flex-wrap: wrap; gap: 4px; margin: 18px 0 8px; }
+.board-listing-filters button { min-height: 36px; padding: 7px 12px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--ink-soft); font-size: 12px; font-weight: 600; }
+.board-listing-filters button:hover { background: var(--surface-hover); color: var(--ink); }
+.board-listing-filters button[aria-pressed="true"] { background: var(--accent-wash); color: var(--accent); border-color: var(--line); }
+.board-listing-items { list-style: none; padding: 0; margin: 0; }
+.board-listing-items li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px 24px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.board-listing-items li > div { min-width: 0; }
+.board-listing-items a { color: var(--ink); font-size: 13px; font-weight: 600; text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+.board-listing-items a:hover { color: var(--accent); }
+.board-listing-items p { margin: 6px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.board-listing-status { flex: none; color: var(--ink-soft); font-size: 11px; }
+.board-listings-feedback { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 18px 0; color: var(--ink-soft); font-size: 13px; line-height: 1.6; max-width: 70ch; }
+.board-listings-feedback p { margin: 0; }
+.board-listings-pagination, .board-listings-pagination > div { display: flex; align-items: center; gap: 8px; }
+.board-listings-pagination { justify-content: space-between; margin-top: 14px; color: var(--ink-soft); font-size: 12px; font-variant-numeric: tabular-nums; }
+@media (max-width: 650px) {
+  .board-listing-items li { display: grid; gap: 7px; }
+  .board-listings-pagination { flex-wrap: wrap; gap: 12px; }
+}
 @media (max-width: 1180px) {
   .boards-columns { display: none; }
   .board-row { grid-template-columns: minmax(0, 1fr) auto; gap: 12px 20px; }

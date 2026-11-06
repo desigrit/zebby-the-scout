@@ -12,4 +12,15 @@ for (const [model, key] of [["gpt-6-luna", process.env.OPENAI_API_KEY], ["claude
     thinkingLevel: "low", maxOutputTokens: 1024 });
   assert.deepEqual(validatedBoardExtraction(result, input), { decisions: expected });
   console.log("Live Figma Product instructions passed for", model);
+  if (process.env.ZEBBY_QA_VISUAL_SAMPLE) {
+    const visual = JSON.parse(process.env.ZEBBY_QA_VISUAL_SAMPLE);
+    const read = await onlineAnalysis({ model, key, input: visual.input, kind: "board_extract", ...boardModelContract(visual.input),
+      thinkingLevel: "low", maxOutputTokens: 8192 });
+    const result = validatedBoardExtraction(read.result, visual.input);
+    assert.deepEqual(result.listings.map(item => item.id).sort(), visual.expected.listingIds.slice().sort());
+    assert.equal(result.nextControlId, visual.expected.nextControlId);
+    assert.ok(result.listings.every(item => /Senior Product Manager/i.test(item.title)));
+    assert.equal(result.expectedTotal, 2); assert.equal(result.empty, false);
+    console.log("Visual board titles and unlabeled navigation passed for", model);
+  }
 }

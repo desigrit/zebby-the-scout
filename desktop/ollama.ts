@@ -58,11 +58,21 @@ export async function ollamaThinkingCapability(baseUrl: string, model: string, f
 export function ollamaThinkValue(value: string) { return value === "default" ? null : value === "on" ? true : value === "off" ? false
   : value.startsWith("level:") ? value.slice(6) : null; }
 
+export async function ollamaSupportsVision(baseUrl: string, model: string, signal: AbortSignal, fetcher: typeof fetch = fetch) {
+  if (!model.trim() || model.length > 200 || /[\r\n]/.test(model)) return false;
+  const response = await fetcher(endpoint(baseUrl, "/api/show"), { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model }), signal: AbortSignal.any([signal, AbortSignal.timeout(8000)]) });
+  if (!response.ok) throw new Error("Could not check whether the selected Ollama model supports images. Check the server and retry.");
+  const value = await response.json() as { capabilities?: unknown };
+  return Array.isArray(value.capabilities) && value.capabilities.includes("vision");
+}
+
 export async function analyzeWithOllama(input: {
   baseUrl: string;
   model: string;
   instructions: string;
   content: string;
+  images?: string[];
   schema: Record<string, unknown>;
   thinkingLevel?: string;
   signal?: AbortSignal;
@@ -82,7 +92,7 @@ export async function analyzeWithOllama(input: {
         format: input.schema, options: input.thinkingLevel === "on" ? { temperature: 0.6, top_p: 0.95, top_k: 20 } : { temperature: 0 },
         messages: [
           { role: "system", content: input.instructions },
-          { role: "user", content: input.content },
+          { role: "user", content: input.content, ...(input.images?.length ? { images: input.images } : {}) },
         ] }),
     });
   } catch (error) {

@@ -23,7 +23,8 @@ const server = createServer(async (request, response) => {
       response.end(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Zebby</title><style>body{margin:12vh auto;padding:24px;max-width:540px;font:16px system-ui;background:#f8f6f3;color:#302c29}h1{color:#a64a34}</style><h1>Return to Zebby</h1><p>${path.endsWith("cancel") ? "Checkout was cancelled. Your credits have not changed." : "Zebby will show your credits once payment is confirmed."}</p><p>You can close this tab.</p></html>`); return;
     }
     let size = 0; const chunks: Buffer[] = [];
-    for await (const chunk of request) { size += chunk.length; if (size > 512000) throw new ServiceError("Request is too large.", 413); chunks.push(chunk); }
+    const bodyLimit = ["/v1/quotes", "/v1/analysis"].includes(path) ? 2_000_000 : 512000;
+    for await (const chunk of request) { size += chunk.length; if (size > bodyLimit) throw new ServiceError("Request is too large.", 413); chunks.push(chunk); }
     const raw = Buffer.concat(chunks);
     const result = path === "/v1/stripe/webhook" && request.method === "POST"
       ? await service.webhook(raw, String(request.headers["stripe-signature"] || ""))

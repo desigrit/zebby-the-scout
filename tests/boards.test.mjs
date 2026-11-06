@@ -313,7 +313,8 @@ test("scanner walks every page, deduplicates IDs, and sends listing links rather
   const reader = readerFor([page([1, 2], { controls: [next], pageNumber: 1, pageCount: 2, expectedTotal: 3 }), page([2, 3], { pageNumber: 2, pageCount: 2, expectedTotal: 3 })]);
   const inputs = [], result = await run(reader, async input => { inputs.push(input); return allLinks(input); });
   assert.equal(result.pages, 2); assert.equal(result.jobs.length, 3); assert.deepEqual(reader.clicks, ["c0"]); assert.equal(reader.closed, true);
-  assert.equal(inputs[0].task, "listings"); assert.equal(inputs[0].expectedListingCount, 3);
+  assert.equal(inputs[0].task, "listings"); assert.equal(inputs[0].expectedListingCount, 2);
+  assert.equal(inputs[1].expectedListingCount, 2, "Each page is verified before following its controls");
 });
 
 test("partial, skipped, repeated, blocked-model, and unverified empty scans cannot become baselines", async () => {
@@ -329,7 +330,8 @@ test("partial, skipped, repeated, blocked-model, and unverified empty scans cann
 
 test("an AI navigation omission does not truncate an unfamiliar board", async () => {
   const reader = readerFor([page([1], { url: "https://example.org/jobs", controls: [next] })]);
-  await assert.rejects(run(reader, allLinks, { url: "https://example.org/jobs" }), /every results page/);
+  await assert.rejects(run(reader, input => input.task === "inventory" ? { decisions: Object.fromEntries(input.candidates.map(item => [item.id, "listing"])) } : allLinks(input),
+    { url: "https://example.org/jobs" }), /every results page/);
 });
 
 test("invalid model output retries once and cancellation never creates a result", async () => {

@@ -56,13 +56,13 @@ The unit restarts on failure and at boot. Its 512 MB memory limit and one-core C
 
 The **Verify the Boards service and release desktop** workflow builds the exact main commit and publishes a service prerelease containing the standalone server, a direct-provider smoke test and a promotion script. Desktop clients receive stable desktop tags only.
 
-1. In the production Supabase SQL Editor, run [the Boards ledger migration](../migrations/20261104_boards.sql). It extends the existing quote kinds and preserves balances, reservations and history.
-2. On the credits VM, use Azure Run Command or an existing administrative session. Set `sha` to the full main commit and `digest` to the tarball SHA-256 shown by the workflow. Run the following in Bash.
+1. For a first Boards deployment, run [the Boards ledger migration](../migrations/20261104_boards.sql) in the production Supabase SQL Editor. It extends the existing quote kinds and preserves balances, reservations and history. The layered reader uses the same `board_extract` kind and needs no additional ledger migration.
+2. On the credits VM, use Azure Run Command or an existing administrative session. Set `sha` to the full main commit, `version` to its package version and `digest` to the tarball SHA-256 shown by the workflow. Run the following in Bash.
 
 ```bash
 set -euo pipefail
 stage=$(mktemp -d /tmp/zebby-upload.XXXXXXXX)
-tag="credits-2.7.0-${sha:0:12}"
+tag="credits-$version-${sha:0:12}"
 curl --fail --silent --show-error --location --proto '=https' \
   "https://github.com/desigrit/zebby-the-scout/releases/download/$tag/zebby-credits-$sha.tar.gz" -o "$stage/bundle.tar.gz"
 cd "$stage"
@@ -72,7 +72,11 @@ sha256sum --check SHA256SUMS
 bash promote.sh "$sha" "$stage" "$(sha256sum server.mjs | cut -d' ' -f1)" "$(sha256sum provider-smoke.mjs | cut -d' ' -f1)"
 ```
 
-The script verifies both configured provider keys against a small sample of public Figma postings captured by the release runner, restarts the service and checks the running commit. A failed health check restores the previous release. Rerun the workflow's failed verification job after promotion. It checks the deployed commit and confirms that an unfunded ordinary wallet can quote both models and recover from insufficient funds. Once those checks pass, GitHub tags that main commit and starts the desktop installer and Microsoft Store builds.
+The script verifies both configured provider keys against public Figma postings and a labeled screenshot captured by the release runner. It checks job titles, observed link IDs and icon-only pagination before restarting the service. A failed health check restores the previous release. Provider keys stay on the VM.
+
+Rerun the workflow's failed verification job after promotion. It checks the deployed commit, the reader capability in the catalog, and text and image quotes for both providers using an unfunded ordinary wallet. Insufficient funds must leave its balance and reservations unchanged. Once those checks pass, GitHub tags that main commit's package version and starts the desktop installer and Microsoft Store builds.
+
+The reverse proxy must accept the service's 2 MB quote and analysis request limit for screenshot evidence. Other request limits remain unchanged. Screenshots are processed in memory and are not added to the wallet ledger or Boards database.
 
 ## Update and roll back
 

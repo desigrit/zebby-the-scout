@@ -11,6 +11,7 @@ import { writeProfileSettings } from "./settings-persistence";
 export type BoardSelection = { provider: AnalysisProvider; model: string; thinkingLevel: string; ollamaUrl?: string };
 type Dependencies<Selection extends BoardSelection> = { profile: string; selection(): Selection;
   reader(signal: AbortSignal): BoardReader;
+  canUseVision?(selection: Selection, signal: AbortSignal): Promise<boolean>;
   extract(selection: Selection, input: BoardExtractionInput, signal: AbortSignal, sourceId: string): Promise<{ value: unknown; acknowledge?: () => Promise<void> }>;
   acknowledgeCached?(selection: Selection, input: BoardExtractionInput, sourceId: string): Promise<void>;
   changed(): void;
@@ -76,6 +77,7 @@ export class BoardsService<Selection extends BoardSelection> {
             return result;
           };
           const scan = await scanBoard({ url: board.url, reader: this.dependencies.reader(signal), extract, signal,
+            canUseVision: () => this.dependencies.canUseVision?.(selected, signal) ?? Promise.resolve(selected.provider !== "builtin" && selected.provider !== "ollama"),
             instructions: board.instructions, knownMatches: board.instructions ? this.store.knownMatches(board.id, board.revision) : undefined,
             provider: selected.provider, model: selected.model, batchSize: selected.provider === "builtin" ? 4 : selected.provider === "ollama" ? 12 : 40,
             progress: report });

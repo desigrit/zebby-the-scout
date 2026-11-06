@@ -98,7 +98,7 @@ export function outputLimit(kind: AnalysisKind, thinkingLevel: OnlineThinkingLev
   return thinkingLevel === "max" ? 64000 : thinkingLevel === "xhigh" ? 40000 : thinkingLevel === "high" ? 24000
     : thinkingLevel === "medium" ? 16000 : thinkingLevel === "on" ? answer + 4096 : answer;
 }
-export function creditOutputLimit(kind: AnalysisKind, thinkingLevel: OnlineThinkingLevel) {
+export function creditOutputLimit(kind: AnalysisKind, thinkingLevel: OnlineThinkingLevel, visualBoard = false) {
   // Total output includes hidden reasoning. A match returns a score and a short
   // explanation; a Plan also returns keyword/theme lists and a rewritten summary.
   // These ceilings depend on the task and chosen effort, never the wallet balance.
@@ -108,7 +108,7 @@ export function creditOutputLimit(kind: AnalysisKind, thinkingLevel: OnlineThink
     : kind === "plan"
     ? { off: 4096, low: 6144, medium: 8192, high: 12288, xhigh: 24576, max: 49152, on: 8192 }
     : { off: 1024, low: 3072, medium: 6144, high: 8192, xhigh: 16384, max: 32768, on: 5120 };
-  return limits[thinkingLevel];
+  return visualBoard && kind === "board_extract" ? Math.max(8192, limits[thinkingLevel]) : limits[thinkingLevel];
 }
 export function maximumCost(model: OnlineModel, inputTokens: number, maxOutputTokens: number) {
   if (!Number.isSafeInteger(inputTokens) || inputTokens <= 0 || !Number.isSafeInteger(maxOutputTokens) || maxOutputTokens <= 0) {

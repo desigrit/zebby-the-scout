@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { BoardPage } from "./board-page";
+import { boardRequest } from "./board-request";
 
 type FetchBatch = (url: string, init: RequestInit) => Promise<Response>;
 const ORIGIN = "https://explore.jobs.netflix.net";
@@ -60,8 +61,7 @@ export class NetflixBoardPages {
     url.searchParams.set("domain", "netflix.com");
     url.searchParams.set("start", String(this.offset));
     url.searchParams.set("num", String(BATCH_SIZE));
-    const response = await this.request(url.href, { credentials: "omit", redirect: "error",
-      headers: { Accept: "application/json" }, signal: AbortSignal.any([this.signal, AbortSignal.timeout(30_000)]) });
+    const response = await boardRequest(this.request, url.href, { credentials: "omit", redirect: "error", headers: { Accept: "application/json" } }, this.signal);
     if (!response.ok) throw new Error(`Netflix could not load results batch ${this.pageNumber} (HTTP ${response.status}). Try again.`);
     const parsed = results.safeParse(await response.json().catch(() => null));
     if (!parsed.success) throw new Error("Netflix returned an incomplete results batch. Try checking the board again.");
@@ -79,7 +79,7 @@ export class NetflixBoardPages {
       }
       const title = job.name.slice(0, 300), department = (job.department || "").slice(0, 200);
       const locations = job.locations?.join(", ") || job.location || "";
-      return { id: "l" + index, url: canonical.href, title, department, text: [title, department, locations].filter(Boolean).join(" · ").slice(0, 600) };
+      return { id: "l" + index, url: canonical.href, title, department, location: locations.slice(0, 300), text: [title, department, locations].filter(Boolean).join(" · ").slice(0, 600) };
     });
     this.nextOffset = end < count ? end : null;
     return { url: this.board.href, title: "Netflix Careers", summary: "", candidates,

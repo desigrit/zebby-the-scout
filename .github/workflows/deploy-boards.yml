@@ -3,7 +3,7 @@ name: Verify the Boards service and release desktop
 on:
   push:
     branches: [main]
-    paths: ['credits-service/migrations/20261104_boards.sql']
+    paths: ['credits-service/**', 'shared/boards.ts', 'shared/analysis-images.ts', '.github/workflows/deploy-boards.yml']
   workflow_dispatch:
 
 concurrency:
@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 jobs:
-  figma:
+  samples:
     if: github.ref == 'refs/heads/main'
     runs-on: windows-latest
     timeout-minutes: 10
@@ -27,20 +27,30 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: node node_modules/electron/install.js
+      - name: Capture native visual reading evidence
+        run: |
+          node --input-type=module -e "import { build } from 'esbuild'; await build({ entryPoints:['scripts/qa-board-layers.mjs'], outfile:'qa-output/board-layers/runner.mjs', bundle:true, platform:'node', format:'esm', target:'node22', external:['electron'] });"
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          & .\node_modules\.bin\electron.cmd qa-output/board-layers/runner.mjs
       - run: node scripts/qa-board-reader.mjs "https://www.figma.com/careers/#job-openings"
       - uses: actions/upload-artifact@v4
         with:
-          name: figma-provider-sample
-          path: qa-output/boards-reader/figma-sample.json
+          name: boards-provider-samples
+          path: |
+            qa-output/boards-reader/figma-sample.json
+            qa-output/board-layers/visual-sample.json
           if-no-files-found: error
           retention-days: 2
 
   bundle:
-    needs: figma
+    needs: samples
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      version: ${{ steps.source.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,35 +60,31 @@ jobs:
           node-version: 22
           cache: npm
       - name: Verify the release source
+        id: source
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
           test "$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)" = "$GITHUB_SHA"
-          test "$(node -p "require('./package.json').version")" = 2.7.0
+          version=$(node -p "require('./package.json').version")
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
       - run: npm ci --ignore-scripts
       - uses: actions/download-artifact@v4
         with:
-          name: figma-provider-sample
-          path: qa-output/boards-reader
+          name: boards-provider-samples
+          path: qa-output
       - name: Build the service and provider check
         run: |
           node scripts/build-credits-service.mjs --standalone
-          node --input-type=module <<'JS'
-          import { readFile } from 'node:fs/promises';
-          import { build } from 'esbuild';
-          const sample = await readFile('qa-output/boards-reader/figma-sample.json', 'utf8');
-          await build({ entryPoints: ['scripts/qa-boards-direct.mjs'], bundle: true, platform: 'node', format: 'esm',
-            define: { 'process.env.ZEBBY_QA_FIGMA_SAMPLE': JSON.stringify(sample) },
-            target: 'node22', outfile: 'credits-service/dist/provider-smoke.mjs', banner: {
-              js: "import { createRequire as qaCreateRequire } from 'node:module'; const require = qaCreateRequire(import.meta.url);" } });
-          JS
+          node scripts/build-boards-smoke.mjs
       - name: Publish the service bundle for Azure Run Command
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.source.outputs.version }}
         run: |
           set -euo pipefail
-          tag="credits-2.7.0-${GITHUB_SHA:0:12}"
+          tag="credits-$RELEASE_VERSION-${GITHUB_SHA:0:12}"
           name="zebby-credits-$GITHUB_SHA.tar.gz"
           cd credits-service/dist
           cp ../deploy/promote.sh .
@@ -89,6 +95,7 @@ jobs:
             mkdir verified
             gh release download "$tag" -R "$GITHUB_REPOSITORY" -p "$name" -D verified
             tar -xOf "verified/$name" server.mjs | cmp server.mjs -
+            tar -xOf "verified/$name" provider-smoke.mjs | cmp provider-smoke.mjs -
             tar -xOf "verified/$name" promote.sh | cmp promote.sh -
             sha256sum "verified/$name" >> "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -107,11 +114,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: boards-provider-samples
+          path: qa-output
       - name: Verify the deployed revision and both ordinary wallet quote paths
         run: node --experimental-strip-types scripts/qa-public-boards-service.mjs "$GITHUB_SHA"
 
   tag:
-    needs: verify
+    needs: [bundle, verify]
     runs-on: ubuntu-latest
     permissions:
       actions: write
@@ -120,11 +131,12 @@ jobs:
       - name: Tag the verified main commit and start desktop packaging
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.bundle.outputs.version }}
         run: |
           set -euo pipefail
           repo="repos/$GITHUB_REPOSITORY"
           test "$(gh api "$repo/commits/main" --jq .sha)" = "$GITHUB_SHA"
-          tag=v2.7.0
+          tag="v$RELEASE_VERSION"
           if existing=$(gh api "$repo/git/ref/tags/$tag" --jq .object.sha 2>/dev/null); then
             test "$existing" = "$GITHUB_SHA"
           else

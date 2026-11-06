@@ -4,7 +4,8 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fetchJobPosting } from "../lib/job-fetch";
 import type { ApplicationInput } from "../lib/application-types";
-import { analyzeWithOllama, DEFAULT_OLLAMA_URL, listOllamaModels, normalizeOllamaUrl, ollamaThinkingCapability } from "./ollama";
+import { analyzeWithOllama, DEFAULT_OLLAMA_URL, listOllamaModels, normalizeOllamaUrl, ollamaThinkingCapability, ollamaSupportsVision } from "./ollama";
+import { boardVisualParts } from "../shared/analysis-images";
 import { extractResumeText } from "./resume-text";
 import { DesktopStore, type PlanInput } from "./store";
 import { getLocalModel, LOCAL_MODELS } from "./local-model-catalog";
@@ -34,7 +35,7 @@ import { writeProfileSettings } from "./settings-persistence";
 import { BoardsStore } from "./boards-store";
 import { BoardsService } from "./boards-service";
 import { BoardBrowser } from "./board-browser";
-import { boardModelContract, type BoardInput } from "../shared/boards";
+import { BOARD_VISION_MESSAGE, boardModelContract, type BoardInput, type BoardListingFilter } from "../shared/boards";
 import { restoreStartupDatabase } from "./startup-database";
 import { readResumeBlocks, resumeDocx, resumeHtml, tailoredBaseName } from "./tailored-resume";
 import { applyResumeEdits, tailoringInstructions, tailoringSchema } from "../shared/tailored-resume";
@@ -362,10 +363,13 @@ async function analyzeWithSelectedProvider(instructions: string, input: unknown,
   logEvent(`Analysis provider selected (${name}, ${selected.provider}, ${selected.model || "default"}, thinking ${selected.thinkingLevel})`);
   return runSelectedAnalysis(selected, {
     ollama: async (baseUrl, model, prompt, content, format) => {
+      const visual = boardVisualParts(content);
+      if (visual && !await ollamaSupportsVision(baseUrl, model, signal)) throw new Error(BOARD_VISION_MESSAGE);
       const capability = await ollamaThinkingCapability(baseUrl, model, fetch, signal).catch(() => null);
       signal?.throwIfAborted();
       const level = capability ? selectedThinking(selected.thinkingLevels, thinkingKey("ollama", model, baseUrl), capability) : selected.thinkingLevel;
-      return analyzeWithOllama({ baseUrl, model, instructions: prompt, content: JSON.stringify(content), schema: format, thinkingLevel: level, signal, onProgress: progress });
+      return analyzeWithOllama({ baseUrl, model, instructions: prompt, content: visual?.text ?? JSON.stringify(content),
+        images: visual ? [visual.image.data] : undefined, schema: format, thinkingLevel: level, signal, onProgress: progress });
     },
     openai: async (prompt, content, formatName, format) => (await onlineAnalysis({ model: selected.model, key: selected.apiKey, instructions: prompt,
       input: content, name: formatName, schema: format, kind: formatName === "board_extract" ? "board_extract" : formatName === "tailored_resume" ? "resume" : formatName === "resume_plan" ? "plan" : "match", thinkingLevel: selected.thinkingLevel, signal })).result,
@@ -640,7 +644,7 @@ function registerIpc() {
     ipcMain.handle(channel, async (event, ...args: Args) => {
       const started = Date.now();
       const trace = !["desktop:state", "desktop:refresh-credits", "desktop:credit-checkout-status"].includes(channel);
-      const changing = !["boards:state", "desktop:state", "desktop:check-updates", "desktop:open-store-updates", "desktop:download-update", "desktop:install-update",
+      const changing = !["boards:state", "boards:listings", "desktop:state", "desktop:check-updates", "desktop:open-store-updates", "desktop:download-update", "desktop:install-update",
         "desktop:list-ollama-models", "desktop:ollama-thinking-capability", "desktop:open-logs", "desktop:open-model-folder", "desktop:download-resume",
         "desktop:warm-credits-service"].includes(channel);
       if (switchingWorkspace) {
@@ -666,6 +670,7 @@ function registerIpc() {
     finally { boards.changed(); }
   }
   handle("boards:state", () => boards.state);
+  handle("boards:listings", (_event, id: string, checkId: number, filter: BoardListingFilter, offset?: number) => boardsStore.listings(id, checkId, filter, offset));
   handle("boards:import-history", async () => {
     boards.assertIdle();
     if (!store.status.filePath || !boardsStore.status.filePath) throw new Error("Open a workspace before importing Boards history.");
@@ -1058,6 +1063,8 @@ else {
     boardsStore = new BoardsStore(storePaths?.recovery || app.getPath("userData"));
     boards = new BoardsService(boardsStore, {
       profile: app.getPath("userData"), selection: selectedAnalysis, reader: signal => new BoardBrowser(signal),
+      canUseVision: (selected, signal) => selected.provider === "ollama" ? ollamaSupportsVision(selected.ollamaUrl, selected.model, signal)
+        : Promise.resolve(selected.provider !== "builtin"),
       changed: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("boards:changed", boards.state); },
       acknowledgeCached: async (selected, input, sourceId) => {
         if (selected.provider === "credits") await creditsClient.acknowledgeCachedSource({ kind: "board_extract", id: sourceId }, input);

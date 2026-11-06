@@ -3,7 +3,7 @@ import { constants } from "node:fs";
 import { copyFile, lstat, mkdir, readFile, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { backup, DatabaseSync } from "node:sqlite";
-import { BOARDS_MISSING_FILE, boardInputSchema, type Board, type BoardInput, type BoardScan } from "../shared/boards";
+import { BOARDS_MISSING_FILE, boardInputSchema, type Board, type BoardInput, type BoardScan, type BoardListings, type BoardListingFilter } from "../shared/boards";
 import { boardSearchKey } from "../lib/board-identity";
 import { writeProfileSettings } from "./settings-persistence";
 
@@ -21,6 +21,7 @@ async function exists(file: string) {
 const APPLICATION_ID = 0x5a424259;
 type Row = Record<string, unknown>;
 type Recovery = { target: string; working: string; hash: string };
+function hasDetails(db: DatabaseSync) { return Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='board_job_details'").get()); }
 function watchKey(url: string, instructions: string) {
   const link = boardSearchKey(url);
   return instructions ? JSON.stringify([link, instructions]) : link;
@@ -33,6 +34,7 @@ function contents(file: string) {
     return JSON.stringify([db.prepare("SELECT * FROM boards ORDER BY id").all(),
       db.prepare("SELECT * FROM board_checks ORDER BY id").all(),
       db.prepare("SELECT * FROM board_jobs ORDER BY board_id,revision,identity").all(),
+      hasDetails(db) ? db.prepare("SELECT * FROM board_job_details ORDER BY board_id,revision,identity").all() : [],
       db.prepare("SELECT * FROM sqlite_sequence ORDER BY name").all()]);
   } finally { db.close(); }
 }
@@ -47,6 +49,7 @@ function validate(db: DatabaseSync) {
     (v2 ? ",instructions" : "") + " FROM boards LIMIT 0").all();
   db.prepare("SELECT id,board_id,revision,checked_at,status,pages,total,provider,model,error FROM board_checks LIMIT 0").all();
   db.prepare("SELECT board_id,revision,identity,url,first_check_id,last_check_id" + (v2 ? ",matches" : "") + " FROM board_jobs LIMIT 0").all();
+  if (hasDetails(db)) db.prepare("SELECT board_id,revision,identity,title,department,location,check_id FROM board_job_details LIMIT 0").all();
 }
 function schema(db: DatabaseSync) {
   db.exec(`PRAGMA application_id = ${APPLICATION_ID}; PRAGMA user_version = 2;
@@ -67,12 +70,16 @@ function schema(db: DatabaseSync) {
 }
 
 function upgradeWorkingCopy(db: DatabaseSync) {
-  if (db.prepare("PRAGMA user_version").get()?.user_version !== 1) return;
   db.exec("BEGIN IMMEDIATE");
   try {
-    db.exec(`ALTER TABLE boards ADD COLUMN instructions TEXT NOT NULL DEFAULT '';
+    if (db.prepare("PRAGMA user_version").get()?.user_version === 1) db.exec(`ALTER TABLE boards ADD COLUMN instructions TEXT NOT NULL DEFAULT '';
       ALTER TABLE board_jobs ADD COLUMN matches INTEGER NOT NULL DEFAULT 1;
-      PRAGMA user_version = 2; COMMIT;`);
+      PRAGMA user_version = 2;`);
+    // Optional metadata keeps the existing v2 history readable by older apps.
+    // A check ID prevents an older client's later scan from showing stale text.
+    db.exec(`CREATE TABLE IF NOT EXISTS board_job_details (board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+      revision INTEGER NOT NULL, identity TEXT NOT NULL, title TEXT NOT NULL, department TEXT NOT NULL, location TEXT NOT NULL,
+      check_id INTEGER NOT NULL, PRIMARY KEY(board_id,revision,identity)); COMMIT;`);
   } catch (error) { db.exec("ROLLBACK"); throw error; }
 }
 
@@ -204,7 +211,7 @@ export class BoardsStore {
         if (generation !== this.epoch || db.prepare("SELECT 1 FROM boards LIMIT 1").get()) {
           throw new Error("Boards history can only be imported into an empty companion file.");
         }
-        for (const table of ["boards", "board_checks", "board_jobs"]) {
+        for (const table of ["boards", "board_checks", "board_jobs", ...(hasDetails(source) ? ["board_job_details"] : [])]) {
           const sourceColumns = new Set(source.prepare(`PRAGMA table_info(${table})`).all().map(row => row.name));
           const columns = db.prepare(`PRAGMA table_info(${table})`).all().map(row => String(row.name)).filter(name => sourceColumns.has(name));
           const fields = columns.join(",");
@@ -300,14 +307,33 @@ export class BoardsStore {
   list(): Board[] {
     if (!this.db) return [];
     return (this.db.prepare(`SELECT b.*, (SELECT COUNT(*) FROM board_jobs j WHERE j.board_id=b.id AND j.revision=b.revision
-      AND j.matches=1 AND j.first_check_id>b.reviewed_through) AS new_count FROM boards b ORDER BY b.created_at,b.id`).all() as Row[]).map(row => ({
+      AND j.matches=1 AND j.first_check_id>b.reviewed_through) AS new_count,
+      (SELECT COUNT(*) FROM board_jobs j WHERE j.board_id=b.id AND j.revision=b.revision AND j.last_check_id=b.last_check_id) AS checked_count
+      FROM boards b ORDER BY b.created_at,b.id`).all() as Row[]).map(row => ({
       id: String(row.id), company: String(row.company), url: String(row.url), revision: Number(row.revision),
       instructions: String(row.instructions),
       lastCheckedAt: String(row.last_checked_at), lastAttemptAt: String(row.last_attempt_at), lastCheckId: Number(row.last_check_id),
-      newCount: Number(row.new_count), totalCount: Number(row.total_count), error: String(row.error), createdAt: String(row.created_at),
+      newCount: Number(row.new_count), totalCount: Number(row.total_count), checkedCount: Number(row.checked_count), error: String(row.error), createdAt: String(row.created_at),
     }));
   }
   get(id: string) { const board = this.list().find(board => board.id === id); if (!board) throw new Error("This board is no longer available."); return board; }
+  listings(id: string, checkId: number, filter: BoardListingFilter = "matches", offset = 0): BoardListings {
+    if (typeof id !== "string" || !Number.isSafeInteger(checkId) || checkId <= 0 || !["matches", "new", "all"].includes(filter) ||
+        !Number.isSafeInteger(offset) || offset < 0 || offset > 10000) throw new Error("Choose a completed board check.");
+    const board = this.get(id), db = this.database();
+    if (board.lastCheckId !== checkId) throw new Error("This board has a newer check. Open its listings again.");
+    const reviewed = Number(db.prepare("SELECT reviewed_through FROM boards WHERE id=?").get(id)!.reviewed_through);
+    const where = "j.board_id=? AND j.revision=? AND " + (filter === "new" ? "j.matches=1 AND j.first_check_id>" + reviewed
+      : "j.last_check_id=" + checkId + (filter === "matches" ? " AND j.matches=1" : ""));
+    const total = Number(db.prepare("SELECT COUNT(*) AS count FROM board_jobs j WHERE " + where).get(id, board.revision)!.count);
+    const rows = db.prepare(`SELECT j.*,d.title,d.department,d.location FROM board_jobs j LEFT JOIN board_job_details d
+      ON d.board_id=j.board_id AND d.revision=j.revision AND d.identity=j.identity AND d.check_id=j.last_check_id
+      WHERE ${where} ORDER BY LOWER(COALESCE(d.title,j.url)),j.identity LIMIT 50 OFFSET ?`).all(id, board.revision, offset);
+    return { checkId, total, offset, listings: rows.map(row => ({ key: String(row.identity), url: String(row.url), matches: Boolean(row.matches),
+      title: row.title ? String(row.title) : undefined, department: row.department ? String(row.department) : undefined,
+      location: row.location ? String(row.location) : undefined, current: row.last_check_id === checkId,
+      unread: Boolean(row.matches) && Number(row.first_check_id) > reviewed })) };
+  }
   knownMatches(id: string, revision: number) {
     const rows = this.database().prepare("SELECT identity,matches FROM board_jobs WHERE board_id=? AND revision=?").all(id, revision);
     return new Map(rows.map(row => [String(row.identity), Boolean(row.matches)]));
@@ -354,7 +380,12 @@ export class BoardsStore {
         .run(id, revision, now, scan.pages, total, scan.provider, scan.model).lastInsertRowid);
       const insert = db.prepare(`INSERT INTO board_jobs(board_id,revision,identity,url,first_check_id,last_check_id,matches) VALUES(?,?,?,?,?,?,?)
         ON CONFLICT(board_id,revision,identity) DO UPDATE SET url=excluded.url,last_check_id=excluded.last_check_id`);
-      for (const job of jobs) insert.run(id, revision, job.key, job.url, check, check, Number(job.matches));
+      const detail = db.prepare(`INSERT INTO board_job_details(board_id,revision,identity,title,department,location,check_id) VALUES(?,?,?,?,?,?,?)
+        ON CONFLICT(board_id,revision,identity) DO UPDATE SET title=excluded.title,department=excluded.department,location=excluded.location,check_id=excluded.check_id`);
+      for (const job of jobs) {
+        insert.run(id, revision, job.key, job.url, check, check, Number(job.matches));
+        detail.run(id, revision, job.key, (job.title || "").slice(0, 300), (job.department || "").slice(0, 200), (job.location || "").slice(0, 300), check);
+      }
       db.prepare("UPDATE boards SET last_check_id=?,last_checked_at=?,last_attempt_at=?,total_count=?,error='',reviewed_through=CASE WHEN last_check_id=0 THEN ? ELSE reviewed_through END WHERE id=?")
         .run(check, now, now, total, check, id);
     });

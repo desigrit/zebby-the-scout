@@ -15,6 +15,7 @@ import { CREDIT_SERVICE_URL, LEGACY_CREDIT_SERVICE_URL } from "../shared/credit-
 import { analysisFetch } from "../desktop/analysis-fetch.ts";
 import { createServer } from "node:http";
 import { once } from "node:events";
+import sharp from "sharp";
 
 test("credit usage shows the remaining share of purchased credits", () => {
   const { percentUsed, ...usage } = creditUsage({ balance: 2790_000_000, reserved: 0, used: 210_000_000, purchased: 3000_000_000 });
@@ -623,6 +624,29 @@ test("PostgreSQL ledger and service integration", async (t) => {
         const classified = await call("POST", "/v1/analysis", { quoteId: await roleQuote(), requestId: randomUUID(), input: roleInput });
         assert.deepEqual(classified.result, providerResult);
         assert.deepEqual(lastProviderRequest.text.format.schema.properties.decisions.required, ["l0"]);
+        const jpeg = await sharp({ create: { width: 320, height: 240, channels: 3, background: "white" } }).jpeg().toBuffer();
+        const visualInput = { task: "visual", pageUrl: boardInput.pageUrl, pageTitle: "Careers", summary: "1 job", candidates: boardInput.candidates,
+          controls: [], atBottom: true, expectedTotal: 1, image: { mediaType: "image/jpeg", data: jpeg.toString("base64"), width: 320, height: 240 } };
+        assert.equal((await call("GET", "/v1/catalog")).boardsReaderVersion, 2);
+        const visualQuote = () => call("POST", "/v1/quotes", { ...payload, input: visualInput, thinkingLevel: "off" });
+        const visualBefore = await wallet();
+        providerResult = { listings: [{ id: "invented", title: "Product Manager", department: "Product", location: "Seattle" }],
+          nextControlId: "", expectedTotal: 1, empty: false, complete: true };
+        await assert.rejects(call("POST", "/v1/analysis", { quoteId: (await visualQuote()).id, requestId: randomUUID(), input: visualInput }));
+        assert.equal((await wallet()).used, visualBefore.used); assert.equal((await wallet()).reserved, 0);
+        providerResult.listings[0].id = "l0";
+        const visualQuoteValue = await visualQuote(), visualRequest = { quoteId: visualQuoteValue.id, requestId: randomUUID(), input: visualInput };
+        assert.ok(visualQuoteValue.outputTokens >= 8192);
+        const visualResponse = await call("POST", "/v1/analysis", visualRequest);
+        assert.deepEqual(visualResponse.result, providerResult);
+        assert.equal(lastProviderRequest.input[0].content[1].type, "input_image");
+        assert.ok(!lastProviderRequest.input[0].content[0].text.includes(visualInput.image.data));
+        const visualCost = (await wallet()).used, visualCalls = providerCalls;
+        await call("POST", "/v1/analysis", visualRequest);
+        assert.equal((await wallet()).used, visualCost); assert.equal(providerCalls, visualCalls);
+        const unfundedQuote = await call("POST", "/v1/quotes", { ...payload, input: visualInput, thinkingLevel: "off" }, "other");
+        await assert.rejects(call("POST", "/v1/analysis", { quoteId: unfundedQuote.id, requestId: randomUUID(), input: visualInput }, "other"), error => error.status === 402);
+        assert.equal(providerCalls, visualCalls);
       } finally { expectedModel = "gpt-6.1-sol"; providerResult = plan; }
     });
     await t.test("refunds are cumulative and idempotent, and disputes freeze spending", async () => {

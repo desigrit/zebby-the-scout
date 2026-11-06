@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("desktop", {
   boardsState: () => ipcRenderer.invoke("boards:state"),
+  boardListings: (id: string, checkId: number, filter: string, offset?: number) => ipcRenderer.invoke("boards:listings", id, checkId, filter, offset),
   importBoardsHistory: () => ipcRenderer.invoke("boards:import-history"),
   retryBoardsSave: () => ipcRenderer.invoke("boards:retry-save"),
   createBoardsFile: () => ipcRenderer.invoke("boards:create-file"),
