@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
-import { after, test } from "node:test";
+import { after, mock, test } from "node:test";
 import { mkdtemp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import fs from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -157,7 +159,7 @@ test("a crash after successful publication clears the stale recovery marker with
 }));
 
 test("a missing cloud file is not recreated by a write", () => fixture(async ({ store, file }) => {
-  await rename(file, file + ".moved"); await assert.rejects(store.add([saved]), /missing/);
+  await rename(file, file + ".moved"); await assert.rejects(store.add([saved]), /find your Boards file/);
   await assert.rejects(stat(file), { code: "ENOENT" }); assert.equal(store.list().length, 0);
 }));
 
@@ -420,7 +422,8 @@ test("paired workspaces adopt or import history, and never recreate a missing co
   assert.deepEqual(await readFile(paired), sourceBytes);
   await assert.rejects(store.importHistory(paired), /empty companion/);
   await rename(paired, file);
-  await assert.rejects(store.openCompanion(applications), /missing/);
+  await assert.rejects(store.openCompanion(applications), /find your Boards file/);
+  assert.equal(store.status.fileMissing, true);
   assert.deepEqual(store.list(), []); assert.equal(store.status.filePath, "");
   await assert.rejects(stat(paired), { code: "ENOENT" });
   const recovered = path.join(folder, "Recovered.sqlite");
@@ -443,4 +446,99 @@ test("a failed receipt acknowledgement resumes from the saved extraction without
   service.check([id]); while (service.busy) await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(calls, 1); assert.equal(recovered, 1); assert.equal(store.get(id).totalCount, 1); assert.equal(store.get(id).error, "");
   await service.stop();
+}));
+
+
+test("starting fresh preserves cached history, instructions and unread jobs in a separate saved file", () => fixture(async ({ store, folder }) => {
+  const applications = path.join(folder, "Product Applications.sqlite"), paired = boardsCompanionPath(applications);
+  await writeFile(applications, "Applications are unchanged");
+  await store.openCompanion(applications);
+  const [id] = await store.add([{ ...saved, instructions: "Principal Product Managers only." }]);
+  await complete(store, id, 1); await complete(store, id, 1, 2);
+  const history = store.get(id), original = await readFile(paired);
+  await rename(paired, paired + ".moved");
+  await assert.rejects(store.openCompanion(applications), /find your Boards file/);
+  await store.createMissingCompanion(applications);
+  assert.equal(store.status.filePath, paired); assert.equal(store.status.fileMissing, false);
+  assert.equal(store.status.dirty, false); assert.deepEqual(store.list(), []);
+  const archive = store.status.savedCopyPath;
+  assert.equal(path.dirname(archive), folder); assert.notEqual(archive, paired);
+  assert.ok(path.basename(archive).startsWith("Product Applications-boards-saved-"));
+  const archived = await readFile(archive);
+  await store.importHistory(archive);
+  assert.deepEqual(store.get(id), history);
+  assert.deepEqual(await readFile(archive), archived);
+  assert.deepEqual(await readFile(paired + ".moved"), original);
+  assert.equal(await readFile(applications, "utf8"), "Applications are unchanged");
+}));
+
+test("creation opens a restored companion and rejects an unrelated or already open workspace", () => fixture(async ({ store, folder }) => {
+  const applications = path.join(folder, "Applications.db"), paired = boardsCompanionPath(applications);
+  await store.openCompanion(applications); const [id] = await store.add([saved]);
+  await rename(paired, paired + ".moved");
+  await assert.rejects(store.openCompanion(applications));
+  await assert.rejects(store.createMissingCompanion(path.join(folder, "Other.db")), /Retry opening/);
+  await rename(paired + ".moved", paired);
+  const original = await readFile(paired);
+  await store.createMissingCompanion(applications);
+  assert.equal(store.get(id).company, saved.company); assert.equal(store.status.savedCopyPath, "");
+  assert.deepEqual(await readFile(paired), original);
+  await assert.rejects(store.createMissingCompanion(applications), /Retry opening/);
+  await store.openCompanion(path.join(folder, "Other.db"));
+  assert.deepEqual(store.list(), []); assert.equal(store.status.fileMissing, false); assert.equal(store.status.savedCopyPath, "");
+}));
+
+test("a companion restored during creation is opened without overwriting its bytes", () => fixture(async ({ store, folder }) => {
+  const applications = path.join(folder, "Search.sqlite"), paired = boardsCompanionPath(applications);
+  await store.openCompanion(applications); const [id] = await store.add([saved]);
+  const original = await readFile(paired);
+  await rename(paired, paired + ".moved"); await assert.rejects(store.openCompanion(applications));
+  const copy = fs.copyFile;
+  const replacement = mock.method(fs, "copyFile", async (source, destination, flags) => {
+    if (destination === paired && path.basename(source).startsWith("boards-new-")) await copy(paired + ".moved", paired);
+    return copy(source, destination, flags);
+  });
+  syncBuiltinESMExports();
+  try { await store.createMissingCompanion(applications); }
+  finally { replacement.mock.restore(); syncBuiltinESMExports(); }
+  assert.equal(store.get(id).company, saved.company);
+  assert.equal(store.status.fileMissing, false); assert.deepEqual(await readFile(paired), original);
+}));
+
+test("an archive failure leaves the cached history and missing companion untouched", () => fixture(async ({ store, folder, profile }) => {
+  const applications = path.join(folder, "Search.sqlite"), paired = boardsCompanionPath(applications);
+  await store.openCompanion(applications); await store.add([saved]);
+  await rename(paired, paired + ".moved"); await assert.rejects(store.openCompanion(applications));
+  const working = path.join(profile, "boards-" + createHash("sha256").update(process.platform === "win32" ? paired.toLowerCase() : paired).digest("hex") + ".sqlite");
+  const before = await readFile(working), copy = fs.copyFile;
+  const replacement = mock.method(fs, "copyFile", async (source, destination, flags) => {
+    if (path.basename(destination).includes("-saved-")) throw Object.assign(new Error("Folder unavailable"), { code: "EACCES" });
+    return copy(source, destination, flags);
+  });
+  syncBuiltinESMExports();
+  try { await assert.rejects(store.createMissingCompanion(applications), { code: "EACCES" }); }
+  finally { replacement.mock.restore(); syncBuiltinESMExports(); }
+  await assert.rejects(stat(paired), { code: "ENOENT" });
+  assert.deepEqual(await readFile(working), before); assert.equal(store.status.fileMissing, true);
+}));
+
+test("new-file creation cannot discard a pending save or replace a damaged existing file", () => fixture(async ({ store, folder, profile }) => {
+  const applications = path.join(folder, "Search.sqlite"), paired = boardsCompanionPath(applications);
+  await store.openCompanion(applications);
+  const observer = new DatabaseSync(paired);
+  observer.exec("BEGIN; SELECT * FROM boards;");
+  try { await assert.rejects(store.add([saved]), /Retry save/); }
+  finally { observer.exec("ROLLBACK"); observer.close(); }
+  await rename(paired, paired + ".moved");
+  await assert.rejects(store.retrySave(), /find your Boards file/);
+  const marker = await readFile(path.join(profile, "boards-pending.json"));
+  await assert.rejects(store.createMissingCompanion(applications), /pending Boards changes/);
+  assert.deepEqual(await readFile(path.join(profile, "boards-pending.json")), marker);
+  assert.equal(store.list().length, 1); await assert.rejects(stat(paired), { code: "ENOENT" });
+  const recovered = path.join(folder, "Recovered.sqlite"); await store.saveRecoveryCopy(recovered);
+  await writeFile(paired, "Not a Boards database");
+  await assert.rejects(store.openCompanion(applications));
+  assert.equal(store.status.fileMissing, false);
+  await assert.rejects(store.createMissingCompanion(applications), /Retry opening/);
+  assert.equal(await readFile(paired, "utf8"), "Not a Boards database");
 }));

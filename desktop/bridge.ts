@@ -44,6 +44,7 @@ export type DesktopBridge = {
   boardsState(): Promise<BoardsState>;
   importBoardsHistory(): Promise<BoardsState | null>;
   retryBoardsSave(): Promise<BoardsState>;
+  createBoardsFile(): Promise<BoardsState>;
   saveBoardsRecovery(): Promise<BoardsState | null>;
   addBoards(inputs: BoardInput[]): Promise<BoardsState>;
   updateBoard(id: string, input: BoardInput): Promise<BoardsState>;

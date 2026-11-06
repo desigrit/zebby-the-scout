@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+export const BOARDS_MISSING_FILE = "Couldn't find your Boards file.";
 export const BOARD_CREDIT_MESSAGE = "Insufficient Zebby credits.";
 export function boardCreditError(error: unknown) {
   return typeof error === "object" && error !== null && "status" in error && error.status === 402;
@@ -14,7 +15,7 @@ export type Board = {
 export type BoardProgress = { boardId: string; phase: "queued" | "reading" | "extracting" | "saving";
   message: string; requestId: string };
 export type BoardsState = { filePath: string; filename: string; dirty: boolean; error: string;
-  expectedPath?: string; canRecover?: boolean;
+  expectedPath?: string; canRecover?: boolean; fileMissing?: boolean; savedCopyPath?: string;
   boards: Board[]; progress: BoardProgress[] };
 export type BoardInput = { company: string; url: string; instructions?: string };
 export type BoardIdentity = { key: string; url: string };

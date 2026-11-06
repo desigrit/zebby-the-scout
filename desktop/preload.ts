@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld("desktop", {
   boardsState: () => ipcRenderer.invoke("boards:state"),
   importBoardsHistory: () => ipcRenderer.invoke("boards:import-history"),
   retryBoardsSave: () => ipcRenderer.invoke("boards:retry-save"),
+  createBoardsFile: () => ipcRenderer.invoke("boards:create-file"),
   saveBoardsRecovery: () => ipcRenderer.invoke("boards:save-recovery"),
   addBoards: (inputs: unknown) => ipcRenderer.invoke("boards:add", inputs),
   updateBoard: (id: string, input: unknown) => ipcRenderer.invoke("boards:update", id, input),

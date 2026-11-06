@@ -3,7 +3,7 @@ import { constants } from "node:fs";
 import { copyFile, lstat, mkdir, readFile, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { backup, DatabaseSync } from "node:sqlite";
-import { boardInputSchema, type Board, type BoardInput, type BoardScan } from "../shared/boards";
+import { BOARDS_MISSING_FILE, boardInputSchema, type Board, type BoardInput, type BoardScan } from "../shared/boards";
 import { boardSearchKey } from "../lib/board-identity";
 import { writeProfileSettings } from "./settings-persistence";
 
@@ -81,6 +81,8 @@ export class BoardsStore {
   private target = "";
   private companion = "";
   private hasRecoveryCopy = false;
+  private fileMissing = false;
+  private savedCopyPath = "";
   private working = "";
   private sourceHash = "";
   private dirty = false;
@@ -90,10 +92,14 @@ export class BoardsStore {
   constructor(private readonly profile: string) { this.recoveryFile = path.join(profile, "boards-pending.json"); }
   get generation() { return this.epoch; }
   get status() { return { filePath: this.target, filename: this.target ? path.basename(this.target) : "", dirty: this.dirty,
-    expectedPath: this.companion, canRecover: this.hasRecoveryCopy }; }
+    expectedPath: this.companion, canRecover: this.hasRecoveryCopy || this.fileMissing && Boolean(this.working),
+    fileMissing: this.fileMissing, savedCopyPath: this.savedCopyPath }; }
   private database() { if (!this.db) throw new Error("Choose a Boards database first."); return this.db; }
   private async current() {
-    if (!(await stat(this.target).catch(() => null))?.isFile()) throw new Error("The Boards database is missing. Wait for OneDrive, then retry.");
+    const source = await stat(this.target).catch(error => { if (missing(error)) return null; throw error; });
+    this.fileMissing = !source;
+    if (this.fileMissing) throw new Error(BOARDS_MISSING_FILE);
+    if (!source?.isFile()) throw new Error("The Boards location is not a file. Restore your Boards file, then retry.");
     if (await hash(this.target) !== this.sourceHash) throw new Error(this.dirty
       ? "The Boards database changed outside this app. Save a recovery copy before reopening it."
       : "The Boards database changed outside this app. Open it again before making changes.");
@@ -137,14 +143,15 @@ export class BoardsStore {
   async openCompanion(applications: string) {
     await this.readyToSwitch();
     await this.close();
-    this.target = ""; this.working = ""; this.sourceHash = "";
+    this.target = ""; this.working = ""; this.sourceHash = ""; this.savedCopyPath = "";
     const target = boardsCompanionPath(applications);
     this.companion = target;
     this.hasRecoveryCopy = await exists(this.workingPath(target));
-    if (await exists(target) || await exists(this.recoveryFile)) {
+    this.fileMissing = !await exists(target);
+    if (!this.fileMissing || await exists(this.recoveryFile)) {
       await this.open(target);
     } else if (this.hasRecoveryCopy) {
-      throw new Error("The paired Boards file is missing. Restore it to the path shown, then retry.");
+      throw new Error(BOARDS_MISSING_FILE);
     } else {
       try { await this.create(target); }
       catch (error) {
@@ -153,6 +160,36 @@ export class BoardsStore {
       }
     }
     this.hasRecoveryCopy = false;
+  }
+  async createMissingCompanion(applications: string) {
+    await this.readyToSwitch();
+    const target = boardsCompanionPath(applications);
+    if (target !== this.companion || !this.fileMissing) {
+      throw new Error("Retry opening your Boards file before creating a new one.");
+    }
+    if (await exists(this.recoveryFile)) {
+      throw new Error("Save a copy of your pending Boards changes before creating a new file.");
+    }
+    // Sync may restore the file after the recovery screen appeared.
+    if (await exists(target)) { await this.openCompanion(applications); return; }
+    const working = this.workingPath(target);
+    let savedCopyPath = "";
+    if (await exists(working)) {
+      const file = path.parse(target);
+      savedCopyPath = path.join(file.dir, file.name + "-saved-" + randomUUID().slice(0, 8) + ".sqlite");
+      // Keep the original bytes even if the cached file cannot be opened.
+      // An archive failure stops creation before the working copy is replaced.
+      await copyFile(working, savedCopyPath, constants.COPYFILE_EXCL);
+      this.savedCopyPath = savedCopyPath;
+    }
+    try { await this.create(target); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      await this.openCompanion(applications);
+    }
+    this.hasRecoveryCopy = false;
+    this.fileMissing = false;
+    this.savedCopyPath = savedCopyPath;
   }
   async importHistory(sourceFile: string) {
     await this.readyToSwitch();
@@ -230,6 +267,7 @@ export class BoardsStore {
     this.db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = DELETE; PRAGMA busy_timeout = 3000;");
     upgradeWorkingCopy(this.db);
     this.target = target; this.working = working; this.sourceHash = sourceHash; this.dirty = Boolean(recovered); this.epoch++;
+    this.fileMissing = !await exists(target);
   }
   async recoverOnStartup(): Promise<boolean> {
     let marker: Recovery;
