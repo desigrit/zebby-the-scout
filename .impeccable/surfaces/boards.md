@@ -2,29 +2,35 @@
 
 MODE: Operate.
 
-## Direction contract: listing inspection
+## Direction contract: compact board status
 
-THESIS: Make a board check understandable through its actual listings and matches.
+THESIS: Show new matching openings with a compact, understandable board status.
 
 OWN-WORLD: Extend Zebby's existing Ember rows, platform typography, rust actions and quiet dividers. Preserve file recovery, the sidebar and Settings.
 
-STORY: Read the last successful checked and matched counts, inspect the relevant listings, then mark discoveries reviewed. An interrupted scan leaves this evidence available.
+STORY: Read the count of matching roles, inspect new discoveries, then mark them reviewed. An interrupted scan preserves the last successful results.
 
-FIRST VIEWPORT: Keep the company, saved instructions, last check, update count and check action visible. Expand one listing section beneath its board without opening a modal.
+FIRST VIEWPORT: Keep the company, saved URL and instructions, last check date, matching count and check or retry action visible, with the new-listing link and Mark as reviewed when discoveries exist. Show error details on hover, focus or tap of Check incomplete without expanding the row.
 
-FORM: Local extension. Use the incumbent tokens and controls, an inline result list, accessible filter buttons and bounded pagination. No new identity or assets.
+FORM: Local extension. Use the incumbent tokens and controls, an inline list of new listings, existing 50-listing pagination, an accessible tooltip and existing focus recovery. No new identity, assets or system changes.
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
 
-## Listing inspection
+## Compact board status
 
-Boards uses a centered BETA badge in the page heading and navigation label, with solid Ember rust and white text in both appearances. First scans show Indexing. Every completed board separates all listings checked from those matching the saved instructions, with new discoveries above and Mark as reviewed below. Boards without instructions label the matching count as tracked. Subsequent scans keep the last successful counts visible until the next complete result.
+Boards uses a centered BETA badge in the page heading and navigation label, with solid Ember rust and white text in both appearances. Each completed board shows one count labeled "x listings checked": roles matching its saved instructions, or all openings at its saved URL when instructions are blank. This count remains visible while a subsequent scan runs and after an interrupted scan, until a complete result replaces it.
 
-View matches opens Matches for a board with instructions; View listings opens All checked for a board without instructions. The new-listing count opens New. Only one board's inspection is open at a time, beneath that board across the full row width. The three filter buttons use readable labels, pressed state and the incumbent rust selection wash. Opening the section focuses its heading; Close listings returns focus to the initiating button without moving the workspace scroll position. Switching Boards files clears the visible inspection.
+An underlined rust "x new listings" action appears only when unread matching discoveries exist, with singular wording for one listing. Mark as reviewed sits below the summary. A completed board with no unread discoveries and no error shows No new listings. Before a successful check, the row shows Not indexed, Indexing during its first scan, or Check incomplete after a failure. Check for updates becomes Retry after a failed check; an active scan exposes Cancel check.
 
-Listing titles open the source page. Department and location appear beneath the title when available, with plain text states for New, Matches, Outside your instructions and No longer listed. Opening a listing leaves its review state unchanged; Mark as reviewed remains an explicit board action. Results use 50-listing pages with a visible range and total, plus Previous and Next when needed. Changing a filter resets to the first page. Loading, empty and failed requests remain inside the section, and a failed request offers Retry.
+Check incomplete is a compact dotted-underlined text button. Hover, keyboard focus or tap opens the error in a tooltip associated through aria-describedby. The tooltip stays available while the pointer moves onto it, dismisses with Escape or an outside press, and closes after focus and pointer leave. It follows the trigger on scroll and resize, closes when the trigger leaves the viewport, and places itself above or below the trigger within a 16px viewport inset. Its paper surface, strong rule, 6px corners and 12px native text use the current appearance tokens. Long errors wrap within a maximum width of 360px and scroll within the available viewport height. Error details do not increase the board row's height, and unread discoveries remain available after a failed check.
 
-The section extends Ember's flat ruled rows and native typography, with a 17px heading, 13px listing titles, 12px metadata and 11px status text. Filter targets are at least 36px tall. At window widths of 650px or less, each listing's status stacks below its identity and pagination wraps. The existing board layout becomes two columns at 1180px and one column at 850px. Long titles and metadata wrap within the available width.
+## New listing inspection
+
+The new-listing action toggles one inline inspection beneath its board across the full row width. The section contains only unread matching discoveries and opens with focus on its heading. Close listings returns focus to the initiating action without moving the workspace scroll position; if that action is no longer present, focus returns to the board's check action. Switching Boards files clears the visible inspection. Successful Mark as reviewed closes that board's inspection and returns focus to its check action.
+
+Listing titles open the source page. Department and location appear beneath the title when available; an unread discovery absent from the latest completed check carries the plain text status No longer listed. Opening a listing leaves its review state unchanged. Results use 50-listing pages with a visible range and total, plus Previous and Next when needed. Opening a fresh inspection starts at the first page, and the page offset stays within the available unread results. Loading, empty and failed requests remain inside the section, and a failed request offers Retry.
+
+The section extends Ember's flat ruled rows and native typography, with a 17px heading, 13px listing titles, 12px metadata and 11px status text. At window widths of 650px or less, each listing's status stacks below its identity and pagination wraps. The existing board layout becomes two columns at 1180px and one column at 850px. Long titles and metadata wrap within the available width.
 
 ## File recovery
 
@@ -38,4 +44,6 @@ Verification covers restored history, an empty replacement, unchanged Applicatio
 
 ## Finish evidence
 
-The listing-inspection finish review returned **ship** after checking the light, dark, compact light, compact dark and error captures in `board-layers-evidence-98ea/.impeccable/review/`: `boards-listings-light.png`, `boards-listings-dark.png`, `boards-listings-compact-light.png`, `boards-listings-compact-dark.png` and `boards-listings-error.png`. The reviewer confirmed Ember fidelity, appropriate compact adaptation and no material fixes. The implemented behavior is recorded from `desktop/renderer/BoardsView.tsx` and `desktop/renderer/desktop.css`. This local extension preserves `DESIGN.md` and `.impeccable/design.json` and introduces no new visual assets.
+The compact-status finish review returned **ship** for commit `a2c4ad6`, with no material fixes. The reviewer checked TYPE, MATERIAL and GROUND, the first viewport, count and discovery behavior, error disclosure, new-listing pagination and focus, and accessibility. All nine captures in `slack-evidence-a2c4/.impeccable/review/` were valid: `boards-desktop-light.png`, `boards-desktop-dark.png`, `boards-tooltip-light.png`, `boards-tooltip-dark.png`, `boards-tooltip-compact-light.png`, `boards-tooltip-compact-dark.png`, `boards-listings-compact-light.png`, `boards-listings-compact-dark.png` and `boards-error-with-new.png`. Hosted renderer checks passed in run `42281665083`.
+
+The implemented behavior is recorded from `desktop/renderer/BoardsView.tsx`, `desktop/renderer/desktop.css` and the existing matching-listing semantics in `desktop/boards-store.ts`. This local extension preserves `DESIGN.md` and `.impeccable/design.json` and introduces no new visual assets. File recovery, Settings, the sidebar and analysis-provider behavior retain their existing contracts.
