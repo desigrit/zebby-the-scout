@@ -107,7 +107,14 @@ export async function scanBoard(options: { url: string; reader: BoardReader; ext
         if (options.canUseVision && !await options.canUseVision()) throw new Error(BOARD_VISION_MESSAGE);
         const covered = new Set<string>();
         let visualNext = "", ended = false, viewports = 0;
-        for await (const input of reader.visual()) {
+        for await (const viewport of reader.visual()) {
+          // Include prior coverage in validation before the provider result is
+          // settled or cached. An omitted next control must remain retryable.
+          const input = { ...viewport, expectedTotal: expectedTotal ?? viewport.expectedTotal, coverage: {
+            verifiedCount: jobs.size,
+            alreadyVerifiedIds: viewport.candidates.filter(candidate => jobs.has(boardJobIdentity(candidate.url).key)).map(candidate => candidate.id),
+            hasNextPage: Boolean(visualNext || next),
+          } };
           signal.throwIfAborted(); options.progress("Reading the page visually, view " + (++viewports), "extracting");
           const result = await extract(input);
           for (const candidate of input.candidates) covered.add(candidate.url);
