@@ -45,7 +45,11 @@ try {
   assert.deepEqual((await page.evaluate(() => window.desktop.boardsState())).boards[0], expected);
   const appBytes = await readFile(applications), boardBytes = await readFile(companion);
   async function capture(name, width = 1550, height = 850, theme = "light") {
-    await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setSize(...size), [width, height]);
+    await app.evaluate(({ BrowserWindow }, size) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      win.setSize(Math.max(790, size[0]), size[1]);
+      win.webContents.setZoomFactor(size[0] < 790 ? 790 / size[0] : 1);
+    }, [width, height]);
     await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
     await page.evaluate(async () => { await document.fonts.ready;
       await Promise.all(document.getAnimations().filter(animation => animation.effect?.getTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {}))); });
@@ -54,7 +58,7 @@ try {
       const actions = [...element.querySelectorAll(".settings-action")].map(button => {
         const r = button.getBoundingClientRect(); return { label: button.textContent, width: r.width, height: r.height };
       });
-      return { scrollWidth: element.scrollWidth, clientWidth: element.clientWidth, headingSize: heading.fontSize, marginTop: style.marginTop, actions };
+      return { viewportWidth: window.innerWidth, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth, headingSize: heading.fontSize, marginTop: style.marginTop, actions };
     });
     assert.ok(metrics.scrollWidth <= metrics.clientWidth + 1, name + " wraps paths");
     for (const action of metrics.actions) assert.ok(action.height >= 36 && action.width >= 96);
