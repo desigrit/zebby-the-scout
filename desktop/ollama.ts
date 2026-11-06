@@ -1,6 +1,7 @@
 import { thinkingLabel, type ThinkingCapability } from "../shared/thinking.ts";
 import type { GenerationStage } from "../shared/analysis-progress.ts";
 import { readOllamaResponse } from "./ollama-response.ts";
+import { LocalResponseWatchdog } from "./local-model-response.ts";
 export const DEFAULT_OLLAMA_URL = "http://localhost:11434";
 
 export function normalizeOllamaUrl(value: string): string {
@@ -75,6 +76,8 @@ export async function analyzeWithOllama(input: {
   images?: string[];
   schema: Record<string, unknown>;
   thinkingLevel?: string;
+  maxTokens?: number;
+  timeouts?: { firstTokenMs?: number; stallMs?: number; totalMs?: number };
   signal?: AbortSignal;
   onProgress?: (stage: GenerationStage) => void;
 }, fetcher: typeof fetch = fetch): Promise<Record<string, unknown>> {
@@ -82,41 +85,63 @@ export async function analyzeWithOllama(input: {
   if (!model || model.length > 200 || /[\r\n]/.test(model)) {
     throw new Error("Choose an Ollama model in Settings.");
   }
+  const maxTokens = (input.maxTokens ?? 3000) + (input.thinkingLevel && !["off", "default"].includes(input.thinkingLevel) ? 4096 : 0);
+  // Ollama has no public tokenizer endpoint. Use a conservative UTF-8 byte
+  // bound, not a claimed exact token count, and leave room for its chat template.
+  const context = Math.max(4096, Math.ceil((Buffer.byteLength(input.instructions + input.content, "utf8") + maxTokens + 1024) / 2048) * 2048);
+  if (context > 131072) throw new Error("This job and resume need a larger local context. Shorten the description and try again.");
+  input.signal?.throwIfAborted();
+  const show = await fetcher(endpoint(input.baseUrl, "/api/show"), { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model }),
+    signal: AbortSignal.any([AbortSignal.timeout(8000), ...(input.signal ? [input.signal] : [])]) }).catch(() => null);
+  input.signal?.throwIfAborted();
+  const info = show?.ok ? await show.json().catch(() => null) : null;
+  const nativeLimit = Object.entries(info?.model_info || {}).find(([key]) => key.endsWith(".context_length"))?.[1];
+  if (typeof nativeLimit === "number" && nativeLimit > 0 && context > nativeLimit) {
+    throw new Error("This job and resume exceed the model's safe context budget. Choose a model with a longer context window or shorten the description.");
+  }
+  const watchdog = new LocalResponseWatchdog(input.timeouts?.firstTokenMs ?? 600_000, input.timeouts?.stallMs ?? 120_000);
+  const deadline = AbortSignal.timeout(input.timeouts?.totalMs ?? 1_800_000);
+  const signal = AbortSignal.any([watchdog.controller.signal, deadline, ...(input.signal ? [input.signal] : [])]);
   let response: Response;
-  const signal = input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(300_000)]) : AbortSignal.timeout(300_000);
   try {
-    response = await fetcher(endpoint(input.baseUrl, "/api/chat"), {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      signal,
-      body: JSON.stringify({ model, stream: true, think: ollamaThinkValue(input.thinkingLevel || "off"),
-        format: input.schema, options: input.thinkingLevel === "on" ? { temperature: 0.6, top_p: 0.95, top_k: 20 } : { temperature: 0 },
-        messages: [
-          { role: "system", content: input.instructions },
-          { role: "user", content: input.content, ...(input.images?.length ? { images: input.images } : {}) },
-        ] }),
-    });
-  } catch (error) {
-    input.signal?.throwIfAborted();
-    if (error instanceof Error && error.name === "TimeoutError") {
-      throw new Error("Ollama did not finish within five minutes. Try a smaller model or resume.");
+    try {
+      response = await fetcher(endpoint(input.baseUrl, "/api/chat"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        signal,
+        body: JSON.stringify({ model, stream: true, think: ollamaThinkValue(input.thinkingLevel || "off"),
+          format: input.schema, keep_alive: "30s", options: {
+            ...(input.thinkingLevel === "on" ? { temperature: 0.6, top_p: 0.95, top_k: 20 } : { temperature: 0 }),
+            num_ctx: context, num_predict: maxTokens,
+          },
+          messages: [
+            { role: "system", content: input.instructions },
+            { role: "user", content: input.content, ...(input.images?.length ? { images: input.images } : {}) },
+          ] }),
+      });
+    } catch (error) {
+      input.signal?.throwIfAborted();
+      if (error instanceof Error && error.name === "TimeoutError") {
+        throw new Error("Local analysis timed out. Try again or choose another model.");
+      }
+      throw new Error("Could not reach the Ollama server. Check its URL and that it is running.");
     }
-    throw new Error("Could not reach the Ollama server. Check its URL and that it is running.");
-  }
-  let content: string;
-  try { content = await readOllamaResponse(response, signal, input.onProgress); }
-  catch (error) {
-    input.signal?.throwIfAborted();
-    if (signal.aborted && signal.reason?.name === "TimeoutError") {
-      throw new Error("Ollama did not finish within five minutes. Try a smaller model or resume.");
+    let content: string;
+    try { content = await readOllamaResponse(response, signal, input.onProgress, () => watchdog.progress()); }
+    catch (error) {
+      input.signal?.throwIfAborted();
+      if (signal.aborted && signal.reason?.name === "TimeoutError") {
+        throw new Error("Local analysis timed out. Try again or choose another model.");
+      }
+      if (error instanceof TypeError) throw new Error("The connection to Ollama stopped. Try again.");
+      throw error;
     }
-    if (error instanceof TypeError) throw new Error("The connection to Ollama stopped. Try again.");
-    throw error;
-  }
-  let result: unknown;
-  try { result = JSON.parse(content); }
-  catch { throw new Error("Ollama returned text that could not be read as JSON. Try another model."); }
-  if (!result || typeof result !== "object" || Array.isArray(result)) {
-    throw new Error("Ollama returned an incomplete analysis. Try again.");
-  }
-  return result as Record<string, unknown>;
+    let result: unknown;
+    try { result = JSON.parse(content); }
+    catch { throw new Error("Ollama returned text that could not be read as JSON. Try another model."); }
+    if (!result || typeof result !== "object" || Array.isArray(result)) {
+      throw new Error("Ollama returned an incomplete analysis. Try again.");
+    }
+    return result as Record<string, unknown>;
+  } finally { watchdog.dispose(); }
 }

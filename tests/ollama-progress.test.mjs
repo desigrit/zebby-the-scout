@@ -19,6 +19,7 @@ const input = { baseUrl: "http://localhost:11434", model: "qwen3.8:27b", instruc
 test("Ollama streams real phases, preserves full inputs and fragmented Unicode, and discards thinking", async () => {
   const phases = [];
   const result = await analyzeWithOllama({ ...input, thinkingLevel: "on", onProgress: (phase) => phases.push(phase) }, async (_url, options) => {
+    if (_url.endsWith("/api/show")) return Response.json({ model_info: { "qwen3.context_length": 32768 } });
     const body = JSON.parse(options.body);
     assert.equal(body.stream, true); assert.equal(body.think, true);
     assert.deepEqual(body.messages, [{ role: "system", content: input.instructions }, { role: "user", content: input.content }]);
@@ -36,6 +37,7 @@ test("Ollama streams real phases, preserves full inputs and fragmented Unicode, 
 test("no thinking status is invented when Ollama returns only answer tokens", async () => {
   const phases = [];
   const result = await analyzeWithOllama({ ...input, thinkingLevel: "off", onProgress: (phase) => phases.push(phase) }, async (_url, options) => {
+    if (_url.endsWith("/api/show")) return Response.json({ model_info: { "qwen3.context_length": 32768 } });
     assert.equal(JSON.parse(options.body).think, false);
     return streaming([{ message: { content: '{"score":90}' }, done: false }, { done: true }]);
   });

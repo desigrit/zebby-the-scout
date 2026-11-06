@@ -10,7 +10,7 @@ type OllamaChunk = {
 // Consume only answer text. Thinking chunks signal a phase, never leave this
 // transport, and are not logged, parsed into results, or saved to the database.
 export async function readOllamaResponse(response: Response, signal: AbortSignal,
-  onProgress?: (stage: GenerationStage) => void): Promise<string> {
+  onProgress?: (stage: GenerationStage) => void, onActivity?: () => void): Promise<string> {
   signal.throwIfAborted();
   let content = "", done = false, phase: GenerationStage | undefined;
   function report(next: GenerationStage) {
@@ -24,6 +24,7 @@ export async function readOllamaResponse(response: Response, signal: AbortSignal
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Ollama returned an unreadable analysis. Try again.");
     const chunk = value as OllamaChunk;
     if (chunk.error) throw new Error(typeof chunk.error === "string" ? chunk.error : "Ollama analysis failed. Try again.");
+    if (chunk.message?.thinking?.length || chunk.message?.content?.length) onActivity?.();
     if (streamed && typeof chunk.message?.thinking === "string" && chunk.message.thinking.length) report("thinking");
     if (typeof chunk.message?.content === "string" && chunk.message.content.length) {
       content += chunk.message.content;

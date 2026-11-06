@@ -99,6 +99,7 @@ for (const cancel of [false, true]) test(`GPU startup ${cancel ? "cancellation n
         }
         return Response.json({});
       }
+      if (url.endsWith("/apply-template")) return Response.json({ prompt: "Full formatted prompt" });
       if (url.endsWith("/tokenize")) return Response.json({ tokens: [1, 2] });
       const request = JSON.parse(options.body);
       assert.deepEqual(JSON.parse(request.messages[1].content), input);
@@ -114,7 +115,7 @@ for (const cancel of [false, true]) test(`GPU startup ${cancel ? "cancellation n
     const attempts = (await readFile(launches, "utf8")).trim().split("\n").map(JSON.parse);
     assert.equal(attempts.length, cancel ? 1 : 2);
     for (const args of attempts) {
-      assert.equal(args[args.indexOf("--ctx-size") + 1], "16384");
+      assert.equal(args[args.indexOf("--ctx-size") + 1], "6144");
       assert.equal(args[args.indexOf("--model") + 1], path.join(folder, "qwen.gguf"));
     }
     if (!cancel) assert.equal(attempts[1][attempts[1].indexOf("--gpu-layers") + 1], "0");

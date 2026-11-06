@@ -45,6 +45,7 @@ for (const phase of ["tokenizing", "first-token", "stalled-stream", "worker-exit
     timeouts: { tokenizeMs: 40, firstTokenMs: phase === "worker-exit" ? 2000 : 40, stallMs: 40 },
     fetcher: async (url, options) => {
       if (url.endsWith("/health")) return Response.json({});
+      if (url.endsWith("/apply-template")) return Response.json({ prompt: "Full formatted prompt" });
       if (url.endsWith("/tokenize")) {
         if (blocked && phase === "tokenizing") {
           options.signal.throwIfAborted();
@@ -136,6 +137,7 @@ for (const phase of ["loading", "generating"]) test(`CPU cancellation stops the 
   const engine = new LocalModelEngine({ runtimeFolder: folder, workerPath: worker,
     downloads: { readyPath: async () => path.join(folder, "test.gguf") },
     fetcher: async (url, options) => {
+      if (url.endsWith("/apply-template")) return Response.json({ prompt: "Full formatted prompt" });
       const target = url.endsWith("/health") ? "loading" : url.endsWith("/v1/chat/completions") ? "generating" : "tokens";
       if (blocked && target === phase) {
         entered();

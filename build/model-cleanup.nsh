@@ -22,6 +22,15 @@
   Delete "${folder}\Qwen3-8B-Q4_K_M.gguf"
   Delete "${folder}\Qwen3-8B-Q4_K_M.gguf.part"
   Delete "${folder}\Qwen3-8B-Q4_K_M.gguf.verified.json"
+  Delete "${folder}\Qwen3-14B-Q4_K_M.gguf"
+  Delete "${folder}\Qwen3-14B-Q4_K_M.gguf.part"
+  Delete "${folder}\Qwen3-14B-Q4_K_M.gguf.verified.json"
+  Delete "${folder}\Qwen3-30B-A3B-Q4_K_M.gguf"
+  Delete "${folder}\Qwen3-30B-A3B-Q4_K_M.gguf.part"
+  Delete "${folder}\Qwen3-30B-A3B-Q4_K_M.gguf.verified.json"
+  Delete "${folder}\Qwen3-32B-Q4_K_M.gguf"
+  Delete "${folder}\Qwen3-32B-Q4_K_M.gguf.part"
+  Delete "${folder}\Qwen3-32B-Q4_K_M.gguf.verified.json"
   RMDir "${folder}"
 !macroend
 

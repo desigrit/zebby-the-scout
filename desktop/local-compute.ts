@@ -7,6 +7,8 @@ export type LocalCompute = {
   backend: ComputeBackend;
   devices: ComputeDevice[];
   availableMemory: number;
+  totalMemory?: number;
+  performanceCores?: number;
   recommendedModelIds: string[];
 };
 const GiB = 1024 ** 3;
@@ -18,7 +20,7 @@ export function recommendedLocalModels(compute: Pick<LocalCompute, "backend" | "
     LOCAL_MODELS.find((model) => model.id === id)!.minimumFreeMemory <= compute.availableMemory);
   const device = compute.devices[0];
   if (compute.backend === "cpu" || !device) return cpu.slice(0, 2);
-  const gpu = ["qwen3-8b", "qwen3-4b", "qwen3-06b"].filter((id) => {
+  const gpu = ["qwen3-32b", "qwen3-30b-a3b", "qwen3-14b", "qwen3-8b", "qwen3-4b", "qwen3-06b"].filter((id) => {
     const model = LOCAL_MODELS.find((item) => item.id === id)!;
     const hostMemory = compute.backend === "metal" ? model.minimumFreeMemory : Math.min(model.minimumFreeMemory, model.bytes + GiB / 2);
     return device.freeMemory - GiB >= model.minimumFreeMemory && compute.availableMemory >= hostMemory;

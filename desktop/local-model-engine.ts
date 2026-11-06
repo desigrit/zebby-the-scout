@@ -6,7 +6,9 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { getLocalModel } from "./local-model-catalog.ts";
 import type { LocalModelDownloads } from "./local-model-downloads.ts";
-import { availableModelMemory } from "./local-model-memory.ts";
+import { localMemoryState, type LocalMemoryState } from "./local-model-memory.ts";
+import { contextForTokens, initialLocalContext, localThreadCounts, localWorkingMemory, systemMemoryReserve,
+  LOCAL_IDLE_MS, LOCAL_MEMORY_POLL_MS } from "./local-inference-policy.ts";
 import { LocalResponseWatchdog, readLocalCompletion } from "./local-model-response.ts";
 import type { ComputeBackend, LocalCompute } from "./local-compute.ts";
 import { detectLocalCompute, localComputeArguments, localRuntimeEnvironment, readLocalRuntime, type LocalRuntime } from "./local-compute-detection.ts";
@@ -61,7 +63,8 @@ type EngineOptions = {
   onDiagnostic?: (message: string, error?: unknown) => void;
   fetcher?: typeof fetch;
   detectCompute?: typeof detectLocalCompute;
-  timeouts?: { loadMs?: number; tokenizeMs?: number; firstTokenMs?: number; stallMs?: number; totalMs?: number };
+  memory?: () => Promise<LocalMemoryState>;
+  timeouts?: { loadMs?: number; tokenizeMs?: number; firstTokenMs?: number; stallMs?: number; totalMs?: number; idleMs?: number; memoryPollMs?: number };
 };
 
 export class LocalModelEngine {
@@ -71,6 +74,10 @@ export class LocalModelEngine {
   private baseUrl = "";
   private secret = "";
   private idleTimer?: NodeJS.Timeout;
+  private memoryTimer?: NodeJS.Timeout;
+  private checkingMemory = false;
+  private stopping?: Promise<void>;
+  private allocatedContext = 0;
   private requests = Promise.resolve();
   private pending = 0;
   private shuttingDown = false;
@@ -85,6 +92,32 @@ export class LocalModelEngine {
   constructor(options: EngineOptions) { this.options = options; }
   get busy() { return this.pending > 0; }
   get modelId() { return this.loadedId; }
+  get contextTokens() { return this.allocatedContext; }
+  private memory() { return (this.options.memory || localMemoryState)(); }
+
+  private watchMemory() {
+    clearInterval(this.memoryTimer);
+    this.memoryTimer = setInterval(() => { void this.checkMemoryPressure(); }, this.options.timeouts?.memoryPollMs ?? LOCAL_MEMORY_POLL_MS);
+    this.memoryTimer.unref();
+  }
+
+  async checkMemoryPressure() {
+    if (this.checkingMemory || !this.child) return;
+    this.checkingMemory = true;
+    const child = this.child;
+    try {
+      const memory = await this.memory();
+      if (this.child !== child) return;
+      const critical = memory.pressure === "critical" || memory.available < 512 * 1024 ** 2;
+      const idlePressure = !this.busy && (memory.pressure !== "normal" || memory.available < systemMemoryReserve(memory.total));
+      if (critical || idlePressure) {
+        this.diagnostic("Local model releasing memory (pressure " + memory.pressure + ", available " + memory.available + ", busy " + this.busy + ")");
+        this.controller.abort(new Error("Local analysis stopped because this computer is low on memory. Close other apps and try again."));
+        await this.stop(true);
+      }
+    } catch (error) { this.diagnostic("Local memory check unavailable", error); }
+    finally { this.checkingMemory = false; }
+  }
   private changed() { this.options.onChange?.(); }
   private diagnostic(message: string, error?: unknown) { this.options.onDiagnostic?.(message, error); }
 
@@ -98,7 +131,7 @@ export class LocalModelEngine {
         });
       } catch (error) {
         signal?.throwIfAborted();
-        this.compute = { status: "unavailable", backend: "cpu", devices: [], availableMemory: await availableModelMemory(), recommendedModelIds: [] };
+        this.compute = { status: "unavailable", backend: "cpu", devices: [], availableMemory: (await this.memory()).available, recommendedModelIds: [] };
         this.diagnostic("Local hardware check unavailable", error);
       }
       this.changed(); return this.compute;
@@ -108,77 +141,93 @@ export class LocalModelEngine {
 
   async stop(force = false) {
     if (this.busy && !force) throw new Error("Wait for the current local analysis to finish, then try again.");
-    clearTimeout(this.idleTimer);
+    if (this.stopping) return this.stopping;
+    this.stopping = this.stopWorker();
+    try { await this.stopping; } finally { this.stopping = undefined; }
+  }
+
+  private async stopWorker() {
+    clearTimeout(this.idleTimer); clearInterval(this.memoryTimer);
     this.controller.abort(); this.controller = new AbortController();
     const child = this.child;
-    if (child) this.diagnostic(`Local model stopping (${this.loadedId}, force ${force})`);
-    this.child = null; this.loadedId = ""; this.baseUrl = ""; this.secret = "";
+    if (child) this.diagnostic("Local model releasing memory (" + this.loadedId + ")");
+    this.child = null; this.loadedId = ""; this.baseUrl = ""; this.secret = ""; this.allocatedContext = 0;
     this.status = "idle"; this.changed();
     if (child && child.exitCode === null && child.signalCode === null) {
-      // stdin works on Windows too, where child.kill() cannot deliver SIGTERM.
+      const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
       child.stdin?.end("stop\n");
-      await Promise.race([new Promise<void>((resolve) => child.once("exit", () => resolve())), delay(3000)]);
-      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      await Promise.race([exited, delay(3000)]);
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGKILL");
+        await Promise.race([exited, delay(1000)]);
+      }
+      this.diagnostic("Local model process stopped; memory released");
     }
   }
 
   async shutdown() { this.shuttingDown = true; await this.stop(true); }
 
-  private async start(id: string, requestSignal?: AbortSignal) {
+  private async start(id: string, context: number, requestSignal?: AbortSignal, probe = false) {
     requestSignal?.throwIfAborted();
     if (this.shuttingDown) throw new Error("The app is closing.");
     const modelFile = await this.options.downloads.readyPath(id);
-    if (this.loadedId === id && this.child?.exitCode === null && this.child.signalCode === null) return;
+    if (this.loadedId === id && this.allocatedContext === context && this.child?.exitCode === null && this.child.signalCode === null) return;
     await this.stop(true);
     requestSignal?.throwIfAborted();
     const model = getLocalModel(id);
     const runtime = await readLocalRuntime(this.options.runtimeFolder);
     const compute = await this.detectHardware(runtime, requestSignal);
     requestSignal?.throwIfAborted();
-    const memory = await availableModelMemory();
+    const memory = await this.memory();
     const gpu = compute.backend !== "cpu" && Boolean(runtime.accelerator);
-    const required = gpu && compute.backend !== "metal" ? Math.min(model.minimumFreeMemory, model.bytes + 512 * 1024 ** 2) : model.minimumFreeMemory;
-    this.diagnostic(`Local model memory check (${id}, available ${memory}, required ${required})`);
-    if (memory < required) {
-      throw new Error(`Not enough memory to run ${model.name}. Close other apps or choose a smaller model.`);
+    const reserve = systemMemoryReserve(memory.total);
+    const requiredMemory = (tokens: number) => (gpu && compute.backend !== "metal"
+      ? Math.min(localWorkingMemory(model, tokens), model.bytes + 512 * 1024 ** 2)
+      : localWorkingMemory(model, tokens)) + reserve;
+    // A small context lets us tokenize first when the estimate would not fit.
+    if (probe && requiredMemory(context) > memory.available) context = Math.min(4096, model.context);
+    const required = requiredMemory(context);
+    this.diagnostic("Local model memory check (" + id + ", available " + memory.available + ", required " + required + ", context " + context + ", reserve " + reserve + ")");
+    if (memory.pressure === "critical" || memory.available < required) {
+      throw new Error("Not enough memory to run " + model.name + " with this job and resume. Close other apps or choose a smaller model.");
     }
     this.cpuFallback = false;
     try {
-      await this.launch(id, modelFile, gpu ? runtime.accelerator!.executable : runtime.executable, compute, !gpu, requestSignal);
+      await this.launch(id, modelFile, gpu ? runtime.accelerator!.executable : runtime.executable, compute, !gpu, context, requestSignal);
     } catch (error) {
-      if (!gpu || requestSignal?.aborted || this.shuttingDown) throw error;
+      if (!gpu || requestSignal?.aborted || this.shuttingDown || error instanceof Error && error.name === "AbortError") throw error;
       this.diagnostic(`Local GPU startup failed (${id}); retrying the same model on CPU`, error);
       await this.stop(true);
       requestSignal?.throwIfAborted();
-      if (await availableModelMemory() < model.minimumFreeMemory) {
+      const fallbackMemory = await this.memory();
+      if (fallbackMemory.pressure === "critical" || fallbackMemory.available < localWorkingMemory(model, context) + reserve) {
         throw new Error(`GPU analysis could not start and there is not enough free memory for ${model.name} on CPU. Close other apps and try again.`, { cause: error });
       }
       this.cpuFallback = true;
-      await this.launch(id, modelFile, runtime.executable, compute, true, requestSignal);
+      await this.launch(id, modelFile, runtime.executable, compute, true, context, requestSignal);
     }
   }
 
-  private async launch(id: string, modelFile: string, executable: string, compute: LocalCompute, cpu: boolean, requestSignal?: AbortSignal) {
-    const model = getLocalModel(id);
+  private async launch(id: string, modelFile: string, executable: string, compute: LocalCompute, cpu: boolean, context: number, requestSignal?: AbortSignal) {
     const port = await availablePort();
     requestSignal?.throwIfAborted();
     if (this.shuttingDown) throw new Error("The app is closing.");
     this.secret = randomBytes(32).toString("hex");
     this.baseUrl = `http://127.0.0.1:${port}`;
     this.loadedId = id; this.status = "loading"; this.backend = cpu ? "cpu" : compute.backend;
-    this.offloadedLayers = null; this.changed();
+    this.offloadedLayers = null; this.allocatedContext = context; this.changed();
     this.diagnostic(`Local model loading (${id}, ${process.platform}/${process.arch})`);
-    const threads = Math.max(1, Math.min(4, Math.floor(availableParallelism() / 2)));
-    this.diagnostic(`Local model worker starting (${id}, ${this.backend}, ${threads} threads, context ${model.context}, device ${cpu ? "CPU" : compute.devices[0]?.id})`);
+    const { threads, batch } = localThreadCounts(availableParallelism(), compute.performanceCores, !cpu);
+    this.diagnostic(`Local model worker starting (${id}, ${this.backend}, ${threads}/${batch} threads, context ${context}, device ${cpu ? "CPU" : compute.devices[0]?.id})`);
     const child = spawn(process.execPath, [this.options.workerPath, String(process.pid), executable,
       "--model", modelFile, "--host", "127.0.0.1", "--port", String(port),
-      "--ctx-size", String(model.context), "--parallel", "1", "--threads", String(threads),
-      "--threads-batch", String(threads), ...localComputeArguments(compute, cpu), "--prio", "-1",
+      "--ctx-size", String(context), "--parallel", "1", "--threads", String(threads),
+      "--threads-batch", String(batch), "--flash-attn", "auto", "--cache-ram", "0", "--ctx-checkpoints", "0", ...localComputeArguments(compute, cpu), "--prio", "-1",
       "--no-webui", "--no-agent", "--no-context-shift", "--jinja", "--reasoning", "auto", "--log-verbosity", "4"], {
       cwd: path.dirname(executable), windowsHide: true, stdio: ["pipe", "ignore", "pipe"],
       env: { ...localRuntimeEnvironment(), ELECTRON_RUN_AS_NODE: "1", LLAMA_API_KEY: this.secret },
     });
-    this.child = child;
+    this.child = child; this.watchMemory();
     let diagnostics = "";
     child.stderr?.on("data", (chunk: Buffer) => {
       const lines = (diagnostics + chunk.toString("utf8")).split(/\r?\n/);
@@ -203,9 +252,10 @@ export class LocalModelEngine {
     child.once("exit", (code, signal) => { failed = true; if (this.child === child) {
       this.diagnostic(`Local model engine exited (${id}, code ${code}, signal ${signal})`);
       runtimeController.abort(new Error("The local analysis engine stopped. Close other apps or try another model."));
-      this.child = null; this.loadedId = ""; this.status = "idle"; this.changed();
+      clearInterval(this.memoryTimer);
+      this.child = null; this.loadedId = ""; this.allocatedContext = 0; this.status = "idle"; this.changed();
     } });
-    const deadline = Date.now() + (this.options.timeouts?.loadMs ?? 120_000);
+    const deadline = Date.now() + (this.options.timeouts?.loadMs ?? 300_000);
     const loadingSignal = requestSignal ? AbortSignal.any([this.controller.signal, requestSignal]) : this.controller.signal;
     while (Date.now() < deadline) {
       if (failed || this.child !== child) throw new Error("The local analysis engine stopped. Close other apps or reinstall the app.");
@@ -213,7 +263,8 @@ export class LocalModelEngine {
       const health = await (this.options.fetcher || fetch)(`${this.baseUrl}/health`,
         { signal: AbortSignal.any([loadingSignal, AbortSignal.timeout(1500)]) }).catch(() => null);
       if (health?.ok) { this.diagnostic(`Local model ready (${id})`); return; }
-      await delay(250, undefined, { signal: loadingSignal });
+      try { await delay(250, undefined, { signal: loadingSignal }); }
+      catch (error) { loadingSignal.throwIfAborted(); throw error; }
     }
     await this.stop(true);
     throw new Error("The local model took too long to load. Close other apps or choose a smaller model.");
@@ -230,33 +281,47 @@ export class LocalModelEngine {
     this.pending++; clearTimeout(this.idleTimer);
     const result = this.requests.then(async () => {
       requestSignal?.throwIfAborted();
-      await this.start(id, requestSignal);
-      requestSignal?.throwIfAborted();
-      this.status = "analyzing"; this.changed();
       const content = typeof input === "string" ? input : JSON.stringify(input);
-      const headers = { Authorization: `Bearer ${this.secret}`, "Content-Type": "application/json" };
+      const model = getLocalModel(id);
+      const messages = localModelMessages(id, instructions, content);
       const fetcher = this.options.fetcher || fetch;
-      const signal = AbortSignal.any([this.controller.signal, AbortSignal.timeout(this.options.timeouts?.totalMs ?? 900_000), ...(requestSignal ? [requestSignal] : [])]);
-      // Check the full text against the model budget rather than silently truncating it.
-      this.diagnostic(`Local model reading input (${id})`);
-      const tokenResponse = await fetcher(`${this.baseUrl}/tokenize`, { method: "POST", headers,
-        body: JSON.stringify({ content: `${instructions}\n${content}`, add_special: true }),
-        signal: AbortSignal.any([signal, AbortSignal.timeout(this.options.timeouts?.tokenizeMs ?? 30_000)]) });
+      const deadline = AbortSignal.timeout(this.options.timeouts?.totalMs ?? 1_800_000);
+      const requestDeadline = requestSignal ? AbortSignal.any([deadline, requestSignal]) : deadline;
+      const initial = this.loadedId === id && this.child ? this.allocatedContext
+        : initialLocalContext(instructions + content, maxTokens, model.context);
+      await this.start(id, initial, requestDeadline, true);
+      requestDeadline.throwIfAborted();
+      const preflightSignal = AbortSignal.any([this.controller.signal, requestDeadline]);
+      const preflightHeaders = { Authorization: "Bearer " + this.secret, "Content-Type": "application/json" };
+      this.diagnostic("Local model reading input (" + id + ")");
+      const templateResponse = await fetcher(this.baseUrl + "/apply-template", { method: "POST", headers: preflightHeaders,
+        body: JSON.stringify({ messages, add_generation_prompt: true, chat_template_kwargs: { enable_thinking: thinking } }),
+        signal: AbortSignal.any([preflightSignal, AbortSignal.timeout(this.options.timeouts?.tokenizeMs ?? 30_000)]) });
+      const template = await templateResponse.json() as { prompt?: string };
+      if (!templateResponse.ok || typeof template.prompt !== "string") throw new Error("The local model could not prepare this request. Try again.");
+      const tokenResponse = await fetcher(this.baseUrl + "/tokenize", { method: "POST", headers: preflightHeaders,
+        body: JSON.stringify({ content: template.prompt, add_special: false, parse_special: true }),
+        signal: AbortSignal.any([preflightSignal, AbortSignal.timeout(this.options.timeouts?.tokenizeMs ?? 30_000)]) });
       const tokenData = await tokenResponse.json() as { tokens?: number[] };
       if (!tokenResponse.ok || !Array.isArray(tokenData.tokens)) throw new Error("The local model could not read this request. Try again.");
-      if (tokenData.tokens.length + maxTokens + 256 > getLocalModel(id).context) {
-        this.diagnostic(`Local model context exceeded (${id}, ${tokenData.tokens.length} input tokens, ${maxTokens} output budget, limit ${getLocalModel(id).context})`);
-        throw new Error("This model cannot fit all the job and resume text. Choose a model with a longer context window or shorten the description.");
+      const context = contextForTokens(tokenData.tokens.length, maxTokens, model.context);
+      if (this.allocatedContext !== context) {
+        this.diagnostic("Local model resizing context (" + id + ", " + this.allocatedContext + " to " + context + ", input " + tokenData.tokens.length + ", output " + maxTokens + ")");
+        await this.start(id, context, requestDeadline);
       }
-      const watchdog = new LocalResponseWatchdog(this.options.timeouts?.firstTokenMs ?? (getLocalModel(id).tier === "Medium" || getLocalModel(id).tier === "Larger" ? 300_000 : 180_000),
-        this.options.timeouts?.stallMs ?? 60_000);
+      requestDeadline.throwIfAborted();
+      this.status = "analyzing"; this.changed();
+      const headers = { Authorization: "Bearer " + this.secret, "Content-Type": "application/json" };
+      const signal = AbortSignal.any([this.controller.signal, requestDeadline]);
+      const watchdog = new LocalResponseWatchdog(this.options.timeouts?.firstTokenMs ?? 600_000,
+        this.options.timeouts?.stallMs ?? 120_000);
       const generationSignal = AbortSignal.any([signal, watchdog.controller.signal]);
       const started = Date.now();
       let responded = false;
       this.diagnostic(`Local model generating (${id}, ${tokenData.tokens.length} input tokens)`);
       try {
         const response = await fetcher(`${this.baseUrl}/v1/chat/completions`, { method: "POST", headers, signal: generationSignal,
-          body: JSON.stringify({ messages: localModelMessages(id, instructions, content),
+          body: JSON.stringify({ messages,
             stream: true, temperature: 0, ...getLocalModel(id).sampling,
             ...(thinking ? { temperature: 0.6, top_k: 20, top_p: 0.95, min_p: 0 } : {}), seed: 0, max_tokens: maxTokens,
             response_format: { type: "json_object", schema: localModelResponseSchema(id, schema, input) },
@@ -304,7 +369,7 @@ export class LocalModelEngine {
     return result.finally(() => {
       this.pending--; if (!this.pending) {
         this.status = "idle"; this.changed();
-        this.idleTimer = setTimeout(() => { void this.stop().catch(() => undefined); }, 60_000);
+        this.idleTimer = setTimeout(() => { void this.stop().catch(() => undefined); }, this.options.timeouts?.idleMs ?? LOCAL_IDLE_MS);
         this.idleTimer.unref();
       }
     });

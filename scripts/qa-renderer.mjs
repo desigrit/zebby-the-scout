@@ -302,6 +302,7 @@ try {
       databaseResult: "cancel",
       setDatabase: (change) => { Object.assign(initialState, change); for (const listener of databaseListeners) listener(snapshot()); },
       setPlatform: (platform) => { initialState.platform = platform; },
+      setEngine: (engine) => { initialState.localEngine = engine; for (const listener of listeners) listener(snapshot()); },
       setCompute: (compute) => { initialState.localCompute = compute; for (const listener of listeners) listener(snapshot()); } };
     window.desktop = { state: async () => initialState,
       boardsState: async () => ({ filePath: "", filename: "", dirty: false, error: "", boards: [], progress: [] }),
@@ -432,6 +433,7 @@ try {
         if ((!licenseVersions[id] || initialState.acceptedModelTerms.includes(id)) &&
           initialState.localModels.find((item) => item.id === id).status !== "ready")
           update(id, { status: "downloading", downloadedBytes: 0, error: "" }); return snapshot(); },
+      releaseLocalModel: async () => { initialState.localEngine = { status: "idle", modelId: "" }; return snapshot(); },
       pauseModelDownload: async () => { for (const item of initialState.localModels)
         if (["downloading", "verifying"].includes(item.status)) update(item.id, { status: "paused" }); return snapshot(); },
       stopModelDownload: async (id) => { window.modelQA.stopRequests.push(id);
@@ -1485,6 +1487,26 @@ try {
     if (backend === "vulkan") await captureSettings("analysis-hardware-windows-light.png", false);
   }
   assert.equal(await page.evaluate(() => window.modelQA.selections.length), beforeHardware, "Hardware detection must not select or download a model");
+  await page.getByRole("combobox", { name: "Local model", exact: true }).selectOption("qwen3-14b");
+  await page.evaluate(() => {
+    window.modelQA.update("qwen3-14b", { status: "ready", downloadedBytes: 9001752960, error: "" });
+    window.modelQA.setCompute({ status: "ready", backend: "metal", availableMemory: 22 * 1024 ** 3,
+      devices: [{ id: "Metal", name: "Apple M1 Max", memory: 24 * 1024 ** 3, freeMemory: 24 * 1024 ** 3 }], recommendedModelIds: ["qwen3-14b", "qwen3-8b"] });
+    window.modelQA.setEngine({ status: "idle", modelId: "qwen3-14b", backend: "metal", busy: false });
+  });
+  const releaseMemory = settingsPage.getByRole("button", { name: "Release memory", exact: true });
+  await releaseMemory.waitFor();
+  await captureSettings("local-memory-windows-light.png", false);
+  await page.evaluate(() => window.modelQA.setEngine({ status: "analyzing", modelId: "qwen3-14b", backend: "metal", busy: true }));
+  await releaseMemory.waitFor({ state: "hidden" });
+  await settingsPage.getByText("Model in use", { exact: true }).waitFor();
+  await page.setViewportSize({ width: 790, height: 850 });
+  await page.evaluate(() => { window.modelQA.setPlatform("darwin"); document.documentElement.dataset.platform = "darwin"; document.documentElement.dataset.theme = "dark";
+    window.modelQA.setEngine({ status: "idle", modelId: "qwen3-14b", backend: "metal", busy: false }); });
+  await captureSettings("local-memory-mac-dark-narrow.png", false);
+  await releaseMemory.click(); await releaseMemory.waitFor({ state: "hidden" });
+  await page.setViewportSize({ width: 1550, height: 850 });
+  await page.evaluate(() => { window.modelQA.setPlatform("win32"); document.documentElement.dataset.platform = "win32"; document.documentElement.dataset.theme = "light"; });
   for (const method of ["ollama", "builtin", "openai", "anthropic"]) {
     await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption(method);
     assert.equal(await settingsPage.getByRole("button", { name: "Buy credits", exact: true }).count(), 1);

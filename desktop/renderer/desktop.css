@@ -482,6 +482,8 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .local-model-library-info strong { font-size: 12px; }
 .local-model-library-info span { color: var(--ink-soft); font-size: 11px; }
 .model-storage-footer { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+.model-memory-session { align-items: center; }
+.model-memory-session .settings-help { margin: 0; }
 .model-storage-help { margin: 0; flex: 0 1 auto; }
 .model-storage-help[open] { flex: 1 1 100%; }
 .model-storage-help summary { padding: 2px 0; }

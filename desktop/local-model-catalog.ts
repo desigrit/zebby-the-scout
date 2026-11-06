@@ -19,6 +19,8 @@ export type LocalModel = {
   sourceUrl: string;
   context: number;
   minimumFreeMemory: number;
+  // FP16 K + V bytes per context token, from the official model configuration.
+  kvBytesPerToken?: number;
   memoryHint: string;
   basic: boolean;
   supportsThinking?: boolean;
@@ -81,7 +83,7 @@ export const LOCAL_MODELS: readonly LocalModel[] = [
     sha256: "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031",
     url: "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/23749fefcc72300e3a2ad315e1317431b06b590a/Qwen3-0.6B-Q8_0.gguf",
     sourceUrl: "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF",
-    context: 16384, minimumFreeMemory: 2 * GiB, memoryHint: "8 GB RAM or more",
+    kvBytesPerToken: 114688, context: 16384, minimumFreeMemory: 2 * GiB, memoryHint: "8 GB RAM or more",
   },
   {
     id: "qwen3-4b", name: "Qwen3 4B", tier: "Medium", basic: false, supportsThinking: true, released: "2025-04-29",
@@ -90,16 +92,43 @@ export const LOCAL_MODELS: readonly LocalModel[] = [
     sha256: "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5",
     url: "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/bc640142c66e1fdd12af0bd68f40445458f3869b/Qwen3-4B-Q4_K_M.gguf",
     sourceUrl: "https://huggingface.co/Qwen/Qwen3-4B-GGUF",
-    context: 32768, minimumFreeMemory: 6 * GiB, memoryHint: "16 GB RAM or more",
+    kvBytesPerToken: 147456, context: 32768, minimumFreeMemory: 6 * GiB, memoryHint: "16 GB RAM or more",
   },
   {
     id: "qwen3-8b", name: "Qwen3 8B", tier: "Larger", basic: false, supportsThinking: true, released: "2025-04-29",
-    description: "The largest built-in option for detailed analysis. Allow more time on CPU.",
+    description: "Detailed role analysis with a smaller download than the 14B and 32B models.",
     bytes: 5027783488, filename: "Qwen3-8B-Q4_K_M.gguf",
     sha256: "d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785",
     url: "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/7c41481f57cb95916b40956ab2f0b139b296d974/Qwen3-8B-Q4_K_M.gguf",
     sourceUrl: "https://huggingface.co/Qwen/Qwen3-8B-GGUF",
-    context: 32768, minimumFreeMemory: 9 * GiB, memoryHint: "24 GB RAM or more",
+    kvBytesPerToken: 147456, context: 32768, minimumFreeMemory: 9 * GiB, memoryHint: "24 GB RAM or more",
+  },
+  {
+    id: "qwen3-14b", name: "Qwen3 14B", tier: "Larger", basic: false, supportsThinking: true, released: "2025-04-29",
+    description: "More capacity for detailed assessment and summary edits. A good starting point for a 32 GB Mac.",
+    bytes: 9001752960, filename: "Qwen3-14B-Q4_K_M.gguf",
+    sha256: "500a8806e85ee9c83f3ae08420295592451379b4f8cf2d0f41c15dffeb6b81f0",
+    url: "https://huggingface.co/Qwen/Qwen3-14B-GGUF/resolve/530227a7d994db8eca5ab5ced2fb692b614357fd/Qwen3-14B-Q4_K_M.gguf",
+    sourceUrl: "https://huggingface.co/Qwen/Qwen3-14B-GGUF",
+    context: 32768, kvBytesPerToken: 163840, minimumFreeMemory: 16 * GiB, memoryHint: "32 GB RAM or more",
+  },
+  {
+    id: "qwen3-30b-a3b", name: "Qwen3 30B A3B", tier: "Large", basic: false, supportsThinking: true, released: "2025-04-29",
+    description: "A mixture-of-experts model for detailed analysis. Activates fewer parameters per token, but keeps the full model in memory.",
+    bytes: 18556685824, filename: "Qwen3-30B-A3B-Q4_K_M.gguf",
+    sha256: "0d003f6662faee786ed5da3e31b29c978de5ae5d275c8794c606a7f3c01aa8f5",
+    url: "https://huggingface.co/Qwen/Qwen3-30B-A3B-GGUF/resolve/e4d4bafdfb96a411a163846265362aceb0b9c63a/Qwen3-30B-A3B-Q4_K_M.gguf",
+    sourceUrl: "https://huggingface.co/Qwen/Qwen3-30B-A3B-GGUF",
+    context: 32768, kvBytesPerToken: 98304, minimumFreeMemory: 24 * GiB, memoryHint: "48 GB RAM or more",
+  },
+  {
+    id: "qwen3-32b", name: "Qwen3 32B", tier: "Large", basic: false, supportsThinking: true, released: "2025-04-29",
+    description: "A larger dense model for detailed assessment and resume edits. Best suited to GPUs with ample memory.",
+    bytes: 19762149024, filename: "Qwen3-32B-Q4_K_M.gguf",
+    sha256: "efd971561896866f0e910cce52761ca77b1b138090c7f15fe284676d57d1f689",
+    url: "https://huggingface.co/Qwen/Qwen3-32B-GGUF/resolve/938a7432affaec9157f883a87164e2646ae17555/Qwen3-32B-Q4_K_M.gguf",
+    sourceUrl: "https://huggingface.co/Qwen/Qwen3-32B-GGUF",
+    context: 32768, kvBytesPerToken: 262144, minimumFreeMemory: 30 * GiB, memoryHint: "48 GB RAM or more",
   },
 ];
 

@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { totalmem } from "node:os";
 import { promisify } from "node:util";
 import type { ComputeBackend, ComputeDevice, LocalCompute } from "./local-compute.ts";
 import { recommendedLocalModels } from "./local-compute.ts";
@@ -64,7 +65,7 @@ export async function detectLocalCompute(runtime: LocalRuntime, options: {
   diagnostic?: (message: string, error?: unknown) => void;
 } = {}): Promise<LocalCompute> {
   const compute: LocalCompute = { status: "ready", backend: "cpu", devices: [],
-    availableMemory: await (options.memory || availableModelMemory)(), recommendedModelIds: [] };
+    availableMemory: await (options.memory || availableModelMemory)(), totalMemory: totalmem(), recommendedModelIds: [] };
   options.signal?.throwIfAborted();
   if (runtime.accelerator) {
     try {
@@ -82,6 +83,12 @@ export async function detectLocalCompute(runtime: LocalRuntime, options: {
       compute.status = "unavailable";
       options.diagnostic?.("Local GPU detection failed; CPU remains available", error);
     }
+  }
+  if (process.platform === "darwin") {
+    const cores = await (options.execute || execute)("/usr/sbin/sysctl", ["-n", "hw.perflevel0.physicalcpu"],
+      { timeout: 2000, maxBuffer: 1024 }).catch(() => null);
+    const count = Number(String(cores?.stdout || "").trim());
+    if (Number.isInteger(count) && count > 0 && count <= 256) compute.performanceCores = count;
   }
   compute.recommendedModelIds = recommendedLocalModels(compute);
   return compute;

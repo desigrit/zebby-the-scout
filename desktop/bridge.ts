@@ -27,7 +27,7 @@ export type DesktopState = {
   acceptedModelTerms: string[];
   localModels: LocalModelStatus[];
   modelsFolder: string;
-  localEngine: { status: "idle" | "loading" | "analyzing"; modelId: string; backend?: ComputeBackend; cpuFallback?: boolean };
+  localEngine: { status: "idle" | "loading" | "analyzing"; modelId: string; backend?: ComputeBackend; cpuFallback?: boolean; busy?: boolean };
   localCompute?: LocalCompute;
   totalMemory: number;
   availableMemory: number;
@@ -86,6 +86,7 @@ export type DesktopBridge = {
   listOllamaModels(url: string): Promise<string[]>;
   ollamaThinkingCapability(url: string, model: string): Promise<ThinkingCapability>;
   selectLocalModel(id: string): Promise<DesktopState>;
+  releaseLocalModel(): Promise<DesktopState>;
   pauseModelDownload(): Promise<DesktopState>;
   stopModelDownload(id: string): Promise<DesktopState>;
   resumeModelDownload(id: string, termsVersion?: string): Promise<DesktopState>;

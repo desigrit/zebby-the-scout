@@ -1,5 +1,5 @@
 import { planInstructions, planSchema, matchInstructions, matchSchema } from "./analysis-contracts";
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, safeStorage, screen, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, powerMonitor, protocol, safeStorage, screen, shell } from "electron";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fetchJobPosting } from "../lib/job-fetch";
@@ -11,6 +11,7 @@ import { DesktopStore, type PlanInput } from "./store";
 import { getLocalModel, LOCAL_MODELS } from "./local-model-catalog";
 import { LocalModelDownloads } from "./local-model-downloads";
 import { LocalModelEngine } from "./local-model-engine";
+import { localTaskOutputBudget } from "./local-inference-policy";
 import { publicAnalysisText, runSelectedAnalysis } from "./analysis-routing";
 import { deleteDownloadedModel } from "./local-model-removal";
 import { localModelFolder } from "./local-model-storage";
@@ -209,7 +210,7 @@ function state() {
       .map((model) => model.id),
     localModels: modelDownloads?.list() || [], modelsFolder: modelDownloads?.folder || "",
     localEngine: { status: modelEngine?.status || "idle", modelId: modelEngine?.modelId || "",
-      backend: modelEngine?.backend || "cpu", cpuFallback: modelEngine?.cpuFallback || false },
+      backend: modelEngine?.backend || "cpu", cpuFallback: modelEngine?.cpuFallback || false, busy: modelEngine?.busy || false },
     localCompute: modelEngine?.compute,
     totalMemory: totalmem(), availableMemory: freemem(),
     canSaveApiKey: safeStorage.isEncryptionAvailable(),
@@ -369,7 +370,7 @@ async function analyzeWithSelectedProvider(instructions: string, input: unknown,
       signal?.throwIfAborted();
       const level = capability ? selectedThinking(selected.thinkingLevels, thinkingKey("ollama", model, baseUrl), capability) : selected.thinkingLevel;
       return analyzeWithOllama({ baseUrl, model, instructions: prompt, content: visual?.text ?? JSON.stringify(content),
-        images: visual ? [visual.image.data] : undefined, schema: format, thinkingLevel: level, signal, onProgress: progress });
+        images: visual ? [visual.image.data] : undefined, schema: format, thinkingLevel: level, maxTokens: localTaskOutputBudget(name), signal, onProgress: progress });
     },
     openai: async (prompt, content, formatName, format) => (await onlineAnalysis({ model: selected.model, key: selected.apiKey, instructions: prompt,
       input: content, name: formatName, schema: format, kind: formatName === "board_extract" ? "board_extract" : formatName === "tailored_resume" ? "resume" : formatName === "resume_plan" ? "plan" : "match", thinkingLevel: selected.thinkingLevel, signal })).result,
@@ -388,7 +389,7 @@ async function analyzeWithSelectedProvider(instructions: string, input: unknown,
       acceptModelTerms(getLocalModel(id), settings.acceptedModelTerms || {});
       return modelDownloads.readyPath(id);
     },
-    local: (id, prompt, content, format, maxTokens) => modelEngine.analyze(id, prompt, content, format, maxTokens, signal, selected.thinkingLevel, progress),
+    local: (id, prompt, content, format, maxTokens) => modelEngine.analyze(id, prompt, content, format, maxTokens ?? localTaskOutputBudget(name), signal, selected.thinkingLevel, progress),
   }, instructions, input, name, schema, failure);
 }
 
@@ -904,6 +905,7 @@ function registerIpc() {
   handle("desktop:set-analysis-provider", async (_event, value: AnalysisProvider) => {
     if (!["ollama", "openai", "builtin", "anthropic", "credits"].includes(value)) throw new Error("Choose an analysis provider.");
     await persistAnalysisSettings({ analysisProvider: value });
+    if (value !== "builtin" && !modelEngine.busy) await modelEngine.stop();
     return state();
   });
   handle("desktop:set-ollama-config", async (_event, value: { url?: string; model?: string }) => {
@@ -924,12 +926,14 @@ function registerIpc() {
   });
   handle("desktop:select-local-model", async (_event, id: string) => {
     const model = getLocalModel(id);
+    if (!modelEngine.busy && modelEngine.modelId !== id) await modelEngine.stop();
     settings.builtInModelId = id;
     await saveSettings();
     if (modelTermsAccepted(model, settings.acceptedModelTerms)) await modelDownloads.start(id);
     else await modelDownloads.pause();
     return state();
   });
+  handle("desktop:release-local-model", async () => { await modelEngine.stop(); return state(); });
   handle("desktop:pause-model-download", async () => { await modelDownloads.pause(); return state(); });
   handle("desktop:stop-model-download", async (_event, id: string) => {
     getLocalModel(id);
@@ -1121,6 +1125,10 @@ else {
     createMenu();
     createWindow();
     void modelEngine.detectHardware();
+    powerMonitor.on("suspend", () => {
+      logEvent("System sleeping; releasing local inference memory");
+      void modelEngine.stop(true).catch((error) => logDiagnostic("Could not release local model memory", error));
+    });
     if (!storeEdition) void updates.check();
     app.on("activate", () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
   }).catch((error) => { console.error("Could not start Zebby", error);

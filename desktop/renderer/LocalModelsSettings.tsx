@@ -61,6 +61,8 @@ export default function LocalModelsSettings({ state, onState, hideSelector = fal
   const current = selected ? statuses.find((item) => item.id === selected.id) || {
     id: selected.id, status: "not-installed" as const, downloadedBytes: 0, error: "",
   } : null;
+  const loaded = Boolean(state.localEngine.modelId);
+  const engineBusy = state.localEngine.busy || state.localEngine.status !== "idle";
   const stored = statuses.filter((item) => item.status !== "not-installed" || item.downloadedBytes > 0);
   const readyCount = stored.filter((item) => item.status === "ready").length;
   const usedBytes = stored.reduce((total, status) => total + (status.status === "ready"
@@ -147,6 +149,11 @@ export default function LocalModelsSettings({ state, onState, hideSelector = fal
         </p>{!state.acceptedModelTerms?.includes(selected.id) && <p className="settings-help">Choosing {current.status === "ready" ? "Agree and use" : "Agree and download"} accepts these terms and any linked use restrictions.</p>}</div>}
       </details>
     </>}
+    {loaded && <div className="model-storage-footer model-memory-session" role="status">
+      <span className="settings-help">{engineBusy ? "Model in use" : "Memory releases after 30 seconds idle"}</span>
+      {!engineBusy && <button className="settings-link" type="button" disabled={working}
+        onClick={() => void run(() => window.desktop!.releaseLocalModel())}>Release memory</button>}
+    </div>}
     <ErrorBanner message={error} retry={() => retryAction.current()} busy={working} />
     <details className="local-model-library">
       <summary><span>Downloaded models</span><span className="model-library-summary">{readyCount} installed · {formatModelBytes(usedBytes)} used<ChevronDown size={16} aria-hidden="true" /></span></summary>

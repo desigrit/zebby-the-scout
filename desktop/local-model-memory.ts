@@ -40,3 +40,17 @@ export async function availableModelMemory(options: {
   const available = reclaimableMacMemory(stats);
   return available === null ? free : Math.min(available, options.totalBytes ?? totalmem());
 }
+
+export type LocalMemoryState = { available: number; total: number; pressure: "normal" | "warning" | "critical" };
+
+export async function localMemoryState(): Promise<LocalMemoryState> {
+  const available = await availableModelMemory();
+  let pressure: LocalMemoryState["pressure"] = "normal";
+  if (process.platform === "darwin") {
+    const result = await execute("/usr/sbin/sysctl", ["-n", "kern.memorystatus_vm_pressure_level"],
+      { timeout: 2000, maxBuffer: 1024, encoding: "utf8" }).catch(() => null);
+    const level = Number(result?.stdout.trim());
+    pressure = level === 4 ? "critical" : level === 2 ? "warning" : "normal";
+  }
+  return { available, total: totalmem(), pressure };
+}
