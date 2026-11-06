@@ -1,8 +1,10 @@
 import type { BoardCandidate, BoardControl } from "../shared/boards";
+import { greenhouseBoard } from "./greenhouse-board";
 import { isNetflixPosition, isNetflixSearch } from "./netflix-board";
 
 export type BoardPage = { url: string; title: string; summary: string; candidates: BoardCandidate[]; controls: BoardControl[];
   expectedTotal: number | null; pageNumber: number | null; pageCount: number | null;
+  embeddedBoards?: string[]; embeddedBoardPending?: boolean;
   empty: boolean; loading: boolean; blocked: boolean; atBottom: boolean; scrollY: number; height: number };
 
 // Serialized into an isolated webContents. Keep this function self-contained.
@@ -63,12 +65,26 @@ export function captureBoardPage(sectionId?: string): BoardPage {
     catch { return 0; }
   }).filter(value => Number.isSafeInteger(value) && value > 0);
   const empty = /\b(no (?:open |matching |available )?(?:jobs|positions|results)|0 (?:open (?:jobs|positions|roles)|items|jobs|results))\b/i.test(text);
+  // Embedded boards are separate documents, including cross-origin documents.
+  // Report visible Greenhouse board frames so the browser can read their real DOM.
+  const isGreenhouseEmbed = (value: string) => {
+    try { const url = new URL(value, location.href);
+      return url.protocol === "https:" && !url.username && !url.password && !url.port &&
+        ["boards.greenhouse.io", "job-boards.greenhouse.io"].includes(url.hostname) &&
+        /^\/embed\/job_board\/?$/.test(url.pathname) && /^[\w-]+$/.test(url.searchParams.get("for") || "");
+    } catch { return false; }
+  };
+  const embeddedBoards = [...(root?.querySelectorAll<HTMLIFrameElement>("iframe[src]") ?? [])]
+    .filter(visible).map(frame => frame.src).filter(isGreenhouseEmbed);
+  const embeddedBoardPending = !embeddedBoards.length && [...document.scripts].some(script =>
+    isGreenhouseEmbed(script.src.replace(/\/js(?=\?|$)/, "")));
   const height = document.documentElement.scrollHeight;
   return { url: location.href, title: document.title.slice(0, 300),
     summary: (text.slice(0, 1500) + "\n" + text.slice(-2500)).slice(0, 4000), candidates, controls,
     expectedTotal: total ? Number(total[1].replace(/,/g, "")) : empty ? 0 : null,
     pageNumber: page ? Number(page[1]) : pageLinks.length ? Number(new URL(location.href).searchParams.get("page")) || 1 : null,
     pageCount: page ? Number(page[2]) : pageLinks.length ? Math.max(...pageLinks) : null,
+    embeddedBoards, embeddedBoardPending,
     empty, loading: /\bloading (?:jobs|results|opportunities)/i.test(text),
     blocked: /\b(verify (?:that )?you are human|unusual traffic|access denied|checking your browser|complete the captcha)\b/i.test(document.body?.innerText || ""),
     atBottom: window.scrollY + window.innerHeight >= height - 8, scrollY: window.scrollY, height };
@@ -81,6 +97,10 @@ export function isFigmaCareers(url: URL) {
 export function knownListing(url: string, board: string): boolean | null {
   const source = new URL(board), link = new URL(url);
   if (isNetflixSearch(source)) return isNetflixPosition(link);
+  const greenhouse = greenhouseBoard(source);
+  if (greenhouse) return ["boards.greenhouse.io", "job-boards.greenhouse.io"].includes(link.hostname) &&
+    link.protocol === "https:" && !link.username && !link.password && !link.port &&
+    link.pathname.split("/")[1] === greenhouse && /^\/[\w-]+\/jobs\/\d+\/?$/.test(link.pathname);
   if (isFigmaCareers(source) && ["boards.greenhouse.io", "job-boards.greenhouse.io"].includes(link.hostname) &&
       /^\/figma\/jobs\/\d+\/?$/.test(link.pathname)) return true;
   if (source.hostname === "slack.com") return link.hostname.endsWith(".myworkdayjobs.com") && /\/Slack\/job\//.test(link.pathname);
@@ -94,6 +114,13 @@ export function knownListing(url: string, board: string): boolean | null {
 export function knownNext(page: BoardPage): string | null {
   const source = new URL(page.url), host = source.hostname;
   if (isNetflixSearch(source)) return page.controls[0]?.id || "";
+  if (greenhouseBoard(source)) {
+    const next = page.controls.find(control => /\bnext page\b/i.test(control.text) && !control.disabled);
+    if (!next && page.pageNumber && page.pageCount && page.pageNumber < page.pageCount) {
+      throw new Error("The next page of this job board could not be found. Try the check again.");
+    }
+    return next?.id || "";
+  }
   if (isFigmaCareers(new URL(page.url)) && !page.controls.length && !(page.pageCount && (page.pageNumber || 1) < page.pageCount)) return "";
   if (host === "slack.com") return "";
   if (host === "jobs.uber.com") {

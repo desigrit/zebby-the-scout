@@ -3,8 +3,9 @@ import { lookup } from "node:dns/promises";
 import { randomUUID } from "node:crypto";
 import { isPublicAddress } from "../lib/public-address";
 import { boardUrl } from "../lib/board-identity";
-import { captureBoardPage, isFigmaCareers, type BoardPage } from "./board-page";
+import { captureBoardPage, isFigmaCareers, knownListing, type BoardPage } from "./board-page";
 import { isNetflixSearch, NetflixBoardPages } from "./netflix-board";
+import { greenhouseBoard, sameGreenhouseSearch } from "./greenhouse-board";
 
 export type BoardReader = { open(url: string): Promise<void>; read(): Promise<BoardPage>; next(id: string): Promise<void>; close(): void };
 const pause = (milliseconds: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
@@ -17,6 +18,8 @@ const pause = (milliseconds: number, signal: AbortSignal) => new Promise<void>((
 export class BoardBrowser implements BoardReader {
   private window: BrowserWindow;
   private source = "";
+  private frame: Electron.WebFrameMain | null = null;
+  private embeddedSource = "";
   private previous = "";
   private navigationError = "";
   private lastPage: BoardPage | null = null;
@@ -63,6 +66,7 @@ export class BoardBrowser implements BoardReader {
   async open(url: string) {
     this.signal.throwIfAborted();
     const target = boardUrl(url); this.source = target.href;
+    this.frame = null; this.embeddedSource = "";
     this.netflix = null; this.lastPage = null; this.previous = ""; this.navigationError = "";
     if (isNetflixSearch(target)) {
       const isolated = this.window.webContents.session;
@@ -75,13 +79,40 @@ export class BoardBrowser implements BoardReader {
     this.signal.throwIfAborted();
     if (this.navigationError) throw new Error(this.navigationError);
     const section = isFigmaCareers(boardUrl(this.source)) ? "job-openings" : "";
-    const result: BoardPage = await this.window.webContents.executeJavaScript(`(${captureBoardPage.toString()})(${JSON.stringify(section)})`);
+    let result: BoardPage = await this.window.webContents.executeJavaScript(`(${captureBoardPage.toString()})(${JSON.stringify(section)})`);
     const original = boardUrl(this.source), current = boardUrl(result.url);
     if (current.origin !== original.origin || current.pathname.replace(/\/$/, "") !== original.pathname.replace(/\/$/, "") ||
         original.hash && current.hash !== original.hash || [...original.searchParams.keys()].some(key =>
           !/^(page|pagesize|offset|start|cursor)$/i.test(key) && current.searchParams.getAll(key).join("\0") !== original.searchParams.getAll(key).join("\0"))) {
       throw new Error("The board changed its search filters. Save the direct results link and try again.");
     }
+    if (result.blocked) throw new Error("This board is asking for a browser check. Open its link and try again later.");
+    const embedded = result.embeddedBoards || [];
+    if (embedded.length > 1) throw new Error("This page contains multiple embedded job boards. Save a direct job board link.");
+    if (embedded.length) {
+      if (this.embeddedSource && !sameGreenhouseSearch(embedded[0], this.embeddedSource)) {
+        throw new Error("The embedded job board changed its search filters. Try the check again.");
+      }
+      this.embeddedSource ||= embedded[0];
+      const frames = this.window.webContents.mainFrame.frames.filter(frame =>
+        !frame.isDestroyed() && sameGreenhouseSearch(frame.url, this.embeddedSource));
+      if (frames.length > 1) throw new Error("The embedded job board could not be identified. Save its direct results link.");
+      this.frame = frames[0] || null;
+      if (!this.frame) return { ...result, candidates: [], controls: [], empty: false, expectedTotal: null, loading: true };
+      result = await this.frame.executeJavaScript('(' + captureBoardPage.toString() + ')()') as BoardPage;
+      if (!sameGreenhouseSearch(result.url, this.embeddedSource)) {
+        throw new Error("The embedded job board changed its search filters. Try the check again.");
+      }
+    } else if (this.embeddedSource) {
+      throw new Error("The embedded job list disappeared before the check finished. Try the check again.");
+    } else if (result.embeddedBoardPending) {
+      return { ...result, candidates: [], controls: [], empty: false, expectedTotal: null, loading: true };
+    } else {
+      this.frame = null;
+    }
+    // Navigation and alert links cannot make an unloaded job board look ready.
+    if (greenhouseBoard(new URL(result.url)) && !result.empty &&
+        !result.candidates.some(candidate => knownListing(candidate.url, result.url))) result.loading = true;
     if (result.candidates.length > 1000 || result.controls.length > 100) throw new Error("This page has too many links to check completely. Save a more specific filtered link.");
     if (result.blocked) throw new Error("This board is asking for a browser check. Open its link and try again later.");
     return result;
@@ -103,7 +134,7 @@ export class BoardBrowser implements BoardReader {
     let bottomStable = 0, previousHeight = -1, previousCount = -1;
     for (let step = 0; step < 100; step++) {
       this.signal.throwIfAborted();
-      await this.window.webContents.executeJavaScript("window.scrollBy(0, Math.max(600, window.innerHeight * .85))");
+      await (this.frame || this.window.webContents.mainFrame).executeJavaScript("window.scrollBy(0, Math.max(600, window.innerHeight * .85))");
       await pause(350, this.signal);
       result = await this.snapshot();
       for (const candidate of result.candidates) collected.set(candidate.url, candidate);
@@ -124,7 +155,7 @@ export class BoardBrowser implements BoardReader {
     const expected = this.lastPage?.controls.find(control => control.id === id);
     if (!expected || !before.controls.some(control => control.id === id && !control.disabled && control.text === expected.text && control.context === expected.context)) throw new Error("The board's next-page control changed. Try the check again.");
     this.previous = JSON.stringify([before.pageNumber, before.candidates.map(item => item.url)]);
-    const clicked = await this.window.webContents.executeJavaScript(`(() => {
+    const clicked = await (this.frame || this.window.webContents.mainFrame).executeJavaScript(`(() => {
       const control = document.querySelector('[data-zebby-board-control="${id}"]');
       if (!control) return false; control.click(); return true;
     })()`);

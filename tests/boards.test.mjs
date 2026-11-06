@@ -16,11 +16,11 @@ const bundle = path.join(root, "boards.mjs");
 await build({ stdin: { contents: `
   export * from './desktop/boards-store'; export * from './desktop/boards-scan';
   export * from './desktop/boards-service'; export * from './desktop/board-page'; export * from './desktop/netflix-board';
-  export * from './lib/board-identity';
+  export * from './lib/board-identity'; export * from './desktop/greenhouse-board';
   export * from './shared/boards';`, resolveDir: process.cwd() },
   outfile: bundle, bundle: true, platform: "node", format: "esm", target: "node22" });
 const { BoardsStore, BoardsService, NetflixBoardPages, scanBoard, boardJobIdentity, boardSearchKey, boardUrl,
-  boardsCompanionPath, boardModelContract, validatedBoardExtraction } = await import(pathToFileURL(bundle).href);
+  boardsCompanionPath, boardModelContract, validatedBoardExtraction, greenhouseBoard, sameGreenhouseSearch, knownListing } = await import(pathToFileURL(bundle).href);
 after(async () => { assert.ok(root.startsWith(path.resolve(tmpdir()) + path.sep)); await rm(root, { recursive: true, force: true }); });
 
 async function fixture(work) {
@@ -541,4 +541,69 @@ test("new-file creation cannot discard a pending save or replace a damaged exist
   assert.equal(store.status.fileMissing, false);
   await assert.rejects(store.createMissingCompanion(applications), /Retry opening/);
   assert.equal(await readFile(paired, "utf8"), "Not a Boards database");
+}));
+
+
+test("Greenhouse identifies the board company and preserves every embedded search filter", () => {
+  const source = "https://boards.greenhouse.io/embed/job_board?for=twitch&department=product";
+  assert.equal(greenhouseBoard(new URL(source)), "twitch");
+  assert.equal(greenhouseBoard(new URL("https://job-boards.greenhouse.io/twitch")), "twitch");
+  assert.ok(sameGreenhouseSearch("https://job-boards.greenhouse.io/embed/job_board?department=product&for=twitch&page=2&validityToken=refreshed", source));
+  for (const url of [
+    "https://job-boards.greenhouse.io/embed/job_board?for=twitch",
+    source.replace("twitch", "another-company"),
+    source + "&office=seattle",
+    source + "&for=another-company",
+    source.replace("https:", "http:"),
+    source.replace("boards.greenhouse.io", "boards.greenhouse.io.example.com"),
+    source.replace("boards.greenhouse.io", "user@boards.greenhouse.io"),
+    source.replace("job_board", "job_app"),
+  ]) assert.equal(sameGreenhouseSearch(url, source), false, url);
+  assert.equal(knownListing("https://job-boards.greenhouse.io/twitch/jobs/8686796002", source), true);
+  assert.equal(knownListing("https://job-boards.greenhouse.io/other/jobs/8686796002", source), false);
+  assert.equal(knownListing("https://my.greenhouse.io/users/sign_in", source), false);
+  assert.notEqual(boardJobIdentity("https://job-boards.greenhouse.io/twitch/jobs/8686796002").key,
+    boardJobIdentity("https://job-boards.greenhouse.io/twitch/jobs/8843932002").key);
+});
+
+test("embedded Greenhouse coverage precedes instructions and incomplete retries preserve saved history", () => fixture(async ({ store }) => {
+  const url = "https://careers.twitch.com/en/careers";
+  const instructions = "Only track Product Manager, Sr. Product Manager, Senior Product Manager, Staff Product Manager and Principal Product Manager roles.";
+  const embedded = "https://job-boards.greenhouse.io/embed/job_board?for=twitch";
+  const [id] = await store.add([{ company: "Twitch", url, instructions }]);
+  const posting = (id, title) => ({ id: "l" + id, url: "https://job-boards.greenhouse.io/twitch/jobs/" + id,
+    title, department: "Community Growth", text: title });
+  const matches = [posting(1, "Senior Product Manager, Commerce San Francisco"),
+    posting(2, "Senior Product Manager, Commerce Seattle"), posting(3, "Senior Product Manager, Commerce Irvine"),
+    ...[4, 5, 6, 7].map(id => posting(id, "Sr. Product Manager, Premium Content Experience Location " + id))];
+  const others = [posting(8, "Product Operations Manager"), posting(9, "Product Engineering Manager")];
+  const added = posting(10, "Principal Product Manager");
+  let roleCalls = 0;
+  const check = async (extra = false, incomplete = false) => {
+    const inventory = [...matches, ...others, ...(extra ? [added] : [])];
+    const pages = [page([], { url: embedded, candidates: inventory.slice(0, 4), expectedTotal: inventory.length,
+      controls: incomplete ? [] : [{ ...next, text: "Next page" }] }),
+    page([], { url: embedded + "&page=2", candidates: inventory.slice(4), expectedTotal: inventory.length })];
+    const reader = readerFor(pages), before = store.get(id);
+    try {
+      const result = await run(reader, async input => {
+        roleCalls++;
+        assert.equal(input.task, "roles");
+        assert.equal(input.criteria, instructions);
+        assert.equal(reader.clicks.length, 1, "The last page must load before any role classification");
+        return { decisions: Object.fromEntries(input.candidates.map(job => [job.id, /\bProduct Manager\b/.test(job.title)])) };
+      }, { url, instructions, knownMatches: store.knownMatches(id, before.revision) });
+      await store.complete(id, before.revision, store.generation, result);
+    } catch (error) {
+      await store.failed(id, before.revision, store.generation, error.message);
+      throw error;
+    }
+  };
+  await check(); assert.equal(store.get(id).totalCount, 7); assert.equal(store.get(id).newCount, 0);
+  const baseline = store.get(id).lastCheckId, calls = roleCalls;
+  await assert.rejects(check(true, true), /Only 4 of 10/);
+  assert.equal(roleCalls, calls, "An incomplete inventory must not reach AI");
+  assert.equal(store.get(id).lastCheckId, baseline); assert.equal(store.get(id).totalCount, 7);
+  await check(true); assert.equal(store.get(id).totalCount, 8); assert.equal(store.get(id).newCount, 1);
+  await check(true); assert.equal(store.get(id).newCount, 1); assert.equal(roleCalls, calls + 1, "Retry reuses saved role decisions");
 }));

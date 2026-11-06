@@ -1,5 +1,6 @@
 import { boardJobIdentity } from "../lib/board-identity";
 import { isNetflixSearch } from "./netflix-board";
+import { greenhouseBoard } from "./greenhouse-board";
 import { boardCreditError, validatedBoardExtraction, type BoardCandidate, type BoardExtractionInput, type BoardScan } from "../shared/boards";
 import { isFigmaCareers, knownListing, knownNext, type BoardPage } from "./board-page";
 import type { BoardReader } from "./board-browser";
@@ -59,7 +60,7 @@ export async function scanBoard(options: { url: string; reader: BoardReader; ext
       explicitlyEmpty ||= page.empty;
       for (const candidate of page.candidates) {
         candidates.set(candidate.url, candidate);
-        if (knownListing(candidate.url, options.url)) expected.add(boardJobIdentity(candidate.url).key);
+        if (knownListing(candidate.url, page.url)) expected.add(boardJobIdentity(candidate.url).key);
       }
       if (candidates.size > 10000) throw new Error("This board has too many results. Save a more specific filtered link.");
       let next = knownNext(page);
@@ -77,16 +78,17 @@ export async function scanBoard(options: { url: string; reader: BoardReader; ext
       await reader.next(next);
     }
     if (!page) throw new Error("The board could not be read.");
-    // Known sites supply an independent coverage check; AI still classifies the
-    // observed links. Other sites retain their complete candidate inventory.
-    const links = [...candidates.values()].filter(candidate => knownListing(candidate.url, options.url) !== false)
+    // The reader may have entered an embedded board. Use that verified document
+    // to recognize posting IDs, while retaining the saved parent URL in history.
+    const listingSource = page.url;
+    const links = [...candidates.values()].filter(candidate => knownListing(candidate.url, listingSource) !== false)
       .map((candidate, index) => ({ ...candidate, id: `l${index}` }));
     const size = Math.max(1, Math.min(options.batchSize || 40, 60));
     const jobs = new Map<string, BoardCandidate>(), toIdentify: BoardCandidate[] = [];
-    const source = new URL(options.url);
-    const verifiedLinks = isFigmaCareers(source) || isNetflixSearch(source);
+    const source = new URL(listingSource);
+    const verifiedLinks = isFigmaCareers(source) || isNetflixSearch(source) || Boolean(greenhouseBoard(source));
     for (const link of links) {
-      if (verifiedLinks && knownListing(link.url, options.url)) jobs.set(boardJobIdentity(link.url).key, link);
+      if (verifiedLinks && knownListing(link.url, listingSource)) jobs.set(boardJobIdentity(link.url).key, link);
       else toIdentify.push(link);
     }
     for (let index = 0; index < toIdentify.length; index += size) {
@@ -94,7 +96,7 @@ export async function scanBoard(options: { url: string; reader: BoardReader; ext
       const batch = toIdentify.slice(index, index + size);
       const response = await extract({ task: "listings", pageUrl: options.url, pageTitle: page.title,
         summary: "Identify specific vacancy links. The saved board filters have already been applied.", candidates: batch, controls: [],
-        expectedListingCount: knownListing(options.url, options.url) === null ? null : batch.length });
+        expectedListingCount: knownListing(listingSource, listingSource) === null ? null : batch.length });
       const accepted = new Set(response.listingIds);
       for (const candidate of batch) if (accepted.has(candidate.id)) jobs.set(boardJobIdentity(candidate.url).key, candidate);
     }
