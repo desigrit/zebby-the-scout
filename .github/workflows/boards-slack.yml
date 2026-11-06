@@ -1,0 +1,36 @@
+name: Slack Boards verification
+
+on:
+  push:
+    branches: [fix/boards-slack-and-compact-status]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  slack:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node node_modules/electron/install.js
+      - name: Bundle the isolated Slack check
+        run: node --input-type=module -e "import { build } from 'esbuild'; await build({ entryPoints:['scripts/qa-slack-board.mjs'], outfile:'qa-output/slack-board/runner.mjs', bundle:true, platform:'node', format:'esm', target:'node22', external:['electron'] });"
+      - name: Capture Slack reader evidence
+        run: |
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          & .\node_modules\.bin\electron.cmd qa-output/slack-board/runner.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: slack-board-evidence
+          retention-days: 7
+          path: |
+            qa-output/slack-board/*.json
+            qa-output/slack-board/*.jpg
