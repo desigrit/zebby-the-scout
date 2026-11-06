@@ -24,6 +24,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node node_modules/electron/install.js
+      - name: Verify unavailable pages and retry behavior
+        run: |
+          node --input-type=module -e "import { build } from 'esbuild'; await build({ entryPoints:['scripts/qa-board-unavailable.mjs'], outfile:'qa-output/slack-board/unavailable.mjs', bundle:true, platform:'node', format:'esm', target:'node22', external:['electron'] });"
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          & .\node_modules\.bin\electron.cmd qa-output/slack-board/unavailable.mjs
       - name: Bundle the isolated Slack check
         run: node --input-type=module -e "import { build } from 'esbuild'; await build({ entryPoints:['scripts/qa-slack-board.mjs'], outfile:'qa-output/slack-board/runner.mjs', bundle:true, platform:'node', format:'esm', target:'node22', external:['electron'] });"
       - name: Capture Slack reader evidence
@@ -46,6 +51,6 @@ jobs:
           path: |
             qa-output/slack-board/*.json
             qa-output/slack-board/*.jpg
+            qa-output/slack-board/*.html
             .impeccable/review/boards-*.png
           include-hidden-files: true
-

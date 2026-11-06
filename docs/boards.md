@@ -2,7 +2,9 @@
 
 Use **Add boards** to save public careers searches, including their filters. Paste one link per line, optionally enter a company and describe the roles you want. For example, “Look under the Product heading for product manager roles.” **Add and check** shows **Indexing** while saving your starting point. The first complete check has zero new listings.
 
-Each completed check shows its coverage, for example **59 listings checked · 7 match your instructions**. Choose **View matches** or **View listings** to inspect the saved titles, departments and locations. Switch between **Matches**, **New** and **All checked**. Separate posting IDs remain separate listings even when their titles are identical. Opening a listing does not mark it reviewed. **Mark as reviewed** clears the discoveries you have seen, including an unread posting that has since disappeared.
+Each completed check shows the number of listings matching your instructions, for example **7 listings checked**. With no instructions, this count includes every listing in the saved search. When matching roles are new, choose **4 new listings** to see their titles, departments and locations. Separate posting IDs remain separate listings even when their titles are identical. Opening a listing does not mark it reviewed. **Mark as reviewed** clears the discoveries you have seen, including an unread posting that has since disappeared.
+
+If a check fails, hover over **Check incomplete**, focus it with the keyboard, or select it to read the error. Escape closes the explanation. **Retry** checks the same saved search again. The last successful count and new discoveries remain available.
 
 Zebby collects every results page before comparing job IDs. On Netflix, each batch must confirm the saved filters and the final count. On Figma, the reader captures the department heading and vacancy title. Changing a link or tracking instructions starts a new baseline. An interrupted or incomplete scan keeps its previous successful check.
 

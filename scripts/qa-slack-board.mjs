@@ -15,6 +15,8 @@ const url = "https://slack.com/careers/dept/product";
 const controller = new AbortController();
 const reader = new BoardBrowser(controller.signal);
 const report = { url, tasks: [], page: null, error: "" };
+report.responses = [];
+reader.window.webContents.on("did-frame-navigate", (_event, target, status, _text, main) => { if (main) report.responses.push({ url: target, status }); });
 try {
   const originalRead = reader.read.bind(reader);
   reader.read = async () => {
@@ -47,8 +49,21 @@ try {
 finally { reader.close(); }
 await writeFile(path.join(output, "report.json"), JSON.stringify(report, null, 2));
 console.log(JSON.stringify({tasks: report.tasks, candidates: report.page?.candidates.length, visualNeeded: report.page?.visualNeeded, expectedTotal: report.page?.expectedTotal, error: report.error}));
+const rootReader = new BoardBrowser(controller.signal);
+try {
+  await rootReader.open("https://slack.com/careers");
+  const page = await rootReader.read();
+  await writeFile(path.join(output, "root-page.json"), JSON.stringify(page, null, 2));
+  const filters = await rootReader.window.webContents.executeJavaScript(`(() => ({
+    selects: [...document.querySelectorAll("select")].map(element => ({name: element.name, id: element.id, html: element.outerHTML})),
+    filters: [...document.querySelectorAll('input,button,a[href*="/careers/"]')].filter(element => /product|department|apply|job.listing/i.test(element.outerHTML)).map(element => element.outerHTML.slice(0, 3000)),
+    careers: [...document.querySelectorAll('a[href*="myworkdayjobs"]')].slice(0, 3).map(element => element.parentElement?.parentElement?.outerHTML.slice(0, 8000))
+  }))()`);
+  await writeFile(path.join(output, "root-filters.json"), JSON.stringify(filters, null, 2));
+  await writeFile(path.join(output, "root.html"), await rootReader.window.webContents.executeJavaScript("document.documentElement.outerHTML"));
+} catch (error) { console.error("Root careers page: " + error.message); }
+finally { rootReader.close(); }
 clearTimeout(timeout);
 app.exit(0);
 }
 void run().catch(error => { console.error(error); app.exit(1); });
-
