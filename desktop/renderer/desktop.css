@@ -14,6 +14,22 @@
 .boards-setup h2, .boards-empty h2 { font-size: 21px; margin: 0 0 10px; font-weight: 600; }
 .boards-setup > p, .boards-empty > p { color: var(--ink-soft); font-size: 14px; margin: 0 0 24px; }
 .boards-database { padding: 18px 0; }
+.boards-file-recovery { max-width: 660px; min-width: 0; margin: 48px 0; }
+.boards-file-recovery h2 { margin: 0 0 10px; font-size: 21px; font-weight: 650; line-height: 1.3; letter-spacing: -.02em; }
+.boards-file-recovery > p { max-width: 65ch; margin: 0; color: var(--ink-soft); font-size: 14px; line-height: 1.6; }
+.boards-file-recovery .boards-file-location { margin: 24px 0 16px; }
+.boards-file-location strong { overflow-wrap: anywhere; }
+.boards-file-location .boards-folder-label { margin-top: 8px; }
+.boards-file-recovery .boards-recovery-help { font-size: 12px; }
+.boards-file-recovery .settings-actions { margin-top: 20px; }
+.boards-file-recovery .boards-recovery-link { margin-top: 16px; font-size: 12px; }
+.boards-file-recovery .boards-retry-hint { margin-top: 16px; font-size: 12px; }
+.boards-file-recovery-compact { max-width: none; margin: 0; }
+.boards-file-recovery-compact h2 { font-size: 17px; }
+.boards-file-recovery-compact .boards-file-location { margin-top: 16px; }
+.boards-saved-copy { max-width: 660px; margin-top: 16px; color: var(--ink-soft); font-size: 12px; line-height: 1.6; }
+.boards-saved-copy p { margin: 4px 0; }
+.boards-saved-copy code { font: inherit; overflow-wrap: anywhere; }
 .boards-editor { display: grid; gap: 16px; padding: 20px 0 24px; margin: 0 0 16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .boards-editor label { display: grid; gap: 7px; font-size: 13px; font-weight: 600; }
 .boards-editor label small { color: var(--ink-soft); font-weight: 400; }

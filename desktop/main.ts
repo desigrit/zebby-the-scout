@@ -677,6 +677,21 @@ function registerIpc() {
     if (generation !== boardsStore.generation) throw new Error("The workspace changed. Open Import Boards history again.");
     return changeCompanion(async () => { await boardsStore.importHistory(result.filePaths[0]); boards.error = ""; });
   });
+  handle("boards:create-file", async () => {
+    boards.assertIdle();
+    if (!store.status.filePath) throw new Error("Open a workspace first.");
+    return changeCompanion(async () => {
+      try { await boardsStore.createMissingCompanion(store.status.filePath); }
+      catch (error) {
+        if (["ENOENT", "EACCES", "EPERM", "ENOSPC", "EBUSY"].includes((error as NodeJS.ErrnoException).code || "")) {
+          logDiagnostic("Could not create the Boards file", error);
+          throw new Error("Couldn't create the Boards file. Check that the Applications folder is available, has free space and allows changes, then try again.");
+        }
+        throw error;
+      }
+      boards.error = "";
+    });
+  });
   handle("boards:retry-save", async () => {
     boards.assertIdle();
     if (!store.status.filePath) throw new Error("Open a workspace first.");

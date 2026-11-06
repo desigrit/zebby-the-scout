@@ -8,7 +8,9 @@ Zebby collects every results page before comparing job IDs. On Netflix, each bat
 
 Choose your Applications file at setup. If it is named `Job Search.sqlite` or `Job Search.db`, Boards uses `Job Search-boards.sqlite` in the same folder. Settings shows both paths. Wait for both files to sync before switching computers.
 
-To reuse your beta history, finish any pending save and close the beta. Copy its saved Boards file beside the Applications file with the companion name before opening the workspace. If an empty companion already exists, choose **Import Boards history** in Settings. A missing or conflicting companion offers recovery. Existing Applications files retain their schema.
+To reuse your beta history, finish any pending save and close the beta. Copy its saved Boards file beside the Applications file with the companion name before opening the workspace. If an empty companion already exists, choose **Import Boards history** in Settings. If Zebby cannot find a previously opened Boards file, Boards and Settings show its exact filename and folder. Move or copy the file back beside Applications, then choose **Retry**. The filename must match, including spaces.
+
+Choose **Create new Boards file** to start with an empty list. Zebby keeps any cached history in a separate `-saved-` file in that folder before starting fresh. **Import Boards history** in Settings can bring that saved history back. Pending changes must be saved or copied first. A file restored by sync during creation is opened instead of replaced. Existing Applications files retain their schema.
 
 ## Analysis and billing
 

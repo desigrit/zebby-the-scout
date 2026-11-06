@@ -1,0 +1,52 @@
+name: Boards file recovery
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'desktop/boards-store.ts'
+      - 'desktop/renderer/BoardsView.tsx'
+      - 'desktop/renderer/desktop.css'
+      - 'desktop/main.ts'
+      - 'desktop/bridge.ts'
+      - 'desktop/preload.ts'
+      - 'shared/boards.ts'
+      - 'tests/boards.test.mjs'
+      - 'scripts/qa-boards-recovery.mjs'
+      - '.github/workflows/boards-recovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recovery:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node node_modules/electron/install.js
+      - run: node --experimental-strip-types --test tests/boards.test.mjs
+      - run: npx tsc --noEmit
+      - run: npm run lint -- --quiet
+      - run: npm run desktop:build
+      - name: Verify recovery in native Windows and capture both appearances
+        run: node scripts/qa-boards-recovery.mjs
+        env:
+          ZEBBY_RECOVERY_IMAGE_LOGS: '1'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: boards-file-recovery
+          path: |
+            qa-output/boards-recovery/*.png
+            qa-output/boards-recovery/report.json
+          if-no-files-found: ignore
+          retention-days: 7

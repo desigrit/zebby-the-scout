@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Check, FolderOpen, LoaderCircle, Pencil, Plus, RefreshCw, X } from "lucide-react";
 import { useAnalysisFlow } from "./AnalysisFlow";
-import { BOARD_CREDIT_MESSAGE, type Board, type BoardsState } from "../../shared/boards";
+import { BOARDS_MISSING_FILE, BOARD_CREDIT_MESSAGE, type Board, type BoardsState } from "../../shared/boards";
 import SettingsAction from "./SettingsAction";
+import { ErrorBanner } from "./WorkspaceFeedback";
 
 const initial: BoardsState = { filePath: "", filename: "", dirty: false, error: "", boards: [], progress: [] };
 const message = (error: unknown) => (error instanceof Error ? error.message : "This action could not be completed. Try again.")
@@ -10,6 +11,7 @@ const message = (error: unknown) => (error instanceof Error ? error.message : "T
 
 function useBoards() {
   const [state, setState] = useState<BoardsState>(initial), [error, setError] = useState(""), [working, setWorking] = useState(false);
+  const inFlight = useRef(false);
   useEffect(() => {
     let active = true, received = false;
     const remove = window.desktop!.onBoardsChanged(next => { received = true; if (active) setState(next); });
@@ -17,31 +19,101 @@ function useBoards() {
     return () => { active = false; remove(); };
   }, []);
   async function act(action: () => Promise<unknown>) {
-    setError(""); setWorking(true);
+    if (inFlight.current) return false;
+    inFlight.current = true; setError(""); setWorking(true);
     try { await action(); return true; }
     catch (error) { setError(message(error)); return false; }
-    finally { setWorking(false); }
+    finally { inFlight.current = false; setWorking(false); }
   }
   return { state, error, working, act };
 }
 
+function useRecoveryFocus(state: BoardsState) {
+  const focusRef = useRef<HTMLDivElement>(null), wasMissing = useRef(false);
+  useEffect(() => {
+    if (wasMissing.current && !state.fileMissing && state.filePath) focusRef.current?.focus({ preventScroll: true });
+    wasMissing.current = Boolean(state.fileMissing);
+  }, [state.fileMissing, state.filePath]);
+  return focusRef;
+}
+
+function BoardsFileRecovery({ controls, compact = false, onCreated }: {
+  controls: ReturnType<typeof useBoards>; compact?: boolean; onCreated?: () => void;
+}) {
+  const { state, working, error, act } = controls, heading = useId();
+  const [pending, setPending] = useState<"retry" | "create" | "save" | null>(null);
+  const [retryHint, setRetryHint] = useState("");
+  const location = state.expectedPath || state.filePath;
+  const separator = Math.max(location?.lastIndexOf("/") ?? -1, location?.lastIndexOf("\\") ?? -1);
+  const filename = location?.slice(separator + 1) || "Boards file", folder = location?.slice(0, separator);
+  const busy = working || state.progress.length > 0;
+  async function run(kind: "retry" | "create" | "save") {
+    setPending(kind); setRetryHint("");
+    try {
+      await act(async () => {
+        const next = await (kind === "retry" ? window.desktop!.retryBoardsSave()
+          : kind === "create" ? window.desktop!.createBoardsFile() : window.desktop!.saveBoardsRecovery());
+        if (kind === "retry" && next?.fileMissing) {
+          setRetryHint("The file is still missing. Check its name and folder, or wait for syncing to finish, then retry.");
+        }
+        if (kind === "create" && next?.filePath && !next.fileMissing && !next.boards.length) onCreated?.();
+      });
+    } finally { setPending(null); }
+  }
+  return <section className={"boards-file-recovery" + (compact ? " boards-file-recovery-compact" : "")} aria-labelledby={heading}>
+    <h2 id={heading}>{BOARDS_MISSING_FILE}</h2>
+    <p>Move or copy the file back to the folder below, using the exact filename shown, then select Retry.</p>
+    <div className="database-location boards-file-location">
+      <span>Boards file</span><strong>{filename}</strong>
+      <span className="boards-folder-label">Same folder as Applications</span><code title={folder}>{folder}</code>
+    </div>
+    <p className="boards-recovery-help">{state.dirty
+      ? "Your latest changes are saved on this computer. Save a copy of your history before creating a new file."
+      : state.canRecover
+        ? "Creating a new file starts an empty board list and keeps a copy of your previous history in this folder."
+        : "Create a new Boards file to start with an empty board list."}</p>
+    <div className="settings-actions">
+      <SettingsAction variant="primary" icon={RefreshCw} busy={pending === "retry"} disabled={busy}
+        onClick={() => void run("retry")}>Retry</SettingsAction>
+      <SettingsAction icon={Plus} busy={pending === "create"} disabled={busy || state.dirty}
+        onClick={() => void run("create")}>Create new Boards file</SettingsAction>
+    </div>
+    {(state.canRecover || state.dirty) && <button type="button" className="settings-link boards-recovery-link" disabled={busy}
+      aria-busy={pending === "save" || undefined} onClick={() => void run("save")}>
+      {pending === "save" && <LoaderCircle size={14} className="spin" aria-hidden="true" />}Save a copy of your history</button>}
+    {retryHint && <p className="boards-retry-hint" role="status">{retryHint}</p>}
+    <ErrorBanner variant="inline" message={error === BOARDS_MISSING_FILE ? "" : error} />
+  </section>;
+}
+
+function BoardsSavedCopy({ path }: { path?: string }) {
+  return path ? <div className="boards-saved-copy" role="status">
+    <p>A copy of your previous Boards history is saved here:</p><code>{path}</code>
+    <p>Use Import Boards history in Settings to bring it back.</p>
+  </div> : null;
+}
+
 export function BoardsDatabaseSettings() {
-  const { state, working, error, act } = useBoards();
+  const controls = useBoards(), { state, working, error, act } = controls;
+  const recoveryFocus = useRecoveryFocus(state);
   const location = state.filePath || state.expectedPath;
   const busy = working || state.progress.length > 0;
-  return <div className="boards-database">
-    <div className="database-location"><span>Boards file</span><strong>{state.filename || "Waiting for companion file"}</strong>
-      {location && <code title={location}>{location}</code>}</div>
-    {(error || state.error) && <p className="boards-error" role="alert">{error || state.error}</p>}
-    {state.dirty && <p className="sync-warning" role="status">Boards changes are waiting to reach the selected file.</p>}
-    <div className="settings-actions">
-      {state.filePath && !state.boards.length && !state.dirty && <SettingsAction icon={FolderOpen} disabled={busy}
-        onClick={() => void act(() => window.desktop!.importBoardsHistory())}>Import Boards history</SettingsAction>}
-      {(state.error || state.dirty) && <SettingsAction icon={RefreshCw} disabled={busy}
-        onClick={() => void act(() => window.desktop!.retryBoardsSave())}>Retry</SettingsAction>}
-      {(state.dirty || state.canRecover) && <SettingsAction icon={FolderOpen} disabled={busy}
-        onClick={() => void act(() => window.desktop!.saveBoardsRecovery())}>Save recovery copy</SettingsAction>}
-    </div>
+  return <div className="boards-database" ref={recoveryFocus} tabIndex={-1}>
+    {state.fileMissing ? <BoardsFileRecovery controls={controls} compact /> : <>
+      <div className="database-location"><span>Boards file</span><strong>{state.filename || "Boards file unavailable"}</strong>
+        {location && <code title={location}>{location}</code>}</div>
+      <ErrorBanner variant="inline" message={error || state.error} />
+      {state.dirty && <p className="sync-warning" role="status">Boards changes are waiting to reach the selected file.</p>}
+      <div className="settings-actions">
+        {state.filePath && !state.boards.length && !state.dirty && <SettingsAction icon={FolderOpen} disabled={busy}
+          onClick={() => void act(() => window.desktop!.importBoardsHistory())}>Import Boards history</SettingsAction>}
+        {(state.error || state.dirty) && <SettingsAction icon={RefreshCw} busy={working} disabled={busy}
+          onClick={() => void act(() => window.desktop!.retryBoardsSave())}>Retry</SettingsAction>}
+        {(state.dirty || state.canRecover) && <SettingsAction icon={FolderOpen} disabled={busy}
+          onClick={() => void act(() => window.desktop!.saveBoardsRecovery())}>Save recovery copy</SettingsAction>}
+      </div>
+      <BoardsSavedCopy path={state.savedCopyPath} />
+    </>}
   </div>;
 }
 
@@ -54,6 +126,7 @@ function companyFromUrl(value: string) {
 
 export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
   const controls = useBoards(), { state, error, working, act } = controls;
+  const recoveryFocus = useRecoveryFocus(state);
   const [adding, setAdding] = useState(false), [editing, setEditing] = useState<Board | null>(null);
   const [links, setLinks] = useState(""), [company, setCompany] = useState("");
   const [instructions, setInstructions] = useState("");
@@ -81,25 +154,27 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
     setEditing(board); setCompany(board.company); setLinks(board.url); setInstructions(board.instructions || ""); setAdding(false);
   }
   return <main className="desktop-main boards-page" aria-label="Boards">
-    <div className="boards-toolbar"><div className="boards-title"><h1>Boards</h1><span className="boards-beta">Beta</span></div>
-      {state.filePath && <div className="boards-toolbar-actions">
+    <div className="boards-toolbar"><div className="boards-title" ref={recoveryFocus} tabIndex={-1}><h1>Boards</h1><span className="boards-beta">Beta</span></div>
+      {state.filePath && !state.fileMissing && <div className="boards-toolbar-actions">
         <button type="button" className="button button-secondary" disabled={working || state.dirty || !state.boards.length || state.progress.length > 0}
           onClick={() => void act(() => window.desktop!.checkBoards())}><RefreshCw size={16} aria-hidden="true" />Check all</button>
         <button type="button" className="button button-primary" data-command="new" disabled={working || state.dirty}
           onClick={beginAdd}><Plus size={17} aria-hidden="true" />Add boards</button>
       </div>}
     </div>
-    {(error || state.error) && <p className="boards-error" role="alert">{error || state.error}</p>}
-    {state.dirty && <div className="boards-save-pending" role="status"><span>Boards changes are waiting to reach your database file.</span>
+    {!state.fileMissing && (error || state.error) && <p className="boards-error" role="alert">{error || state.error}</p>}
+    {!state.fileMissing && state.dirty && <div className="boards-save-pending" role="status"><span>Boards changes are waiting to reach your database file.</span>
       <button type="button" className="boards-text-action" disabled={working} onClick={() => void act(() => window.desktop!.retryBoardsSave())}>Retry save</button>
       <button type="button" className="boards-text-action" disabled={working || state.progress.length > 0} onClick={() => void act(() => window.desktop!.saveBoardsRecovery())}>Save recovery copy</button></div>}
-    {!state.filePath ? <div className="boards-setup">{state.error && <>
+    {state.fileMissing ? <BoardsFileRecovery controls={controls} onCreated={reset} />
+    : !state.filePath ? <div className="boards-setup">{state.error && <>
       {state.expectedPath && <p>{state.expectedPath}</p>}
       <button type="button" className="button button-secondary" disabled={working}
         onClick={() => void act(() => window.desktop!.retryBoardsSave())}>Retry</button>
       {state.canRecover && <button type="button" className="boards-text-action" disabled={working}
         onClick={() => void act(() => window.desktop!.saveBoardsRecovery())}>Save recovery copy</button>}</>}</div>
     : <>
+      <BoardsSavedCopy path={state.savedCopyPath} />
       {(adding || editing) && <form className="boards-editor" onSubmit={event => void save(event)} aria-label={editing ? "Edit board" : "Add boards"}>
         <label><span>{editing ? "Board link" : "Board links"}</span><textarea autoFocus rows={editing ? 2 : 3} value={links} required maxLength={100000}
           placeholder="Paste links here, one per line" onChange={event => setLinks(event.target.value)} disabled={working} /></label>
