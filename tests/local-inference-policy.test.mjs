@@ -139,12 +139,13 @@ test("cancellation releases native memory and queued work retains its own reques
 test("Ollama reserves explicit task context and output, retains model and thinking, and releases after 30 idle seconds", async () => {
   let body;
   const result = await analyzeWithOllama({ baseUrl: "http://localhost:11434", model: "chosen-model", thinkingLevel: "level:high",
-    maxTokens: 1800, instructions: "Instructions", content: "Complete input", schema: {} }, async (url, options) => {
+    maxTokens: 1800, instructions: "Instructions", content: "Complete input", images: ["board-image"], schema: {} }, async (url, options) => {
     if (url.endsWith("/api/show")) return Response.json({ model_info: { "qwen3.context_length": 32768 } });
     body = JSON.parse(options.body);
     return Response.json({ message: { content: '{"score":80}' }, done: true });
   });
   assert.equal(result.score, 80); assert.equal(body.model, "chosen-model"); assert.equal(body.think, "high");
+  assert.deepEqual(body.messages[1].images, ["board-image"]);
   assert.equal(body.keep_alive, "30s"); assert.equal(body.options.num_predict, 5896);
   assert.ok(body.options.num_ctx >= 5896 + 1024);
 });

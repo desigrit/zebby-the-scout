@@ -10,7 +10,7 @@ on:
       - '.github/workflows/msix-validation.yml'
   push:
     branches: [store/msix]
-    tags: ['v2.7.0']
+    tags: ['v*']
 
 permissions:
   contents: read
