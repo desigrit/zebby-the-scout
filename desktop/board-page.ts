@@ -165,8 +165,9 @@ export function actOnBoardPage(action: "scroll" | "reset" | "click" | "label" | 
       const rect = element.getBoundingClientRect();
       if (!rect.width || !rect.height || rect.bottom <= 0 || rect.top >= innerHeight || rect.right <= 0 || rect.left >= innerWidth) continue;
       const label = document.createElement("span");
-      label.textContent = [element.getAttribute("data-zebby-board-link"), element.getAttribute("data-zebby-board-control")].filter(Boolean).join(" ");
-      label.style.cssText = `position:absolute;left:${Math.max(0, rect.left)}px;top:${Math.max(0, rect.top - 14)}px;background:#fff;color:#111;border:1px solid #111;font:12px monospace;padding:0 2px;line-height:14px`;
+      const link = element.getAttribute("data-zebby-board-link"), control = element.getAttribute("data-zebby-board-control");
+      label.textContent = [link && "link " + link, control && "control " + control].filter(Boolean).join(" · ");
+      label.style.cssText = `position:absolute;left:${Math.max(0, rect.left)}px;top:${Math.max(0, rect.top - 20)}px;background:#fff;color:#111;border:1px solid #111;font:600 14px monospace;padding:0 3px;line-height:18px`;
       overlay.append(label);
     }
     document.documentElement.append(overlay); return true;
