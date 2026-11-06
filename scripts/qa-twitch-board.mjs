@@ -15,7 +15,7 @@ app.setPath("userData", path.join(output, "profile"));
 app.on("window-all-closed", () => {});
 await app.whenReady();
 console.log("Twitch diagnostic Electron ready");
-const source = "https://careers.twitch.tv/en/careers";
+const source = "https://careers.twitch.com/en/careers";
 const controller = new AbortController(), reader = new BoardBrowser(controller.signal);
 const events = [], started = Date.now();
 const cleanUrl = value => { const url = new URL(value); return url.origin + url.pathname; };
