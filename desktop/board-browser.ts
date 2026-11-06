@@ -31,12 +31,12 @@ const pause = (milliseconds: number, signal: AbortSignal) => new Promise<void>((
 class BoardWebsiteError extends Error {
   constructor(readonly status: number, readonly retryAfter: string | null) {
     super(status === 404 || status === 410
-      ? "This board link could not be found. Open it to check the address, then edit the saved link if it has changed. Your last successful check is unchanged."
+      ? "This board link could not be found. Open it to check the address, then edit the saved link if it has changed."
       : status === 401 || status === 403
-        ? "This careers website could not be opened. Open its link to check whether sign-in or a browser check is required. Your last successful check is unchanged."
+        ? "This careers website could not be opened. Open its link to check whether sign-in or a browser check is required."
         : status === 429
-          ? "This careers website is limiting requests. Try again later. Your last successful check is unchanged."
-          : "This careers website is temporarily unavailable. Try again later. Your last successful check is unchanged.");
+          ? "This careers website is limiting requests. Try again later."
+          : "This careers website is temporarily unavailable. Try again later.");
   }
 }
 

@@ -113,7 +113,9 @@ export async function checkBoardsRenderer(page, nav) {
   await incomplete.click(); await tip.waitFor();
   const box = await tip.boundingBox(); assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= 790 && box.y + box.height <= 620);
   await capture("boards-tooltip-compact-dark");
+  assert.equal(await tip.isVisible(), true, "The tooltip remains open after focus scrolls its row into view");
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; }); await capture("boards-tooltip-compact-light");
+  assert.equal(await tip.isVisible(), true);
   await page.keyboard.press("Escape"); await page.setViewportSize({ width: 1550, height: 850 });
   await first.getByRole("button", { name: "4 new listings", exact: true }).click();
   const listingSection = first.getByRole("region", { name: "Slack new listings" });
@@ -156,8 +158,11 @@ export async function checkBoardsRenderer(page, nav) {
   }
   await page.evaluate(() => { window.modelQA.setDatabase({ platform: "win32" }); document.documentElement.dataset.theme = "light"; });
   await nav.getByRole("button", { name: "Boards", exact: true }).click();
+  await first.getByRole("button", { name: "4 new listings", exact: true }).click(); await listingSection.waitFor();
   await first.getByRole("button", { name: "Mark as reviewed" }).click();
   assert.deepEqual(await page.evaluate(() => window.boardsQA.reviews), [{ id: "0", through: 10 }]); await first.getByText("No new listings").waitFor();
+  await listingSection.waitFor({ state: "hidden" });
+  await page.waitForFunction(() => document.activeElement?.id === "board-check-0");
   await first.getByRole("button", { name: "Check for updates" }).click(); await first.getByText("Reading page 2").waitFor();
   await first.getByText("20 listings checked", { exact: true }).waitFor();
   assert.equal(await first.getByRole("button", { name: "Edit Slack board" }).isEnabled(), false); await capture("boards-checking");
@@ -172,6 +177,16 @@ export async function checkBoardsRenderer(page, nav) {
   await third.getByText("0 listings checked", { exact: true }).waitFor();
   assert.equal(await third.getByRole("button", { name: /new listings?/ }).count(), 0, "Zero matches never show a discovery link");
   await capture("boards-updated-counts");
+  await page.evaluate(() => window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => ({ ...board,
+    error: index === 0 || index === 2 ? "This careers website is temporarily unavailable. Try again later. Your last successful check is unchanged." : "",
+    ...(index === 2 ? { lastCheckedAt: "", lastCheckId: 0 } : {}) })) }));
+  await first.getByRole("button", { name: "2 new listings", exact: true }).waitFor();
+  await first.getByRole("button", { name: "Check incomplete", exact: true }).waitFor();
+  await first.getByText("19 listings checked", { exact: true }).waitFor();
+  await third.getByRole("button", { name: "Check incomplete", exact: true }).waitFor();
+  assert.equal(await third.locator(".board-match-total").count(), 0, "A failed first check has no successful count");
+  await capture("boards-error-with-new");
+  await page.evaluate(() => window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => ({ ...board, error: "", lastCheckId: 20 + index, lastCheckedAt: "2026-11-05T16:30:00Z" })) }));
   await page.evaluate(() => window.boardsQA.set({ dirty: true, error: "Boards changes are saved on this computer. Use Retry save when OneDrive is ready." }));
   await page.locator(".boards-save-pending").waitFor();
   assert.equal(await first.getByRole("button", { name: "Check for updates" }).isEnabled(), false); await capture("boards-recovery");
@@ -187,4 +202,3 @@ export async function checkBoardsRenderer(page, nav) {
   await nav.getByRole("button", { name: "Plan", exact: true }).click();
   await page.getByRole("main", { name: "Plan", exact: true }).waitFor();
 }
-

@@ -136,9 +136,16 @@ function BoardCheckStatus({ error }: { error: string }) {
   useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
   useLayoutEffect(() => {
     if (!open || !trigger.current || !tooltip.current) return;
-    const anchor = trigger.current.getBoundingClientRect(), tip = tooltip.current.getBoundingClientRect();
-    setPosition({ left: Math.max(16, Math.min(anchor.left, window.innerWidth - tip.width - 16)),
-      top: anchor.bottom + 8 + tip.height <= window.innerHeight - 16 ? anchor.bottom + 8 : Math.max(16, anchor.top - tip.height - 8) });
+    const place = () => {
+      if (!trigger.current || !tooltip.current) return;
+      const anchor = trigger.current.getBoundingClientRect(), tip = tooltip.current.getBoundingClientRect();
+      if (anchor.bottom <= 0 || anchor.top >= window.innerHeight) { setOpen(false); return; }
+      const next = { left: Math.max(16, Math.min(anchor.left, window.innerWidth - tip.width - 16)),
+        top: anchor.bottom + 8 + tip.height <= window.innerHeight - 16 ? anchor.bottom + 8 : Math.max(16, anchor.top - tip.height - 8) };
+      setPosition(previous => previous.left === next.left && previous.top === next.top ? previous : next);
+    };
+    place(); window.addEventListener("resize", place); window.addEventListener("scroll", place, true);
+    return () => { window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
   }, [open, error]);
   useEffect(() => {
     if (!open) return;
@@ -146,9 +153,7 @@ function BoardCheckStatus({ error }: { error: string }) {
     const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { event.stopPropagation(); dismiss(); } };
     const outside = (event: PointerEvent) => { if (!trigger.current?.contains(event.target as Node) && !tooltip.current?.contains(event.target as Node)) dismiss(); };
     window.addEventListener("keydown", escape, true); window.addEventListener("pointerdown", outside);
-    window.addEventListener("resize", dismiss); window.addEventListener("scroll", dismiss, true);
-    return () => { window.removeEventListener("keydown", escape, true); window.removeEventListener("pointerdown", outside);
-      window.removeEventListener("resize", dismiss); window.removeEventListener("scroll", dismiss, true); };
+    return () => { window.removeEventListener("keydown", escape, true); window.removeEventListener("pointerdown", outside); };
   }, [open]);
   return <>
     <button ref={trigger} type="button" className="board-check-status" aria-describedby={open ? id : undefined}
@@ -201,7 +206,7 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
   const [links, setLinks] = useState(""), [company, setCompany] = useState("");
   const [instructions, setInstructions] = useState("");
   const [inspection, setInspecting] = useState<{ id: string; filePath: string } | null>(null);
-  const inspecting = inspection?.filePath === state.filePath ? inspection : null;
+  const inspecting = inspection?.filePath === state.filePath && state.boards.some(board => board.id === inspection.id && board.lastCheckedAt && board.newCount > 0) ? inspection : null;
   const inspectionButton = useRef<HTMLButtonElement | null>(null);
   function inspect(board: Board, button: HTMLButtonElement) {
     inspectionButton.current = button; setInspecting({ id: board.id, filePath: state.filePath });
@@ -210,6 +215,11 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
     setInspecting(null);
     const target = inspectionButton.current?.isConnected ? inspectionButton.current : document.getElementById("board-check-" + inspecting?.id);
     target?.focus({ preventScroll: true });
+  }
+  async function markReviewed(board: Board) {
+    if (!await act(() => window.desktop!.markBoardReviewed(board.id, board.lastCheckId))) return;
+    if (inspecting?.id === board.id) setInspecting(null);
+    requestAnimationFrame(() => document.getElementById("board-check-" + board.id)?.focus({ preventScroll: true }));
   }
   const analysis = useAnalysisFlow();
   const dirty = editing ? links !== editing.url || company !== editing.company || instructions !== (editing.instructions || "")
@@ -300,9 +310,9 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
                   {board.error && !progress && <BoardCheckStatus error={board.error} />}
                   <span className="board-match-total">{board.totalCount} {board.totalCount === 1 ? "listing" : "listings"} checked</span>
                 </div>
-                {board.newCount > 0 && <button type="button" className="boards-text-action" disabled={working || state.dirty} onClick={() => void act(() => window.desktop!.markBoardReviewed(board.id, board.lastCheckId))}>
+                {board.newCount > 0 && <button type="button" className="boards-text-action" disabled={working || state.dirty} onClick={() => void markReviewed(board)}>
                   <Check size={14} aria-hidden="true" />Mark as reviewed</button>}
-              </> : !progress && (board.error ? <BoardCheckStatus error={board.error} /> : <span className="board-no-updates">Not indexed</span>)}
+              </> : !progress && <span role="status">{board.error ? <BoardCheckStatus error={board.error} /> : <span className="board-no-updates">Not indexed</span>}</span>}
               {progress && <span className="board-progress" role="status" title={progress.message}>
                 <LoaderCircle size={13} className="spin" aria-hidden="true" />{board.lastCheckedAt ? progress.message : "Indexing"}</span>}
             </div>
@@ -323,4 +333,3 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
     </>}
   </main>;
 }
-

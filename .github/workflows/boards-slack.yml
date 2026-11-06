@@ -1,8 +1,9 @@
 name: Slack Boards verification
 
 on:
-  push:
-    branches: [fix/boards-slack-and-compact-status]
+  pull_request:
+    branches: [main]
+    paths: ['desktop/board-*.ts', 'desktop/boards-scan.ts', 'scripts/qa-slack-board.mjs', 'scripts/qa-board-unavailable.mjs', '.github/workflows/boards-slack.yml']
   workflow_dispatch:
 
 permissions:
@@ -15,7 +16,7 @@ concurrency:
 jobs:
   slack:
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,26 +32,13 @@ jobs:
           & .\node_modules\.bin\electron.cmd qa-output/slack-board/unavailable.mjs
       - name: Bundle the isolated Slack check
         run: node --input-type=module -e "import { build } from 'esbuild'; await build({ entryPoints:['scripts/qa-slack-board.mjs'], outfile:'qa-output/slack-board/runner.mjs', bundle:true, platform:'node', format:'esm', target:'node22', external:['electron'] });"
-      - name: Capture Slack reader evidence
+      - name: Check the saved Slack Product URL
         run: |
           Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
           & .\node_modules\.bin\electron.cmd qa-output/slack-board/runner.mjs
-      - run: npx tsc --noEmit
-      - run: npm run lint -- --quiet
-      - run: npm run desktop:build
-      - run: node node_modules/playwright-core/cli.js install chromium
-      - name: Check compact Boards statuses and error disclosure
-        run: npm run test:renderer
-        env:
-          ZEBBY_CAPTURE_BOARDS: '1'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: slack-board-evidence
           retention-days: 7
-          path: |
-            qa-output/slack-board/*.json
-            qa-output/slack-board/*.jpg
-            qa-output/slack-board/*.html
-            .impeccable/review/boards-*.png
-          include-hidden-files: true
+          path: qa-output/slack-board/*.json
