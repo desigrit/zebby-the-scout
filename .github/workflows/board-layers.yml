@@ -1,0 +1,57 @@
+name: Layered Boards checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths: ['desktop/**', 'shared/**', 'credits-service/**', 'tests/**', 'scripts/qa-board*', '.github/workflows/board-layers.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: board-layers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  layers:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node node_modules/electron/install.js
+      - run: npm run test:boards
+      - run: npm run test:credits
+      - run: npx tsc --noEmit
+      - run: npm run lint -- --quiet
+      - run: npm run desktop:build
+      - run: npm run credits:build
+      - name: Bundle native reader fixtures
+        run: node --input-type=module -e "import { build } from 'esbuild'; await build({ entryPoints:['scripts/qa-board-layers.mjs'], outfile:'qa-output/board-layers/runner.mjs', bundle:true, platform:'node', format:'esm', target:'node22', external:['electron'] });"
+      - name: Verify rendered, embedded and visual layers
+        run: |
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          & .\node_modules\.bin\electron.cmd qa-output/board-layers/runner.mjs
+      - run: node node_modules/playwright-core/cli.js install chromium
+      - name: Verify listing inspection and capture both appearances
+        run: npm run test:renderer
+        env:
+          ZEBBY_CAPTURE_BOARDS: '1'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: board-layers-evidence
+          path: |
+            qa-output/board-layers/*.json
+            qa-output/board-layers/*.jpg
+            .impeccable/review/boards-*.png
+            credits-service/dist/server.mjs
+          retention-days: 7
+          if-no-files-found: ignore

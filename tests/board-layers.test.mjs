@@ -11,6 +11,7 @@ import { openAIAnalysisInput, countOpenAIAnalysisInput } from "../desktop/openai
 import { anthropicAnalysisInput, countAnthropicAnalysisInput } from "../desktop/anthropic-request.ts";
 import { onlineAnalysis } from "../desktop/online-analysis.ts";
 import { creditOutputLimit } from "../shared/online-models.ts";
+import { boardRequest } from "../desktop/board-request.ts";
 
 const folder = await mkdtemp(path.join(tmpdir(), "zebby-layers-"));
 await build({ stdin: { contents: "export * from './desktop/board-feeds'; export * from './desktop/boards-scan'; export * from './desktop/boards-store'; export * from './desktop/boards-service'; export * from './desktop/ollama';", resolveDir: process.cwd() },
@@ -31,6 +32,19 @@ test("feed selection preserves supported filters and declines unknown filters or
   assert.equal(new URL(feed.endpoint).hostname, "api.eu.lever.co");
   assert.deepEqual(new URL(feed.endpoint).searchParams.getAll("team"), ["Product", "Design"]);
   assert.equal(new URL(feed.endpoint).searchParams.get("location"), "Berlin");
+});
+test("transient request retries respect server delays, cancellation and a bounded attempt count", async () => {
+  let calls = 0; const waits = [];
+  const result = await boardRequest(async () => ++calls < 3 ? new Response(null, { status: 429, headers: { "Retry-After": "3" } }) : Response.json({ ok: true }),
+    "https://example.org/jobs", {}, signal(), async ms => { waits.push(ms); });
+  assert.equal(result.status, 200); assert.equal(calls, 3); assert.deepEqual(waits, [3000, 3000]);
+  calls = 0;
+  assert.equal((await boardRequest(async () => { calls++; return new Response(null, { status: 429, headers: { "Retry-After": "90" } }); },
+    "https://example.org/jobs", {}, signal(), async () => assert.fail("Long waits must be left for a later check"))).status, 429);
+  assert.equal(calls, 1);
+  const abort = new AbortController();
+  await assert.rejects(boardRequest(async () => new Response(null, { status: 503 }), "https://example.org/jobs", {}, abort.signal,
+    async () => abort.abort()), /abort/i);
 });
 test("Greenhouse verifies the entire feed and keeps location postings distinct", async () => {
   const feed = boardFeed("https://job-boards.greenhouse.io/twitch"), data = { meta: { total: 3 }, jobs: [

@@ -23,6 +23,14 @@ export async function checkBoardsRenderer(page, nav) {
         state.progress = (ids || state.boards.map(board => board.id)).map(boardId => ({ boardId, requestId: boardId, phase: "reading", message: "Reading page 2" })); publish(); return state; },
       cancelBoardCheck: async id => { state.progress = state.progress.filter(entry => entry.boardId !== id); publish(); return true; },
       markBoardReviewed: async (id, through) => { window.boardsQA.reviews.push({ id, through }); state.boards.find(board => board.id === id).newCount = 0; publish(); return state; },
+      boardListings: async (id, checkId, filter, offset = 0) => {
+        if (window.boardsQA.listingError) throw new Error("The saved listings could not be opened. Try again.");
+        const board = state.boards.find(item => item.id === id), count = filter === "new" ? board.newCount : filter === "matches" ? 7 : 59;
+        return { checkId, total: count, offset, listings: Array.from({ length: Math.min(50, Math.max(0, count - offset)) }, (_, i) => ({
+          key: String(offset + i), url: "https://example.org/jobs/" + (offset + i), title: i < 3 ? "Senior Product Manager, Commerce" : "Sr. Product Manager, Premium Content Experience",
+          department: "Community Growth", location: ["San Francisco, CA", "Seattle, WA", "Irvine, CA", "Los Angeles, CA", "New York City"][i % 5],
+          matches: i < 7, current: true, unread: filter === "new" })) };
+      },
       retryBoardsSave: async () => { state.dirty = false; state.error = ""; publish(); return state; },
       saveBoardsRecovery: async () => { state.dirty = false; state.error = ""; publish(); return state; },
     });
@@ -81,6 +89,29 @@ export async function checkBoardsRenderer(page, nav) {
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await first.getByText(seniorRoles, { exact: true }).waitFor();
   await first.getByText("20 listings checked · 20 match your instructions").waitFor();
+  await first.getByRole("button", { name: "View matches", exact: true }).click();
+  const listingSection = first.getByRole("region", { name: "Slack listings" });
+  await listingSection.getByText("1-7 of 7", { exact: true }).waitFor();
+  assert.equal(await listingSection.locator(".board-listing-items li").count(), 7);
+  assert.equal(await listingSection.getByRole("heading").evaluate(node => node === document.activeElement), true);
+  await capture("boards-listings-light");
+  await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; }); await capture("boards-listings-dark");
+  await page.setViewportSize({ width: 790, height: 620 }); await capture("boards-listings-compact-dark");
+  await page.evaluate(() => { document.documentElement.dataset.theme = "light"; }); await capture("boards-listings-compact-light");
+  await page.setViewportSize({ width: 1550, height: 850 });
+  await listingSection.getByRole("button", { name: "All checked", exact: true }).click();
+  await listingSection.getByText("1-50 of 59", { exact: true }).waitFor();
+  await listingSection.getByRole("button", { name: "Next", exact: true }).click();
+  await listingSection.getByText("51-59 of 59", { exact: true }).waitFor();
+  assert.equal(await listingSection.getByRole("button", { name: "Next", exact: true }).isEnabled(), false);
+  await page.evaluate(() => { window.boardsQA.listingError = true; });
+  await listingSection.getByRole("button", { name: "New", exact: true }).click();
+  await listingSection.getByRole("alert").waitFor(); await capture("boards-listings-error");
+  await page.evaluate(() => { window.boardsQA.listingError = false; });
+  await listingSection.getByRole("button", { name: "Retry", exact: true }).click();
+  await listingSection.getByText("1-4 of 4", { exact: true }).waitFor();
+  await listingSection.getByRole("button", { name: "Close listings", exact: true }).click();
+  assert.equal(await first.getByRole("button", { name: "View matches", exact: true }).evaluate(node => node === document.activeElement), true);
   await capture("boards-desktop-light"); await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
   await capture("boards-desktop-dark"); await page.setViewportSize({ width: 790, height: 620 }); await capture("boards-compact-dark");
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; }); await capture("boards-compact-light");
@@ -108,7 +139,7 @@ export async function checkBoardsRenderer(page, nav) {
     totalCount: [19, 1, 0][index], newCount: [2, 1, 0][index], error: "", lastCheckId: 20 + index, lastCheckedAt: "2026-11-05T16:30:00Z" })) }));
   await first.getByText("2 new listings", { exact: true }).waitFor(); await first.getByText("19 listings checked · 19 match your instructions").waitFor();
   const second = page.getByRole("article", { name: "Uber", exact: true });
-  await second.getByText("1 new listing", { exact: true }).waitFor(); await second.getByText("1 listings checked · 1 tracked").waitFor();
+  await second.getByText("1 new listing", { exact: true }).waitFor(); await second.getByText("1 listing checked · 1 tracked").waitFor();
   await third.getByText("0 listings checked · 0 tracked").waitFor(); await capture("boards-updated-counts");
   await page.evaluate(() => window.boardsQA.set({ dirty: true, error: "Boards changes are saved on this computer. Use Retry save when OneDrive is ready." }));
   await page.locator(".boards-save-pending").waitFor();

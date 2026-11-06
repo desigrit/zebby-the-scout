@@ -3,6 +3,7 @@ import { boardJobIdentity, boardUrl } from "../lib/board-identity";
 import { greenhouseBoard } from "./greenhouse-board";
 import type { BoardCandidate } from "../shared/boards";
 import type { BoardPage } from "./board-page";
+import { boardRequest } from "./board-request";
 
 export type BoardFeed = { kind: "greenhouse" | "lever" | "ashby"; board: string; url: string; endpoint: string };
 type Request = (url: string, init: RequestInit) => Promise<Response>;
@@ -50,8 +51,7 @@ const ashbyResponse = z.object({ apiVersion: z.literal("1"), jobs: z.array(z.obj
 })).max(10000) });
 
 async function json(request: Request, url: string, signal: AbortSignal) {
-  const response = await request(url, { credentials: "omit", redirect: "error", headers: { Accept: "application/json" },
-    signal: AbortSignal.any([signal, AbortSignal.timeout(30000)]) });
+  const response = await boardRequest(request, url, { credentials: "omit", redirect: "error", headers: { Accept: "application/json" } }, signal);
   if (!response.ok || !response.body) throw new Error("The job feed is temporarily unavailable.");
   const reader = response.body.getReader(), chunks: Uint8Array[] = [];
   let bytes = 0;

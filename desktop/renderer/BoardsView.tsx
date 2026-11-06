@@ -127,15 +127,18 @@ function companyFromUrl(value: string) {
 
 function BoardResults({ board, initialFilter, onClose }: { board: Board; initialFilter: BoardListingFilter; onClose(): void }) {
   const [filter, setFilter] = useState(initialFilter), [offset, setOffset] = useState(0), [retry, setRetry] = useState(0);
-  const [result, setResult] = useState<BoardListings | null>(null), [error, setError] = useState("");
+  const [loaded, setLoaded] = useState<{ key: string; result?: BoardListings; error?: string } | null>(null);
+  const requestKey = JSON.stringify([board.id, board.lastCheckId, board.newCount, filter, offset, retry]);
+  const result = loaded?.key === requestKey ? loaded.result : null, error = loaded?.key === requestKey ? loaded.error : "";
   const heading = useId(), focus = useRef<HTMLHeadingElement>(null);
   useEffect(() => { focus.current?.focus({ preventScroll: true }); }, []);
   useEffect(() => {
-    let active = true; setResult(null); setError("");
+    let active = true;
     void window.desktop!.boardListings(board.id, board.lastCheckId, filter, offset)
-      .then(value => { if (active) setResult(value); }).catch(error => { if (active) setError(message(error)); });
+      .then(value => { if (active) setLoaded({ key: requestKey, result: value }); })
+      .catch(error => { if (active) setLoaded({ key: requestKey, error: message(error) }); });
     return () => { active = false; };
-  }, [board.id, board.lastCheckId, board.newCount, filter, offset, retry]);
+  }, [board.id, board.lastCheckId, board.newCount, filter, offset, retry, requestKey]);
   function choose(value: BoardListingFilter) { setFilter(value); setOffset(0); }
   return <section id={"board-results-" + board.id} className="board-listings" aria-labelledby={heading}>
     <div className="board-listings-heading"><div><h2 id={heading} ref={focus} tabIndex={-1}>{board.company} listings</h2>
@@ -169,11 +172,11 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
   const [adding, setAdding] = useState(false), [editing, setEditing] = useState<Board | null>(null);
   const [links, setLinks] = useState(""), [company, setCompany] = useState("");
   const [instructions, setInstructions] = useState("");
-  const [inspecting, setInspecting] = useState<{ id: string; filter: BoardListingFilter } | null>(null);
+  const [inspection, setInspecting] = useState<{ id: string; filter: BoardListingFilter; filePath: string } | null>(null);
+  const inspecting = inspection?.filePath === state.filePath ? inspection : null;
   const inspectionButton = useRef<HTMLButtonElement | null>(null);
-  useEffect(() => { setInspecting(null); }, [state.filePath]);
   function inspect(board: Board, filter: BoardListingFilter, button: HTMLButtonElement) {
-    inspectionButton.current = button; setInspecting({ id: board.id, filter });
+    inspectionButton.current = button; setInspecting({ id: board.id, filter, filePath: state.filePath });
   }
   function closeInspection() { setInspecting(null); inspectionButton.current?.focus({ preventScroll: true }); }
   const analysis = useAnalysisFlow();
@@ -262,7 +265,7 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
                         aria-controls={inspecting?.id === board.id ? "board-results-" + board.id : undefined}
                         onClick={event => inspect(board, "new", event.currentTarget)}>{board.newCount} new {board.newCount === 1 ? "listing" : "listings"}</button>
                     : <span className="board-no-updates">{board.error && !progress ? "Check incomplete" : "No new listings"}</span>}
-                  <span className="board-match-total">{board.checkedCount ?? board.totalCount} listings checked · {board.totalCount} {board.instructions ? "match your instructions" : "tracked"}</span>
+                  <span className="board-match-total">{board.checkedCount ?? board.totalCount} {(board.checkedCount ?? board.totalCount) === 1 ? "listing" : "listings"} checked · {board.totalCount} {board.instructions ? board.totalCount === 1 ? "matches your instructions" : "match your instructions" : "tracked"}</span>
                 </div>
                 <button type="button" className="boards-text-action board-view-listings" aria-expanded={inspecting?.id === board.id}
                   aria-controls={inspecting?.id === board.id ? "board-results-" + board.id : undefined}
