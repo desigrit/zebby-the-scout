@@ -1,6 +1,6 @@
 # Zebby privacy
 
-Last updated: October 31, 2026
+Last updated: November 6, 2026
 
 Zebby is a job application tracker from Desigrit Labs. This page explains what stays on your computer and what is sent when you use connected features.
 
@@ -10,7 +10,7 @@ Zebby stores your plans, applications, job descriptions, notes, resume files, an
 
 If you put the database in OneDrive or another synced folder, that service handles synchronization under its own terms. Zebby also keeps local working and recovery copies to protect database saves. Databases and recovery files outside the app's data folder remain on disk when you uninstall Zebby. You control those files.
 
-Boards stores saved board URLs and filters, company names, tracking instructions, job identities, scan and review history in a second SQLite file alongside Applications. Its working copy, recovery data and cache of validated model decisions stay in the app's local folders. Your chosen sync service may transfer both workspace files.
+Boards stores saved board URLs and filters, company names, tracking instructions, job identities, observed titles, departments, locations, scan and review history in a second SQLite file alongside Applications. Its working copy, recovery data and cache of validated model decisions stay in the app's local folders. Your chosen sync service may transfer both workspace files.
 
 ## Analysis choices
 
@@ -22,7 +22,9 @@ Boards stores saved board URLs and filters, company names, tracking instructions
 | Your Anthropic API key | Job text, your summary, and extracted resume text go directly to Anthropic. Your Anthropic account is billed. |
 | Zebby credits | Job text, your summary, and extracted resume text pass through Zebby's credits service to the selected online model provider. |
 
-For a Boards check, Zebby contacts the public careers site from your computer. When a model is needed it receives the relevant URLs, titles, department headings, page excerpts, navigation controls and any tracking instructions. A downloaded model processes them on your computer. Ollama receives them at your selected server. Personal keys send them directly to OpenAI or Anthropic. Zebby credits send them through the credits service to the selected provider. The service retains validated decisions under its normal recovery policy.
+For a Boards check, Zebby contacts the public careers site and applicable recruiting-platform feed from your computer. When a model is needed it receives the relevant URLs, titles, department headings, page excerpts, observed link and control IDs, and any tracking instructions. When these are insufficient, visual reading sends screenshots of the public page in Zebby's isolated browser. It does not capture your desktop or other browser windows.
+
+A downloaded model processes text on your computer. Ollama receives text and, for a vision-capable model, screenshots at your selected server. Personal keys send the required text and screenshots directly to OpenAI or Anthropic. Zebby credits send them through the credits service to the selected provider. Zebby does not save the screenshots to a database, cache or log. It keeps validated results and request hashes for interrupted-check recovery. The credits service retains validated decisions under its normal recovery policy.
 
 Model providers process requests under their own terms. Retention and use for model improvement depend on the provider and the data-sharing settings of the account serving the request. With your own API key, those are your account settings. With Zebby credits, those are the service operator's account settings. OpenAI requests set `store: false`; this does not override separate provider retention or data-sharing settings.
 

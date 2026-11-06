@@ -124,7 +124,7 @@ export function captureBoardPage(sectionId?: string): BoardPage {
   const embeddedBoardPending = !embeddedBoards.length && [...document.scripts].some(script =>
     isGreenhouseEmbed(script.src.replace(/\/js(?=\?|$)/, "")));
   const scrollable = query<HTMLElement>("*").filter(element => visible(element) && element.clientHeight > 100 &&
-    element.scrollHeight > element.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(element).overflowY) &&
+    element.scrollHeight > element.clientHeight + 8 && /auto|scroll/.test(getComputedStyle(element).overflowY) &&
     !element.closest("nav,header,footer") && element.querySelector("a[href],[role=link],canvas"));
   for (const [index, element] of scrollable.entries()) element.setAttribute("data-zebby-board-scroll", String(index));
   const height = document.documentElement.scrollHeight + scrollable.reduce((sum, element) => sum + element.scrollHeight, 0);

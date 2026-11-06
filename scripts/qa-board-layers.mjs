@@ -42,6 +42,8 @@ async function visualFixture() {
         assert.ok(input.candidates.length); assert.equal(input.image.mediaType, "image/jpeg");
         const number = images.length; images.push(input.image.data);
         await writeFile(path.join(output, 'visual-' + number + '.jpg'), Buffer.from(input.image.data, 'base64'));
+        if (number === 0) await writeFile(path.join(output, 'visual-sample.json'), JSON.stringify({ input,
+          expected: { listingIds: input.candidates.map(item => item.id), nextControlId: input.controls.find(item => !item.disabled)?.id || '' } }));
         return { listings: input.candidates.map(item => ({ id: item.id, title: item.url.endsWith('/1') ? 'Senior Product Manager' : 'Product Engineering Manager', department: 'Product', location: 'Seattle, WA' })),
           nextControlId: input.controls.find(item => !item.disabled)?.id || '', expectedTotal: 2, empty: false, complete: true };
       }
