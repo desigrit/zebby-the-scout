@@ -10,13 +10,15 @@ OWN-WORLD: Extend Zebby's existing Ember rows, platform typography, rust actions
 
 STORY: Read the count of matching roles, inspect new discoveries, then mark them reviewed. An interrupted scan preserves the last successful results.
 
-FIRST VIEWPORT: Keep the company, saved URL and instructions, last check date, matching count and check or retry action visible, with the new-listing link and Mark as reviewed when discoveries exist. Show error details on hover, focus or tap of Check incomplete without expanding the row.
+FIRST VIEWPORT: Keep the company, saved URL, a Custom instructions indicator when applicable, last check date, matching count and check or retry action visible, with the new-listing link and Mark as reviewed when discoveries exist. Read or change the complete instructions through Edit board. Show error details on hover, focus or tap of Check incomplete without expanding the row.
 
 FORM: Local extension. Use the incumbent tokens and controls, an inline list of new listings, existing 50-listing pagination, an accessible tooltip and existing focus recovery. No new identity, assets or system changes.
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
 
 ## Compact board status
+
+The company name and an optional Custom instructions indicator share one line above the saved URL. The indicator pairs a 13px sliders icon with 11px muted text and has no filled badge, hover preview or separate action. Long company names truncate with native hover text. Full instructions appear in the existing Edit board form, so their length does not change the summary row height. Boards without instructions have no indicator.
 
 Boards uses a centered BETA badge in the page heading and navigation label, with solid Ember rust and white text in both appearances. Each completed board shows one count labeled "x listings checked": roles matching its saved instructions, or all openings at its saved URL when instructions are blank. This count remains visible while a subsequent scan runs and after an interrupted scan, until a complete result replaces it.
 

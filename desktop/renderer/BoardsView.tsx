@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, FolderOpen, LoaderCircle, Pencil, Plus, RefreshCw, X } from "lucide-react";
+import { Check, FolderOpen, LoaderCircle, Pencil, Plus, RefreshCw, SlidersHorizontal, X } from "lucide-react";
 import { useAnalysisFlow } from "./AnalysisFlow";
 import { BOARDS_MISSING_FILE, BOARD_CREDIT_MESSAGE, type Board, type BoardsState, type BoardListings } from "../../shared/boards";
 import SettingsAction from "./SettingsAction";
@@ -294,8 +294,9 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
         {state.boards.map(board => {
           const progress = state.progress.find(item => item.boardId === board.id);
           return <article key={board.id} className="board-row" aria-label={board.company}>
-            <div className="board-identity"><strong>{board.company}</strong><a href={board.url} target="_blank" rel="noopener noreferrer" title={board.url}>{board.url}</a>
-              {board.instructions && <span className="board-instructions" title={board.instructions}>{board.instructions}</span>}</div>
+            <div className="board-identity"><div className="board-heading"><strong title={board.company}>{board.company}</strong>
+              {board.instructions?.trim() && <span className="board-instructions-indicator"><SlidersHorizontal size={13} aria-hidden="true" />Custom instructions</span>}</div>
+              <a href={board.url} target="_blank" rel="noopener noreferrer" title={board.url}>{board.url}</a></div>
             <div className="board-date"><span className="board-mobile-label">Last checked on</span>{board.lastCheckedAt
               ? <time dateTime={board.lastCheckedAt} title={new Date(board.lastCheckedAt).toLocaleString()}>{new Date(board.lastCheckedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</time>
               : <span>Never checked</span>}</div>

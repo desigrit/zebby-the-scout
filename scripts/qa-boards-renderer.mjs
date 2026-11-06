@@ -64,7 +64,8 @@ export async function checkBoardsRenderer(page, nav) {
   assert.equal(await instructions.inputValue(), seniorRoles);
   await page.evaluate(() => { window.boardsQA.failedAdd = false; }); await page.getByRole("button", { name: "Add and check" }).click();
   await page.locator(".board-row").nth(2).waitFor(); assert.equal(await page.locator(".board-row").count(), 3);
-  assert.equal(await page.locator(".board-row").getByText(seniorRoles, { exact: true }).count(), 3);
+  assert.equal(await page.locator(".board-row").getByText("Custom instructions", { exact: true }).count(), 3);
+  assert.equal(await page.locator(".board-row").getByText(seniorRoles, { exact: true }).count(), 0);
   assert.equal(await page.getByText("Indexing", { exact: true }).count(), 3, "Queued first scans show Indexing");
   assert.equal(await page.locator(".board-match-total").count(), 0, "Unfinished first scans never show a misleading zero");
   await capture("boards-indexing");
@@ -88,7 +89,8 @@ export async function checkBoardsRenderer(page, nav) {
   await page.getByRole("button", { name: "Edit Uber board" }).click();
   assert.equal(await company.inputValue(), "Slack Product", "Editing another row cannot silently replace a draft");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  await first.getByText(seniorRoles, { exact: true }).waitFor();
+  await first.getByText("Custom instructions", { exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => window.boardsQA.get().boards[0].instructions), seniorRoles, "Cancel preserves the full saved instructions");
   await first.getByText("20 listings checked", { exact: true }).waitFor();
   await page.evaluate(() => window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => index === 0 ? { ...board, totalCount: 7, checkedCount: 59 } : board) }));
   await first.getByText("7 listings checked", { exact: true }).waitFor();
@@ -195,6 +197,24 @@ export async function checkBoardsRenderer(page, nav) {
   assert.equal(await first.getByRole("button", { name: "Check for updates" }).isEnabled(), true);
   await page.getByRole("button", { name: "Check all", exact: true }).click(); assert.equal((await page.evaluate(() => window.boardsQA.get().progress)).length, 3);
   await page.evaluate(() => window.boardsQA.set({ progress: [] }));
+  const savedBoards = await page.evaluate(() => structuredClone(window.boardsQA.get().boards));
+  await page.evaluate(() => window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => ({ ...board,
+    newCount: 0, error: "", instructions: index === 0
+      ? "Only track Product Manager or Senior Product Manager roles. Ignore Principal, Staff, Director, Sr Manager and Group roles. ".repeat(10).trim()
+      : index === 2 ? "Look under the Product heading for product manager roles." : "" })) }));
+  for (const width of [1550, 1050, 790]) {
+    await page.setViewportSize({ width, height: width === 790 ? 620 : 850 });
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate(theme => { document.documentElement.dataset.theme = theme; document.querySelector(".desktop-workspace").scrollTop = 0; }, theme);
+      await capture("boards-instructions-" + width + "-" + theme);
+    }
+  }
+  await page.setViewportSize({ width: 1550, height: 850 });
+  await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
+  await first.getByRole("button", { name: "Edit Slack board" }).click();
+  await capture("boards-instructions-edit");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.evaluate(boards => window.boardsQA.set({ boards }), savedBoards);
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
   const syncHint = page.getByText("Quit Zebby and let both files sync before switching computers.", { exact: true });
   await syncHint.waitFor();
