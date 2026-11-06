@@ -56,9 +56,18 @@ try {
     const page = await reader.read();
     console.log(JSON.stringify({ stage: "reader-complete", elapsed: Date.now() - started, page }));
   } catch(error) { console.log(JSON.stringify({ stage: "reader-error", elapsed: Date.now() - started, error: error.message })); }
-  await inspect("initial");
-  await new Promise(resolve => setTimeout(resolve, 5000)); await inspect("after-5-seconds");
-  await new Promise(resolve => setTimeout(resolve, 10000)); await inspect("after-15-seconds");
+  for (const frame of reader.window.webContents.mainFrame.framesInSubtree) {
+    if (frame === reader.window.webContents.mainFrame) continue;
+    const url = new URL(frame.url);
+    if (!["job-boards.greenhouse.io", "boards.greenhouse.io"].includes(url.hostname)) continue;
+    const page = await frame.executeJavaScript("(" + captureBoardPage.toString() + ")()");
+    const safeUrl = new URL(page.url); safeUrl.searchParams.delete("validityToken"); page.url = safeUrl.href;
+    const html = await frame.executeJavaScript("(" + (() => [...document.querySelectorAll("a[href]")].filter(link =>
+      /product manager/i.test(link.innerText)).slice(0, 10).map(link => ({ href: link.href, html: link.outerHTML,
+      parent: link.parentElement?.outerHTML.slice(0, 2000) }))).toString() + ")()");
+    console.log(JSON.stringify({ stage: "frame", page, html }));
+    await writeFile(path.join(output, "frame.json"), JSON.stringify(page, null, 2));
+  }
   console.log(JSON.stringify({ events }));
   await writeFile(path.join(output, "network.json"), JSON.stringify(events, null, 2));
 } catch(error) { console.error(error); process.exitCode = 1; }
