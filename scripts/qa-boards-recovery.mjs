@@ -53,12 +53,13 @@ try {
     await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
     await page.evaluate(async () => { await document.fonts.ready;
       await Promise.all(document.getAnimations().filter(animation => animation.effect?.getTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {}))); });
+    await page.locator(".boards-file-recovery").scrollIntoViewIfNeeded();
     const metrics = await page.locator(".boards-file-recovery").evaluate(element => {
       const style = getComputedStyle(element), heading = getComputedStyle(element.querySelector("h2"));
       const actions = [...element.querySelectorAll(".settings-action")].map(button => {
         const r = button.getBoundingClientRect(); return { label: button.textContent, width: r.width, height: r.height };
       });
-      return { viewportWidth: window.innerWidth, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth, headingSize: heading.fontSize, marginTop: style.marginTop, actions };
+      return { viewportWidth: window.innerWidth, viewportHeight: window.innerHeight, dpr: window.devicePixelRatio, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth, headingSize: heading.fontSize, marginTop: style.marginTop, actions };
     });
     assert.ok(metrics.scrollWidth <= metrics.clientWidth + 1, name + " wraps paths");
     for (const action of metrics.actions) {
@@ -66,7 +67,15 @@ try {
         name + " preserves action targets at fractional zoom: " + JSON.stringify(action));
     }
     assert.equal(await page.locator(".desktop-workspace").evaluate(element => element.scrollWidth > element.clientWidth), false);
-    const png = path.join(output, name + ".png"); await page.screenshot({ path: png });
+    const png = path.join(output, name + ".png");
+    const image = Buffer.from(await app.evaluate(async ({ BrowserWindow }) => {
+      const capture = await BrowserWindow.getAllWindows()[0].webContents.capturePage(undefined, { stayHidden: true, stayAwake: true });
+      return capture.toPNG().toString("base64");
+    }), "base64");
+    const dimensions = await sharp(image).metadata();
+    assert.ok(Math.abs(dimensions.width - metrics.viewportWidth * metrics.dpr) <= 2, "Capture includes the full scaled window width");
+    assert.ok(Math.abs(dimensions.height - metrics.viewportHeight * metrics.dpr) <= 2, "Capture includes the full scaled window height");
+    await writeFile(png, image);
     captures.push({ name, width, height, theme, metrics });
   }
   await rename(companion, moved);
