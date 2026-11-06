@@ -1,5 +1,6 @@
 import { onlineModel, validateOnlineThinking } from "../shared/online-models.ts";
 import { providerFailure } from "./online-response.ts";
+import { boardVisualParts } from "../shared/analysis-images.ts";
 
 type StructuredRequest = { model: string; instructions: string; input: unknown; name: string;
   schema: Record<string, unknown>; thinkingLevel?: string };
@@ -10,8 +11,12 @@ export function openAIAnalysisInput(options: StructuredRequest) {
   const model = onlineModel(options.model);
   if (model.provider !== "openai") throw new Error("Token counting requires an OpenAI model.");
   const effort = validateOnlineThinking(model, options.thinkingLevel);
+  const visual = boardVisualParts(options.input);
   return { model: model.id, reasoning: { effort: effort === "off" ? "none" : effort },
-    instructions: options.instructions, input: Array.isArray(options.input) ? options.input : JSON.stringify(options.input),
+    instructions: options.instructions, input: visual ? [{ role: "user", content: [
+      { type: "input_text", text: visual.text },
+      { type: "input_image", image_url: `data:${visual.image.mediaType};base64,${visual.image.data}`, detail: "high" },
+    ] }] : Array.isArray(options.input) ? options.input : JSON.stringify(options.input),
     text: { format: { type: "json_schema", name: options.name, strict: true, schema: options.schema } } };
 }
 

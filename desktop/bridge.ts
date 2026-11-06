@@ -5,7 +5,7 @@ import type { AnalysisProvider, AnalysisSource, CreditQuote, CreditsState } from
 import type { WalletPairing } from "../shared/wallet-access";
 import type { ThinkingCapability, ThinkingPreferences } from "../shared/thinking";
 import type { AnalysisProgress } from "../shared/analysis-progress";
-import type { BoardInput, BoardsState } from "../shared/boards";
+import type { BoardInput, BoardsState, BoardListings, BoardListingFilter } from "../shared/boards";
 
 export type DesktopState = {
   filePath: string;
@@ -47,6 +47,7 @@ export type DesktopBridge = {
   createBoardsFile(): Promise<BoardsState>;
   saveBoardsRecovery(): Promise<BoardsState | null>;
   addBoards(inputs: BoardInput[]): Promise<BoardsState>;
+  boardListings(id: string, checkId: number, filter: BoardListingFilter, offset?: number): Promise<BoardListings>;
   updateBoard(id: string, input: BoardInput): Promise<BoardsState>;
   removeBoard(id: string): Promise<BoardsState>;
   checkBoards(ids?: string[]): Promise<BoardsState>;

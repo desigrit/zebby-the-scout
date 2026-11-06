@@ -68,8 +68,8 @@ export async function checkBoardsRenderer(page, nav) {
     instructions: index === 0 ? board.instructions : "",
     lastCheckedAt: "2026-11-04T16:30:00Z", lastCheckId: 10 + index, totalCount: 20, newCount: index === 0 ? 4 : 0,
     error: index === 2 ? "The board's results did not finish loading. The last successful check is unchanged." : "" })) }));
-  const first = page.getByRole("article", { name: "Slack", exact: true }); await first.getByText("4 new listings.", { exact: true }).waitFor();
-  assert.equal(await page.getByText("20 matching roles at last check", { exact: true }).count(), 3, "Every board shows totals, including boards without instructions");
+  const first = page.getByRole("article", { name: "Slack", exact: true }); await first.getByText("4 new listings", { exact: true }).waitFor();
+  assert.equal(await page.locator(".board-match-total").count(), 3, "Every board shows coverage, including boards without instructions");
   await first.getByRole("button", { name: "Edit Slack board" }).click();
   assert.equal(await instructions.inputValue(), seniorRoles);
   await instructions.fill("Look under the Product heading for product manager roles.");
@@ -80,7 +80,7 @@ export async function checkBoardsRenderer(page, nav) {
   assert.equal(await company.inputValue(), "Slack Product", "Editing another row cannot silently replace a draft");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await first.getByText(seniorRoles, { exact: true }).waitFor();
-  await first.getByText("20 matching roles at last check").waitFor();
+  await first.getByText("20 listings checked · 20 match your instructions").waitFor();
   await capture("boards-desktop-light"); await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
   await capture("boards-desktop-dark"); await page.setViewportSize({ width: 790, height: 620 }); await capture("boards-compact-dark");
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; }); await capture("boards-compact-light");
@@ -99,17 +99,17 @@ export async function checkBoardsRenderer(page, nav) {
   await first.getByRole("button", { name: "Mark as reviewed" }).click();
   assert.deepEqual(await page.evaluate(() => window.boardsQA.reviews), [{ id: "0", through: 10 }]); await first.getByText("No new listings").waitFor();
   await first.getByRole("button", { name: "Check for updates" }).click(); await first.getByText("Reading page 2").waitFor();
-  await first.getByText("20 matching roles at last check").waitFor();
+  await first.getByText("20 listings checked · 20 match your instructions").waitFor();
   assert.equal(await first.getByRole("button", { name: "Edit Slack board" }).isEnabled(), false); await capture("boards-checking");
   await first.getByRole("button", { name: "Cancel check" }).click(); await first.getByRole("button", { name: "Check for updates" }).waitFor();
-  await first.getByText("20 matching roles at last check").waitFor();
+  await first.getByText("20 listings checked · 20 match your instructions").waitFor();
   await first.getByRole("button", { name: "Check for updates" }).click();
   await page.evaluate(() => window.boardsQA.set({ progress: [], boards: window.boardsQA.get().boards.map((board, index) => ({ ...board,
     totalCount: [19, 1, 0][index], newCount: [2, 1, 0][index], error: "", lastCheckId: 20 + index, lastCheckedAt: "2026-11-05T16:30:00Z" })) }));
-  await first.getByText("2 new listings.", { exact: true }).waitFor(); await first.getByText("19 matching roles at last check").waitFor();
+  await first.getByText("2 new listings", { exact: true }).waitFor(); await first.getByText("19 listings checked · 19 match your instructions").waitFor();
   const second = page.getByRole("article", { name: "Uber", exact: true });
-  await second.getByText("1 new listing.", { exact: true }).waitFor(); await second.getByText("1 matching role at last check").waitFor();
-  await third.getByText("0 matching roles at last check").waitFor(); await capture("boards-updated-counts");
+  await second.getByText("1 new listing", { exact: true }).waitFor(); await second.getByText("1 listings checked · 1 tracked").waitFor();
+  await third.getByText("0 listings checked · 0 tracked").waitFor(); await capture("boards-updated-counts");
   await page.evaluate(() => window.boardsQA.set({ dirty: true, error: "Boards changes are saved on this computer. Use Retry save when OneDrive is ready." }));
   await page.locator(".boards-save-pending").waitFor();
   assert.equal(await first.getByRole("button", { name: "Check for updates" }).isEnabled(), false); await capture("boards-recovery");

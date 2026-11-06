@@ -1,5 +1,6 @@
 import { onlineModel, validateOnlineThinking } from "../shared/online-models.ts";
 import { anthropicSchema, providerFailure } from "./online-response.ts";
+import { boardVisualParts } from "../shared/analysis-images.ts";
 
 type StructuredRequest = { model: string; instructions: string; input: unknown;
   schema: Record<string, unknown>; thinkingLevel?: string };
@@ -11,8 +12,12 @@ export function anthropicAnalysisInput(options: StructuredRequest) {
   if (model.provider !== "anthropic") throw new Error("Token counting requires an Anthropic model.");
   const level = validateOnlineThinking(model, options.thinkingLevel);
   const legacyHaiku = model.id === "claude-haiku-4-5-20251001";
+  const visual = boardVisualParts(options.input);
   return { model: model.id, system: options.instructions,
-    messages: [{ role: "user", content: JSON.stringify(options.input) }],
+    messages: [{ role: "user", content: visual ? [
+      { type: "image", source: { type: "base64", media_type: visual.image.mediaType, data: visual.image.data } },
+      { type: "text", text: visual.text },
+    ] : JSON.stringify(options.input) }],
     thinking: legacyHaiku ? level === "on" ? { type: "enabled", budget_tokens: 4096 } : { type: "disabled" } : { type: "adaptive" },
     output_config: { ...(!legacyHaiku ? { effort: level } : {}), format: { type: "json_schema", schema: anthropicSchema(options.schema) } } };
 }
