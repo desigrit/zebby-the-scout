@@ -86,11 +86,24 @@ async function feedFailureFixture() {
   } finally { fixture.reader.close(); }
 }
 
+async function filterAndControlFixture() {
+  const fixture = await browser(() => html("Filtered jobs", '<p>1 open job</p><a href="https://example.org/vacancy/1">Product Manager</a><button id="next">Next page</button>'));
+  try {
+    await fixture.reader.open("https://example.org/careers?team=Product");
+    const before = await fixture.reader.read(), observed = before.controls.find(control => /Next/.test(control.text));
+    await fixture.reader.window.webContents.executeJavaScript("document.getElementById('next').remove(); const button=document.createElement('button'); button.textContent='Next page'; document.body.append(button)");
+    await assert.rejects(fixture.reader.next(observed.id, observed), /control changed/);
+    await fixture.reader.window.webContents.executeJavaScript("history.replaceState(null,'','?team=Product&region=US')");
+    await assert.rejects(fixture.reader.read(), /search filters/);
+    reports.push({ name: "replaced controls and newly added filters are rejected" });
+  } finally { fixture.reader.close(); }
+}
+
 async function run() {
   const timeout = setTimeout(() => { console.error("Layered reader checks timed out"); app.exit(1); }, 240000); timeout.unref();
   await mkdir(path.join(output, "profile"), { recursive: true }); app.setPath("userData", path.join(output, "profile"));
   app.on("window-all-closed", () => {}); await app.whenReady();
-  await scrollingFixture(); await feedFailureFixture(); await visualFixture();
+  await scrollingFixture(); await feedFailureFixture(); await visualFixture(); await filterAndControlFixture();
   await writeFile(path.join(output, "report.json"), JSON.stringify(reports, null, 2));
   console.log(JSON.stringify({ status: "passed", reports })); clearTimeout(timeout); app.exit(0);
 }

@@ -5,19 +5,20 @@ import { isPublicAddress } from "../lib/public-address";
 import { boardUrl } from "../lib/board-identity";
 import { actOnBoardPage, captureBoardPage, isFigmaCareers, knownListing, type BoardPage } from "./board-page";
 import { boardFeed, readBoardFeed } from "./board-feeds";
-import type { BoardVisualInput } from "../shared/boards";
+import type { BoardVisualInput, BoardControl } from "../shared/boards";
 import { isNetflixSearch, NetflixBoardPages } from "./netflix-board";
 import { greenhouseBoard, sameGreenhouseSearch } from "./greenhouse-board";
 
 export type BoardDocument = { id: string; url: string; title: string; summary: string };
-export type BoardReader = { open(url: string): Promise<void>; read(): Promise<BoardPage>; next(id: string): Promise<void>; close(): void;
+export type BoardReader = { open(url: string): Promise<void>; read(): Promise<BoardPage>; next(id: string, observed?: BoardControl): Promise<void>; close(): void;
   documents?(): Promise<BoardDocument[]>; selectDocument?(id: string): Promise<void>; visual?(): AsyncGenerator<BoardVisualInput> };
 function sameSearch(value: string, saved: string) {
   const current = boardUrl(value), original = boardUrl(saved);
   const path = (url: URL) => url.pathname.replace(/\/page\/\d+\/?$/, "").replace(/\/$/, "");
-  return current.origin === original.origin && path(current) === path(original) && (!original.hash || current.hash === original.hash) &&
-    [...original.searchParams.keys()].every(key => /^(page|pagesize|offset|start|cursor)$/i.test(key) ||
-      current.searchParams.has(key) && current.searchParams.getAll(key).join("\0") === original.searchParams.getAll(key).join("\0"));
+  const keys = new Set([...original.searchParams.keys(), ...current.searchParams.keys()]);
+  return current.origin === original.origin && path(current) === path(original) && current.hash === original.hash &&
+    [...keys].every(key => /^(page|pagesize|offset|start|cursor)$/i.test(key) || /^utm_/i.test(key) ||
+      current.searchParams.has(key) === original.searchParams.has(key) && current.searchParams.getAll(key).slice().sort().join("\0") === original.searchParams.getAll(key).slice().sort().join("\0"));
 }
 const pause = (milliseconds: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
   signal.throwIfAborted();
@@ -188,11 +189,11 @@ export class BoardBrowser implements BoardReader {
     }
     throw new Error("This board kept loading more results. Use a more specific filtered link.");
   }
-  async next(id: string) {
+  async next(id: string, observed?: BoardControl) {
     if (this.netflix) { this.netflix.next(id); return; }
     if (!/^c\d+$/.test(id)) throw new Error("Invalid pagination control.");
     const before = await this.snapshot();
-    const expected = this.lastPage?.controls.find(control => control.id === id);
+    const expected = observed || this.lastPage?.controls.find(control => control.id === id);
     if (!expected || !before.controls.some(control => control.id === id && !control.disabled && control.text === expected.text && control.context === expected.context)) throw new Error("The board's next-page control changed. Try the check again.");
     this.previous = JSON.stringify([before.pageNumber, before.candidates.map(item => item.url)]);
     const clicked = await this.action("click", id);
@@ -267,6 +268,8 @@ export class BoardBrowser implements BoardReader {
         const candidates = page.candidates.filter(item => visible.has(item.id));
         if (candidates.length > 60) throw new Error("Too many job links are visible for a complete visual read. Save a more specific filtered link.");
         await this.action("label");
+        await (this.frame || this.window.webContents.mainFrame).executeJavaScript(
+          "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
         const bitmap = (await this.window.webContents.capturePage()).resize({ width: 1280, height: 900 });
         await this.action("unlabel");
         const size = bitmap.getSize(), data = bitmap.toJPEG(80).toString("base64");

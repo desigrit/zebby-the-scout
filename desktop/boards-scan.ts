@@ -1,7 +1,7 @@
 import { boardJobIdentity } from "../lib/board-identity";
 import { isNetflixSearch } from "./netflix-board";
 import { greenhouseBoard } from "./greenhouse-board";
-import { BOARD_VISION_MESSAGE, boardCreditError, validatedBoardExtraction, type BoardCandidate, type BoardExtractionInput, type BoardScan } from "../shared/boards";
+import { BOARD_VISION_MESSAGE, boardCreditError, validatedBoardExtraction, type BoardCandidate, type BoardControl, type BoardExtractionInput, type BoardScan } from "../shared/boards";
 import { isFigmaCareers, knownListing, knownNext, type BoardPage } from "./board-page";
 import type { BoardReader } from "./board-browser";
 
@@ -93,11 +93,12 @@ export async function scanBoard(options: { url: string; reader: BoardReader; ext
           const result = await extract({ task: "navigation", pageUrl: page.url, pageTitle: page.title, summary: page.summary,
             candidates: [], controls: page.controls, expectedListingCount: 0 });
           next = result.nextControlId;
-          if (!next && page.controls.some(control => !control.disabled)) needsVisual = true;
+          if (!next && page.controls.some(control => !control.disabled && (!control.text.trim() || /\bnext\b|load more (?:jobs|results)|show more (?:jobs|results)/i.test(control.text)))) needsVisual = true;
         }
       }
       if (!next && (page.pageNumber && page.pageCount && page.pageNumber < page.pageCount ||
           expectedTotal !== null && jobs.size < expectedTotal || !jobs.size && !explicitlyEmpty)) needsVisual = true;
+      let nextEvidence: BoardControl | undefined = page.controls.find(control => control.id === next);
       if (needsVisual) {
         if (!reader.visual) {
           if (expectedTotal !== null && jobs.size !== expectedTotal) throw new Error("Only " + jobs.size + " of " + expectedTotal + " listings could be verified. Try the check again.");
@@ -116,7 +117,7 @@ export async function scanBoard(options: { url: string; reader: BoardReader; ext
               location: listing.location || candidate.location, text: [listing.title, listing.department, listing.location].filter(Boolean).join(" · ").slice(0, 600) });
           }
           total(result.expectedTotal); explicitlyEmpty ||= result.empty;
-          if (result.nextControlId) visualNext = result.nextControlId;
+          if (result.nextControlId) { visualNext = result.nextControlId; nextEvidence = input.controls.find(control => control.id === result.nextControlId); }
           ended = input.atBottom;
         }
         if (!ended || page.candidates.some(candidate => !covered.has(candidate.url))) {
@@ -127,7 +128,7 @@ export async function scanBoard(options: { url: string; reader: BoardReader; ext
       if (jobs.size > 10000) throw new Error("This board has too many results. Save a more specific filtered link.");
       if (!next) break;
       if (pages === 100) throw new Error("This board has more than 100 pages. Save a more specific filtered link.");
-      await reader.next(next);
+      await reader.next(next, nextEvidence);
     }
     if ([...expected].some(id => !jobs.has(id))) throw new Error("The selected model did not identify every job link. Try the check again or choose another model in Settings.");
     if (expectedTotal !== null && jobs.size !== expectedTotal) throw new Error("Only " + jobs.size + " of " + expectedTotal + " listings could be verified. Try the check again.");

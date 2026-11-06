@@ -55,7 +55,7 @@ export function captureBoardPage(sectionId?: string): BoardPage {
   let opaque = query("canvas").some(element => visible(element) && !element.closest("nav,header,footer"));
   const urls = new Map<string, string>();
   for (const element of query<HTMLElement>("[data-zebby-board-link],[data-zebby-board-control],[data-zebby-board-scroll]")) {
-    element.removeAttribute("data-zebby-board-link"); element.removeAttribute("data-zebby-board-control"); element.removeAttribute("data-zebby-board-scroll");
+    element.removeAttribute("data-zebby-board-link"); element.removeAttribute("data-zebby-board-scroll");
   }
   for (const element of query<HTMLElement>("a[href], [role=link][data-href], [role=link][data-url]")) {
     if (!visible(element)) continue;
@@ -81,6 +81,8 @@ export function captureBoardPage(sectionId?: string): BoardPage {
     } catch { /* Invalid links cannot be listing candidates. */ }
   }
   const controls: BoardControl[] = [];
+  const controlIds = new Set<string>();
+  let controlSequence = Number(document.documentElement.getAttribute("data-zebby-control-sequence")) || 0;
   for (const element of query<HTMLElement>("button, [role=button], a[href], [role=link][data-href]")) {
     if (!visible(element)) continue;
     const label = clean(`${element.getAttribute("aria-label") || ""} ${element.getAttribute("title") || ""} ${element.innerText}`, 300);
@@ -90,14 +92,17 @@ export function captureBoardPage(sectionId?: string): BoardPage {
     const pagination = Boolean(element.closest('nav[aria-label*="agin"], [role=navigation], [class*="pagination"], [data-testid*="pagination"]'));
     const unlabeled = !label && element.matches("button,[role=button]") && Boolean(element.querySelector("svg,img")) && !element.closest("header,footer");
     if (!pagination && !unlabeled && !/\b(?:next|more|load)\b|^forward$|^\d+$/i.test(label) && !/page\s+\d+\s+(?:of|\/)\s*\d+/i.test(context)) continue;
-    const id = `c${controls.length}`;
+    let id = element.getAttribute("data-zebby-board-control") || "";
+    if (!/^c\d+$/.test(id) || controlIds.has(id)) id = `c${controlSequence++}`;
+    controlIds.add(id);
     element.setAttribute("data-zebby-board-control", id);
     if (inViewport(element)) viewportControls.push(id);
     controls.push({ id, text: label, context,
       disabled: element.hasAttribute("disabled") || element.getAttribute("aria-disabled") === "true" });
   }
+  document.documentElement.setAttribute("data-zebby-control-sequence", String(controlSequence));
   const page = text.match(/page\s+(\d+)\s+(?:of|\/)\s*(\d+)/i);
-  const total = text.match(/\b(\d[\d,]*)\s+(?:open (?:jobs|positions|roles)|items|jobs found|jobs available|results found|results|jobs)\b/i);
+  const total = text.match(/\b(\d[\d,]*)\s+(?:open (?:jobs?|positions?|roles?)|items|jobs found|jobs available|results found|results|jobs?)\b/i);
   const pageLinks = query<HTMLAnchorElement>('a[href]').filter(visible).map(link => {
     try { const url = new URL(link.href); return url.origin === location.origin && url.pathname === location.pathname ? Number(url.searchParams.get("page")) : 0; }
     catch { return 0; }

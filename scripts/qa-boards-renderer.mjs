@@ -89,6 +89,7 @@ export async function checkBoardsRenderer(page, nav) {
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await first.getByText(seniorRoles, { exact: true }).waitFor();
   await first.getByText("20 listings checked · 20 match your instructions").waitFor();
+  await page.evaluate(() => window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => index === 0 ? { ...board, totalCount: 7, checkedCount: 59 } : board) }));
   await first.getByRole("button", { name: "View matches", exact: true }).click();
   const listingSection = first.getByRole("region", { name: "Slack listings" });
   await listingSection.getByText("1-7 of 7", { exact: true }).waitFor();
@@ -112,6 +113,7 @@ export async function checkBoardsRenderer(page, nav) {
   await listingSection.getByText("1-4 of 4", { exact: true }).waitFor();
   await listingSection.getByRole("button", { name: "Close listings", exact: true }).click();
   assert.equal(await first.getByRole("button", { name: "View matches", exact: true }).evaluate(node => node === document.activeElement), true);
+  await page.evaluate(() => window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => index === 0 ? { ...board, totalCount: 20, checkedCount: undefined } : board) }));
   await capture("boards-desktop-light"); await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
   await capture("boards-desktop-dark"); await page.setViewportSize({ width: 790, height: 620 }); await capture("boards-compact-dark");
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; }); await capture("boards-compact-light");

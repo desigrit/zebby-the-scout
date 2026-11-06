@@ -131,7 +131,7 @@ function BoardResults({ board, initialFilter, onClose }: { board: Board; initial
   const requestKey = JSON.stringify([board.id, board.lastCheckId, board.newCount, filter, offset, retry]);
   const result = loaded?.key === requestKey ? loaded.result : null, error = loaded?.key === requestKey ? loaded.error : "";
   const heading = useId(), focus = useRef<HTMLHeadingElement>(null);
-  useEffect(() => { focus.current?.focus({ preventScroll: true }); }, []);
+  useEffect(() => { focus.current?.focus(); }, []);
   useEffect(() => {
     let active = true;
     void window.desktop!.boardListings(board.id, board.lastCheckId, filter, offset)
