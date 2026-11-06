@@ -144,6 +144,7 @@ export class BoardsStore {
     await this.readyToSwitch();
     await this.close();
     this.target = ""; this.working = ""; this.sourceHash = ""; this.savedCopyPath = "";
+    this.fileMissing = false; this.hasRecoveryCopy = false;
     const target = boardsCompanionPath(applications);
     this.companion = target;
     this.hasRecoveryCopy = await exists(this.workingPath(target));
