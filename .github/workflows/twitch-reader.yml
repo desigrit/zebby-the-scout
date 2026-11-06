@@ -1,0 +1,42 @@
+name: Twitch board reader
+
+on:
+  push:
+    branches: [fix/twitch-board-reader]
+    paths: ['desktop/**', 'shared/boards.ts', 'lib/board-identity.ts', 'scripts/qa-twitch-board.mjs', '.github/workflows/twitch-reader.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: twitch-reader-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  twitch:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node node_modules/electron/install.js
+      - name: Bundle the isolated live reader check
+        run: node --input-type=module -e "import { build } from 'esbuild'; await build({ entryPoints:['scripts/qa-twitch-board.mjs'], outfile:'qa-output/twitch-reader/runner.mjs', bundle:true, platform:'node', format:'esm', target:'node22', external:['electron'] });"
+      - name: Inspect Twitch in the isolated Boards browser
+        run: |
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          & .\node_modules\.bin\electron.cmd qa-output/twitch-reader/runner.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: twitch-reader-evidence
+          path: qa-output/twitch-reader/*.json
+          retention-days: 3
+          if-no-files-found: ignore
