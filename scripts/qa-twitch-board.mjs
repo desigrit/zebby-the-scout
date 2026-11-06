@@ -1,81 +1,114 @@
+import assert from "node:assert/strict";
 import { app } from "electron";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { lookup } from "node:dns/promises";
-import { isPublicAddress } from "../lib/public-address.ts";
 import { BoardBrowser } from "../desktop/board-browser.ts";
-import { captureBoardPage } from "../desktop/board-page.ts";
+import { scanBoard } from "../desktop/boards-scan.ts";
+
+const criteria = "Only track Product Manager, Sr. Product Manager, Senior Product Manager, Staff Product Manager and Principal Product Manager roles.";
+const source = "https://careers.twitch.com/en/careers";
+const output = path.resolve("qa-output/twitch-reader");
+const isRequestedRole = title => /^(?:(?:Sr\.|Senior|Staff|Principal) )?Product Manager(?:\b|,)/i.test(title || "");
+const html = body => new Response("<!doctype html><html><head><title>Embedded jobs</title></head><body>" + body + "</body></html>",
+  { headers: { "content-type": "text/html; charset=utf-8" } });
+
+async function fixtures() {
+  const parent = "https://careers.twitch.com/qa-boards";
+  const embed = "https://job-boards.greenhouse.io/embed/job_board?for=zebby-test&department=product";
+  const inventory = [
+    ...["San Francisco", "Seattle", "Irvine"].map(city => "Senior Product Manager, Commerce " + city),
+    ...["San Francisco", "Los Angeles", "Seattle", "New York"].map(city => "Sr. Product Manager, Premium Content Experience " + city),
+    "Product Engineering Manager", "Product Operations Manager",
+  ];
+  const create = async () => {
+    const controller = new AbortController(), reader = new BoardBrowser(controller.signal);
+    await reader.window.webContents.session.protocol.handle("https", request => {
+      const url = new URL(request.url);
+      if (url.href === parent) return html('<p>0 jobs in the navigation example</p><a href="https://careers.twitch.com/">Careers</a>' +
+        '<iframe style="display:none" src="https://job-boards.greenhouse.io/embed/job_board?for=hidden"></iframe>' +
+        '<iframe src="https://www.twitch.tv/qa-ad"></iframe>' +
+        '<script src="https://boards.greenhouse.io/embed/job_board/js?for=zebby-test"></script>');
+      if (url.pathname.endsWith("/js")) return new Response('setTimeout(() => { const frame = document.createElement("iframe"); frame.id="jobs"; frame.src=' +
+        JSON.stringify(embed) + '; frame.style="width:100%;height:260px"; document.body.append(frame); }, 800);',
+        { headers: { "content-type": "application/javascript" } });
+      if (url.searchParams.get("for") === "zebby-test") {
+        const second = url.searchParams.get("page") === "2", begin = second ? 4 : 0, end = second ? inventory.length : 4;
+        return html("<p>9 jobs</p><h2>Community Growth</h2><ul>" + inventory.slice(begin, end).map((title, index) =>
+          '<li style="padding:60px 0"><a href="https://job-boards.greenhouse.io/zebby-test/jobs/' + (begin + index + 1) + '">' + title + "</a></li>").join("") +
+          "</ul>" + (second ? '<button aria-label="Next page" disabled>Next page</button>' :
+            '<a aria-label="Next page" href="' + embed + '&page=2">Next page</a>'));
+      }
+      return html('<a href="https://job-boards.greenhouse.io/hidden/jobs/999">Unrelated role</a>');
+    });
+    return { reader, controller };
+  };
+  const first = await create();
+  let pages = 0;
+  const originalRead = first.reader.read.bind(first.reader);
+  first.reader.read = async () => { const page = await originalRead(); pages++; return page; };
+  const originalOpen = first.reader.open.bind(first.reader);
+  first.reader.open = async url => {
+    await originalOpen(url);
+    const pending = await first.reader.snapshot();
+    assert.equal(pending.loading, true, "A pending embedded board must not settle on navigation links");
+    assert.equal(pending.empty, false, "Parent-page empty text cannot confirm an empty embedded board");
+  };
+  const result = await scanBoard({ url: parent, ...first, signal: first.controller.signal, provider: "coverage-test", model: "fixture-oracle",
+    instructions: criteria, progress() {},
+    extract: async input => {
+      assert.equal(pages, 2); assert.equal(input.task, "roles"); assert.equal(input.criteria, criteria);
+      assert.equal(input.candidates.length, 9);
+      assert.ok(input.candidates.every(job => job.department === "Community Growth"));
+      return { decisions: Object.fromEntries(input.candidates.map(job => [job.id, isRequestedRole(job.title)])) };
+    } });
+  assert.equal(result.jobs.length, 9); assert.equal(result.jobs.filter(job => job.matches).length, 7);
+  assert.ok(result.jobs.every(job => job.key.startsWith("greenhouse:zebby-test:")));
+  const missing = await create();
+  try {
+    await missing.reader.open(parent); await missing.reader.read();
+    await missing.reader.window.webContents.executeJavaScript("document.getElementById('jobs').remove()");
+    await assert.rejects(missing.reader.read(), /disappeared/);
+  } finally { missing.reader.close(); }
+  console.log(JSON.stringify({ check: "embedded fixtures", pages: result.pages, jobs: 9, matches: 7, status: "passed" }));
+}
+
+async function live() {
+  const controller = new AbortController(), reader = new BoardBrowser(controller.signal), pages = [];
+  const read = reader.read.bind(reader);
+  reader.read = async () => {
+    const page = await read(), url = new URL(page.url); url.searchParams.delete("validityToken");
+    pages.push({ ...page, url: url.href });
+    return page;
+  };
+  // This oracle checks reader coverage independently of AI quality or paid providers.
+  // The production scanner still applies the selected model to these same role inputs.
+  const scan = await scanBoard({ url: source, reader, instructions: criteria, signal: controller.signal,
+    provider: "coverage-test", model: "observed-titles", progress() {},
+    extract: async input => {
+      assert.equal(input.task, "roles", "Greenhouse navigation and posting IDs should not need AI");
+      assert.equal(input.criteria, criteria);
+      return { decisions: Object.fromEntries(input.candidates.map(job => [job.id, isRequestedRole(job.title)])) };
+    } });
+  const matches = scan.jobs.filter(job => job.matches);
+  assert.ok(scan.jobs.length > 0); assert.equal(scan.jobs.length, pages.at(-1).expectedTotal);
+  const titles = new Map(pages.flatMap(page => page.candidates.map(job => [job.url, job.title])));
+  const evidence = { source, criteria, pages: scan.pages, total: scan.jobs.length,
+    matches: matches.map(job => ({ ...job, title: titles.get(job.url) })) };
+  await writeFile(path.join(output, "coverage.json"), JSON.stringify(evidence, null, 2));
+  await writeFile(path.join(output, "pages.json"), JSON.stringify(pages, null, 2));
+  console.log(JSON.stringify({ check: "live Twitch", ...evidence, status: "passed" }));
+}
 
 async function run() {
-console.log("Twitch diagnostic starting");
-setTimeout(() => { console.error("Twitch diagnostic exceeded its two-minute limit"); app.exit(1); }, 120000).unref();
-const output = path.resolve("qa-output/twitch-reader");
-await mkdir(path.join(output, "profile"), { recursive: true });
-app.setPath("userData", path.join(output, "profile"));
-app.on("window-all-closed", () => {});
-await app.whenReady();
-console.log("Twitch diagnostic Electron ready");
-const source = "https://careers.twitch.com/en/careers";
-const controller = new AbortController(), reader = new BoardBrowser(controller.signal);
-const events = [], started = Date.now();
-const cleanUrl = value => { const url = new URL(value); return url.origin + url.pathname; };
-reader.window.webContents.session.webRequest.onCompleted(details => {
-  if (["mainFrame", "subFrame", "xhr", "script"].includes(details.resourceType)) events.push({
-    elapsed: Date.now() - started, url: cleanUrl(details.url), type: details.resourceType, status: details.statusCode });
-});
-reader.window.webContents.session.webRequest.onErrorOccurred(details => events.push({
-  elapsed: Date.now() - started, url: cleanUrl(details.url), type: details.resourceType, error: details.error }));
-async function inspect(label) {
-  const result = await reader.window.webContents.executeJavaScript("(" + captureBoardPage.toString() + ")()");
-  const dom = await reader.window.webContents.executeJavaScript("(" + (() => {
-    const roles = [...document.querySelectorAll("a,button,[role=link],li,tr")].filter(element =>
-      element.getClientRects().length && /\bproduct manager\b/i.test(element.innerText || ""));
-    return {
-      title: document.title, url: location.href, text: document.body.innerText.slice(0, 20000),
-      anchors: document.querySelectorAll("a[href]").length,
-      iframes: [...document.querySelectorAll("iframe")].map(frame => ({ src: frame.src, title: frame.title })),
-      roleNodes: roles.filter(element => element.innerText.length < 700).slice(0, 20).map(element => ({
-        html: element.outerHTML.slice(0, 3500), parent: element.parentElement?.outerHTML.slice(0, 5000) })),
-      scripts: [...document.scripts].map(script => script.src).filter(Boolean),
-      shadowRoots: [...document.querySelectorAll("*")].filter(element => element.shadowRoot).map(element => element.tagName)
-    };
-  }).toString() + ")()");
-  await writeFile(path.join(output, label + ".json"), JSON.stringify({ result, dom }, null, 2));
-  console.log(JSON.stringify({ label, elapsed: Date.now() - started, url: result.url, candidates: result.candidates,
-    controls: result.controls, expectedTotal: result.expectedTotal, empty: result.empty, loading: result.loading,
-    text: dom.text, anchors: dom.anchors, iframes: dom.iframes, roleNodes: dom.roleNodes, scripts: dom.scripts, shadowRoots: dom.shadowRoots }));
-}
-try {
-  const addresses = await lookup(new URL(source).hostname, { all: true });
-  console.log(JSON.stringify({ stage: "dns", addresses: addresses.map(item => ({ ...item, public: isPublicAddress(item.address) })) }));
-  const response = await fetch(source, { redirect: "manual", signal: AbortSignal.timeout(20000) });
-  console.log(JSON.stringify({ stage: "http", status: response.status, location: response.headers.get("location"), body: (await response.text()).slice(0, 1500) }));
-  await reader.open(source);
-  console.log(JSON.stringify({ stage: "opened", elapsed: Date.now() - started }));
-  try {
-    const page = await reader.read();
-    console.log(JSON.stringify({ stage: "reader-complete", elapsed: Date.now() - started, page }));
-  } catch(error) { console.log(JSON.stringify({ stage: "reader-error", elapsed: Date.now() - started, error: error.message })); }
-  for (const frame of reader.window.webContents.mainFrame.framesInSubtree) {
-    if (frame === reader.window.webContents.mainFrame) continue;
-    const url = new URL(frame.url);
-    if (!["job-boards.greenhouse.io", "boards.greenhouse.io"].includes(url.hostname)) continue;
-    const page = await frame.executeJavaScript("(" + captureBoardPage.toString() + ")()");
-    const safeUrl = new URL(page.url); safeUrl.searchParams.delete("validityToken"); page.url = safeUrl.href;
-    const html = await frame.executeJavaScript("(" + (() => [...document.querySelectorAll("a[href]")].filter(link =>
-      /product manager/i.test(link.innerText)).slice(0, 10).map(link => ({ href: link.href, html: link.outerHTML,
-      parent: link.parentElement?.outerHTML.slice(0, 2000) }))).toString() + ")()");
-    console.log(JSON.stringify({ stage: "frame", page, html }));
-    await writeFile(path.join(output, "frame.json"), JSON.stringify(page, null, 2));
-  }
-  console.log(JSON.stringify({ events }));
-  await writeFile(path.join(output, "network.json"), JSON.stringify(events, null, 2));
-} catch(error) { console.error(error); process.exitCode = 1; }
-finally {
-  console.log(JSON.stringify({ stage: "final", navigationError: reader.navigationError, events }));
-  await writeFile(path.join(output, "network.json"), JSON.stringify(events, null, 2));
-  reader.close(); app.exit(process.exitCode || 0);
-}
-
+  const timeout = setTimeout(() => { console.error("Embedded board checks exceeded their time limit"); app.exit(1); }, 180000);
+  timeout.unref();
+  await mkdir(path.join(output, "profile"), { recursive: true });
+  app.setPath("userData", path.join(output, "profile"));
+  app.on("window-all-closed", () => {});
+  await app.whenReady();
+  await fixtures();
+  await live();
+  clearTimeout(timeout);
+  app.exit(0);
 }
 void run().catch(error => { console.error(error); app.exit(1); });

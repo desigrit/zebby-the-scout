@@ -3,7 +3,7 @@ name: Twitch board reader
 on:
   push:
     branches: [fix/twitch-board-reader]
-    paths: ['desktop/**', 'shared/boards.ts', 'lib/board-identity.ts', 'scripts/qa-twitch-board.mjs', '.github/workflows/twitch-reader.yml']
+    paths: ['desktop/**', 'shared/boards.ts', 'lib/board-identity.ts', 'scripts/qa-twitch-board.mjs', 'tests/boards.test.mjs', '.github/workflows/twitch-reader.yml']
   workflow_dispatch:
 
 permissions:
@@ -27,9 +27,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node node_modules/electron/install.js
+      - run: npm run test:boards
+      - run: npx tsc --noEmit
+      - run: npm run lint -- --quiet
       - name: Bundle the isolated live reader check
         run: node --input-type=module -e "import { build } from 'esbuild'; await build({ entryPoints:['scripts/qa-twitch-board.mjs'], outfile:'qa-output/twitch-reader/runner.mjs', bundle:true, platform:'node', format:'esm', target:'node22', external:['electron'] });"
-      - name: Inspect Twitch in the isolated Boards browser
+      - name: Verify embedded board fixtures and live Twitch coverage
         run: |
           Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
           & .\node_modules\.bin\electron.cmd qa-output/twitch-reader/runner.mjs
