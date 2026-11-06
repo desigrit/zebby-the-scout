@@ -5,6 +5,8 @@ import { BoardBrowser } from "../desktop/board-browser.ts";
 import { scanBoard } from "../desktop/boards-scan.ts";
 
 const output = path.resolve("qa-output/slack-board");
+async function run() {
+const timeout = setTimeout(() => { console.error("Slack reader check timed out"); app.exit(1); }, 180000); timeout.unref();
 await mkdir(output, { recursive: true });
 app.setPath("userData", path.join(output, "profile"));
 app.on("window-all-closed", () => {});
@@ -45,4 +47,8 @@ try {
 finally { reader.close(); }
 await writeFile(path.join(output, "report.json"), JSON.stringify(report, null, 2));
 console.log(JSON.stringify({tasks: report.tasks, candidates: report.page?.candidates.length, visualNeeded: report.page?.visualNeeded, expectedTotal: report.page?.expectedTotal, error: report.error}));
+clearTimeout(timeout);
 app.exit(0);
+}
+void run().catch(error => { console.error(error); app.exit(1); });
+

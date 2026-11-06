@@ -8,10 +8,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: slack-boards-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   slack:
     runs-on: windows-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,6 +30,14 @@ jobs:
         run: |
           Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
           & .\node_modules\.bin\electron.cmd qa-output/slack-board/runner.mjs
+      - run: npx tsc --noEmit
+      - run: npm run lint -- --quiet
+      - run: npm run desktop:build
+      - run: node node_modules/playwright-core/cli.js install chromium
+      - name: Check compact Boards statuses and error disclosure
+        run: npm run test:renderer
+        env:
+          ZEBBY_CAPTURE_BOARDS: '1'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -34,3 +46,6 @@ jobs:
           path: |
             qa-output/slack-board/*.json
             qa-output/slack-board/*.jpg
+            .impeccable/review/boards-*.png
+          include-hidden-files: true
+
