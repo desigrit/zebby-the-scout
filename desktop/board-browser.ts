@@ -73,6 +73,7 @@ export class BoardBrowser implements BoardReader {
     const checked = new Map<string, boolean>();
     isolated.webRequest.onBeforeRequest((details, callback) => {
       if (signal.aborted) { callback({ cancel: true }); return; }
+      if (details.url === "about:blank" && details.resourceType === "mainFrame") { callback({}); return; }
       if (/^(data:|blob:)/.test(details.url) && details.resourceType !== "mainFrame") { callback({}); return; }
       let url: URL;
       try { url = boardUrl(details.url); } catch { callback({ cancel: true }); return; }

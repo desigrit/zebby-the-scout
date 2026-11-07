@@ -223,7 +223,7 @@ export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> 
         else if (closed) feedback = "There are unopened sections that have not been classified as unrelated. Inspect and open the job-results sections.";
         else if (unaccountedControls.length) feedback = `These controls still need review: ${unaccountedControls.map(control => control.id + " " + control.name).join(", ").slice(0, 1000)}. Use result navigation, inspect vacancy controls, or explicitly classify unrelated controls before finishing.`;
         else if (result.uncertainIds.length) feedback = "Visible links are still uncertain. Inspect those vacancies before finishing.";
-        else if (!page.atBottom || unclassified) { action = scroll(observation); feedback = "Some of the page has not been read. Continue through all result containers before finishing."; }
+        else if (!page.atBottom || unclassified) { action = scroll(observation, page.atBottom && unclassified); feedback = "Some of the page has not been read. Continue through all result containers before finishing."; }
         else if (expected !== null && jobs.size !== expected) feedback = `Verified ${jobs.size} job IDs, but the proposed filtered total is ${expected}. Find the missing page or reassess whether that counter is company-wide. Do not guess a count.`;
         else if (!jobs.size && !empty) feedback = "No jobs were verified, and the results have not explicitly confirmed an empty search. Inspect the result controls.";
         else if (!result.complete) feedback = "The visible evidence is still ambiguous. Resolve the stated issue before finishing.";

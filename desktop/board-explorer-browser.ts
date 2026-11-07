@@ -102,6 +102,12 @@ export class BoardExplorerBrowser implements ThoroughBoardReader {
   async open(url: string) {
     this.signal.throwIfAborted(); this.active = true; this.source = boardUrl(url).href; this.allowedTarget = this.source;
     this.frame = null; this.networkError = ""; this.epoch++; this.pending.clear(); this.responses.clear(); this.observedFeeds.clear();
+    // Reopening a fragment URL can be an in-document navigation in Chromium.
+    // Start a genuinely new document so the audit cannot inherit the last
+    // page, expanded sections, or a scroller parked at the end of the list.
+    if (this.window.webContents.getURL() && this.window.webContents.getURL() !== "about:blank") {
+      await this.bounded(this.window.loadURL("about:blank"), 10000, "Starting a fresh verification pass");
+    }
     let networkReady: Promise<unknown> | undefined;
     if (!this.attached) try {
       this.window.webContents.debugger.attach("1.3"); this.attached = true;
