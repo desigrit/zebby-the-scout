@@ -5,6 +5,15 @@ on:
     branches: [main]
     paths: ['desktop/**', 'shared/**', 'credits-service/**', 'tests/**', 'scripts/qa-board*', '.github/workflows/board-layers.yml']
   workflow_dispatch:
+    inputs:
+      browser_checks:
+        description: Run the hosted browser fixtures and live website checks
+        type: boolean
+        default: true
+      zoox:
+        description: Verify the filtered Zoox board
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -34,19 +43,31 @@ jobs:
       - run: npm run desktop:build
       - run: npm run credits:build
       - name: Bundle native reader fixtures
+        if: github.event_name != 'workflow_dispatch' || inputs.browser_checks
         run: node --input-type=module -e "import { build } from 'esbuild'; await build({ entryPoints:['scripts/qa-board-layers.mjs'], outfile:'qa-output/board-layers/runner.mjs', bundle:true, platform:'node', format:'esm', target:'node22', external:['electron'] });"
       - name: Verify rendered, embedded and visual layers
+        if: github.event_name != 'workflow_dispatch' || inputs.browser_checks
         run: |
           Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
           & .\node_modules\.bin\electron.cmd qa-output/board-layers/runner.mjs
       - name: Capture the live Figma role sample
+        if: github.event_name != 'workflow_dispatch' || inputs.browser_checks
         run: node scripts/qa-board-reader.mjs "https://www.figma.com/careers/#job-openings"
+      - name: Check the exact filtered Zoox board
+        if: github.event_name == 'workflow_dispatch' && inputs.zoox
+        run: |
+          node --input-type=module -e "import { build } from 'esbuild'; await build({ entryPoints:['scripts/qa-zoox-board.mjs'], outfile:'qa-output/board-layers/zoox.mjs', bundle:true, platform:'node', format:'esm', target:'node22', external:['electron'] });"
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          & .\node_modules\.bin\electron.cmd qa-output/board-layers/zoox.mjs
       - name: Prepare a standalone service and live provider verification
+        if: github.event_name != 'workflow_dispatch' || inputs.browser_checks
         run: |
           node scripts/build-credits-service.mjs --standalone
           node scripts/build-boards-smoke.mjs
       - run: node node_modules/playwright-core/cli.js install chromium
+        if: github.event_name != 'workflow_dispatch' || inputs.browser_checks
       - name: Verify listing inspection and capture both appearances
+        if: github.event_name != 'workflow_dispatch' || inputs.browser_checks
         run: npm run test:renderer
         env:
           ZEBBY_CAPTURE_BOARDS: '1'
