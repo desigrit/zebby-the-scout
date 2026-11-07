@@ -46,7 +46,9 @@ async function compareRenderedPage(expected) {
     assert.deepEqual(ids(state.jobs), ids(expected.jobs), "The feed must match every rendered Product posting");
     report.rendered = { ...state, parsedOverallTotal: page.expectedTotal };
     await reader.window.webContents.executeJavaScript("document.querySelector('#openings').scrollIntoView({block:'start',behavior:'instant'})");
-    await reader.window.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+    await reader.window.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 500)))");
+    const position = await reader.window.webContents.executeJavaScript("document.querySelector('#openings').getBoundingClientRect().top");
+    assert.ok(position >= -1 && position < 200, "The capture must show the results section");
     await writeFile(path.join(output, "lyft-product.jpg"), (await reader.window.webContents.capturePage()).toJPEG(80));
   } finally { reader.close(); }
 }
