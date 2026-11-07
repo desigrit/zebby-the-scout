@@ -1,4 +1,5 @@
 import { boardJobIdentity } from "../lib/board-identity";
+import { boardListingTitle, isBoardActionLabel } from "../shared/board-listing-title";
 import { isNetflixSearch } from "./netflix-board";
 import { greenhouseBoard } from "./greenhouse-board";
 import { BOARD_VISION_MESSAGE, boardCreditError, validatedBoardExtraction, type BoardCandidate, type BoardControl, type BoardExtractionInput, type BoardScan } from "../shared/boards";
@@ -43,7 +44,12 @@ export async function scanBoard(options: { url: string; reader: BoardReader; ext
     if (expectedTotal !== null && expectedTotal !== value) throw new Error("The board's result count changed during this check. Try again.");
     expectedTotal = value;
   }
-  const add = (candidate: BoardCandidate) => jobs.set(boardJobIdentity(candidate.url).key, candidate);
+  const add = (candidate: BoardCandidate) => {
+    const key = boardJobIdentity(candidate.url).key, previous = jobs.get(key);
+    const title = previous?.title && (!candidate.title || isBoardActionLabel(candidate.title))
+      ? previous.title : boardListingTitle(candidate.title, candidate.url);
+    jobs.set(key, { ...candidate, title });
+  };
   try {
     await reader.open(options.url);
     const documents = await reader.documents?.();

@@ -4,6 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { BoardBrowser } from "../desktop/board-browser.ts";
 import { scanBoard } from "../desktop/boards-scan.ts";
+import { isBoardActionLabel } from "../shared/board-listing-title.ts";
 
 // Live website availability is recorded separately from a completed job scan.
 // No credentials, paid model calls or personal databases are used.
@@ -26,6 +27,8 @@ async function run() {
       }
     });
     report.status = "complete"; report.jobs = result.jobs.length; report.pages = result.pages;
+    report.listings = result.jobs.map(({ title, url }) => ({ title, url }));
+    assert.ok(result.jobs.every(job => job.title && !isBoardActionLabel(job.title)), "Each Slack job has a role title, not a CTA");
   } catch (error) {
     report.error = error.message;
     report.status = error.message === "This careers website is temporarily unavailable. Try again later." ? "website-unavailable" : "failed";

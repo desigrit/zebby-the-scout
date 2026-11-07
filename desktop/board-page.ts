@@ -57,6 +57,31 @@ export function captureBoardPage(sectionId?: string): BoardPage {
   const viewportCandidates: string[] = [], viewportControls: string[] = [];
   const opaque = query("canvas").some(element => visible(element) && !element.closest("nav,header,footer"));
   const urls = new Map<string, string>();
+  const actionLabel = (value: string) => /^(?:apply(?: now| here| for (?:this |the )?(?:job|role|position))?|view (?:job|role|position|details|job details)|(?:learn|read) more|details)[.!\s]*$/i.test(value.trim());
+  const linkSelector = 'a[href], [role=link][data-href], [role=link][data-url]';
+  function href(element: Element) {
+    try { return new URL(element.getAttribute("href") || element.getAttribute("data-href") || element.getAttribute("data-url") || "", location.href).href; }
+    catch { return ""; }
+  }
+  function localTitle(element: HTMLElement, url: string) {
+    let title = clean(element.querySelector<HTMLElement>('h2,h3,h4,[itemprop="title"]')?.innerText || element.innerText || element.getAttribute("aria-label"), 300);
+    let row = element.closest<HTMLElement>('li,tr,article,[role="listitem"]') || element.parentElement || element;
+    if (!title || actionLabel(title)) {
+      // A CTA can sit beside its title, but must never borrow one from another
+      // job. Stay inside a single-destination card and stop at list boundaries.
+      for (let card = element.parentElement, depth = 0; card && depth < 5 && card !== root && !card.matches("main,body"); card = card.parentElement, depth++) {
+        if ([...card.querySelectorAll(linkSelector)].some(link => visible(link) && href(link) !== url)) break;
+        const headings = [...card.querySelectorAll<HTMLElement>('h2,h3,h4,h5,h6,[role="heading"],[itemprop="title"],[data-testid="job-title"]')]
+          .filter(visible).map(heading => clean(heading.innerText, 300)).filter(value => value && !actionLabel(value));
+        const unique = [...new Set(headings)];
+        if (unique.length > 1) break;
+        if (unique.length === 1) { title = unique[0]; row = card; break; }
+        if (card.matches('li,tr,article,[role="listitem"]')) break;
+      }
+    }
+    const local = [...row.querySelectorAll(linkSelector)].every(link => !visible(link) || href(link) === url);
+    return { title, row, text: clean(`${title} ${element.getAttribute("aria-label") || ""} ${local ? row.innerText : element.innerText}`, 600) };
+  }
   for (const element of query<HTMLElement>("[data-zebby-board-link],[data-zebby-board-control],[data-zebby-board-scroll]")) {
     element.removeAttribute("data-zebby-board-link"); element.removeAttribute("data-zebby-board-scroll");
   }
@@ -65,22 +90,26 @@ export function captureBoardPage(sectionId?: string): BoardPage {
     try {
       const url = new URL(element.getAttribute("href") || element.getAttribute("data-href") || element.getAttribute("data-url") || "", location.href);
       if (url.protocol !== "https:" || url.username || url.password || url.port) continue;
+      const { title, row, text: context } = localTitle(element, url.href);
       const duplicate = urls.get(url.href);
       if (duplicate) {
+        const saved = candidates.find(candidate => candidate.id === duplicate)!;
+        if ((!saved.title || actionLabel(saved.title)) && title && !actionLabel(title)) {
+          Object.assign(saved, { title, department: departmentFor(element as HTMLAnchorElement, row, title), text: context });
+          const graphic = visualCandidateUrls.indexOf(url.href);
+          if (graphic !== -1) visualCandidateUrls.splice(graphic, 1);
+        }
         element.setAttribute("data-zebby-board-link", duplicate);
         if (inViewport(element) && !viewportCandidates.includes(duplicate)) viewportCandidates.push(duplicate);
         continue;
       }
-      const title = clean(element.querySelector<HTMLElement>('h2,h3,h4,[itemprop="title"]')?.innerText || element.innerText || element.getAttribute("aria-label"), 300);
-      const row = element.closest<HTMLElement>('li,tr,article,[role="listitem"]') || element.parentElement || element;
-      const rowText = row.querySelectorAll("a[href]").length <= 1 ? row.innerText : element.innerText;
       const id = `l${candidates.length}`;
       urls.set(url.href, id);
       element.setAttribute("data-zebby-board-link", id);
       if (inViewport(element)) viewportCandidates.push(id);
       if (!title && !element.closest("nav,header,footer") && element.querySelector("img,svg,canvas")) visualCandidateUrls.push(url.href);
       candidates.push({ id, url: url.href, title, department: departmentFor(element as HTMLAnchorElement, row, title),
-        text: clean(`${element.getAttribute("aria-label") || ""} ${rowText}`, 600) });
+        text: context });
     } catch { /* Invalid links cannot be listing candidates. */ }
   }
   const controls: BoardControl[] = [];

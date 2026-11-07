@@ -47,17 +47,19 @@
 .board-identity { min-width: 0; display: grid; gap: 6px; }
 .board-heading { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .board-heading strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-size: 15px; font-weight: 650; }
-.board-instructions-indicator { display: inline-flex; flex: none; align-items: center; gap: 5px; color: var(--ink-soft); font-size: 11px; white-space: nowrap; }
+.board-instructions-indicator { display: inline-flex; flex: none; align-items: center; border-radius: 4px; padding: 4px 6px; background: var(--accent-wash); color: var(--accent); font-size: 10px; font-weight: 600; line-height: 1; white-space: nowrap; }
 .board-identity a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-soft); font-size: 12px; text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .board-identity a:hover { color: var(--accent); }
 .board-date { color: var(--ink-soft); font-size: 12px; font-variant-numeric: tabular-nums; }
 .board-mobile-label { display: none; }
 .board-result { display: grid; justify-items: start; gap: 6px; font-size: 12px; }
 .board-update-summary { display: grid; gap: 6px; }
+.board-update-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 24px; }
 .board-discoveries { color: var(--accent); font-weight: 650; text-decoration: underline; text-underline-offset: 3px; }
 .board-check-status { border: 0; border-radius: 3px; min-height: 24px; padding: 3px 0; margin: -3px 0; background: transparent; color: var(--accent); font-size: 12px; line-height: inherit; text-align: left; text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; }
 .board-check-status:hover { color: var(--accent-hover); }
 .board-error-tooltip { position: fixed; z-index: 100; width: max-content; max-width: min(360px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; margin: 0; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--paper); color: var(--ink); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.board-action-tooltip { padding: 6px 8px; line-height: 1.4; white-space: nowrap; }
 .board-no-updates { color: var(--ink-soft); }
 .board-progress { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); }
 .board-progress svg { flex-shrink: 0; }
@@ -65,19 +67,22 @@
 .board-actions .button { font-size: 12px; min-height: 36px; padding: 7px 10px; }
 .board-icon-action { display: inline-flex; width: 28px; height: 34px; align-items: center; justify-content: center; background: transparent; border: 0; border-radius: 5px; color: var(--ink-soft); }
 .board-icon-action:hover:not(:disabled) { color: var(--ink); background: var(--surface-hover); }
+.board-review-action { flex: none; width: 24px; height: 24px; color: var(--accent); }
+.board-review-action.is-reviewed { pointer-events: none; animation: board-review-done 180ms cubic-bezier(.16, 1, .3, 1) forwards; }
+@keyframes board-review-done { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(.75); } }
+@media (prefers-reduced-motion: reduce) { .board-review-action.is-reviewed { animation: none; opacity: 0; } }
 .boards-file-footer { margin-top: 24px; }
-.board-listings { grid-column: 1 / -1; min-width: 0; margin-top: 6px; padding: 20px 0 4px; border-top: 1px solid var(--line); }
-.board-listings-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
-.board-listings h2 { margin: 0; color: var(--ink); font-size: 17px; font-weight: 650; letter-spacing: -.015em; }
-.board-listings-heading p { margin: 7px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.6; max-width: 70ch; }
-.board-listing-items { list-style: none; padding: 0; margin: 12px 0 0; }
+.board-listings { position: relative; grid-column: 1 / -1; min-width: 0; margin-top: 6px; padding: 0 0 4px; border-top: 1px solid var(--line); }
+.board-listings-close { position: absolute; right: 0; top: 8px; }
+.board-listing-items { list-style: none; padding: 0; margin: 0; }
 .board-listing-items li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px 24px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.board-listing-items li:first-child { padding-right: 40px; }
 .board-listing-items li > div { min-width: 0; }
 .board-listing-items a { color: var(--ink); font-size: 13px; font-weight: 600; text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
 .board-listing-items a:hover { color: var(--accent); }
 .board-listing-items p { margin: 6px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .board-listing-status { flex: none; color: var(--ink-soft); font-size: 11px; }
-.board-listings-feedback { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 18px 0; color: var(--ink-soft); font-size: 13px; line-height: 1.6; max-width: 70ch; }
+.board-listings-feedback { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 18px 0; padding-right: 40px; color: var(--ink-soft); font-size: 13px; line-height: 1.6; max-width: 70ch; }
 .board-listings-feedback p { margin: 0; }
 .board-listings-pagination, .board-listings-pagination > div { display: flex; align-items: center; gap: 8px; }
 .board-listings-pagination { justify-content: space-between; margin-top: 14px; color: var(--ink-soft); font-size: 12px; font-variant-numeric: tabular-nums; }

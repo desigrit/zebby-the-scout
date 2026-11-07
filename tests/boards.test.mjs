@@ -10,6 +10,19 @@ import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { build } from "esbuild";
 import { onlineAnalysis } from "../desktop/online-analysis.ts";
+import { boardListingTitle } from "../shared/board-listing-title.ts";
+
+test("CTA titles recover from Workday role URLs while meaningful titles stay unchanged", () => {
+  const url = "https://salesforce.wd12.myworkdayjobs.com/en-US/Slack/job/Seattle/Senior-Product-Manager--Commerce_JR123";
+  assert.equal(boardListingTitle("Apply", url), "Senior Product Manager Commerce");
+  assert.equal(boardListingTitle("View job", url + "?source=slack"), "Senior Product Manager Commerce");
+  assert.equal(boardListingTitle("Senior Product Manager, Commerce", url), "Senior Product Manager, Commerce");
+  assert.equal(boardListingTitle("Apply", "https://example.org/jobs/123"), "");
+  assert.equal(boardListingTitle("Apply", url.replace(".myworkdayjobs.com", ".myworkdayjobs.com.evil.test")), "");
+  assert.equal(boardListingTitle("Apply", url.replace("_JR123", "")), "");
+  assert.equal(boardListingTitle("Apply", "not a URL"), "");
+  assert.equal(boardListingTitle("Apply Research Scientist", url), "Apply Research Scientist");
+});
 
 const root = await mkdtemp(path.join(tmpdir(), "zebby-boards-"));
 const bundle = path.join(root, "boards.mjs");
