@@ -10,7 +10,7 @@ export function boardListingTitle(title: string | undefined, url: string) {
     const link = new URL(url);
     if (link.protocol !== "https:" || !link.hostname.endsWith(".myworkdayjobs.com") || !link.pathname.includes("/job/")) return "";
     const slug = decodeURIComponent(link.pathname.replace(/\/$/, "").split("/").at(-1) || "");
-    const match = /^(.+)_(?:JR|R-?)\d+$/i.exec(slug);
+    const match = /^(.+)_(?:JR|R-?)\d+(?:-\d+)?$/i.exec(slug);
     const recovered = match?.[1].replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim() || "";
     return recovered && !isBoardActionLabel(recovered) ? recovered.slice(0, 300) : "";
   } catch { return ""; }

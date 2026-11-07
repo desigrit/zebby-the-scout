@@ -17,6 +17,13 @@ async function run() {
   const url = "https://slack.com/careers/dept/product", controller = new AbortController();
   const reader = new BoardBrowser(controller.signal), tasks = [], responses = [];
   const report = { url, tasks, responses, status: "", error: "" };
+  const read = reader.read.bind(reader);
+  reader.read = async () => {
+    const page = await read();
+    report.observed = page.candidates.filter(item => item.url.includes(".myworkdayjobs.com/")).map(({ title, url, text }) => ({ title, url, text }));
+    report.cards = await reader.window.webContents.executeJavaScript(`Array.from(document.querySelectorAll('a[href*=".myworkdayjobs.com/"]')).slice(0,5).map(a => a.parentElement.parentElement.outerHTML.slice(0,5000))`);
+    return page;
+  };
   reader.window.webContents.on("did-frame-navigate", (_event, target, status, _text, main) => { if (main) responses.push({ url: target, status }); });
   try {
     const result = await scanBoard({ url, reader, signal: controller.signal, provider: "coverage-test", model: "observed-ids", progress(message) { console.log(message); },

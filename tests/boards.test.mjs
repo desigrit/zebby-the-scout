@@ -16,6 +16,7 @@ test("CTA titles recover from Workday role URLs while meaningful titles stay unc
   const url = "https://salesforce.wd12.myworkdayjobs.com/en-US/Slack/job/Seattle/Senior-Product-Manager--Commerce_JR123";
   assert.equal(boardListingTitle("Apply", url), "Senior Product Manager Commerce");
   assert.equal(boardListingTitle("View job", url + "?source=slack"), "Senior Product Manager Commerce");
+  assert.equal(boardListingTitle("Apply", url + "-2"), "Senior Product Manager Commerce");
   assert.equal(boardListingTitle("Senior Product Manager, Commerce", url), "Senior Product Manager, Commerce");
   assert.equal(boardListingTitle("Apply", "https://example.org/jobs/123"), "");
   assert.equal(boardListingTitle("Apply", url.replace(".myworkdayjobs.com", ".myworkdayjobs.com.evil.test")), "");
