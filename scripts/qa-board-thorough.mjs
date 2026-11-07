@@ -34,10 +34,11 @@ async function runFixture(name, { iframe = false, oracleFailure = false } = {}) 
   let first = true;
   try {
     const result = await thoroughlyScanBoard({ url, reader: owner.thorough, signal: abort.signal, provider: "fixture", model: "observed-controls",
-      checkpoint: run, settings: { ...defaultBoardReaderSettings, modelCalls: 120 }, progress() {}, save: async run => checkpoints.push(structuredClone(run)),
+      checkpoint: run, settings: { ...defaultBoardReaderSettings, minutes: 2, modelCalls: 70 }, progress() {}, save: async run => checkpoints.push(structuredClone(run)),
       extract: async input => {
         if (input.task === "feed_map") return { usable: false, records: "", id: "", title: "", url: "", department: "", location: "", total: "", next: "" };
         assert.equal(input.task, "explore"); observed.push({ pass: input.pass, jobs: input.coverage.verifiedCount, controls: input.controls.length, scope: input.coverage.scopeVerified });
+        if (observed.length % 10 === 0) console.log(name, JSON.stringify({ call: observed.length, pass: input.pass, coverage: input.coverage, atBottom: input.atBottom, feedback: input.feedback }));
         if (first) { first = false; await writeFile(path.join(output, name + ".jpg"), Buffer.from(input.image.data, "base64")); }
         if (oracleFailure && input.coverage.verifiedCount > 0) throw new Error("Provider unavailable");
         const frame = input.controls.find(control => control.kind === "document");
@@ -56,7 +57,8 @@ async function runFixture(name, { iframe = false, oracleFailure = false } = {}) 
         else if (nested || !input.atBottom) action = { kind: "scroll", targetId: nested?.id || "", value: "down" };
         else if (next) action = { kind: "next", targetId: next.id, value: "" };
         const result = { listings: input.candidates.filter(job => job.url.includes("/job/") && job.title !== "Apply").map(job => ({ id: job.id, title: job.title, department: "Product", location: "Seattle" })),
-          action, scopeEvidence: [], irrelevantControls: team?.value === "Product" ? [team.id] : [], totalEvidence: { counterId: input.counters[0]?.id || "",
+          action, excludedIds: input.candidates.filter(job => !job.url.includes("/job/")).map(job => job.id), uncertainIds: apply ? [apply.id] : [],
+          scopeEvidence: [], irrelevantControls: team?.value === "Product" ? [team.id] : [], totalEvidence: { counterId: input.counters[0]?.id || "",
             filteredTotal: input.coverage.scopeVerified && input.counters.length ? 5 : null, interpretation: input.coverage.scopeVerified && input.counters.length ? "filtered" : "unknown" }, empty: false, complete: true, reason: "Read every result control" };
         if (input.candidates.some(job => job.url.includes("/job/")) && input.pass === "collect") {
           await writeFile(path.join(output, name + "-results.jpg"), Buffer.from(input.image.data, "base64"));
@@ -77,7 +79,8 @@ async function runFixture(name, { iframe = false, oracleFailure = false } = {}) 
   } finally { owner.close(); }
 }
 
-await app.whenReady(); await mkdir(output, { recursive: true });
+await mkdir(path.join(output, "thorough-profile"), { recursive: true }); app.setPath("userData", path.join(output, "thorough-profile"));
+app.on("window-all-closed", () => {}); await app.whenReady();
 try {
   await runFixture("thorough-custom-filters");
   await runFixture("thorough-embedded", { iframe: true });

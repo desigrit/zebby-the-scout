@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import sharp from "sharp";
 import { boardExtractionInput, boardModelContract, validatedBoardExtraction } from "../shared/boards.ts";
-import { defaultBoardReaderSettings } from "../shared/board-exploration.ts";
+import { defaultBoardReaderSettings, controlProvesScope } from "../shared/board-exploration.ts";
 import { openAIAnalysisInput } from "../desktop/openai-request.ts";
 import { anthropicAnalysisInput } from "../desktop/anthropic-request.ts";
 
@@ -32,7 +32,7 @@ function fixture({ inventory = [job()], total = true, change = false, empty = fa
   } };
   const extract = async input => { inputs.push(input); if (input.task === "roles") return { decisions: Object.fromEntries(input.candidates.map(job => [job.id, job.title.endsWith("1")])) };
     return { listings: input.candidates.map(job => ({ id: job.id, title: job.title, department: "Product", location: "Seattle" })),
-      action: { kind: "finish", targetId: "", value: "" }, scopeEvidence: [], irrelevantControls: [],
+      action: { kind: "finish", targetId: "", value: "" }, excludedIds: [], uncertainIds: [], scopeEvidence: [], irrelevantControls: [],
       totalEvidence: { counterId: total ? "t0" : "", filteredTotal: total ? input.candidates.length : null, interpretation: total ? "filtered" : "unknown" }, empty, complete: true, reason: "All results visible" };
   };
   return { reader, extract, actions, inputs, opens: () => opens, closed: () => closed };
@@ -58,6 +58,8 @@ test("changed inventory cannot complete on two disagreeing passes", async () => 
   await assert.rejects(scan(f, run), /kept changing/); assert.equal(f.opens(), 3); assert.equal(run.status, "incomplete");
 });
 test("URL scope survives fragment filters and requires observed selected values", async () => {
+  assert.equal(controlProvesScope(control({ kind: "option", role: "option", value: "Product", options: [] }), "Product"), false, "An unselected menu option cannot prove a filter");
+  assert.equal(controlProvesScope(control({ kind: "option", role: "selected", value: "Product", options: [] }), "Product"), true);
   assert.deepEqual(boardScope(url + "#openings?category=product"), [{ id: "s0", key: "category", value: "product" }]);
   assert.equal(boardScope(url + "?utm_source=test&sort_by=relevance").length, 0);
   await assert.rejects(scan(fixture(), checkpoint({ url: url + "?team=Product" }), { settings: { ...defaultBoardReaderSettings, modelCalls: 8 } }), /reading limit/);

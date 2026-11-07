@@ -165,7 +165,8 @@ export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> 
         feedback = String(error).slice(0, 1500); await persist("Checking the page evidence again"); continue;
       }
       result.scopeEvidence.forEach(proof => proofs.add(proof.scopeId)); result.irrelevantControls.forEach(id => ignored.add(id));
-      candidates.forEach(candidate => classified.add(candidate.url));
+      const accounted = new Set([...result.listings.map(job => job.id), ...result.excludedIds]);
+      candidates.filter(candidate => accounted.has(candidate.id)).forEach(candidate => classified.add(candidate.url));
       for (const listing of proofs.size === scope.length ? result.listings : []) {
         const candidate = candidates.find(item => item.id === listing.id)!;
         const fromDetail = inspected.get(boardJobIdentity(candidate.url).key);
@@ -219,7 +220,8 @@ export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> 
       }
       if (action.kind === "next" && !page.atBottom) { action = scroll(observation); feedback = "Finish reading this page before following its next-page control."; }
       if (action.kind === "next") {
-        const pageKey = hash([page.url, page.candidates.map(candidate => candidate.url).sort(), page.counters]);
+        const target = page.controls.find(control => control.id === action.targetId);
+        const pageKey = hash([page.url, page.candidates.map(candidate => candidate.url).sort(), page.counters, target?.name, target?.href]);
         if (visitedNext.has(pageKey)) throw new Error("The board repeated a results page. Verified jobs are saved; resume to retry its navigation.");
         visitedNext.add(pageKey); stableBottom = 0; sweptAgain = false;
       }

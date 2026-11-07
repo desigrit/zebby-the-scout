@@ -658,7 +658,7 @@ test("PostgreSQL ledger and service integration", async (t) => {
           image: visualInput.image, candidates: visualInput.candidates, controls: [], scope: [], pass: "collect", counters: [{ id: "t0", text: "1 open job" }],
           atBottom: true, loading: false, pendingRequests: 0, coverage: { verifiedCount: 0, stableSweeps: 0, remainingSections: 0, scopeVerified: true }, history: [], feedback: "" };
         providerResult = { listings: [{ id: "l0", title: "Product Manager", department: "Product", location: "Seattle" }],
-          action: { kind: "next", targetId: "unobserved", value: "" }, scopeEvidence: [], irrelevantControls: [],
+          action: { kind: "next", targetId: "unobserved", value: "" }, excludedIds: [], uncertainIds: [], scopeEvidence: [], irrelevantControls: [],
           totalEvidence: { counterId: "t0", filteredTotal: 1, interpretation: "filtered" }, empty: false, complete: true, reason: "Results read" };
         const beforeExplore = await wallet();
         const exploreQuote = () => call("POST", "/v1/quotes", { ...payload, input: explore, thinkingLevel: "off" });
