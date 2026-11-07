@@ -19,9 +19,12 @@ export async function checkBoardsRenderer(page, nav) {
       },
       updateBoard: async (id, input) => { Object.assign(state.boards.find(board => board.id === id), input); publish(); return state; },
       removeBoard: async id => { state.boards = state.boards.filter(board => board.id !== id); publish(); return state; },
-      checkBoards: async ids => { window.boardsQA.checks.push(ids || state.boards.map(board => board.id));
+      checkBoards: async (ids, options) => { window.boardsQA.options = options; window.boardsQA.checks.push(ids || state.boards.map(board => board.id));
         state.progress = (ids || state.boards.map(board => board.id)).map(boardId => ({ boardId, requestId: boardId, phase: "reading", message: "Reading page 2" })); publish(); return state; },
       cancelBoardCheck: async id => { state.progress = state.progress.filter(entry => entry.boardId !== id); publish(); return true; },
+      configureBoardReader: async settings => { state.readerSettings = settings; publish(); return state; },
+      boardRunPreview: async id => ({ summary: state.runs.find(run => run.boardId === id), listings: Array.from({ length: 12 }, (_, index) => ({
+        id: String(index), title: "Senior Product Manager, Commerce " + (index + 1), department: "Product", location: "Seattle, WA", url: "https://example.org/jobs/" + index, text: "Product" })) }),
       markBoardReviewed: async (id, through) => {
         window.boardsQA.reviews.push({ id, through });
         if (window.boardsQA.deferReview) await new Promise(resolve => { window.boardsQA.finishReview = resolve; });
@@ -274,10 +277,49 @@ export async function checkBoardsRenderer(page, nav) {
   await capture("boards-instructions-edit");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.evaluate(boards => window.boardsQA.set({ boards }), savedBoards);
+  await page.evaluate(() => window.boardsQA.set({ runs: [{ boardId: "0", status: "paused", found: 12, modelCalls: 60,
+    message: "The check reached its reading limit. Resume to continue.", updatedAt: "2026-11-07T12:00:00Z", canResume: true, criteriaPending: true }] }));
+  await first.getByRole("button", { name: "Resume check", exact: true }).waitFor();
+  await first.getByRole("button", { name: "12 found so far", exact: true }).click();
+  await page.getByRole("region", { name: "Slack partial results", exact: true }).getByText("Tracking instructions will be applied", { exact: false }).waitFor();
+  assert.equal(await first.locator(".board-partial-listings li").count(), 12);
+  for (const width of [1325, 790]) {
+    await page.setViewportSize({ width, height: 850 });
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate(theme => { document.documentElement.dataset.theme = theme; document.querySelector(".desktop-workspace").scrollTop = 0; }, theme);
+      await capture("boards-thorough-partial-" + width + "-" + theme);
+    }
+  }
+  await first.getByRole("button", { name: "Close partial results", exact: true }).click();
+  await first.getByRole("button", { name: "Resume check", exact: true }).click();
+  assert.equal((await page.evaluate(() => window.boardsQA.options)).resume, true);
+  await page.evaluate(() => window.boardsQA.set({ progress: [], runs: [] }));
+  await first.getByRole("button", { name: "Edit Slack board", exact: true }).click();
+  await page.getByRole("button", { name: "Thorough recheck", exact: true }).click();
+  assert.equal((await page.evaluate(() => window.boardsQA.options)).thorough, true);
+  await page.evaluate(() => window.boardsQA.set({ progress: [] }));
+  await page.setViewportSize({ width: 1325, height: 850 });
+  await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
   const syncHint = page.getByText("Quit Zebby and let both files sync before switching computers.", { exact: true });
   await syncHint.waitFor();
   await capture("boards-settings-spacing");
+  const automatic = page.getByRole("checkbox", { name: "Automatically try a thorough check", exact: true });
+  assert.equal(await automatic.isChecked(), true); await automatic.uncheck();
+  assert.equal((await page.evaluate(() => window.boardsQA.get().readerSettings)).automaticThorough, false);
+  await automatic.check(); await page.getByText("Reading limits", { exact: true }).click();
+  await page.getByRole("combobox", { name: "Time per attempt", exact: true }).selectOption("30");
+  await page.getByRole("combobox", { name: "Model requests per attempt", exact: true }).selectOption("120");
+  assert.equal((await page.evaluate(() => window.boardsQA.get().readerSettings)).modelCalls, 120);
+  for (const width of [1325, 790]) {
+    await page.setViewportSize({ width, height: 850 });
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate(theme => { document.documentElement.dataset.theme = theme; }, theme);
+      await page.locator(".board-reader-settings").scrollIntoViewIfNeeded(); await capture("boards-thorough-settings-" + width + "-" + theme);
+    }
+  }
+  await page.setViewportSize({ width: 1550, height: 850 });
+  await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
   await nav.getByRole("button", { name: "Plan", exact: true }).click();
   await page.getByRole("main", { name: "Plan", exact: true }).waitFor();
 }

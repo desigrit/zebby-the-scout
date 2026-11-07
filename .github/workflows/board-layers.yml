@@ -39,6 +39,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint -- --quiet
       - run: node node_modules/electron/install.js
       - run: npm run test:boards
         if: github.event_name != 'workflow_dispatch' || !inputs.lyft
@@ -50,8 +52,6 @@ jobs:
           npm test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:private
-      - run: npx tsc --noEmit
-      - run: npm run lint -- --quiet
       - run: npm run desktop:build
       - run: npm run credits:build
       - name: Bundle native reader fixtures
