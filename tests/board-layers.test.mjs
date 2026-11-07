@@ -73,6 +73,102 @@ test("Ashby excludes unlisted jobs and rejects foreign posting URLs", async () =
   assert.equal((await read([job, { ...job, isListed: false }])).expectedTotal, 1);
   await assert.rejects(read([{ ...job, jobUrl: job.jobUrl.replace("/example/", "/another/") }]), /outside/);
 });
+
+const lyftUrl = "https://www.lyft.com/careers#openings?category=product";
+const lyftJob = (id, category = "Product", location = "New York, NY", title = "Senior Product Manager") => ({
+  id, internal_job_id: 90, title, location: { name: location }, departments: [{ name: "Rider Experience" }],
+  absolute_url: `https://app.careerpuck.com/job-board/lyft/job/${id}?gh_jid=${id}`,
+  metadata: [{ name: "Career Site Category", value: category, value_type: "single_select" }],
+});
+const lyftData = jobs => ({ meta: { total: jobs.length }, jobs });
+
+test("Lyft preserves query and fragment filters without accepting unknown or conflicting scope", () => {
+  for (const url of [lyftUrl, "https://www.lyft.com/careers?category=product#openings",
+    "https://www.lyft.com/careers?location=new%2520york%252C%2520ny#openings?category=product&search=senior",
+    "https://www.lyft.com/careers#openings", "https://www.lyft.com/careers?utm_source=example"]) {
+    const feed = boardFeed(url);
+    assert.equal(feed.kind, "lyft"); assert.equal(feed.url, url);
+    assert.equal(feed.endpoint, "https://api.greenhouse.io/v1/boards/lyft/jobs?content=true");
+  }
+  for (const suffix of ["?department=product", "#other?category=product", "#openings?level=senior",
+    "?category=design#openings?category=product", "?category=product&category=design", "?category=", "?search=%25broken"]) {
+    assert.equal(boardFeed("https://www.lyft.com/careers" + suffix), null);
+  }
+  assert.equal(boardFeed("https://www.lyft.com/careers/early-talent?category=product"), null);
+  assert.equal(boardFeed("https://www.lyft.com.example.org/careers?category=product"), null);
+});
+
+test("Lyft uses the published career category, preserves posting locations and applies every saved filter", async () => {
+  const data = lyftData([lyftJob(1), lyftJob(2, "Product", "Toronto, Canada", "Staff Product Manager"), lyftJob(3, "Design")]);
+  const read = url => readBoardFeed(boardFeed(url), async () => Response.json(data), signal());
+  const page = await read(lyftUrl);
+  assert.equal(page.layer, "structured"); assert.equal(page.complete, true); assert.equal(page.expectedTotal, 2);
+  assert.deepEqual(page.candidates.map(job => job.department), ["Product", "Product"]);
+  assert.deepEqual(page.candidates.map(job => job.location), ["New York, NY", "Toronto, Canada"]);
+  assert.deepEqual(await read("https://www.lyft.com/careers?category=product#openings"), { ...page, url: "https://www.lyft.com/careers?category=product#openings" });
+  const filtered = await read("https://www.lyft.com/careers?location=new%2520york%252C%2520ny#openings?category=product&search=senior");
+  assert.equal(filtered.expectedTotal, 1); assert.equal(filtered.candidates[0].url, data.jobs[0].absolute_url);
+  const empty = await read(lyftUrl + "&search=not-a-listed-title");
+  assert.equal(empty.expectedTotal, 0); assert.equal(empty.empty, true); assert.equal(empty.complete, true);
+});
+
+test("Lyft rejects incomplete inventories, missing metadata and invalid job links before filtering", async () => {
+  const product = lyftJob(1), other = lyftJob(2, "Design"), data = lyftData([product, other]);
+  const read = input => readBoardFeed(boardFeed(lyftUrl), async () => Response.json(input), signal());
+  for (const invalid of [
+    { ...data, meta: { total: 3 } }, lyftData([product, product]),
+    lyftData([product, { ...other, metadata: [] }]),
+    lyftData([product, { ...other, metadata: [...other.metadata, ...other.metadata] }]),
+    lyftData([product, { ...other, metadata: [{ name: "Career Site Category", value: ["Design"] }] }]),
+    lyftData([product, { ...other, absolute_url: "https://app.careerpuck.com/job-board/another/job/2?gh_jid=2" }]),
+    lyftData([product, { ...other, absolute_url: other.absolute_url.replace("gh_jid=2", "gh_jid=3") }]),
+    lyftData([product, { ...other, absolute_url: other.absolute_url + "&redirect=https://example.org" }]),
+  ]) await assert.rejects(read(invalid));
+  const empty = await read(lyftData([])); assert.equal(empty.complete, true); assert.equal(empty.expectedTotal, 0);
+  assert.equal((await read(lyftData([{ ...product, metadata: [{ name: "Career Site Category", value: null }] }]))).expectedTotal, 0);
+});
+
+test("Lyft first scans need no AI, failures preserve history, and retries on the saved board discover each posting once", async () => {
+  const profile = path.join(folder, "lyft-history"), store = new BoardsStore(profile);
+  await store.create(path.join(folder, "Lyft.sqlite"));
+  const [id] = await store.add([{ company: "Lyft", url: lyftUrl }]);
+  let data = lyftData([lyftJob(1)]);
+  const service = new BoardsService(store, { profile,
+    selection: () => ({ provider: "chatgpt", model: "selected-model", thinkingLevel: "off", account: "fixture-account" }), changed() {},
+    reader: () => ({ open: async () => {}, close() {}, next: async () => assert.fail("The verified feed has one complete page"),
+      read: () => readBoardFeed(boardFeed(lyftUrl), async () => Response.json(data), signal()) }),
+    extract: async () => assert.fail("Blank instructions must not require an AI call"),
+  });
+  const check = async () => { service.check([id]); while (service.busy) await new Promise(resolve => setTimeout(resolve, 10)); return store.get(id); };
+  try {
+    for (let cold = 0; cold < 3; cold++) {
+      const saved = await check(); assert.equal(saved.error, ""); assert.equal(saved.checkedCount, 1); assert.equal(saved.newCount, 0);
+    }
+    const baseline = store.get(id);
+    data = { meta: { total: 2 }, jobs: [lyftJob(1)] };
+    const failed = await check(); assert.match(failed.error, /incomplete/); assert.equal(failed.lastCheckId, baseline.lastCheckId);
+    assert.equal(failed.lastCheckedAt, baseline.lastCheckedAt); assert.equal(failed.newCount, 0);
+    data = lyftData([lyftJob(1), lyftJob(2)]);
+    const retried = await check(); assert.equal(retried.error, ""); assert.equal(retried.checkedCount, 2); assert.equal(retried.newCount, 1);
+    assert.equal((await check()).newCount, 1);
+    assert.equal(store.listings(id, store.get(id).lastCheckId, "new").listings[0].url, lyftJob(2).absolute_url);
+  } finally { await service.stop(); await store.close(); }
+});
+
+test("Lyft applies tracking instructions only after the complete filtered inventory is verified", async () => {
+  const page = await readBoardFeed(boardFeed(lyftUrl), async () => Response.json(lyftData([
+    lyftJob(1), lyftJob(2, "Product", "Toronto, Canada", "Staff Product Manager"), lyftJob(3, "Design"),
+  ])), signal());
+  const tasks = [];
+  const result = await scanBoard({ url: lyftUrl, signal: signal(), provider: "chatgpt", model: "selected-model", instructions: "Senior Product Manager only", progress() {},
+    reader: { open: async () => {}, close() {}, read: async () => page, next: async () => assert.fail("Unexpected pagination") },
+    extract: async input => {
+      tasks.push(input.task); assert.equal(input.task, "roles"); assert.equal(input.candidates.length, 2);
+      return { decisions: Object.fromEntries(input.candidates.map(job => [job.id, job.title === "Senior Product Manager"])) };
+    },
+  });
+  assert.deepEqual(tasks, ["roles"]); assert.equal(result.jobs.length, 2); assert.equal(result.jobs.filter(job => job.matches).length, 1);
+});
 test("visual input validates real image dimensions and observed output IDs", () => {
   assert.equal(boardExtractionInput.parse(visual).task, "visual");
   for (const image of [{ ...visual.image, width: 900 }, { ...visual.image, mediaType: "image/png" }, { ...visual.image, data: "a".repeat(40) }]) {

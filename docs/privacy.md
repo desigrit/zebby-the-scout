@@ -1,6 +1,6 @@
 # Zebby privacy
 
-Last updated: November 6, 2026
+Last updated: November 7, 2026
 
 Zebby is a job application tracker from Desigrit Labs. This page explains what stays on your computer and what is sent when you use connected features.
 
@@ -25,6 +25,8 @@ Boards stores saved board URLs and filters, company names, tracking instructions
 For a Boards check, Zebby contacts the public careers site and applicable recruiting-platform feed from your computer. When a model is needed it receives the relevant URLs, titles, department headings, page excerpts, observed link and control IDs, and any tracking instructions. When these are insufficient, visual reading sends screenshots of the public page in Zebby's isolated browser. It does not capture your desktop or other browser windows.
 
 A downloaded model processes text on your computer. Ollama receives text and, for a vision-capable model, screenshots at your selected server. Personal keys send the required text and screenshots directly to OpenAI or Anthropic. Zebby credits send them through the credits service to the selected provider. Zebby does not save the screenshots to a database, cache or log. It keeps validated results and request hashes for interrupted-check recovery. The credits service retains validated decisions under its normal recovery policy.
+
+Automatic thorough checks can navigate public results, inspect job descriptions, and examine samples of public JSON responses loaded by the careers page. The selected model receives the relevant evidence, including screenshots. Local recovery logs retain discovered jobs, the saved search, model selection, and navigation steps so checks can resume. Older recovery logs remain in the app folder until you remove them. Successful navigation steps may be reused, but each new check verifies the current page and filters.
 
 Model providers process requests under their own terms. Retention and use for model improvement depend on the provider and the data-sharing settings of the account serving the request. With your own API key, those are your account settings. With Zebby credits, those are the service operator's account settings. OpenAI requests set `store: false`; this does not override separate provider retention or data-sharing settings.
 

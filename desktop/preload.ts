@@ -10,7 +10,9 @@ contextBridge.exposeInMainWorld("desktop", {
   addBoards: (inputs: unknown) => ipcRenderer.invoke("boards:add", inputs),
   updateBoard: (id: string, input: unknown) => ipcRenderer.invoke("boards:update", id, input),
   removeBoard: (id: string) => ipcRenderer.invoke("boards:remove", id),
-  checkBoards: (ids?: string[]) => ipcRenderer.invoke("boards:check", ids),
+  checkBoards: (ids?: string[], options?: unknown) => ipcRenderer.invoke("boards:check", ids, options),
+  configureBoardReader: (settings: unknown) => ipcRenderer.invoke("boards:configure-reader", settings),
+  boardRunPreview: (id: string) => ipcRenderer.invoke("boards:run-preview", id),
   cancelBoardCheck: (id: string) => ipcRenderer.invoke("boards:cancel", id),
   markBoardReviewed: (id: string, through: number) => ipcRenderer.invoke("boards:reviewed", id, through),
   onBoardsChanged: (callback: (value: unknown) => void) => {

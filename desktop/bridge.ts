@@ -5,7 +5,8 @@ import type { AnalysisProvider, AnalysisSource, CreditQuote, CreditsState } from
 import type { WalletPairing } from "../shared/wallet-access";
 import type { ThinkingCapability, ThinkingPreferences } from "../shared/thinking";
 import type { AnalysisProgress } from "../shared/analysis-progress";
-import type { BoardInput, BoardsState, BoardListings, BoardListingFilter } from "../shared/boards";
+import type { BoardInput, BoardsState, BoardListings, BoardListingFilter, BoardRunPreview } from "../shared/boards";
+import type { BoardCheckOptions, BoardReaderSettings } from "../shared/board-exploration";
 
 export type DesktopState = {
   filePath: string;
@@ -50,7 +51,9 @@ export type DesktopBridge = {
   boardListings(id: string, checkId: number, filter: BoardListingFilter, offset?: number): Promise<BoardListings>;
   updateBoard(id: string, input: BoardInput): Promise<BoardsState>;
   removeBoard(id: string): Promise<BoardsState>;
-  checkBoards(ids?: string[]): Promise<BoardsState>;
+  checkBoards(ids?: string[], options?: BoardCheckOptions): Promise<BoardsState>;
+  configureBoardReader(settings: BoardReaderSettings): Promise<BoardsState>;
+  boardRunPreview(id: string): Promise<BoardRunPreview | null>;
   cancelBoardCheck(id: string): Promise<boolean>;
   markBoardReviewed(id: string, throughCheckId: number): Promise<BoardsState>;
   onBoardsChanged(callback: (value: BoardsState) => void): () => void;

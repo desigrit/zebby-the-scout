@@ -35,4 +35,11 @@ for (const [model, key] of [["gpt-6-luna", process.env.OPENAI_API_KEY], ["claude
     assert.equal(result.expectedTotal, 2); assert.equal(result.empty, false);
     console.log("Visual board titles and unlabeled navigation passed for", model);
   }
+  if (process.env.ZEBBY_QA_THOROUGH_SAMPLE) {
+    const sample = JSON.parse(process.env.ZEBBY_QA_THOROUGH_SAMPLE);
+    const result = await verifiedRead(model, key, sample.input, 8192);
+    assert.deepEqual(result.listings.map(item => item.id).sort(), sample.expected.listingIds.slice().sort());
+    assert.ok(result.listings.every(item => /Senior Product Manager/i.test(item.title)));
+    console.log("Thorough page coverage and bounded actions passed for", model);
+  }
 }

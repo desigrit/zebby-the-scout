@@ -4,8 +4,9 @@ import { greenhouseBoard } from "./greenhouse-board";
 import type { BoardCandidate } from "../shared/boards";
 import type { BoardPage } from "./board-page";
 import { boardRequest } from "./board-request";
+import { lyftFilters, lyftListingUrl } from "./lyft-board";
 
-export type BoardFeed = { kind: "greenhouse" | "lever" | "ashby"; board: string; url: string; endpoint: string };
+export type BoardFeed = { kind: "greenhouse" | "lever" | "ashby" | "lyft"; board: string; url: string; endpoint: string };
 type Request = (url: string, init: RequestInit) => Promise<Response>;
 const token = /^[\w-]+$/;
 const leverFilters = ["location", "commitment", "team", "department"];
@@ -14,6 +15,8 @@ const tracking = (key: string) => /^utm_/i.test(key) || ["gh_src", "lever-source
 // An unknown query or fragment can be a saved filter. Never drop it to use a feed.
 export function boardFeed(value: string): BoardFeed | null {
   const url = boardUrl(value), parts = url.pathname.split("/").filter(Boolean);
+  if (lyftFilters(url)) return { kind: "lyft", board: "lyft", url: url.href,
+    endpoint: "https://api.greenhouse.io/v1/boards/lyft/jobs?content=true" };
   if (url.hash) return null;
   const greenhouse = greenhouseBoard(url);
   if (greenhouse && [...url.searchParams.keys()].every(key => tracking(key) || ["for", "validityToken"].includes(key))) {
@@ -39,6 +42,10 @@ const text = z.string().trim().min(1);
 const greenhouseResponse = z.object({ meta: z.object({ total: z.number().int().nonnegative().max(10000) }), jobs: z.array(z.object({
   id: z.number().int().positive().safe(), internal_job_id: z.number().nullable().optional(), title: text,
   location: z.object({ name: z.string() }).optional(), departments: z.array(z.object({ name: z.string() })).optional(),
+})).max(10000) });
+const lyftResponse = greenhouseResponse.extend({ jobs: z.array(greenhouseResponse.shape.jobs.element.extend({
+  absolute_url: z.string().url(), location: z.object({ name: z.string() }),
+  metadata: z.array(z.object({ name: z.string(), value: z.unknown(), value_type: z.string().optional() })).max(100),
 })).max(10000) });
 const leverResponse = z.array(z.object({ id: z.string().uuid(), text,
   hostedUrl: z.string().url(), categories: z.object({ location: z.string().optional(), allLocations: z.array(z.string()).optional(),
@@ -75,7 +82,29 @@ function listing(url: string, title: string, department = "", location = ""): Bo
 
 export async function readBoardFeed(feed: BoardFeed, request: Request, signal: AbortSignal): Promise<BoardPage> {
   let candidates: BoardCandidate[] = [];
-  if (feed.kind === "greenhouse") {
+  if (feed.kind === "lyft") {
+    const filters = lyftFilters(boardUrl(feed.url));
+    if (!filters) throw new Error("Lyft's saved filters could not be verified.");
+    const data = lyftResponse.parse(await json(request, feed.endpoint, signal));
+    if (data.meta.total !== data.jobs.length || new Set(data.jobs.map(job => job.id)).size !== data.meta.total) {
+      throw new Error("Lyft's job feed returned an incomplete inventory.");
+    }
+    // Validate the entire feed before filtering. A missing category must not
+    // silently become an exclusion or a successful empty baseline.
+    for (const job of data.jobs) {
+      const fields = job.metadata.filter(field => field.name === "Career Site Category");
+      if (fields.length !== 1 || fields[0].value !== null && typeof fields[0].value !== "string" ||
+          fields[0].value_type && fields[0].value_type !== "single_select") {
+        throw new Error("Lyft's job categories could not be verified.");
+      }
+      const category = fields[0].value as string | null, location = job.location.name.trim();
+      const url = lyftListingUrl(job.absolute_url, job.id);
+      if (!category || job.internal_job_id === null) continue;
+      const matches = [...filters].every(([key, wanted]) => key === "search" ? job.title.toLowerCase().includes(wanted) :
+        (key === "category" ? category : location).toLowerCase() === wanted);
+      if (matches) candidates.push(listing(url, job.title, category, location));
+    }
+  } else if (feed.kind === "greenhouse") {
     const data = greenhouseResponse.parse(await json(request, feed.endpoint, signal));
     if (data.meta.total !== data.jobs.length || new Set(data.jobs.map(job => job.id)).size !== data.meta.total) {
       throw new Error("The job feed returned an incomplete inventory.");

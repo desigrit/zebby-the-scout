@@ -419,9 +419,10 @@ export class CreditsClient {
   }
   async quote(kind: AnalysisKind, input: unknown, model: string, thinkingLevel?: string): Promise<CreditQuote> {
     if (kind === "board_extract" && input && typeof input === "object" && "task" in input &&
-        ["inventory", "document", "visual"].includes(String(input.task))) {
+        ["inventory", "document", "visual", "explore", "feed_map"].includes(String(input.task))) {
       const catalog = z.object({ boardsReaderVersion: z.number().optional() }).parse(await this.request("/v1/catalog", undefined, false));
-      if ((catalog.boardsReaderVersion || 0) < 2) throw new Error("The credits service is being updated for this board reader. Try again shortly or choose a personal API key in Settings.");
+      const requiredVersion = ["explore", "feed_map"].includes(String(input.task)) ? 3 : 2;
+      if ((catalog.boardsReaderVersion || 0) < requiredVersion) throw new Error("The credits service is being updated for this board reader. Try again shortly or choose a personal API key in Settings.");
     }
     const level = validateOnlineThinking(creditModel(model), thinkingLevel);
     const quote = z.object({ id: z.string().uuid(), model: z.string(), thinkingLevel: z.enum(CREDIT_THINKING_LEVELS), maximum: integer.positive(), expiresAt: z.string(),

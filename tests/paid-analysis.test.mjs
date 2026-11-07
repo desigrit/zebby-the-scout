@@ -627,7 +627,7 @@ test("PostgreSQL ledger and service integration", async (t) => {
         const jpeg = await sharp({ create: { width: 320, height: 240, channels: 3, background: "white" } }).jpeg().toBuffer();
         const visualInput = { task: "visual", pageUrl: boardInput.pageUrl, pageTitle: "Careers", summary: "1 job", candidates: boardInput.candidates,
           controls: [], atBottom: true, expectedTotal: 1, image: { mediaType: "image/jpeg", data: jpeg.toString("base64"), width: 320, height: 240 } };
-        assert.equal((await call("GET", "/v1/catalog")).boardsReaderVersion, 2);
+        assert.equal((await call("GET", "/v1/catalog")).boardsReaderVersion, 3);
         const visualQuote = () => call("POST", "/v1/quotes", { ...payload, input: visualInput, thinkingLevel: "off" });
         const visualBefore = await wallet();
         providerResult = { listings: [{ id: "invented", title: "Product Manager", department: "Product", location: "Seattle" }],
@@ -654,6 +654,26 @@ test("PostgreSQL ledger and service integration", async (t) => {
         const unfundedQuote = await call("POST", "/v1/quotes", { ...payload, input: visualInput, thinkingLevel: "off" }, "other");
         await assert.rejects(call("POST", "/v1/analysis", { quoteId: unfundedQuote.id, requestId: randomUUID(), input: visualInput }, "other"), error => error.status === 402);
         assert.equal(providerCalls, visualCalls);
+        const explore = { task: "explore", savedUrl: boardInput.pageUrl, pageUrl: boardInput.pageUrl, pageTitle: "Careers", summary: "1 open job",
+          image: visualInput.image, candidates: visualInput.candidates, controls: [], scope: [], pass: "collect", counters: [{ id: "t0", text: "1 open job" }],
+          atBottom: true, loading: false, pendingRequests: 0, coverage: { verifiedCount: 0, stableSweeps: 0, remainingSections: 0, scopeVerified: true }, history: [], feedback: "" };
+        providerResult = { listings: [{ id: "l0", title: "Product Manager", department: "Product", location: "Seattle" }],
+          action: { kind: "next", targetId: "unobserved", value: "" }, excludedIds: [], uncertainIds: [], scopeEvidence: [], irrelevantControls: [],
+          totalEvidence: { counterId: "t0", filteredTotal: 1, interpretation: "filtered" }, empty: false, complete: true, reason: "Results read" };
+        const beforeExplore = await wallet();
+        const exploreQuote = () => call("POST", "/v1/quotes", { ...payload, input: explore, thinkingLevel: "off" });
+        await assert.rejects(call("POST", "/v1/analysis", { quoteId: (await exploreQuote()).id, requestId: randomUUID(), input: explore }));
+        assert.equal((await wallet()).used, beforeExplore.used); assert.equal((await wallet()).reserved, 0);
+        providerResult.action = { kind: "finish", targetId: "", value: "" };
+        const thoroughQuote = await exploreQuote(), thoroughRequest = { quoteId: thoroughQuote.id, requestId: randomUUID(), input: explore };
+        assert.ok(thoroughQuote.outputTokens >= 8192);
+        await call("POST", "/v1/analysis", thoroughRequest);
+        const thoroughCost = (await wallet()).used, thoroughCalls = providerCalls;
+        await call("POST", "/v1/analysis", thoroughRequest);
+        assert.equal((await wallet()).used, thoroughCost); assert.equal(providerCalls, thoroughCalls);
+        const emptyQuote = await call("POST", "/v1/quotes", { ...payload, input: explore, thinkingLevel: "off" }, "other");
+        await assert.rejects(call("POST", "/v1/analysis", { quoteId: emptyQuote.id, requestId: randomUUID(), input: explore }, "other"), error => error.status === 402);
+        assert.equal(providerCalls, thoroughCalls);
       } finally { expectedModel = "gpt-6.1-sol"; providerResult = plan; }
     });
     await t.test("refunds are cumulative and idempotent, and disputes freeze spending", async () => {

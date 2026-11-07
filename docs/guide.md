@@ -30,7 +30,7 @@ On first launch, choose **Create database** or **Open existing database**. Choos
 
 To bring in an existing beta Boards file, finish any save in the beta and close it. Copy that file to the companion name before opening your Applications file. If the companion has already been created and is empty, choose **Import Boards history** in Settings.
 
-In **Boards (Beta)**, add a career page and optional tracking instructions. The first complete scan records a baseline. Later scans show newly observed matching roles. [Using Boards](boards.md)
+In **Boards (Beta)**, add a career page and optional tracking instructions. The first complete scan records a baseline. Later scans show newly observed matching roles. Difficult pages automatically receive a thorough check with your selected model. Settings lets you change its limits; Stop and Resume preserve progress without replacing the last successful scan. [Using Boards](boards.md)
 
 Install version 1.4.1 or newer on both computers before opening a shared database that has been upgraded by this release. Older versions cannot open the upgraded file.
 
