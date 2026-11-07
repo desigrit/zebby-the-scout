@@ -45,11 +45,14 @@ async function compareRenderedPage(expected) {
     assert.equal(Number(counts[1].replaceAll(",", "")), state.jobs.length);
     assert.deepEqual(ids(state.jobs), ids(expected.jobs), "The feed must match every rendered Product posting");
     report.rendered = { ...state, parsedOverallTotal: page.expectedTotal };
-    await reader.window.webContents.executeJavaScript("document.querySelector('#openings').scrollIntoView({block:'start',behavior:'instant'})");
-    await reader.window.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 500)))");
-    const position = await reader.window.webContents.executeJavaScript("document.querySelector('#openings').getBoundingClientRect().top");
-    assert.ok(position >= -1 && position < 200, "The capture must show the results section");
-    await writeFile(path.join(output, "lyft-product.jpg"), (await reader.window.webContents.capturePage()).toJPEG(80));
+    let captured = false;
+    for await (const viewport of reader.visual()) {
+      if (!viewport.candidates.some(job => jobId(job.url))) continue;
+      report.capture = { candidates: viewport.candidates, atBottom: viewport.atBottom };
+      await writeFile(path.join(output, "lyft-product.jpg"), Buffer.from(viewport.image.data, "base64"));
+      captured = true; break;
+    }
+    assert.ok(captured, "The visual reader must expose the Product listings");
   } finally { reader.close(); }
 }
 
