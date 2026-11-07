@@ -64,11 +64,13 @@ export async function scanBoard(options: { url: string; reader: BoardReader; ext
       const source = new URL(page.url);
       const trusted = page.layer === "structured" && page.complete || isFigmaCareers(source) || isNetflixSearch(source) || Boolean(greenhouseBoard(source));
       const unknown: BoardCandidate[] = [];
+      const unresolvedVisualLinks = new Set(page.visualCandidateUrls);
       for (const candidate of page.candidates) {
         const known = knownListing(candidate.url, page.url);
         if (known || page.layer === "structured" && page.complete) expected.add(boardJobIdentity(candidate.url).key);
         if (trusted && (known || page.layer === "structured" && page.complete)) add(candidate);
         else if (known !== false) unknown.push(candidate);
+        if (known === false) unresolvedVisualLinks.delete(candidate.url);
       }
       let needsVisual = Boolean(page.visualNeeded), next = knownNext(page);
       for (let index = 0; index < unknown.length; index += size) {
@@ -77,15 +79,23 @@ export async function scanBoard(options: { url: string; reader: BoardReader; ext
         if (knownListing(page.url, page.url) !== null) {
           const result = await extract({ task: "listings", pageUrl: page.url, pageTitle: page.title,
             summary: page.summary, candidates: batch, controls: [], expectedListingCount: batch.length });
-          for (const candidate of batch) if (result.listingIds.includes(candidate.id)) add(candidate);
+          for (const candidate of batch) {
+            if (result.listingIds.includes(candidate.id)) add(candidate);
+            else unresolvedVisualLinks.delete(candidate.url);
+          }
         } else {
           const result = await extract({ task: "inventory", pageUrl: page.url, pageTitle: page.title, candidates: batch });
           for (const candidate of batch) {
             if (result.decisions[candidate.id] === "listing") add(candidate);
             if (result.decisions[candidate.id] === "uncertain") needsVisual = true;
+            if (result.decisions[candidate.id] === "other") unresolvedVisualLinks.delete(candidate.url);
           }
         }
       }
+      // A graphic link classified as navigation need not force screenshots of
+      // the entire site when the verified jobs also match its stated total.
+      // Missing totals, unresolved graphics and actual canvases remain visual.
+      if (page.visualCandidateUrls?.length && (unresolvedVisualLinks.size || expectedTotal === null || jobs.size !== expectedTotal)) needsVisual = true;
       if (next === null) {
         if (!page.controls.length) next = "";
         else {

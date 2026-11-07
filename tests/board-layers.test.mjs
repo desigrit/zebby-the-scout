@@ -128,6 +128,38 @@ const rendered = { url: visual.pageUrl, title: "Careers", summary: "1 open job",
 const options = reader => ({ url: visual.pageUrl, reader, signal: signal(), provider: "openai", model: "gpt-6-luna", instructions: "Senior Product Manager only", progress() {} });
 function reader(input = visual) { return { closed: false, open: async () => {}, read: async () => rendered, next: async () => assert.fail("No next page"),
   async *visual() { yield input; }, close() { this.closed = true; } }; }
+test("a non-job graphic link does not force vision after the complete inventory matches the stated total", async () => {
+  const jump = { id: "l1", url: visual.pageUrl + "#CareerSearch", title: "", text: "" };
+  const listing = { ...candidate, title: "Senior Product Manager", text: "Product, Full-time" };
+  const tasks = [], source = reader();
+  source.read = async () => ({ ...rendered, candidates: [listing, jump], visualNeeded: false, visualCandidateUrls: [jump.url] });
+  source.visual = async function* () { assert.fail("An accounted-for section link must not trigger a visual pass"); };
+  const result = await scanBoard({ ...options(source), extract: async input => {
+    tasks.push(input.task);
+    if (input.task === "inventory") return { decisions: { l0: "listing", l1: "other" } };
+    assert.equal(input.task, "roles"); assert.equal(input.candidates.length, 1);
+    return { decisions: { l0: true } };
+  } });
+  assert.equal(result.jobs.length, 1); assert.equal(result.jobs[0].matches, true);
+  assert.deepEqual(tasks, ["inventory", "roles"]); assert.equal(source.closed, true);
+});
+
+test("graphic links still require vision without a corroborating total or a complete classification", async () => {
+  const jump = { id: "l1", url: visual.pageUrl + "#CareerSearch", title: "", text: "" };
+  for (const change of [{ expectedTotal: null }, { expectedTotal: 2 }, { decision: "uncertain" },
+    { decision: "listing", expectedTotal: 2 }, { visualNeeded: true }]) {
+    const source = reader();
+    source.read = async () => ({ ...rendered, visualNeeded: false, candidates: [candidate, jump], visualCandidateUrls: [jump.url], ...change });
+    await assert.rejects(scanBoard({ ...options(source), canUseVision: async () => false,
+      extract: async input => {
+        assert.equal(input.task, "inventory");
+        return { decisions: { l0: "listing", l1: change.decision || "other" } };
+      },
+    }), /vision-capable/);
+    assert.equal(source.closed, true);
+  }
+});
+
 test("visual fallback enriches verified links before applying criteria, while incomplete or unsupported reads preserve history", async () => {
   const store = new BoardsStore(path.join(folder, "profile")); await store.create(path.join(folder, "Boards.sqlite"));
   const [id] = await store.add([{ company: "Example", url: visual.pageUrl, instructions: "Senior Product Manager only" }]);

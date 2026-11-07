@@ -205,6 +205,8 @@ export class BoardBrowser implements BoardReader {
       previous = signature; await pause(500, this.signal);
     }
     const collected = new Map(result.candidates.map(candidate => [candidate.url, candidate]));
+    const visualCandidateUrls = new Set(result.visualCandidateUrls);
+    let visualNeeded = Boolean(result.visualNeeded);
     let bottomStable = 0, previousHeight = -1, previousCount = -1;
     for (let step = 0; step < 100; step++) {
       this.signal.throwIfAborted();
@@ -212,10 +214,13 @@ export class BoardBrowser implements BoardReader {
       await pause(350, this.signal);
       result = await this.snapshot();
       for (const candidate of result.candidates) collected.set(candidate.url, candidate);
+      for (const url of result.visualCandidateUrls || []) visualCandidateUrls.add(url);
+      visualNeeded ||= Boolean(result.visualNeeded);
       if (collected.size > 10000) throw new Error("This board has too many links to check completely. Use a more specific filtered link.");
       bottomStable = result.atBottom && !result.loading && result.height === previousHeight && collected.size === previousCount ? bottomStable + 1 : 0;
       if (bottomStable >= 3) {
-        this.lastPage = { ...result, candidates: [...collected.values()].map((candidate, index) => ({ ...candidate, id: `l${index}` })) };
+        this.lastPage = { ...result, visualNeeded, visualCandidateUrls: [...visualCandidateUrls],
+          candidates: [...collected.values()].map((candidate, index) => ({ ...candidate, id: `l${index}` })) };
         const embeddedFeed = this.frame && boardFeed(result.url);
         // Parent query parameters can carry filters sent to the iframe. A feed
         // is safe here only when its total and every observed posting agree.

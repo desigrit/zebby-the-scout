@@ -7,6 +7,7 @@ export type BoardPage = { url: string; title: string; summary: string; candidate
   embeddedBoards?: string[]; embeddedBoardPending?: boolean;
   embeddedDocuments?: { id: string; url: string; title: string }[];
   layer?: "structured" | "dom"; complete?: boolean; visualNeeded?: boolean;
+  visualCandidateUrls?: string[];
   viewportCandidates?: string[]; viewportControls?: string[];
   unavailable?: boolean;
   empty: boolean; loading: boolean; blocked: boolean; atBottom: boolean; scrollY: number; height: number };
@@ -52,8 +53,9 @@ export function captureBoardPage(sectionId?: string): BoardPage {
     return "";
   }
   const candidates: BoardCandidate[] = [];
+  const visualCandidateUrls: string[] = [];
   const viewportCandidates: string[] = [], viewportControls: string[] = [];
-  let opaque = query("canvas").some(element => visible(element) && !element.closest("nav,header,footer"));
+  const opaque = query("canvas").some(element => visible(element) && !element.closest("nav,header,footer"));
   const urls = new Map<string, string>();
   for (const element of query<HTMLElement>("[data-zebby-board-link],[data-zebby-board-control],[data-zebby-board-scroll]")) {
     element.removeAttribute("data-zebby-board-link"); element.removeAttribute("data-zebby-board-scroll");
@@ -76,7 +78,7 @@ export function captureBoardPage(sectionId?: string): BoardPage {
       urls.set(url.href, id);
       element.setAttribute("data-zebby-board-link", id);
       if (inViewport(element)) viewportCandidates.push(id);
-      if (!title && !element.closest("nav,header,footer") && element.querySelector("img,svg,canvas")) opaque = true;
+      if (!title && !element.closest("nav,header,footer") && element.querySelector("img,svg,canvas")) visualCandidateUrls.push(url.href);
       candidates.push({ id, url: url.href, title, department: departmentFor(element as HTMLAnchorElement, row, title),
         text: clean(`${element.getAttribute("aria-label") || ""} ${rowText}`, 600) });
     } catch { /* Invalid links cannot be listing candidates. */ }
@@ -142,7 +144,7 @@ export function captureBoardPage(sectionId?: string): BoardPage {
     expectedTotal: total ? Number(total[1].replace(/,/g, "")) : empty ? 0 : null,
     pageNumber: page ? Number(page[1]) : pageLinks.length ? Number(new URL(location.href).searchParams.get("page")) || 1 : null,
     pageCount: page ? Number(page[2]) : pageLinks.length ? Math.max(...pageLinks) : null,
-    embeddedBoards, embeddedBoardPending, embeddedDocuments, viewportCandidates, viewportControls, layer: "dom", visualNeeded: opaque,
+    embeddedBoards, embeddedBoardPending, embeddedDocuments, viewportCandidates, viewportControls, layer: "dom", visualNeeded: opaque, visualCandidateUrls,
     empty, unavailable, loading: /\bloading (?:jobs|results|opportunities)/i.test(text),
     blocked: /\b(verify (?:that )?you are human|unusual traffic|access denied|checking your browser|complete the captcha)\b/i.test(document.body?.innerText || ""),
     atBottom: window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 8 &&

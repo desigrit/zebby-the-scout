@@ -99,11 +99,37 @@ async function filterAndControlFixture() {
   } finally { fixture.reader.close(); }
 }
 
+async function graphicNavigationFixture() {
+  const fixture = await browser(() => html("Filtered careers", `<main>
+    <section style="height:1000px"><h1>Work with us</h1><a href="#CareerSearch"><svg width="40" height="40"><path d="M2 2L20 20L38 2"/></svg></a></section>
+    <section id="CareerSearch"><h2>Product</h2><p>2 jobs</p>
+      <a href="https://example.org/vacancy/1">Senior Product Manager</a>
+      <a href="https://example.org/vacancy/2">Product Engineer</a>
+    </section></main>
+    <aside style="position:fixed;bottom:0;left:0;background:white;padding:30px">Privacy Policy
+      <a href="https://example.org/privacy" aria-label="More information about your privacy">Privacy Policy</a>
+      <button>Accept all cookies</button>
+    </aside>`));
+  const tasks = [];
+  const result = await scanBoard({ ...fixture, url: "https://example.org/careers?team=Product&type=Full-time#CareerSearch",
+    provider: "fixture", model: "observed-link-oracle", progress() {},
+    extract: async input => {
+      tasks.push(input.task);
+      if (input.task === "inventory") return { decisions: Object.fromEntries(input.candidates.map(item =>
+        [item.id, new URL(item.url).pathname.startsWith("/vacancy/") ? "listing" : "other"])) };
+      assert.equal(input.task, "navigation", "Resolved non-job graphics must not force screenshots of the marketing content or cookie notice");
+      return { listingIds: [], nextControlId: "" };
+    },
+  });
+  assert.equal(result.jobs.length, 2); assert.deepEqual(tasks, ["inventory", "navigation"]);
+  reports.push({ name: "graphic section link and cookie notice do not override a complete verified inventory", checked: 2, tasks });
+}
+
 async function run() {
   const timeout = setTimeout(() => { console.error("Layered reader checks timed out"); app.exit(1); }, 240000); timeout.unref();
   await mkdir(path.join(output, "profile"), { recursive: true }); app.setPath("userData", path.join(output, "profile"));
   app.on("window-all-closed", () => {}); await app.whenReady();
-  await scrollingFixture(); await feedFailureFixture(); await visualFixture(); await filterAndControlFixture();
+  await scrollingFixture(); await feedFailureFixture(); await visualFixture(); await filterAndControlFixture(); await graphicNavigationFixture();
   await writeFile(path.join(output, "report.json"), JSON.stringify(reports, null, 2));
   console.log(JSON.stringify({ status: "passed", reports })); clearTimeout(timeout); app.exit(0);
 }
