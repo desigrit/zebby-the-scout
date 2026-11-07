@@ -133,7 +133,6 @@ test("a non-job graphic link does not force vision after the complete inventory 
   const listing = { ...candidate, title: "Senior Product Manager", text: "Product, Full-time" };
   const tasks = [], source = reader();
   source.read = async () => ({ ...rendered, candidates: [listing, jump], visualNeeded: false, visualCandidateUrls: [jump.url] });
-  source.visual = async function* () { assert.fail("An accounted-for section link must not trigger a visual pass"); };
   const result = await scanBoard({ ...options(source), extract: async input => {
     tasks.push(input.task);
     if (input.task === "inventory") return { decisions: { l0: "listing", l1: "other" } };

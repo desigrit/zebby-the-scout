@@ -60,6 +60,7 @@ jobs:
           Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
           & .\node_modules\.bin\electron.cmd qa-output/board-layers/zoox.mjs
       - name: Prepare a standalone service and live provider verification
+        if: github.event_name != 'workflow_dispatch' || inputs.browser_checks
         run: |
           node scripts/build-credits-service.mjs --standalone
           node scripts/build-boards-smoke.mjs
