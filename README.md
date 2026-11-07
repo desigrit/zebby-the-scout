@@ -8,7 +8,7 @@
 
 I built Zebby while organizing my own job search: reviewing roles, deciding what my resume needed, and remembering which version went where. I wanted something my peers could use without a complicated AI setup. The zebra came along for moral support.
 
-Below are the [design exploration and selection](#choosing-a-design-direction), [product decisions](#product-decisions), [how I worked with AI](#working-with-ai), [what I pushed back on](#what-i-pushed-back-on), and [what I'd do next](#what-id-do-next).
+Below are the [model evaluation](#model-evaluation), [design exploration and selection](#choosing-a-design-direction), [product decisions](#product-decisions), [how I worked with AI](#working-with-ai), [what I pushed back on](#what-i-pushed-back-on), and [what I'd do next](#what-id-do-next).
 
 <a href="https://apps.microsoft.com/detail/9p4qwz4dbf52?hl=en-US&amp;gl=US"><picture><source media="(prefers-color-scheme: dark)" srcset="https://get.microsoft.com/images/en-us%20light.svg" width="200"><img alt="Get Zebby from the Microsoft Store" src="https://get.microsoft.com/images/en-us%20dark.svg" width="200"></picture></a>
 
@@ -49,6 +49,16 @@ Choose your provider, model and supported thinking level. Keys stay on this comp
 ![Zebby Analysis settings with OpenAI selected, a masked demo key and supported thinking levels](docs/screenshots/settings.png?v=2.3.8)
 
 </details>
+
+## Model evaluation
+
+I compared ten saved roles across **21 cloud and local configurations**, including different thinking levels. **186 analyses completed**. I wanted to know whether more thinking produced advice that was more faithful to the resume.
+
+Sol Medium was the most useful starting point in the reviewed examples. Some smaller models identified a missing skill in the explanation, then invented it in the rewrite. Finishing the request and giving sound advice need separate checks.
+
+[![Zebby model evaluation: median analysis time at baseline and higher thinking settings across cloud APIs, Ollama and an M1 Max.](docs/evaluations/2026-11-model-comparison/thinking-time.png)](docs/evaluations/2026-11-model-comparison/README.md)
+
+**[Read the report: test set, hypothesis and outcomes](docs/evaluations/2026-11-model-comparison/README.md)** · [All configurations and completion results](docs/evaluations/2026-11-model-comparison/full-results.png) · [Aggregate data](docs/evaluations/2026-11-model-comparison/results.csv)
 
 ## Choosing a design direction
 
@@ -123,7 +133,7 @@ Software tests can show that a result reaches the right job and is charged once.
 
 ## What I'd do next
 
-I would compare advice with human reviews of resumes and roles shared with permission. I would check missed requirements, invented claims, useful edits and how much answers change across repeated runs. Some examples would be kept aside to test changes, rather than used to tune them.
+The [first model evaluation](docs/evaluations/2026-11-model-comparison/README.md) exposed unsupported claims and inconsistent scoring. Next I would add repeated runs, more candidate profiles and blind human reviews, checking missed requirements, invented claims and useful edits. Some examples would be kept aside to test changes, rather than used to tune them.
 
 I would assess keyword coverage separately from full analysis, then test whether explanations help people more than the headline percentage. That could change whether Zebby should show a score at all.
 
@@ -155,3 +165,4 @@ Direct downloads check for updates and offer **Restart to update** when a verifi
 Electron, React, TypeScript, SQLite and a native inference engine.
 
 [User and build guide](docs/guide.md) · [Privacy](docs/privacy.md) · [Microsoft Store packaging](docs/microsoft-store/build.md) · [Host your own credits service](credits-service/README.md) · [Ideas and bugs](https://github.com/desigrit/zebby-the-scout/issues)
+
