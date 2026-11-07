@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { boardJobIdentity, boardUrl } from "../lib/board-identity";
 import { isBoardActionLabel } from "../shared/board-listing-title";
-import { BOARD_EXPLORER_VERSION, controlProvesScope, scopeText, type BoardExploreInput, type BoardExploreResult,
+import { BOARD_EXPLORER_VERSION, controlProvesScope, isContinuationControl, scopeText, type BoardExploreInput, type BoardExploreResult,
   type BoardFeedMapping, type BoardReaderSettings, type ExplorationAction } from "../shared/board-exploration";
 import { validatedBoardExtraction, type BoardCandidate, type BoardExtractionInput, type BoardScan } from "../shared/boards";
 import { scanBoard, type BoardExtractor } from "./boards-scan";
@@ -214,8 +214,14 @@ export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> 
       if (action.kind === "finish") {
         const unclassified = page.candidates.some(candidate => !classified.has(candidate.url));
         const closed = page.sections.some(id => !ignored.has(id));
+        const unaccountedControls = controls.filter(control => !control.disabled && control.kind !== "scroll" &&
+          (isContinuationControl(control) || !ignored.has(control.id) && control.expanded !== true &&
+            !inspectedControls.has(controlKey(page.url, control)) &&
+            !(control.kind === "link" && classified.has(control.href)) &&
+            !scope.some(filter => controlProvesScope(control, filter.value, scope.filter(item => item.key === filter.key).map(item => item.value)))));
         if (proofs.size !== scope.length) feedback = "The saved filters are not all verified. Restore the missing filters and report their selected values.";
         else if (closed) feedback = "There are unopened sections that have not been classified as unrelated. Inspect and open the job-results sections.";
+        else if (unaccountedControls.length) feedback = `These controls still need review: ${unaccountedControls.map(control => control.id + " " + control.name).join(", ").slice(0, 1000)}. Use result navigation, inspect vacancy controls, or explicitly classify unrelated controls before finishing.`;
         else if (result.uncertainIds.length) feedback = "Visible links are still uncertain. Inspect those vacancies before finishing.";
         else if (!page.atBottom || unclassified) { action = scroll(observation); feedback = "Some of the page has not been read. Continue through all result containers before finishing."; }
         else if (expected !== null && jobs.size !== expected) feedback = `Verified ${jobs.size} job IDs, but the proposed filtered total is ${expected}. Find the missing page or reassess whether that counter is company-wide. Do not guess a count.`;

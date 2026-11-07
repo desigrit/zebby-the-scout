@@ -57,6 +57,13 @@ test("changed inventory cannot complete on two disagreeing passes", async () => 
   const f = fixture({ change: true }), run = checkpoint();
   await assert.rejects(scan(f, run), /kept changing/); assert.equal(f.opens(), 3); assert.equal(run.status, "incomplete");
 });
+test("finish cannot silently skip enabled result controls", async () => {
+  for (const name of ["Next page", "Show 20 more jobs", "Explore opportunities"]) {
+    const f = fixture(), observe = f.reader.observe;
+    f.reader.observe = async () => { const observation = await observe(); observation.page.controls = [control({ name, role: "button", kind: "button", value: "", options: [] })]; return observation; };
+    await assert.rejects(scan(f), /further progress|reading limit/);
+  }
+});
 test("URL scope survives fragment filters and requires observed selected values", async () => {
   assert.equal(controlProvesScope(control({ kind: "option", role: "option", value: "Product", options: [] }), "Product"), false, "An unselected menu option cannot prove a filter");
   assert.equal(controlProvesScope(control({ kind: "option", role: "selected", value: "Product", options: [] }), "Product"), true);
