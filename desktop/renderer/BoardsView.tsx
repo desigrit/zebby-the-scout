@@ -133,7 +133,7 @@ export function BoardsDatabaseSettings({ onReady }: { onReady?: () => void }) {
         <label>Model requests per attempt<select value={(state.readerSettings || defaultBoardReaderSettings).modelCalls} disabled={busy}
           onChange={event => void act(() => window.desktop!.configureBoardReader({ ...(state.readerSettings || defaultBoardReaderSettings), modelCalls: Number(event.target.value) }))}>
           {[20, 40, 60, 120].map(value => <option key={value} value={value}>{value} requests</option>)}</select></label>
-      </div><p className="settings-help">Checks pause at either limit. Resume continues with a fresh allowance and verifies the current page. Saved analysis results are reused when the inputs still match.</p></details>
+      </div><p className="settings-help">Checks pause at either limit. Resume uses the same limits for the next attempt and verifies the current page. Saved analysis results are reused when the inputs still match.</p></details>
     </section>
   </div>;
 }
