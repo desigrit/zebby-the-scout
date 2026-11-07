@@ -101,7 +101,7 @@ export function observeExplorePage(desiredValues: string[] = []): ExplorePage {
   const body = texts.join("\n"), counters: { id: string; text: string }[] = [], counts = new Set<string>();
   for (const node of query<HTMLElement>('p,h1,h2,h3,[role="status"],[aria-live],span')) {
     const text = clean(node.innerText);
-    if (!shown(node) || text.length > 250 || !/\b\d[\d,]*\s+(?:of\s+\d[\d,]*\s+)?(?:open |matching |available )?(?:jobs|positions|results|openings)\b/i.test(text) || counts.has(text)) continue;
+    if (!shown(node) || text.length > 250 || !/\b\d[\d,]*\s+(?:of\s+\d[\d,]*\s+)?(?:open |matching |available )?(?:jobs?|positions?|results?|openings?)\b/i.test(text) || counts.has(text)) continue;
     counts.add(text); counters.push({ id: "t" + counters.length, text }); if (counters.length >= 20) break;
   }
   const scrolls = controls.filter(control => control.kind === "scroll");

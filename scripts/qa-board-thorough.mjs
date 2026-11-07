@@ -95,6 +95,8 @@ async function buttonFixture() {
     const scan = await thoroughlyScanBoard({ url: source, reader: owner.thorough, signal: abort.signal, provider: "fixture", model: "observed-controls", checkpoint: run,
       settings: { ...defaultBoardReaderSettings, minutes: 2, modelCalls: 20 }, progress() {}, save: async () => {}, extract: async input => {
         assert.equal(input.task, "explore");
+        assert.equal(input.counters[0]?.text, "1 open job", "A singular vacancy counter must be observed");
+        assert.ok(input.candidates.length || input.controls.some(control => control.name === "Principal Product Manager"), "The vacancy control must remain available");
         return { listings: input.candidates.map(job => ({ id: job.id, title: job.title, department: "Product", location: "Seattle" })), excludedIds: [], uncertainIds: [],
           action: input.candidates.length ? { kind: "finish", targetId: "", value: "" } : { kind: "inspect", targetId: input.controls.find(control => control.name === "Principal Product Manager").id, value: "" },
           scopeEvidence: [], irrelevantControls: [], totalEvidence: { counterId: input.counters[0].id, filteredTotal: 1, interpretation: "filtered" }, empty: false, complete: true, reason: "Observed vacancy" };
