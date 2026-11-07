@@ -104,15 +104,18 @@ async function buttonFixture() {
   } finally { owner.close(); }
 }
 
-await mkdir(path.join(output, "thorough-profile"), { recursive: true }); app.setPath("userData", path.join(output, "thorough-profile"));
-app.on("window-all-closed", () => {}); await app.whenReady();
-try {
-  await runFixture("thorough-custom-filters");
-  await runFixture("thorough-embedded", { iframe: true });
-  await buttonFixture();
-  await runFixture("thorough-recovery", { oracleFailure: true });
-  console.log(JSON.stringify(reports));
-  await writeFile(path.join(output, "thorough-report.json"), JSON.stringify(reports, null, 2)); app.exit(0);
-} catch (error) {
-  console.error(error); await writeFile(path.join(output, "thorough-report.json"), JSON.stringify(reports, null, 2)); app.exit(1);
+async function main() {
+  await mkdir(path.join(output, "thorough-profile"), { recursive: true }); app.setPath("userData", path.join(output, "thorough-profile"));
+  app.on("window-all-closed", () => {}); await app.whenReady();
+  try {
+    await runFixture("thorough-custom-filters");
+    await runFixture("thorough-embedded", { iframe: true });
+    await buttonFixture();
+    await runFixture("thorough-recovery", { oracleFailure: true });
+    console.log(JSON.stringify(reports));
+    await writeFile(path.join(output, "thorough-report.json"), JSON.stringify(reports, null, 2)); app.exit(0);
+  } catch (error) {
+    console.error(error); await writeFile(path.join(output, "thorough-report.json"), JSON.stringify(reports, null, 2)); app.exit(1);
+  }
 }
+void main().catch(error => { console.error(error); app.exit(1); });
