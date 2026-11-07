@@ -73,11 +73,11 @@ type Options = { url: string; reader: ThoroughBoardReader; extract: BoardExtract
 export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> {
   const { reader, signal, checkpoint, settings } = options, scope = boardScope(options.url);
   const started = Date.now(), initialCalls = checkpoint.calls - checkpoint.reused;
-  let stepsTaken = 0, transientErrors = 0, feedback = "", finished = false;
+  let stepsTaken = 0, observations = 0, transientErrors = 0, feedback = "", finished = false;
   const history: string[] = [], feedMaps = new Map<string, ReturnType<typeof mapObservedFeed>>();
   const checkBudget = () => {
     signal.throwIfAborted();
-    if (Date.now() - started > settings.minutes * 60000 || checkpoint.calls - checkpoint.reused - initialCalls >= settings.modelCalls || stepsTaken >= 240) {
+    if (Date.now() - started > settings.minutes * 60000 || checkpoint.calls - checkpoint.reused - initialCalls >= settings.modelCalls || stepsTaken >= 240 || observations >= 240) {
       throw new BoardReadLimit("This check reached its reading limit. The verified jobs are saved. Resume to continue, or adjust the limits in Settings.");
     }
   };
@@ -125,13 +125,14 @@ export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> 
     const jobs = new Map<string, BoardCandidate>(), proofs = new Set<string>(), ignored = new Set<string>();
     const inspected = new Map<string, BoardCandidate>(), classified = new Set<string>(), visitedNext = new Set<string>();
     const inspectedControls = new Map<string, BoardCandidate>();
+    const repeatedDecisions = new Map<string, number>();
     const controlKey = (pageUrl: string, control: BoardObservation["page"]["controls"][number]) => hash([pageUrl, control.id, control.name, control.role, control.context]);
     let expected: number | null = null, empty = false, bottom = "", stableBottom = 0, sweptAgain = false, lastUrl = "";
     feedback = ""; history.length = 0; transientErrors = 0;
     await reader.open(options.url); await replay(recipe);
     options.progress(pass === "audit" ? "Verifying the inventory in a fresh pass" : "Reading the board thoroughly", "reading");
     while (true) {
-      checkBudget();
+      checkBudget(); observations++;
       let observation: BoardObservation;
       try { observation = await reader.observe(); }
       catch (error) { signal.throwIfAborted(); if (++transientErrors > 3 || /blocking automated|browser check|destination|too many elements/i.test(String(error))) throw error; feedback = String(error).slice(0, 1500); continue; }
@@ -186,6 +187,9 @@ export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> 
       empty ||= result.empty && proofs.size === scope.length;
       checkpoint.jobs = [...jobs.values()];
       await persist(result.reason || (pass === "audit" ? "Verifying all results" : "Reading all results"));
+      const decisionKey = hash([observation.fingerprint, result.action, jobKeys(jobs.values()), [...proofs].sort()]);
+      const repeated = (repeatedDecisions.get(decisionKey) || 0) + 1; repeatedDecisions.set(decisionKey, repeated);
+      if (repeated > 4) throw new Error("The reader could not make further progress on this page. Resume to try again, or edit the board to use its direct results link. Your last successful check is unchanged.");
       // Discover and validate public response fields, then use the records only
       // to enrich links independently observed in the current result scope.
       for (const feed of reader.feeds().slice(0, 3)) {
@@ -212,6 +216,7 @@ export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> 
         const closed = page.sections.some(id => !ignored.has(id));
         if (proofs.size !== scope.length) feedback = "The saved filters are not all verified. Restore the missing filters and report their selected values.";
         else if (closed) feedback = "There are unopened sections that have not been classified as unrelated. Inspect and open the job-results sections.";
+        else if (result.uncertainIds.length) feedback = "Visible links are still uncertain. Inspect those vacancies before finishing.";
         else if (!page.atBottom || unclassified) { action = scroll(observation); feedback = "Some of the page has not been read. Continue through all result containers before finishing."; }
         else if (expected !== null && jobs.size !== expected) feedback = `Verified ${jobs.size} job IDs, but the proposed filtered total is ${expected}. Find the missing page or reassess whether that counter is company-wide. Do not guess a count.`;
         else if (!jobs.size && !empty) feedback = "No jobs were verified, and the results have not explicitly confirmed an empty search. Inspect the result controls.";

@@ -98,7 +98,8 @@ export class BoardsService<Selection extends BoardSelection> {
             if (!await canUseVision()) throw new Error("A thorough check needs a model that can read images. Choose one in Settings, then retry. Your last successful check is unchanged.");
             const prior = this.runs.latest(workspace, board), account = "";
             const compatible = prior && prior.provider === selected.provider && prior.model === selected.model && prior.account === account;
-            checkpoint = options.resume && compatible && prior.status !== "complete" ? prior : newBoardCheckpoint({ boardId: board.id,
+            const resumePrior = Boolean(compatible && prior.status !== "complete" && (!options.thorough || options.resume));
+            checkpoint = resumePrior && prior ? prior : newBoardCheckpoint({ boardId: board.id,
               workspace, revision: board.revision, url: board.url, provider: selected.provider, model: selected.model, account, instructions: board.instructions });
             if (!options.thorough && compatible && prior.recipe.length) checkpoint.recipe = prior.recipe;
             checkpoint.status = "reading";
@@ -114,7 +115,7 @@ export class BoardsService<Selection extends BoardSelection> {
                   if (!owner.thorough) throw new Error("The thorough reader is unavailable. Update Zebby and retry.");
                   return await thoroughlyScanBoard({ ...scanOptions, reader: owner.thorough, signal: requestSignal,
                     settings: { ...settings, modelCalls: remaining }, checkpoint,
-                    resume: options.resume || attempt > 0, forceFresh: options.thorough && !options.resume && !attempt,
+                    resume: resumePrior || attempt > 0, forceFresh: options.thorough && !options.resume && !attempt,
                     save: async run => { await this.runs.save(run); this.changed(); } });
                 } catch (error) {
                   requestSignal.throwIfAborted();

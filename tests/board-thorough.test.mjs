@@ -67,7 +67,7 @@ test("URL scope survives fragment filters and requires observed selected values"
   assert.equal(boardScope(url + "?utm_source=test&sort_by=relevance").length, 0);
   assert.deepEqual(boardScope(url + "?team=Product&team=Design").map(filter => filter.value), ["Product", "Design"]);
   assert.equal(boardScope(url + "?q=%2520")[0].value, "%20");
-  await assert.rejects(scan(fixture(), checkpoint({ url: url + "?team=Product" }), { settings: { ...defaultBoardReaderSettings, modelCalls: 8 } }), /reading limit/);
+  await assert.rejects(scan(fixture(), checkpoint({ url: url + "?team=Product" }), { settings: { ...defaultBoardReaderSettings, modelCalls: 8 } }), /reading limit|further progress/);
   const f = fixture({ filter: true }); await scan(f, checkpoint({ url: url + "?team=Product" })); assert.equal(f.opens(), 2);
 });
 test("a limit preserves the finished pass and resume starts with an independent audit", async () => {
@@ -94,6 +94,9 @@ test("exploration schemas reject fabricated actions and preserve native image pr
   assert.equal(boardModelContract(input).schema.additionalProperties, false);
   assert.throws(() => validatedBoardExtraction({ ...result, action: { kind: "next", targetId: "made-up", value: "" } }, input), /unavailable/);
   assert.throws(() => validatedBoardExtraction({ ...result, listings: [{ id: "not-observed", title: "PM", department: "", location: "" }] }, input), /unobserved/);
+  assert.throws(() => validatedBoardExtraction({ ...result, listings: [] }, input), /every visible link/);
+  const dangerous = { ...input, controls: [control({ kind: "button", role: "button", name: "Apply now" })] };
+  assert.throws(() => validatedBoardExtraction({ ...result, action: { kind: "inspect", targetId: "e0", value: "" } }, dangerous), /unsupported/);
   const contract = boardModelContract(input); const a = openAIAnalysisInput({ ...contract, input, model: "gpt-6.1-sol" }), b = anthropicAnalysisInput({ ...contract, input, model: "claude-sonnet-5-5" });
   assert.ok(JSON.stringify(a).includes("input_image")); assert.ok(JSON.stringify(b).includes('"image"'));
 });
@@ -111,13 +114,20 @@ test("journal is isolated by workspace and revision, survives restart and retain
 test("default service fallback establishes a zero-new baseline and later discovers only the delta", async () => {
   const profile = path.join(folder, "service"), store = new BoardsStore(profile); await store.create(path.join(folder, "boards.sqlite"));
   await store.add([{ company: "Fixture", url, instructions: "" }]);
-  let inventory = [job(1)], fast = 0, thorough = 0;
+  let inventory = [job(1)], fast = 0, thorough = 0, fail = false;
   const service = new BoardsService(store, { profile, selection: () => ({ provider: "openai", model: "fixture", thinkingLevel: "none" }),
     reader() { const f = fixture({ inventory }); return { thorough: { ...f.reader, async open() { thorough++; await f.reader.open(); } },
       async open() { fast++; throw new Error("The results did not finish loading"); }, close() {}, async read() {}, async next() {} }; },
-    async extract(_selection, input) { return { value: await fixture({ inventory }).extract(input) }; }, changed() {} });
+    async extract(_selection, input) { if (fail) throw new Error("API key authentication failed"); return { value: await fixture({ inventory }).extract(input) }; }, changed() {} });
   const idle = async () => { for (let i = 0; i < 500 && service.busy; i++) await new Promise(resolve => setTimeout(resolve, 10)); assert.equal(service.busy, false); };
   service.check(); await idle(); assert.equal(store.list()[0].newCount, 0); assert.equal(store.list()[0].totalCount, 1);
   inventory = [job(1), job(2)]; service.check(); await idle(); assert.equal(store.list()[0].newCount, 1); assert.equal(store.list()[0].totalCount, 2);
-  assert.equal(fast, 2); assert.equal(thorough, 4); assert.equal(service.state.runs.length, 0); await store.close();
+  assert.equal(fast, 2); assert.equal(thorough, 4); assert.equal(service.state.runs.length, 0);
+  const previous = store.list()[0]; inventory = [job(1), job(2), job(3)]; fail = true;
+  service.check(); await idle();
+  assert.equal(store.list()[0].lastCheckId, previous.lastCheckId); assert.equal(store.list()[0].totalCount, 2); assert.equal(store.list()[0].newCount, 1);
+  assert.equal(service.state.runs[0].canResume, true);
+  fail = false; service.check([previous.id], { resume: true }); await idle();
+  assert.equal(store.list()[0].totalCount, 3); assert.equal(store.list()[0].newCount, 2); assert.equal(service.state.runs.length, 0);
+  await store.close();
 });

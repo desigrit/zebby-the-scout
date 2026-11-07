@@ -60,7 +60,7 @@ export class BoardRuns {
   summary(workspace: string, board: Board): BoardRunSummary | null {
     const run = this.latest(workspace, board);
     if (!run || run.status === "complete") return null;
-    return { boardId: board.id, status: run.status, found: run.jobs.length, modelCalls: run.calls, message: run.message,
+    return { boardId: board.id, status: run.status, found: run.jobs.length, modelCalls: run.calls - run.reused, message: run.message,
       updatedAt: run.updatedAt, canResume: run.status !== "reading", criteriaPending: Boolean(board.instructions) };
   }
   preview(workspace: string, board: Board): BoardRunPreview | null {

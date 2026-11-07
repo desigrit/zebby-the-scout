@@ -227,7 +227,7 @@ function BoardPartialResults({ board, onClose }: { board: Board; onClose(): void
   const [offset, setOffset] = useState(0);
   const focus = useRef<HTMLElement>(null);
   useEffect(() => { focus.current?.focus(); let active = true;
-    void window.desktop!.boardRunPreview(board.id).then(value => { if (active) setPreview(value); }).catch(error => { if (active) setError(message(error)); });
+    void window.desktop!.boardRunPreview(board.id).then(value => { if (active) { if (value) setPreview(value); else setError("This check no longer has partial results. Close this view to see its current status."); } }).catch(error => { if (active) setError(message(error)); });
     return () => { active = false; };
   }, [board.id]);
   return <section className="board-listings board-partial-listings" aria-label={board.company + " partial results"} ref={focus} tabIndex={-1}>
@@ -260,7 +260,7 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
   const reviewBusy = useRef(false), reviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (reviewTimer.current) clearTimeout(reviewTimer.current); }, []);
   function inspect(board: Board, button: HTMLButtonElement) {
-    inspectionButton.current = button; setInspecting({ id: board.id, filePath: state.filePath });
+    setPartial(null); inspectionButton.current = button; setInspecting({ id: board.id, filePath: state.filePath });
   }
   function closeInspection() {
     setInspecting(null);
@@ -358,7 +358,7 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
           const run = state.runs?.find(item => item.boardId === board.id);
           const showPartial = !progress && partial?.id === board.id && partial.workspace === state.filePath && Boolean(run?.found);
           const partialLink = !progress && run?.found ? <button type="button" className="boards-text-action board-partial-link" aria-expanded={showPartial}
-            onClick={() => setPartial(showPartial ? null : { id: board.id, workspace: state.filePath })}>{run.found} found so far</button> : null;
+            onClick={() => { setInspecting(null); setPartial(showPartial ? null : { id: board.id, workspace: state.filePath }); }}>{run.found} found so far</button> : null;
           const review = reviewing?.id === board.id ? reviewing.phase : null;
           const checkProgress = progress && <span className="board-progress" role={board.lastCheckedAt ? undefined : "status"} title={progress.message}>
             <LoaderCircle size={13} className="spin" aria-hidden="true" />{board.lastCheckedAt || /thorough|verif|found/i.test(progress.message) ? progress.message : "Indexing"}</span>;
