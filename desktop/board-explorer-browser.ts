@@ -114,14 +114,18 @@ export class BoardExplorerBrowser implements ThoroughBoardReader {
     if (this.networkError) throw new Error(this.networkError);
     const frame = this.frame || this.window.webContents.mainFrame;
     if (frame.isDestroyed()) throw new Error("The embedded results were replaced. Resume to read the updated page.");
-    const page = await this.bounded(frame.executeJavaScript(`(${observeExplorePage.toString()})()`), 15000, "Reading the page") as ExplorePage;
+    const source = new URL(this.source), fragment = new URLSearchParams(source.hash.includes("?") ? source.hash.slice(source.hash.indexOf("?") + 1) : "");
+    const values = [...source.searchParams.values(), ...fragment.values()].slice(0, 30);
+    const page = await this.bounded(frame.executeJavaScript(`(${observeExplorePage.toString()})(${JSON.stringify(values)})`), 15000, "Reading the page") as ExplorePage;
     boardUrl(page.url);
     if (page.candidates.length >= 2000 || page.controls.length >= 1000) throw new Error("This page has too many elements to verify in one check. Use a more specific results link.");
     if (page.blocked) throw new Error("This careers page is blocking automated reading. Your last successful check is unchanged. Try its direct job-board link instead.");
     return page;
   }
   private async execute(action: ExplorationAction | { kind: "label" | "unlabel"; targetId: string; value: string }) {
-    return this.bounded((this.frame || this.window.webContents.mainFrame).executeJavaScript(`(${actExplorePage.toString()})(${JSON.stringify(action)})`), 15000, "Updating the results view") as Promise<boolean>;
+    const source = new URL(this.source), fragment = new URLSearchParams(source.hash.includes("?") ? source.hash.slice(source.hash.indexOf("?") + 1) : "");
+    const values = [...source.searchParams.values(), ...fragment.values()].slice(0, 30);
+    return this.bounded((this.frame || this.window.webContents.mainFrame).executeJavaScript(`(${actExplorePage.toString()})(${JSON.stringify(action)},${JSON.stringify(values)})`), 15000, "Updating the results view") as Promise<boolean>;
   }
   async observe(): Promise<BoardObservation> {
     let page = await this.raw(), previous = pageFingerprint(page), stable = 0;

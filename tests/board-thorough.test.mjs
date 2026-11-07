@@ -60,8 +60,13 @@ test("changed inventory cannot complete on two disagreeing passes", async () => 
 test("URL scope survives fragment filters and requires observed selected values", async () => {
   assert.equal(controlProvesScope(control({ kind: "option", role: "option", value: "Product", options: [] }), "Product"), false, "An unselected menu option cannot prove a filter");
   assert.equal(controlProvesScope(control({ kind: "option", role: "selected", value: "Product", options: [] }), "Product"), true);
+  const multi = control({ options: [{ value: "Product", label: "Product", selected: true }, { value: "Design", label: "Design", selected: true }] });
+  assert.equal(controlProvesScope(multi, "Product"), false, "An extra selection broadens the saved search");
+  assert.equal(controlProvesScope(multi, "Product", ["Product", "Design"]), true);
   assert.deepEqual(boardScope(url + "#openings?category=product"), [{ id: "s0", key: "category", value: "product" }]);
   assert.equal(boardScope(url + "?utm_source=test&sort_by=relevance").length, 0);
+  assert.deepEqual(boardScope(url + "?team=Product&team=Design").map(filter => filter.value), ["Product", "Design"]);
+  assert.equal(boardScope(url + "?q=%2520")[0].value, "%20");
   await assert.rejects(scan(fixture(), checkpoint({ url: url + "?team=Product" }), { settings: { ...defaultBoardReaderSettings, modelCalls: 8 } }), /reading limit/);
   const f = fixture({ filter: true }); await scan(f, checkpoint({ url: url + "?team=Product" })); assert.equal(f.opens(), 2);
 });

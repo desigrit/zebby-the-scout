@@ -85,11 +85,31 @@ async function runFixture(name, { iframe = false, oracleFailure = false } = {}) 
   } finally { clearTimeout(deadline); owner.close(); }
 }
 
+async function buttonFixture() {
+  const abort = new AbortController(), owner = new BoardBrowser(abort.signal), source = "https://example.org/careers";
+  await owner.window.webContents.session.protocol.handle("https", request => new URL(request.url).pathname === "/job/42"
+    ? html("<main><h1>Principal Product Manager</h1><p>Seattle</p></main>")
+    : html('<h1>Open roles</h1><p>1 open job</p><button onclick="window.open(\'https://example.org/job/42\',\'_blank\')">Principal Product Manager</button>'));
+  const run = newBoardCheckpoint({ boardId: "button-fixture", workspace: "fixture.sqlite", revision: 1, url: source, provider: "fixture", model: "observed-controls", account: "", instructions: "" });
+  try {
+    const scan = await thoroughlyScanBoard({ url: source, reader: owner.thorough, signal: abort.signal, provider: "fixture", model: "observed-controls", checkpoint: run,
+      settings: { ...defaultBoardReaderSettings, minutes: 2, modelCalls: 20 }, progress() {}, save: async () => {}, extract: async input => {
+        assert.equal(input.task, "explore");
+        return { listings: input.candidates.map(job => ({ id: job.id, title: job.title, department: "Product", location: "Seattle" })), excludedIds: [], uncertainIds: [],
+          action: input.candidates.length ? { kind: "finish", targetId: "", value: "" } : { kind: "inspect", targetId: input.controls.find(control => control.name === "Principal Product Manager").id, value: "" },
+          scopeEvidence: [], irrelevantControls: [], totalEvidence: { counterId: input.counters[0].id, filteredTotal: 1, interpretation: "filtered" }, empty: false, complete: true, reason: "Observed vacancy" };
+      } });
+    assert.equal(scan.jobs.length, 1); assert.equal(scan.jobs[0].url, "https://example.org/job/42"); assert.equal(scan.jobs[0].title, "Principal Product Manager");
+    reports.push({ name: "button-only vacancy opens an observed detail URL", verified: 1, status: "passed" });
+  } finally { owner.close(); }
+}
+
 await mkdir(path.join(output, "thorough-profile"), { recursive: true }); app.setPath("userData", path.join(output, "thorough-profile"));
 app.on("window-all-closed", () => {}); await app.whenReady();
 try {
   await runFixture("thorough-custom-filters");
   await runFixture("thorough-embedded", { iframe: true });
+  await buttonFixture();
   await runFixture("thorough-recovery", { oracleFailure: true });
   console.log(JSON.stringify(reports));
   await writeFile(path.join(output, "thorough-report.json"), JSON.stringify(reports, null, 2)); app.exit(0);

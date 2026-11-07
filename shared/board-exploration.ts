@@ -81,10 +81,12 @@ export function explorationContract(input: BoardExploreInput | BoardFeedMappingI
   }) };
 }
 export const scopeText = (value: string) => value.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
-export function controlProvesScope(control: ExplorationControl, value: string) {
+export function controlProvesScope(control: ExplorationControl, value: string, wantedValues = [value]) {
   const wanted = scopeText(value);
   const selectedControl = ["input", "select"].includes(control.kind) || ["combobox", "selected"].includes(control.role);
-  return selectedControl && Boolean(wanted) && [control.value, ...control.options.filter(option => option.selected).flatMap(option => [option.value, option.label]),
+  const selected = control.options.filter(option => option.selected), allowed = new Set(wantedValues.map(scopeText));
+  if (selected.some(option => !allowed.has(scopeText(option.value)) && !allowed.has(scopeText(option.label)))) return false;
+  return selectedControl && Boolean(wanted) && [control.value, ...selected.flatMap(option => [option.value, option.label]),
     ...(control.role === "selected" ? [control.name] : [])].some(actual => scopeText(actual) === wanted);
 }
 export function validateExploration(value: unknown, input: BoardExploreInput) {
@@ -122,7 +124,7 @@ export function validateExploration(value: unknown, input: BoardExploreInput) {
   }
   for (const proof of result.scopeEvidence) {
     const filter = input.scope.find(item => item.id === proof.scopeId), target = input.controls.find(item => item.id === proof.controlId);
-    if (!filter || !target || scopeText(proof.value) !== scopeText(filter.value) || !controlProvesScope(target, filter.value)) {
+    if (!filter || !target || scopeText(proof.value) !== scopeText(filter.value) || !controlProvesScope(target, filter.value, input.scope.filter(item => item.key === filter.key).map(item => item.value))) {
       throw new Error("The reader could not verify that the saved filters are active.");
     }
   }

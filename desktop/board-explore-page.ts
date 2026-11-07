@@ -6,13 +6,20 @@ export type ExplorePage = { url: string; title: string; summary: string; candida
   height: number; scrollY: number; sections: string[] };
 
 // Executed in the isolated page. No page-provided code or selectors are evaluated.
-export function observeExplorePage(): ExplorePage {
+export function observeExplorePage(desiredValues: string[] = []): ExplorePage {
   const roots: (Document | ShadowRoot)[] = [document];
   for (let at = 0; at < roots.length; at++) for (const node of roots[at].querySelectorAll("*")) {
     if (node.shadowRoot && roots.length < 100) roots.push(node.shadowRoot);
   }
   const query = <T extends Element>(selector: string) => roots.flatMap(root => [...root.querySelectorAll<T>(selector)]);
   const clean = (value: string | null | undefined, limit = 300) => (value || "").replace(/\s+/g, " ").trim().slice(0, limit);
+  const wanted = new Set(desiredValues.map(value => clean(value, 500).toLowerCase()));
+  const accessibleName = (element: HTMLElement) => {
+    const labelledBy = (element.getAttribute("aria-labelledby") || "").split(/\s+/).filter(Boolean).map(id => element.getRootNode() instanceof ShadowRoot
+      ? (element.getRootNode() as ShadowRoot).getElementById(id)?.textContent : document.getElementById(id)?.textContent).filter(Boolean).join(" ");
+    const labels = element instanceof HTMLInputElement || element instanceof HTMLSelectElement ? [...element.labels || []].map(label => label.textContent).join(" ") : "";
+    return clean(element.getAttribute("aria-label") || labelledBy || labels || element.getAttribute("title") || element.innerText || element.getAttribute("placeholder") || element.getAttribute("name"));
+  };
   const shown = (element: Element) => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden" && !element.closest('[inert],[aria-hidden="true"]');
   const inView = (element: Element) => {
     if (!shown(element)) return false;
@@ -50,10 +57,10 @@ export function observeExplorePage(): ExplorePage {
       if (inView(link)) viewportIds.push(id);
     } catch { /* Non-HTTPS and malformed links are not job evidence. */ }
   }
-  for (const element of query<HTMLElement>('button,summary,select,input:not([type="hidden"]):not([type="password"]):not([type="file"]),[role="button"],[role="combobox"],[role="option"],[aria-selected="true"],a[href],iframe[src]')) {
+  for (const element of query<HTMLElement>('button,summary,select,input:not([type="hidden"]):not([type="password"]):not([type="file"]),[role="button"],[role="combobox"],[role="option"],[aria-selected="true"],[aria-checked="true"],[aria-pressed="true"],a[href],iframe[src]')) {
     if (!shown(element)) continue;
     const href = element instanceof HTMLAnchorElement ? element.href : element instanceof HTMLIFrameElement ? element.src : "";
-    const name = clean(element.getAttribute("aria-label") || element.getAttribute("title") || element.innerText || element.getAttribute("placeholder") || element.getAttribute("name"));
+    const name = accessibleName(element);
     if (element instanceof HTMLAnchorElement && !/^#/.test(element.getAttribute("href") || "") &&
         !/\b(next|more|load|previous|jobs|careers|openings)\b/i.test(name) && !element.closest('nav[aria-label*="agin"],[class*="pagination"]')) continue;
     const expanded = element.getAttribute("aria-expanded");
@@ -65,12 +72,13 @@ export function observeExplorePage(): ExplorePage {
     const id = existing && used.has(existing) ? existing : identify(element);
     const value = element instanceof HTMLInputElement || element instanceof HTMLSelectElement ? element.value :
       element.getAttribute("aria-valuetext") || element.getAttribute("data-value") || "";
-    controls.push({ id, role: element.getAttribute("aria-selected") === "true" ? "selected" : element.getAttribute("role") || element.tagName.toLowerCase(),
+    controls.push({ id, role: ["aria-selected", "aria-checked", "aria-pressed"].some(attribute => element.getAttribute(attribute) === "true") ? "selected" : element.getAttribute("role") || element.tagName.toLowerCase(),
       name, kind, context: clean(element.parentElement?.innerText, 700), value: clean(value, 500), href: href.slice(0, 4000),
       disabled: element.hasAttribute("disabled") || element.getAttribute("aria-disabled") === "true", visible: inView(element),
       expanded: expanded !== null ? expanded === "true" : element.matches("summary") ? element.parentElement?.hasAttribute("open") || false :
         section ? Boolean([...element.parentElement?.querySelectorAll("a[href]") || []].some(shown)) : null,
-      options: element instanceof HTMLSelectElement ? [...element.options].slice(0, 60).map(option => ({ value: clean(option.value, 500), label: clean(option.label), selected: option.selected })) : [],
+      options: element instanceof HTMLSelectElement ? [...element.options].sort((left, right) => Number(right.selected || wanted.has(clean(right.value, 500).toLowerCase()) || wanted.has(clean(right.label).toLowerCase())) -
+        Number(left.selected || wanted.has(clean(left.value, 500).toLowerCase()) || wanted.has(clean(left.label).toLowerCase()))).slice(0, 60).map(option => ({ value: clean(option.value, 500), label: clean(option.label), selected: option.selected })) : [],
     });
   }
   for (const element of query<HTMLElement>("*")) {
@@ -99,7 +107,7 @@ export function observeExplorePage(): ExplorePage {
     sections: controls.filter(control => control.kind === "section" && control.expanded === false).map(control => control.id) };
 }
 
-export function actExplorePage(action: ExplorationAction | { kind: "label" | "unlabel"; targetId: string; value: string }): boolean {
+export function actExplorePage(action: ExplorationAction | { kind: "label" | "unlabel"; targetId: string; value: string }, desiredValues: string[] = []): boolean {
   const roots: (Document | ShadowRoot)[] = [document];
   for (let at = 0; at < roots.length; at++) for (const node of roots[at].querySelectorAll("*")) if (node.shadowRoot && roots.length < 100) roots.push(node.shadowRoot);
   const find = (id: string) => roots.flatMap(root => [...root.querySelectorAll<HTMLElement>("[data-zebby-explore]")]).find(item => item.getAttribute("data-zebby-explore") === id);
@@ -130,7 +138,11 @@ export function actExplorePage(action: ExplorationAction | { kind: "label" | "un
       element instanceof HTMLButtonElement && element.type === "submit" && element.closest("form")) return false;
   if (action.kind === "select" && element instanceof HTMLSelectElement) {
     if (![...element.options].some(option => option.value === action.value)) return false;
-    element.value = action.value; element.dispatchEvent(new Event("input", { bubbles: true })); element.dispatchEvent(new Event("change", { bubbles: true })); return true;
+    if (element.multiple) {
+      const desired = new Set(desiredValues.map(value => value.trim().toLowerCase()));
+      for (const option of element.options) option.selected = desired.has(option.value.trim().toLowerCase()) || desired.has(option.label.trim().toLowerCase());
+    } else element.value = action.value;
+    element.dispatchEvent(new Event("input", { bubbles: true })); element.dispatchEvent(new Event("change", { bubbles: true })); return true;
   }
   if (action.kind === "fill" && element instanceof HTMLInputElement && !["password", "file", "hidden"].includes(element.type)) {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(element, action.value);

@@ -16,18 +16,18 @@ const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(valu
 const jobKeys = (jobs: Iterable<BoardCandidate>) => [...jobs].map(job => boardJobIdentity(job.url).key).sort();
 const noFilter = /^(?:utm_.+|gh_src|lever-source|page|pagesize|page_size|offset|start|cursor|sort|sort_by|sort_order)$/i;
 export function boardScope(value: string): BoardExploreInput["scope"] {
-  const url = boardUrl(value), values = new Map<string, string>();
+  const url = boardUrl(value), values = new Map<string, { key: string; value: string }>();
   const fragment = new URLSearchParams(url.hash.includes("?") ? url.hash.slice(url.hash.indexOf("?") + 1) : "");
   for (const [key, raw] of [...url.searchParams, ...fragment]) {
     if (noFilter.test(key)) continue;
-    let value: string; try { value = decodeURIComponent(raw); } catch { value = raw; }
-    if (!value || value.length > 500 || key.length > 100 || values.has(key) && values.get(key) !== value) {
+    const value = raw;
+    if (!value || value.length > 500 || key.length > 100) {
       throw new Error("This saved search contains ambiguous filters. Edit its link before checking again.");
     }
-    values.set(key, value);
+    values.set(JSON.stringify([key, value]), { key, value });
   }
   if (values.size > 30) throw new Error("This saved search has too many filters to verify.");
-  return [...values].map(([key, value], index) => ({ id: "s" + index, key, value }));
+  return [...values.values()].map(({ key, value }, index) => ({ id: "s" + index, key, value }));
 }
 export function newBoardCheckpoint(input: Pick<BoardCheckpoint, "boardId" | "workspace" | "revision" | "url" | "provider" | "model" | "account" | "instructions">): BoardCheckpoint {
   const now = new Date().toISOString();
@@ -142,7 +142,7 @@ export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> 
       // Revalidate controls that remain in this document. A selected filter
       // can change without navigation; a stale proof cannot authorize a save.
       for (const filter of scope) {
-        if (page.controls.some(control => controlProvesScope(control, filter.value))) proofs.add(filter.id);
+        if (page.controls.some(control => controlProvesScope(control, filter.value, scope.filter(item => item.key === filter.key).map(item => item.value)))) proofs.add(filter.id);
         else if (!history.some(step => step.startsWith("document:"))) proofs.delete(filter.id);
       }
       const visible = new Set(page.viewportIds);
