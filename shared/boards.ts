@@ -1,4 +1,9 @@
 import { z } from "zod";
+import { boardImageSchema } from "./board-image.ts";
+import { explorationInput, explorationContract, validateExploration, feedMappingInput, feedMappingResult,
+  type BoardExploreResult, type BoardFeedMapping, type BoardReaderSettings } from "./board-exploration.ts";
+export { boardImageSchema } from "./board-image.ts";
+export type { BoardImage } from "./board-image.ts";
 
 export const BOARDS_MISSING_FILE = "Couldn't find your Boards file.";
 export const BOARD_CREDIT_MESSAGE = "Insufficient Zebby credits.";
@@ -17,7 +22,12 @@ export type BoardProgress = { boardId: string; phase: "queued" | "reading" | "ex
   message: string; requestId: string };
 export type BoardsState = { filePath: string; filename: string; dirty: boolean; error: string;
   expectedPath?: string; canRecover?: boolean; fileMissing?: boolean; savedCopyPath?: string;
+  readerSettings?: BoardReaderSettings;
+  runs?: BoardRunSummary[];
   boards: Board[]; progress: BoardProgress[] };
+export type BoardRunSummary = { boardId: string; status: "reading" | "paused" | "incomplete"; found: number; modelCalls: number;
+  message: string; updatedAt: string; canResume: boolean; criteriaPending: boolean };
+export type BoardRunPreview = { summary: BoardRunSummary; listings: BoardCandidate[] };
 export type BoardInput = { company: string; url: string; instructions?: string };
 export type BoardIdentity = { key: string; url: string };
 export type BoardJob = BoardIdentity & { matches: boolean; title?: string; department?: string; location?: string };
@@ -27,7 +37,7 @@ export type BoardControl = { id: string; text: string; context: string; disabled
 export type BoardListing = BoardJob & { current: boolean; unread: boolean };
 export type BoardListings = { checkId: number; total: number; offset: number; listings: BoardListing[] };
 export type BoardListingFilter = "matches" | "new" | "all";
-export const BOARDS_READER_VERSION = 2;
+export const BOARDS_READER_VERSION = 3;
 export const BOARD_VISION_MESSAGE = "This page needs visual reading. Choose an online model or a vision-capable Ollama model in Settings, then retry.";
 
 export const boardInputSchema = z.object({ company: z.string().trim().min(1).max(120),
@@ -54,34 +64,6 @@ const inventoryInput = z.object({ task: z.literal("inventory"), pageUrl: z.strin
 const documentInput = z.object({ task: z.literal("document"), pageUrl: z.string().url().max(4000),
   documents: z.array(z.object({ id: z.string().regex(/^d\d+$/), url: z.string().url().max(4000),
     title: z.string().max(300), summary: z.string().max(4000) }).strict()).min(1).max(12) }).strict();
-export const boardImageSchema = z.object({ mediaType: z.enum(["image/jpeg", "image/png"]),
-  data: z.string().min(40).max(1_400_000).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
-  width: z.number().int().min(32).max(1600), height: z.number().int().min(32).max(1200),
-}).strict().refine(image => validImageDimensions(image), "The board screenshot is invalid or too large.");
-export type BoardImage = z.infer<typeof boardImageSchema>;
-function validImageDimensions(image: { mediaType: string; data: string; width: number; height: number }) {
-  try {
-    const bytes = Uint8Array.from(atob(image.data), letter => letter.charCodeAt(0));
-    if (image.mediaType === "image/png") {
-      const view = new DataView(bytes.buffer);
-      return view.getUint32(0) === 0x89504e47 && view.getUint32(4) === 0x0d0a1a0a &&
-        view.getUint32(12) === 0x49484452 && view.getUint32(16) === image.width && view.getUint32(20) === image.height;
-    }
-    if (bytes[0] !== 255 || bytes[1] !== 216) return false;
-    for (let at = 2; at + 8 < bytes.length;) {
-      if (bytes[at++] !== 255) return false;
-      while (bytes[at] === 255) at++;
-      const marker = bytes[at++];
-      if (marker === 217 || marker === 218) return false;
-      const length = bytes[at] * 256 + bytes[at + 1];
-      if (length < 2 || at + length > bytes.length) return false;
-      if ([192, 193, 194].includes(marker)) return bytes[at + 3] * 256 + bytes[at + 4] === image.height &&
-        bytes[at + 5] * 256 + bytes[at + 6] === image.width;
-      at += length;
-    }
-  } catch { return false; }
-  return false;
-}
 const visualInput = z.object({ task: z.literal("visual"), pageUrl: z.string().url().max(4000),
   pageTitle: z.string().max(300), summary: z.string().max(4000), image: boardImageSchema,
   candidates: z.array(candidateSchema).max(60), controls: pageExtractionInput.shape.controls,
@@ -91,7 +73,7 @@ const visualInput = z.object({ task: z.literal("visual"), pageUrl: z.string().ur
 }).strict().refine(input => !input.coverage || input.coverage.alreadyVerifiedIds.length <= input.coverage.verifiedCount &&
   new Set(input.coverage.alreadyVerifiedIds).size === input.coverage.alreadyVerifiedIds.length &&
   input.coverage.alreadyVerifiedIds.every(id => input.candidates.some(candidate => candidate.id === id)), "Invalid visual coverage evidence.");
-export const boardExtractionInput = z.union([pageExtractionInput, roleInput, inventoryInput, documentInput, visualInput]);
+export const boardExtractionInput = z.union([pageExtractionInput, roleInput, inventoryInput, documentInput, visualInput, explorationInput, feedMappingInput]);
 export type BoardExtractionInput = z.infer<typeof boardExtractionInput>;
 export type BoardVisualInput = z.infer<typeof visualInput>;
 export const boardExtractionResult = z.object({ listingIds: z.array(z.string().max(40)).max(60),
@@ -125,6 +107,7 @@ Return every specific vacancy link visible in the screenshot, with its observed 
 Inspect every labeled control, including controls whose text is empty. Use the screenshot's icon, placement and surrounding job results to determine its purpose. A right-pointing arrow or chevron below the results can be a next-page button even with no text. Return its observed control ID when it advances results. Never select Apply, filter expansion, login, or consent. If a possible results-navigation control is ambiguous, set complete false rather than silently omitting it.
 Return the full filtered results total only if visibly stated. Set empty only when the board explicitly confirms there are no results. Set complete false if visible job cards lack corresponding observed links, content is still loading or blocked, or the evidence is ambiguous. complete describes coverage of this viewport, not the whole board. A page showing one job, a total of two jobs and a next-page control is complete for this viewport: return the one visible job and the next control. Scrolling and global completeness are checked separately.`;
 export function boardModelContract(input: BoardExtractionInput) {
+  if (input.task === "explore" || input.task === "feed_map") return explorationContract(input);
   if (input.task === "document") return { instructions: documentInstructions, name: "board_extract", schema: {
     type: "object", additionalProperties: false, required: ["documentId"], properties: { documentId: { type: "string", enum: ["", ...input.documents.map(item => item.id)] } },
   } };
@@ -149,11 +132,14 @@ export function boardModelContract(input: BoardExtractionInput) {
   } };
 }
 
-export type BoardExtractionOutput<T extends BoardExtractionInput> = T extends { task: "visual" } ? z.infer<typeof visualResult> :
+export type BoardExtractionOutput<T extends BoardExtractionInput> = T extends { task: "explore" } ? BoardExploreResult :
+  T extends { task: "feed_map" } ? BoardFeedMapping : T extends { task: "visual" } ? z.infer<typeof visualResult> :
   T extends { task: "document" } ? z.infer<typeof documentResult> : T extends { task: "inventory" } ? z.infer<typeof inventoryResult> :
   T extends { task: "roles" } ? z.infer<typeof roleResult> : z.infer<typeof boardExtractionResult>;
 export function validatedBoardExtraction<T extends BoardExtractionInput>(value: unknown, input: T): BoardExtractionOutput<T>;
 export function validatedBoardExtraction(value: unknown, input: BoardExtractionInput) {
+  if (input.task === "explore") return validateExploration(value, input);
+  if (input.task === "feed_map") return feedMappingResult.parse(value);
   if (input.task === "document") {
     const result = documentResult.parse(value);
     if (result.documentId && !input.documents.some(document => document.id === result.documentId)) throw new Error("The model selected an unknown results document.");

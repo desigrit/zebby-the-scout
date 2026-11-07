@@ -171,7 +171,7 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
       const inputTokens = await countInput({ model: model.id, key: providerKey(model.id), input, ...contract(value.kind, input),
         thinkingLevel, signal, fetcher: send });
       signal.throwIfAborted();
-      const outputTokens = creditOutputLimit(value.kind, thinkingLevel, "task" in input && input.task === "visual");
+      const outputTokens = creditOutputLimit(value.kind, thinkingLevel, "task" in input && ["visual", "explore"].includes(input.task));
       const maximum = maximumCost(model, inputTokens, outputTokens);
       const quote = { id: randomUUID(), user_id: account.id, model: model.id, kind: value.kind, thinking_level: thinkingLevel,
         input_tokens: inputTokens, output_limit: outputTokens,
@@ -185,7 +185,7 @@ export function createService(config: ServiceConfig, dependencies: Dependencies 
       if (!quote || quote.price_version !== PRICE_VERSION) throw new ServiceError("Request a fresh analysis quote.");
       const kind = kindSchema.parse(quote.kind), model = configuredModel(quote.model), input = validateInput(value.input, kind);
       const thinkingLevel = validateOnlineThinking(model, quote.thinking_level);
-      if (quote.output_limit !== creditOutputLimit(kind, thinkingLevel, "task" in input && input.task === "visual") ||
+      if (quote.output_limit !== creditOutputLimit(kind, thinkingLevel, "task" in input && ["visual", "explore"].includes(input.task)) ||
           quote.maximum !== maximumCost(model, quote.input_tokens, quote.output_limit)) throw new ServiceError("Request a fresh analysis quote.");
       const run = await rpc<RunRow>("reserve", { p_user: account.id, p_id: value.requestId, p_quote: quote.id, p_hash: digest(JSON.stringify(input)) })
         .catch(async (error: unknown) => {

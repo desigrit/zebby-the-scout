@@ -10,9 +10,11 @@ import type { BoardVisualInput, BoardControl } from "../shared/boards";
 import { isNetflixSearch, NetflixBoardPages } from "./netflix-board";
 import { greenhouseBoard, sameGreenhouseSearch } from "./greenhouse-board";
 import { isLyftCareers } from "./lyft-board";
+import { BoardExplorerBrowser, type ThoroughBoardReader } from "./board-explorer-browser";
 
 export type BoardDocument = { id: string; url: string; title: string; summary: string };
 export type BoardReader = { open(url: string): Promise<void>; read(): Promise<BoardPage>; next(id: string, observed?: BoardControl): Promise<void>; close(): void;
+  thorough?: ThoroughBoardReader;
   documents?(): Promise<BoardDocument[]>; selectDocument?(id: string): Promise<void>; visual?(): AsyncGenerator<BoardVisualInput> };
 function sameSearch(value: string, saved: string) {
   const current = boardUrl(value), original = boardUrl(saved);
@@ -42,6 +44,7 @@ class BoardWebsiteError extends Error {
 }
 
 export class BoardBrowser implements BoardReader {
+  readonly thorough: BoardExplorerBrowser;
   private window: BrowserWindow;
   private source = "";
   private frame: Electron.WebFrameMain | null = null;
@@ -83,11 +86,13 @@ export class BoardBrowser implements BoardReader {
     this.window = new BrowserWindow({ show: false, width: 1280, height: 900,
       webPreferences: { session: isolated, sandbox: true, contextIsolation: true, nodeIntegration: false,
         webSecurity: true, backgroundThrottling: false, devTools: false } });
+    this.thorough = new BoardExplorerBrowser(this.window, signal);
     this.window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     this.window.webContents.on("did-frame-navigate", (_event, url, status) => {
       this.responses.set(url, { status, retryAfter: this.responses.get(url)?.retryAfter || null });
     });
     const guard = (event: Electron.Event, target: string) => {
+      if (this.thorough.active) { if (!this.thorough.permitsNavigation(target)) event.preventDefault(); return; }
       try {
         if (!sameSearch(target, this.source)) throw new Error();
       } catch { event.preventDefault(); this.navigationError = "The board redirected or changed its search filters. Save the direct results link and try again."; }
@@ -365,6 +370,7 @@ export class BoardBrowser implements BoardReader {
     }
   }
   close() {
+    this.thorough.close();
     this.signal.removeEventListener("abort", this.abort);
     if (!this.window.isDestroyed()) this.window.destroy();
   }

@@ -76,7 +76,7 @@ export async function checkBoardsRenderer(page, nav) {
   assert.equal(await page.locator(".board-match-total").count(), 0, "Unfinished first scans never show a misleading zero");
   await capture("boards-indexing");
   const third = page.getByRole("article", { name: "Meta", exact: true });
-  await third.getByRole("button", { name: "Cancel check" }).click();
+  await third.getByRole("button", { name: "Stop check" }).click();
   await third.getByText("Not indexed", { exact: true }).waitFor();
   await third.getByRole("button", { name: "Check for updates" }).click();
   await third.getByText("Indexing", { exact: true }).waitFor();
@@ -212,7 +212,7 @@ export async function checkBoardsRenderer(page, nav) {
   assert.equal(await first.locator(".board-match-total").count(), 0, "Current progress replaces the old count during a recheck");
   assert.equal(await first.locator(".board-update-summary > :nth-child(2)").textContent(), "Reading page 2");
   assert.equal(await first.getByRole("button", { name: "Edit Slack board" }).isEnabled(), false); await capture("boards-checking");
-  await first.getByRole("button", { name: "Cancel check" }).click(); await first.getByRole("button", { name: "Check for updates" }).waitFor();
+  await first.getByRole("button", { name: "Stop check" }).click(); await first.getByRole("button", { name: "Check for updates" }).waitFor();
   await first.getByText("20 listings checked", { exact: true }).waitFor();
   await first.getByRole("button", { name: "Check for updates" }).click();
   await page.evaluate(() => window.boardsQA.set({ progress: [], boards: window.boardsQA.get().boards.map((board, index) => ({ ...board,

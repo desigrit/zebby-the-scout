@@ -2,7 +2,8 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } f
 import { createPortal } from "react-dom";
 import { Check, FolderOpen, LoaderCircle, Pencil, Plus, RefreshCw, X } from "lucide-react";
 import { useAnalysisFlow } from "./AnalysisFlow";
-import { BOARDS_MISSING_FILE, BOARD_CREDIT_MESSAGE, type Board, type BoardsState, type BoardListings } from "../../shared/boards";
+import { BOARDS_MISSING_FILE, BOARD_CREDIT_MESSAGE, type Board, type BoardsState, type BoardListings, type BoardRunPreview } from "../../shared/boards";
+import { defaultBoardReaderSettings } from "../../shared/board-exploration";
 import { boardListingTitle } from "../../shared/board-listing-title";
 import SettingsAction from "./SettingsAction";
 import { ErrorBanner } from "./WorkspaceFeedback";
@@ -117,6 +118,20 @@ export function BoardsDatabaseSettings() {
       </div>}
       <BoardsSavedCopy path={state.savedCopyPath} />
     </>}
+    <section className="board-reader-settings" aria-label="Board checks">
+      <label className="board-reader-toggle"><input type="checkbox" checked={(state.readerSettings || defaultBoardReaderSettings).automaticThorough}
+        disabled={busy} onChange={event => void act(() => window.desktop!.configureBoardReader({ ...(state.readerSettings || defaultBoardReaderSettings), automaticThorough: event.target.checked }))} />
+        <span>Automatically try a thorough check</span></label>
+      <p className="settings-help">If a page is difficult to read, Zebby uses your selected model to navigate its results and verify them again. This uses additional model allowance or credits.</p>
+      <details><summary>Reading limits</summary><div className="board-reader-limits">
+        <label>Time per attempt<select value={(state.readerSettings || defaultBoardReaderSettings).minutes} disabled={busy}
+          onChange={event => void act(() => window.desktop!.configureBoardReader({ ...(state.readerSettings || defaultBoardReaderSettings), minutes: Number(event.target.value) }))}>
+          {[5, 10, 15, 30].map(value => <option key={value} value={value}>{value} minutes</option>)}</select></label>
+        <label>Model requests per attempt<select value={(state.readerSettings || defaultBoardReaderSettings).modelCalls} disabled={busy}
+          onChange={event => void act(() => window.desktop!.configureBoardReader({ ...(state.readerSettings || defaultBoardReaderSettings), modelCalls: Number(event.target.value) }))}>
+          {[20, 40, 60, 120].map(value => <option key={value} value={value}>{value} requests</option>)}</select></label>
+      </div><p className="settings-help">Checks pause at either limit. Resume continues with a fresh allowance and verifies the current page. Saved analysis results are reused when the inputs still match.</p></details>
+    </section>
   </div>;
 }
 
@@ -207,12 +222,37 @@ function BoardResults({ board, onClose }: { board: Board; onClose(): void }) {
   </section>;
 }
 
+function BoardPartialResults({ board, onClose }: { board: Board; onClose(): void }) {
+  const [preview, setPreview] = useState<BoardRunPreview | null>(null), [error, setError] = useState("");
+  const [offset, setOffset] = useState(0);
+  const focus = useRef<HTMLElement>(null);
+  useEffect(() => { focus.current?.focus(); let active = true;
+    void window.desktop!.boardRunPreview(board.id).then(value => { if (active) setPreview(value); }).catch(error => { if (active) setError(message(error)); });
+    return () => { active = false; };
+  }, [board.id]);
+  return <section className="board-listings board-partial-listings" aria-label={board.company + " partial results"} ref={focus} tabIndex={-1}>
+    <button type="button" className="board-icon-action board-listings-close" onClick={onClose} aria-label="Close partial results"><X size={17} aria-hidden="true" /></button>
+    <p className="board-partial-help">Found so far. {board.instructions ? "Tracking instructions will be applied after the full inventory is verified. " : ""}Your last successful check is unchanged.</p>
+    {error ? <p role="alert">{error}</p> : !preview ? <p role="status">Loading partial results</p> : <>
+      <ul className="board-listing-items">{preview.listings.slice(offset, offset + 50).map(listing => <li key={listing.url}><div>
+        <a href={listing.url} target="_blank" rel="noopener noreferrer">{boardListingTitle(listing.title || "", listing.url) || listing.url}</a>
+        {(listing.department || listing.location) && <p>{[listing.department, listing.location].filter(Boolean).join(" · ")}</p>}
+      </div></li>)}</ul>
+      {preview.listings.length > 50 && <div className="board-listings-pagination"><span>{offset + 1}-{Math.min(offset + 50, preview.listings.length)} of {preview.listings.length}</span><div>
+        <button type="button" className="boards-text-action" disabled={!offset} onClick={() => setOffset(value => value - 50)}>Previous</button>
+        <button type="button" className="boards-text-action" disabled={offset + 50 >= preview.listings.length} onClick={() => setOffset(value => value + 50)}>Next</button>
+      </div></div>}
+    </>}
+  </section>;
+}
+
 export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
   const controls = useBoards(), { state, error, working, act } = controls;
   const recoveryFocus = useRecoveryFocus(state);
   const [adding, setAdding] = useState(false), [editing, setEditing] = useState<Board | null>(null);
   const [links, setLinks] = useState(""), [company, setCompany] = useState("");
   const [instructions, setInstructions] = useState("");
+  const [partial, setPartial] = useState<{ id: string; workspace: string } | null>(null);
   const [inspection, setInspecting] = useState<{ id: string; filePath: string } | null>(null);
   const inspecting = inspection?.filePath === state.filePath && state.boards.some(board => board.id === inspection.id && board.lastCheckedAt && board.newCount > 0) ? inspection : null;
   const inspectionButton = useRef<HTMLButtonElement | null>(null);
@@ -304,7 +344,9 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
           {analysis.state.analysisProvider === "credits" && " Each AI batch uses your selected model and available Zebby credits."}</p>}
         <div className="boards-editor-actions"><button type="submit" className="button button-primary" disabled={working || state.dirty}>
           {working && <LoaderCircle size={16} className="spin" aria-hidden="true" />}{editing ? "Save board" : "Add and check"}</button>
-          <button type="button" className="button button-secondary" disabled={working} onClick={reset}>Cancel</button></div>
+          <button type="button" className="button button-secondary" disabled={working} onClick={reset}>Cancel</button>
+          {editing && <button type="button" className="boards-text-action" disabled={working || dirty || state.dirty || state.progress.some(item => item.boardId === editing.id)}
+            onClick={() => void act(async () => { await window.desktop!.checkBoards([editing.id], { thorough: true }); reset(); })}>Thorough recheck</button>}</div>
       </form>}
       {!state.boards.length && !adding ? <div className="boards-empty"><h2>Your next opportunity starts here</h2>
         <p>Save the company career pages you check regularly.</p>
@@ -313,9 +355,13 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
         <div className="boards-columns" aria-hidden="true"><span>Company and board link</span><span>Last checked on</span><span>Updates</span><span /></div>
         {state.boards.map(board => {
           const progress = state.progress.find(item => item.boardId === board.id);
+          const run = state.runs?.find(item => item.boardId === board.id);
+          const showPartial = !progress && partial?.id === board.id && partial.workspace === state.filePath && Boolean(run?.found);
+          const partialLink = !progress && run?.found ? <button type="button" className="boards-text-action board-partial-link" aria-expanded={showPartial}
+            onClick={() => setPartial(showPartial ? null : { id: board.id, workspace: state.filePath })}>{run.found} found so far</button> : null;
           const review = reviewing?.id === board.id ? reviewing.phase : null;
           const checkProgress = progress && <span className="board-progress" role={board.lastCheckedAt ? undefined : "status"} title={progress.message}>
-            <LoaderCircle size={13} className="spin" aria-hidden="true" />{board.lastCheckedAt ? progress.message : "Indexing"}</span>;
+            <LoaderCircle size={13} className="spin" aria-hidden="true" />{board.lastCheckedAt || /thorough|verif|found/i.test(progress.message) ? progress.message : "Indexing"}</span>;
           return <article key={board.id} className="board-row" aria-label={board.company}>
             <div className="board-identity"><div className="board-heading"><strong title={board.company}>{board.company}</strong>
               {board.instructions?.trim() && <span className="board-instructions-indicator">Custom instructions</span>}</div>
@@ -339,14 +385,14 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
                   </BoardTooltipButton>}
                   {board.error && !progress && <BoardCheckStatus error={board.error} />}
                   </div>
-                  {checkProgress || <span className="board-match-total">{board.totalCount} {board.totalCount === 1 ? "listing" : "listings"} checked</span>}
+                  {checkProgress || partialLink || <span className="board-match-total">{board.totalCount} {board.totalCount === 1 ? "listing" : "listings"} checked</span>}
                 </div>
-                : checkProgress || <span role="status">{board.error ? <BoardCheckStatus error={board.error} /> : <span className="board-no-updates">Not indexed</span>}</span>}
+                : checkProgress || <div className="board-update-summary"><span role="status">{board.error ? <BoardCheckStatus error={board.error} /> : <span className="board-no-updates">{run?.canResume ? "Check paused" : "Not indexed"}</span>}</span>{partialLink}</div>}
             </div>
             <div className="board-actions">{progress ? <button id={"board-check-" + board.id} type="button" className="button button-secondary" disabled={progress.phase === "saving"}
-              onClick={() => void act(() => window.desktop!.cancelBoardCheck(board.id))}>Cancel check</button>
-              : <button id={"board-check-" + board.id} type="button" className="button button-secondary" disabled={working || state.dirty} onClick={() => void act(() => window.desktop!.checkBoards([board.id]))}>
-                <RefreshCw size={15} aria-hidden="true" />{board.error ? "Retry" : "Check for updates"}</button>}
+              onClick={() => void act(() => window.desktop!.cancelBoardCheck(board.id))}>Stop check</button>
+              : <button id={"board-check-" + board.id} type="button" className="button button-secondary" disabled={working || state.dirty} onClick={() => { setPartial(null); void act(() => window.desktop!.checkBoards([board.id], run?.canResume ? { resume: true } : undefined)); }}>
+                <RefreshCw size={15} aria-hidden="true" />{run?.canResume ? "Resume check" : board.error ? "Retry" : "Check for updates"}</button>}
               {analysis.state.analysisProvider === "credits" && board.error.startsWith(BOARD_CREDIT_MESSAGE) && !progress &&
                 <button type="button" className="boards-text-action" onClick={() => analysis.openCredits()}>Top up</button>}
               <button type="button" className="board-icon-action" aria-label={`Edit ${board.company} board`} title="Edit board" disabled={working || Boolean(progress) || state.dirty} onClick={() => edit(board)}><Pencil size={15} aria-hidden="true" /></button>
@@ -354,6 +400,7 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
             </div>
             {inspecting?.id === board.id && <BoardResults key={board.id + ":" + board.lastCheckId}
               board={board} onClose={closeInspection} />}
+            {showPartial && <BoardPartialResults key={board.id + ":" + run?.updatedAt} board={board} onClose={() => { setPartial(null); document.getElementById("board-check-" + board.id)?.focus(); }} />}
           </article>;
         })}
       </div>}

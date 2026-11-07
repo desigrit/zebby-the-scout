@@ -739,7 +739,9 @@ function registerIpc() {
     if (response.response === 1) { boards.assertIdle(id); await boardsStore.remove(id); boards.changed(); }
     return boards.state;
   });
-  handle("boards:check", (_event, ids?: string[]) => boards.check(ids));
+  handle("boards:check", (_event, ids?: string[], options?: import("../shared/board-exploration").BoardCheckOptions) => boards.check(ids, options));
+  handle("boards:configure-reader", (_event, value: unknown) => boards.configure(value));
+  handle("boards:run-preview", (_event, id: string) => boards.preview(id));
   handle("boards:cancel", (_event, id: string) => boards.cancel(id));
   handle("boards:reviewed", async (_event, id: string, through: number) => {
     try { await boardsStore.reviewed(id, through); return boards.state; }
