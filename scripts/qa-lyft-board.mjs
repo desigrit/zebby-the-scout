@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { BoardBrowser } from "../desktop/board-browser.ts";
 
-const url = "https://www.lyft.com/careers#openings?category=product";
+const url = "https://www.lyft.com/careers?category=product#openings";
 const output = path.resolve("qa-output/board-layers");
 async function run() {
   const timeout = setTimeout(() => { console.error("Lyft reader check timed out"); app.exit(1); }, 240000); timeout.unref();
