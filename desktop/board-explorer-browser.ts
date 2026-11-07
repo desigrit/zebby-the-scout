@@ -102,12 +102,16 @@ export class BoardExplorerBrowser implements ThoroughBoardReader {
   async open(url: string) {
     this.signal.throwIfAborted(); this.active = true; this.source = boardUrl(url).href; this.allowedTarget = this.source;
     this.frame = null; this.networkError = ""; this.epoch++; this.pending.clear(); this.responses.clear(); this.observedFeeds.clear();
-    if (!this.attached) {
+    let networkReady: Promise<unknown> | undefined;
+    if (!this.attached) try {
       this.window.webContents.debugger.attach("1.3"); this.attached = true;
       this.window.webContents.debugger.on("message", this.networkMessage);
-      await this.bounded(this.window.webContents.debugger.sendCommand("Network.enable", { maxTotalBufferSize: 16_000_000, maxResourceBufferSize: 4_000_000 }), 10000, "Preparing public response capture");
-    }
+      // The first renderer is created by loadURL. Awaiting a debugger command
+      // before that navigation can deadlock a new hidden BrowserWindow.
+      networkReady = this.window.webContents.debugger.sendCommand("Network.enable", { maxTotalBufferSize: 16_000_000, maxResourceBufferSize: 4_000_000 }).catch(() => undefined);
+    } catch { /* Public response capture is supplementary to rendered evidence. */ }
     await Promise.race([this.window.loadURL(this.source), delay(30000, undefined, { signal: this.signal }).then(() => { throw new Error("The careers page took too long to open. Resume the check to try again."); })]);
+    if (networkReady) await Promise.race([networkReady, delay(2000, undefined, { signal: this.signal })]);
   }
   private async raw(): Promise<ExplorePage> {
     this.signal.throwIfAborted();
