@@ -104,13 +104,27 @@ export class BoardsService<Selection extends BoardSelection> {
             checkpoint.status = "reading";
             const deadline = new AbortController(), timer = setTimeout(() => deadline.abort(new BoardReadLimit("This check reached its time limit. Resume to continue, or adjust the limits in Settings.")), settings.minutes * 60000);
             requestSignal = AbortSignal.any([signal, deadline.signal]);
-            const owner = this.dependencies.reader(requestSignal);
+            const initialRequests = checkpoint.calls - checkpoint.reused;
             try {
-              if (!owner.thorough) throw new Error("The thorough reader is unavailable. Update Zebby and retry.");
-              return await thoroughlyScanBoard({ ...scanOptions, reader: owner.thorough, signal: requestSignal, settings, checkpoint,
-                resume: options.resume, forceFresh: options.thorough && !options.resume,
-                save: async run => { await this.runs.save(run); this.changed(); } });
-            } finally { clearTimeout(timer); owner.close(); requestSignal = signal; }
+              for (let attempt = 0; attempt < 2; attempt++) {
+                const remaining = settings.modelCalls - (checkpoint.calls - checkpoint.reused - initialRequests);
+                if (remaining <= 0) throw new BoardReadLimit("This check reached its reading limit. Resume to continue.");
+                const owner = this.dependencies.reader(requestSignal);
+                try {
+                  if (!owner.thorough) throw new Error("The thorough reader is unavailable. Update Zebby and retry.");
+                  return await thoroughlyScanBoard({ ...scanOptions, reader: owner.thorough, signal: requestSignal,
+                    settings: { ...settings, modelCalls: remaining }, checkpoint,
+                    resume: options.resume || attempt > 0, forceFresh: options.thorough && !options.resume && !attempt,
+                    save: async run => { await this.runs.save(run); this.changed(); } });
+                } catch (error) {
+                  requestSignal.throwIfAborted();
+                  if (attempt || error instanceof BoardReadLimit || !/took too long|page.*(?:changed|replaced)|results.*changed|object has been destroyed|temporar|network|ERR_(?:CONNECTION|TIMED_OUT)/i.test(String(error))) throw error;
+                  checkpoint.status = "reading"; checkpoint.message = "Reopening the page after an interrupted read";
+                  await this.runs.save(checkpoint); report(checkpoint.message, "reading");
+                } finally { owner.close(); }
+              }
+              throw new Error("The page could not finish loading. Resume to try again.");
+            } finally { clearTimeout(timer); requestSignal = signal; }
           };
           let scan;
           if (options.thorough || options.resume) scan = await thorough();
