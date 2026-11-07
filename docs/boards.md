@@ -2,9 +2,11 @@
 
 Use **Add boards** to save public careers searches, including their filters. Paste one link per line, optionally enter a company and describe the roles you want. For example, “Look under the Product heading for product manager roles.” **Add and check** shows **Indexing** while saving your starting point. The first complete check has zero new listings.
 
-A **Custom instructions** indicator beside the company name shows when a board has saved tracking instructions. Select its pencil-shaped **Edit board** button to read or change the full instructions. Their length does not change the height of the board's summary.
+A light **Custom instructions** label beside the company name shows when a board has saved tracking instructions. Select its pencil-shaped **Edit board** button to read or change the full instructions. Their length does not change the height of the board's summary.
 
-Each completed check shows the number of listings matching your instructions, for example **7 listings checked**. With no instructions, this count includes every listing in the saved search. When matching roles are new, choose **4 new listings** to see their titles, departments and locations. Separate posting IDs remain separate listings even when their titles are identical. Opening a listing does not mark it reviewed. **Mark as reviewed** clears the discoveries you have seen, including an unread posting that has since disappeared.
+Each completed check shows the number of listings matching your instructions, for example **7 listings checked**. With no instructions, this count includes every listing in the saved search. During a recheck, current progress replaces that count on the same line.
+
+When matching roles are new, choose **4 new listings** to expand their titles, departments and locations directly below the board. Separate posting IDs remain separate listings even when their titles are identical. Opening a listing does not mark it reviewed. The check icon beside the new-listing count has a **Mark as reviewed** tooltip. It clears the discoveries you have seen, including an unread posting that has since disappeared. A small spinner shows while the review saves, followed by a gentle fade. Reduced-motion settings skip that transition. If saving fails, the discoveries remain available to retry.
 
 If a check fails, hover over **Check incomplete**, focus it with the keyboard, or select it to read the error. Escape closes the explanation. **Retry** checks the same saved search again. The last successful count and new discoveries remain available.
 

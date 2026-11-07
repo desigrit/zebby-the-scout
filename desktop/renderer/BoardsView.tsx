@@ -1,8 +1,9 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Check, FolderOpen, LoaderCircle, Pencil, Plus, RefreshCw, SlidersHorizontal, X } from "lucide-react";
+import { Check, FolderOpen, LoaderCircle, Pencil, Plus, RefreshCw, X } from "lucide-react";
 import { useAnalysisFlow } from "./AnalysisFlow";
 import { BOARDS_MISSING_FILE, BOARD_CREDIT_MESSAGE, type Board, type BoardsState, type BoardListings } from "../../shared/boards";
+import { boardListingTitle } from "../../shared/board-listing-title";
 import SettingsAction from "./SettingsAction";
 import { ErrorBanner } from "./WorkspaceFeedback";
 
@@ -126,42 +127,51 @@ function companyFromUrl(value: string) {
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
-function BoardCheckStatus({ error }: { error: string }) {
+function BoardTooltipButton({ content, children, className, label, above = false, disabled = false, busy = false, onClick }: {
+  content: string; children: ReactNode; className: string; label?: string; above?: boolean; disabled?: boolean; busy?: boolean; onClick?(): void;
+}) {
   const id = useId(), trigger = useRef<HTMLButtonElement>(null), tooltip = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null), focused = useRef(false);
   const [open, setOpen] = useState(false), [position, setPosition] = useState({ left: 0, top: 0 });
+  const visible = open && !disabled;
   function clearClose() { if (closeTimer.current) clearTimeout(closeTimer.current); }
   function show() { clearClose(); setOpen(true); }
   function leave() { clearClose(); closeTimer.current = setTimeout(() => { if (!focused.current) setOpen(false); }, 120); }
   useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
   useLayoutEffect(() => {
-    if (!open || !trigger.current || !tooltip.current) return;
+    if (!visible || !trigger.current || !tooltip.current) return;
     const place = () => {
       if (!trigger.current || !tooltip.current) return;
       const anchor = trigger.current.getBoundingClientRect(), tip = tooltip.current.getBoundingClientRect();
       if (anchor.bottom <= 0 || anchor.top >= window.innerHeight) { setOpen(false); return; }
-      const next = { left: Math.max(16, Math.min(anchor.left, window.innerWidth - tip.width - 16)),
-        top: anchor.bottom + 8 + tip.height <= window.innerHeight - 16 ? anchor.bottom + 8 : Math.max(16, anchor.top - tip.height - 8) };
+      const preferTop = above && anchor.top - tip.height - 8 >= 16;
+      const next = { left: Math.max(16, Math.min(above ? anchor.left + (anchor.width - tip.width) / 2 : anchor.left, window.innerWidth - tip.width - 16)),
+        top: preferTop ? anchor.top - tip.height - 8 : anchor.bottom + 8 + tip.height <= window.innerHeight - 16 ? anchor.bottom + 8 : Math.max(16, anchor.top - tip.height - 8) };
       setPosition(previous => previous.left === next.left && previous.top === next.top ? previous : next);
     };
     place(); window.addEventListener("resize", place); window.addEventListener("scroll", place, true);
     return () => { window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
-  }, [open, error]);
+  }, [visible, content, above]);
   useEffect(() => {
-    if (!open) return;
+    if (!visible) return;
     const dismiss = () => setOpen(false);
     const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { event.stopPropagation(); dismiss(); } };
     const outside = (event: PointerEvent) => { if (!trigger.current?.contains(event.target as Node) && !tooltip.current?.contains(event.target as Node)) dismiss(); };
     window.addEventListener("keydown", escape, true); window.addEventListener("pointerdown", outside);
     return () => { window.removeEventListener("keydown", escape, true); window.removeEventListener("pointerdown", outside); };
-  }, [open]);
+  }, [visible]);
   return <>
-    <button ref={trigger} type="button" className="board-check-status" aria-describedby={open ? id : undefined}
-      onPointerEnter={show} onPointerLeave={leave} onClick={show}
-      onFocus={() => { focused.current = true; show(); }} onBlur={() => { focused.current = false; leave(); }}>Check incomplete</button>
-    {open && createPortal(<div ref={tooltip} id={id} role="tooltip" className="board-error-tooltip" style={position}
-      onPointerEnter={clearClose} onPointerLeave={leave}>{error}</div>, document.body)}
+    <button ref={trigger} type="button" className={className} aria-label={label} disabled={disabled} aria-busy={busy || undefined}
+      aria-describedby={visible ? id : undefined} onPointerEnter={show} onPointerLeave={leave}
+      onClick={() => { if (onClick) { setOpen(false); onClick(); } else show(); }}
+      onFocus={() => { focused.current = true; show(); }} onBlur={() => { focused.current = false; leave(); }}>{children}</button>
+    {visible && createPortal(<div ref={tooltip} id={id} role="tooltip" className={"board-error-tooltip" + (above ? " board-action-tooltip" : "")} style={position}
+      onPointerEnter={clearClose} onPointerLeave={leave}>{content}</div>, document.body)}
   </>;
+}
+
+function BoardCheckStatus({ error }: { error: string }) {
+  return <BoardTooltipButton content={error} className="board-check-status">Check incomplete</BoardTooltipButton>;
 }
 
 function BoardResults({ board, onClose }: { board: Board; onClose(): void }) {
@@ -170,7 +180,7 @@ function BoardResults({ board, onClose }: { board: Board; onClose(): void }) {
   const [loaded, setLoaded] = useState<{ key: string; result?: BoardListings; error?: string } | null>(null);
   const requestKey = JSON.stringify([board.id, board.lastCheckId, board.newCount, offset, retry]);
   const result = loaded?.key === requestKey ? loaded.result : null, error = loaded?.key === requestKey ? loaded.error : "";
-  const heading = useId(), focus = useRef<HTMLHeadingElement>(null);
+  const focus = useRef<HTMLElement>(null);
   useEffect(() => { focus.current?.focus(); }, []);
   useEffect(() => {
     let active = true;
@@ -179,22 +189,20 @@ function BoardResults({ board, onClose }: { board: Board; onClose(): void }) {
       .catch(error => { if (active) setLoaded({ key: requestKey, error: message(error) }); });
     return () => { active = false; };
   }, [board.id, board.lastCheckId, board.newCount, offset, retry, requestKey]);
-  return <section id={"board-results-" + board.id} className="board-listings" aria-labelledby={heading}>
-    <div className="board-listings-heading"><div><h2 id={heading} ref={focus} tabIndex={-1}>{board.company} new listings</h2>
-      <p>From the last successful check. Opening a listing does not mark it reviewed.</p></div>
-      <button type="button" className="board-icon-action" onClick={onClose} aria-label="Close listings"><X size={17} aria-hidden="true" /></button></div>
+  return <section id={"board-results-" + board.id} className="board-listings" aria-label={board.company + " new listings"} ref={focus} tabIndex={-1}>
+    <button type="button" className="board-icon-action board-listings-close" onClick={onClose} aria-label="Close listings"><X size={17} aria-hidden="true" /></button>
     {error ? <div className="board-listings-feedback"><p role="alert">{error}</p>
       <button type="button" className="boards-text-action" onClick={() => setRetry(value => value + 1)}>Retry</button></div>
       : !result ? <p className="board-listings-feedback" role="status"><LoaderCircle size={14} className="spin" aria-hidden="true" />Loading listings</p>
       : <>
         {result.listings.length ? <ul className="board-listing-items">{result.listings.map(listing => <li key={listing.key}>
-          <div><a href={listing.url} target="_blank" rel="noopener noreferrer">{listing.title || listing.url}</a>
+          <div><a href={listing.url} target="_blank" rel="noopener noreferrer">{boardListingTitle(listing.title, listing.url) || listing.url}</a>
             {(listing.department || listing.location) && <p>{[listing.department, listing.location].filter(Boolean).join(" · ")}</p>}</div>
           {!listing.current && <span className="board-listing-status">No longer listed</span>}
         </li>)}</ul> : <p className="board-listings-feedback" role="status">No new listings to review.</p>}
-        {result.total > 0 && <div className="board-listings-pagination"><span role="status">{offset + 1}-{Math.min(offset + result.listings.length, result.total)} of {result.total}</span>
-          {result.total > 50 && <div><button type="button" className="button button-secondary" disabled={offset === 0} onClick={() => setOffset(value => Math.max(0, value - 50))}>Previous</button>
-            <button type="button" className="button button-secondary" disabled={offset + 50 >= result.total} onClick={() => setOffset(value => value + 50)}>Next</button></div>}</div>}
+        {result.total > 50 && <div className="board-listings-pagination"><span role="status">{offset + 1}-{Math.min(offset + result.listings.length, result.total)} of {result.total}</span>
+          <div><button type="button" className="button button-secondary" disabled={offset === 0} onClick={() => setOffset(value => Math.max(0, value - 50))}>Previous</button>
+            <button type="button" className="button button-secondary" disabled={offset + 50 >= result.total} onClick={() => setOffset(value => value + 50)}>Next</button></div></div>}
       </>}
   </section>;
 }
@@ -208,6 +216,9 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
   const [inspection, setInspecting] = useState<{ id: string; filePath: string } | null>(null);
   const inspecting = inspection?.filePath === state.filePath && state.boards.some(board => board.id === inspection.id && board.lastCheckedAt && board.newCount > 0) ? inspection : null;
   const inspectionButton = useRef<HTMLButtonElement | null>(null);
+  const [reviewing, setReviewing] = useState<{ id: string; phase: "saving" | "done" } | null>(null);
+  const reviewBusy = useRef(false), reviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (reviewTimer.current) clearTimeout(reviewTimer.current); }, []);
   function inspect(board: Board, button: HTMLButtonElement) {
     inspectionButton.current = button; setInspecting({ id: board.id, filePath: state.filePath });
   }
@@ -217,8 +228,17 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
     target?.focus({ preventScroll: true });
   }
   async function markReviewed(board: Board) {
-    if (!await act(() => window.desktop!.markBoardReviewed(board.id, board.lastCheckId))) return;
+    if (reviewBusy.current) return;
+    reviewBusy.current = true; setReviewing({ id: board.id, phase: "saving" });
+    if (!await act(() => window.desktop!.markBoardReviewed(board.id, board.lastCheckId))) {
+      reviewBusy.current = false; setReviewing(null); return;
+    }
     if (inspecting?.id === board.id) setInspecting(null);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { reviewBusy.current = false; setReviewing(null); }
+    else {
+      setReviewing({ id: board.id, phase: "done" });
+      reviewTimer.current = setTimeout(() => { reviewBusy.current = false; setReviewing(null); }, 180);
+    }
     requestAnimationFrame(() => document.getElementById("board-check-" + board.id)?.focus({ preventScroll: true }));
   }
   const analysis = useAnalysisFlow();
@@ -293,31 +313,37 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
         <div className="boards-columns" aria-hidden="true"><span>Company and board link</span><span>Last checked on</span><span>Updates</span><span /></div>
         {state.boards.map(board => {
           const progress = state.progress.find(item => item.boardId === board.id);
+          const review = reviewing?.id === board.id ? reviewing.phase : null;
+          const checkProgress = progress && <span className="board-progress" role={board.lastCheckedAt ? undefined : "status"} title={progress.message}>
+            <LoaderCircle size={13} className="spin" aria-hidden="true" />{board.lastCheckedAt ? progress.message : "Indexing"}</span>;
           return <article key={board.id} className="board-row" aria-label={board.company}>
             <div className="board-identity"><div className="board-heading"><strong title={board.company}>{board.company}</strong>
-              {board.instructions?.trim() && <span className="board-instructions-indicator"><SlidersHorizontal size={13} aria-hidden="true" />Custom instructions</span>}</div>
+              {board.instructions?.trim() && <span className="board-instructions-indicator">Custom instructions</span>}</div>
               <a href={board.url} target="_blank" rel="noopener noreferrer" title={board.url}>{board.url}</a></div>
             <div className="board-date"><span className="board-mobile-label">Last checked on</span>{board.lastCheckedAt
               ? <time dateTime={board.lastCheckedAt} title={new Date(board.lastCheckedAt).toLocaleString()}>{new Date(board.lastCheckedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</time>
               : <span>Never checked</span>}</div>
             <div className="board-result">
-              {board.lastCheckedAt ? <>
+              {board.lastCheckedAt ?
                 <div className="board-update-summary" role="status">
+                  <div className="board-update-heading">
                   {board.newCount > 0
                     ? <button type="button" className="boards-text-action board-discoveries" aria-expanded={inspecting?.id === board.id}
                         aria-controls={inspecting?.id === board.id ? "board-results-" + board.id : undefined}
                         onClick={event => inspecting?.id === board.id ? closeInspection() : inspect(board, event.currentTarget)}>{board.newCount} new {board.newCount === 1 ? "listing" : "listings"}</button>
-                    : !board.error && <span className="board-no-updates">No new listings</span>}
+                    : (!board.error || progress) && <span className="board-no-updates">No new listings</span>}
+                  {(board.newCount > 0 || review) && <BoardTooltipButton content="Mark as reviewed" label="Mark as reviewed" above
+                    className={"board-icon-action board-review-action" + (review === "done" ? " is-reviewed" : "")}
+                    disabled={working || state.dirty || Boolean(reviewing)} busy={review === "saving"} onClick={() => void markReviewed(board)}>
+                    {review === "saving" ? <LoaderCircle size={14} className="spin" aria-hidden="true" /> : <Check size={14} aria-hidden="true" />}
+                  </BoardTooltipButton>}
                   {board.error && !progress && <BoardCheckStatus error={board.error} />}
-                  <span className="board-match-total">{board.totalCount} {board.totalCount === 1 ? "listing" : "listings"} checked</span>
+                  </div>
+                  {checkProgress || <span className="board-match-total">{board.totalCount} {board.totalCount === 1 ? "listing" : "listings"} checked</span>}
                 </div>
-                {board.newCount > 0 && <button type="button" className="boards-text-action" disabled={working || state.dirty} onClick={() => void markReviewed(board)}>
-                  <Check size={14} aria-hidden="true" />Mark as reviewed</button>}
-              </> : !progress && <span role="status">{board.error ? <BoardCheckStatus error={board.error} /> : <span className="board-no-updates">Not indexed</span>}</span>}
-              {progress && <span className="board-progress" role="status" title={progress.message}>
-                <LoaderCircle size={13} className="spin" aria-hidden="true" />{board.lastCheckedAt ? progress.message : "Indexing"}</span>}
+                : checkProgress || <span role="status">{board.error ? <BoardCheckStatus error={board.error} /> : <span className="board-no-updates">Not indexed</span>}</span>}
             </div>
-            <div className="board-actions">{progress ? <button type="button" className="button button-secondary" disabled={progress.phase === "saving"}
+            <div className="board-actions">{progress ? <button id={"board-check-" + board.id} type="button" className="button button-secondary" disabled={progress.phase === "saving"}
               onClick={() => void act(() => window.desktop!.cancelBoardCheck(board.id))}>Cancel check</button>
               : <button id={"board-check-" + board.id} type="button" className="button button-secondary" disabled={working || state.dirty} onClick={() => void act(() => window.desktop!.checkBoards([board.id]))}>
                 <RefreshCw size={15} aria-hidden="true" />{board.error ? "Retry" : "Check for updates"}</button>}

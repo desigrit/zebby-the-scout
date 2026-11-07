@@ -86,6 +86,28 @@ async function feedFailureFixture() {
   } finally { fixture.reader.close(); }
 }
 
+async function jobTitleFixture() {
+  const workday = "https://salesforce.wd12.myworkdayjobs.com/en-US/Slack/job/Seattle/";
+  const fixture = await browser(() => html("Product careers", `<h2>Product</h2><section>
+    <article><h3>Senior Product Manager, Commerce</h3><p>Seattle, WA</p><div><a href="${workday}Senior-Product-Manager--Commerce_JR1">Apply</a></div></article>
+    <article><a href="${workday}Principal-Product-Manager_JR2">Apply now</a><a href="${workday}Principal-Product-Manager_JR2">Principal Product Manager</a></article>
+    <article><h3>Staff Product Manager</h3><a href="${workday}Staff-Product-Manager_JR3">Staff Product Manager</a><a href="${workday}Staff-Product-Manager_JR3">Apply</a></article>
+    <div><h3>Unrelated team heading</h3><a href="https://example.org/jobs/4">Apply</a><a href="https://example.org/jobs/5">Apply</a></div>
+    <article><h3>Role A</h3><h3>Role B</h3><a href="https://example.org/jobs/6">Apply</a></article>
+    <table><tbody><tr><td class="job-listing__table--title-col"><p>Senior Product Manager, Data Products</p></td><td>5 locations</td>
+      <td><p><a href="${workday}Senior-Product-Manager--Data-Products_JR7">Apply</a></p></td></tr></tbody></table>
+  </section>`));
+  try {
+    await fixture.reader.open("https://slack.com/careers/dept/product");
+    const page = await fixture.reader.read();
+    assert.equal(page.candidates.length, 7, "Duplicate Apply and title links represent one job");
+    assert.deepEqual(page.candidates.map(job => job.title), ["Senior Product Manager, Commerce", "Principal Product Manager", "Staff Product Manager", "Apply", "Apply", "Apply", "Senior Product Manager, Data Products"]);
+    assert.ok(page.candidates[0].text.includes("Seattle, WA"));
+    assert.equal(page.candidates[0].department, "Product");
+    reports.push({ name: "CTA titles use their own card or Slack table row, duplicate links preserve role names, ambiguous neighbors stay separate", checked: 7 });
+  } finally { fixture.reader.close(); }
+}
+
 async function filterAndControlFixture() {
   const fixture = await browser(() => html("Filtered jobs", '<p>1 open job</p><a href="https://example.org/vacancy/1">Product Manager</a><button id="next">Next page</button>'));
   try {
@@ -129,7 +151,7 @@ async function run() {
   const timeout = setTimeout(() => { console.error("Layered reader checks timed out"); app.exit(1); }, 240000); timeout.unref();
   await mkdir(path.join(output, "profile"), { recursive: true }); app.setPath("userData", path.join(output, "profile"));
   app.on("window-all-closed", () => {}); await app.whenReady();
-  await scrollingFixture(); await feedFailureFixture(); await visualFixture(); await filterAndControlFixture(); await graphicNavigationFixture();
+  await scrollingFixture(); await feedFailureFixture(); await jobTitleFixture(); await visualFixture(); await filterAndControlFixture(); await graphicNavigationFixture();
   await writeFile(path.join(output, "report.json"), JSON.stringify(reports, null, 2));
   console.log(JSON.stringify({ status: "passed", reports })); clearTimeout(timeout); app.exit(0);
 }

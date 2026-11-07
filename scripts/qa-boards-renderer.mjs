@@ -22,13 +22,19 @@ export async function checkBoardsRenderer(page, nav) {
       checkBoards: async ids => { window.boardsQA.checks.push(ids || state.boards.map(board => board.id));
         state.progress = (ids || state.boards.map(board => board.id)).map(boardId => ({ boardId, requestId: boardId, phase: "reading", message: "Reading page 2" })); publish(); return state; },
       cancelBoardCheck: async id => { state.progress = state.progress.filter(entry => entry.boardId !== id); publish(); return true; },
-      markBoardReviewed: async (id, through) => { window.boardsQA.reviews.push({ id, through }); state.boards.find(board => board.id === id).newCount = 0; publish(); return state; },
+      markBoardReviewed: async (id, through) => {
+        window.boardsQA.reviews.push({ id, through });
+        if (window.boardsQA.deferReview) await new Promise(resolve => { window.boardsQA.finishReview = resolve; });
+        if (window.boardsQA.reviewError) throw new Error("The review could not be saved. Try again.");
+        state.boards.find(board => board.id === id).newCount = 0; publish(); return state;
+      },
       boardListings: async (id, checkId, filter, offset = 0) => {
         window.boardsQA.listingCalls.push({ id, filter, offset });
         if (window.boardsQA.listingError) throw new Error("The saved listings could not be opened. Try again.");
         const board = state.boards.find(item => item.id === id), count = filter === "new" ? board.newCount : filter === "matches" ? 7 : 59;
         return { checkId, total: count, offset, listings: Array.from({ length: Math.min(50, Math.max(0, count - offset)) }, (_, i) => ({
-          key: String(offset + i), url: "https://example.org/jobs/" + (offset + i), title: i < 3 ? "Senior Product Manager, Commerce" : "Sr. Product Manager, Premium Content Experience",
+          key: String(offset + i), url: i === 0 ? "https://salesforce.wd12.myworkdayjobs.com/en-US/Slack/job/Seattle/Senior-Product-Manager--Slack_JR123" : "https://example.org/jobs/" + (offset + i),
+          title: i === 0 ? "Apply" : i < 3 ? "Senior Product Manager, Commerce" : "Sr. Product Manager, Premium Content Experience",
           department: "Community Growth", location: ["San Francisco, CA", "Seattle, WA", "Irvine, CA", "Los Angeles, CA", "New York City"][i % 5],
           matches: filter === "new" || i < 7, current: true, unread: filter === "new" })) };
       },
@@ -121,10 +127,13 @@ export async function checkBoardsRenderer(page, nav) {
   await page.keyboard.press("Escape"); await page.setViewportSize({ width: 1550, height: 850 });
   await first.getByRole("button", { name: "4 new listings", exact: true }).click();
   const listingSection = first.getByRole("region", { name: "Slack new listings" });
-  await listingSection.getByText("1-4 of 4", { exact: true }).waitFor();
+  await listingSection.getByRole("link", { name: "Senior Product Manager Slack", exact: true }).waitFor();
   assert.equal(await listingSection.locator(".board-listing-items li").count(), 4);
+  assert.equal(await listingSection.getByText("Apply", { exact: true }).count(), 0, "Previously saved CTA labels recover their Workday role name");
+  assert.equal(await listingSection.getByRole("heading").count(), 0, "Expanded listings start directly with role rows");
+  assert.equal(await listingSection.locator(".board-listings-pagination").count(), 0, "Single-page results need no range footer");
   assert.equal(await listingSection.getByRole("button", { name: /^(All checked|Matches|New)$/ }).count(), 0);
-  assert.equal(await listingSection.getByRole("heading").evaluate(node => node === document.activeElement), true);
+  assert.equal(await listingSection.evaluate(node => node === document.activeElement), true);
   await capture("boards-listings-light");
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; }); await capture("boards-listings-dark");
   await page.setViewportSize({ width: 790, height: 620 }); await capture("boards-listings-compact-dark");
@@ -140,7 +149,7 @@ export async function checkBoardsRenderer(page, nav) {
   await listingSection.getByRole("alert").waitFor(); await capture("boards-listings-error");
   await page.evaluate(() => { window.boardsQA.listingError = false; });
   await listingSection.getByRole("button", { name: "Retry", exact: true }).click();
-  await listingSection.getByText("1-4 of 4", { exact: true }).waitFor();
+  await listingSection.getByRole("link", { name: "Senior Product Manager Slack", exact: true }).waitFor();
   await listingSection.getByRole("button", { name: "Close listings", exact: true }).click();
   assert.equal(await first.getByRole("button", { name: "4 new listings", exact: true }).evaluate(node => node === document.activeElement), true);
   assert.ok((await page.evaluate(() => window.boardsQA.listingCalls)).every(call => call.filter === "new"), "Only new matching listings are requested");
@@ -161,12 +170,47 @@ export async function checkBoardsRenderer(page, nav) {
   await page.evaluate(() => { window.modelQA.setDatabase({ platform: "win32" }); document.documentElement.dataset.theme = "light"; });
   await nav.getByRole("button", { name: "Boards", exact: true }).click();
   await first.getByRole("button", { name: "4 new listings", exact: true }).click(); await listingSection.waitFor();
-  await first.getByRole("button", { name: "Mark as reviewed" }).click();
-  assert.deepEqual(await page.evaluate(() => window.boardsQA.reviews), [{ id: "0", through: 10 }]); await first.getByText("No new listings").waitFor();
+  const review = first.getByRole("button", { name: "Mark as reviewed", exact: true });
+  await review.hover(); await tip.waitFor();
+  assert.equal(await tip.textContent(), "Mark as reviewed");
+  const reviewBox = await review.boundingBox(), reviewTip = await tip.boundingBox();
+  assert.ok(reviewTip.y + reviewTip.height < reviewBox.y, "The review tooltip appears above its icon");
+  const discoveryBox = await first.locator(".board-discoveries").boundingBox();
+  assert.ok(Math.abs(reviewBox.y - discoveryBox.y) < 6 && reviewBox.x > discoveryBox.x, "The review icon sits beside the discovery link");
+  await capture("boards-polish-review-tooltip");
+  await page.keyboard.press("Escape"); await tip.waitFor({ state: "hidden" });
+  await page.evaluate(() => { window.boardsQA.deferReview = true; window.boardsQA.reviewError = true; });
+  await review.click(); await first.locator('.board-review-action[aria-busy="true"] .spin').waitFor();
+  assert.equal(await review.isEnabled(), false, "Repeated clicks cannot submit duplicate reviews");
+  assert.equal(await first.getByRole("button", { name: "4 new listings", exact: true }).isVisible(), true, "Counts stay visible until the save succeeds");
+  await capture("boards-polish-review-saving");
+  await page.evaluate(() => window.boardsQA.finishReview());
+  await page.getByRole("alert").filter({ hasText: "The review could not be saved" }).waitFor();
+  await page.waitForFunction(() => !document.querySelector('.board-review-action')?.disabled);
+  assert.equal(await first.getByRole("button", { name: "4 new listings", exact: true }).isVisible(), true);
+  assert.equal(await listingSection.isVisible(), true, "A failed review preserves the expanded listings");
+  await page.evaluate(() => { window.boardsQA.reviewError = false; });
+  await review.click(); await first.locator('.board-review-action[aria-busy="true"] .spin').waitFor();
+  await page.evaluate(() => {
+    window.boardsQA.sawReviewExit = false;
+    document.addEventListener("animationstart", event => { if (event.animationName === "board-review-done") window.boardsQA.sawReviewExit = true; });
+    window.boardsQA.finishReview();
+  });
+  await page.waitForFunction(() => window.boardsQA.sawReviewExit);
+  await review.waitFor({ state: "hidden" });
+  assert.deepEqual(await page.evaluate(() => window.boardsQA.reviews), [{ id: "0", through: 10 }, { id: "0", through: 10 }]); await first.getByText("No new listings").waitFor();
   await listingSection.waitFor({ state: "hidden" });
   await page.waitForFunction(() => document.activeElement?.id === "board-check-0");
+  await capture("boards-polish-reviewed");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.evaluate(() => { window.boardsQA.deferReview = false; window.boardsQA.sawReviewExit = false;
+    window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => index === 0 ? { ...board, newCount: 1 } : board) }); });
+  await review.click(); await review.waitFor({ state: "hidden" });
+  assert.equal(await page.evaluate(() => window.boardsQA.sawReviewExit), false, "Reduced motion skips the exit animation");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await first.getByRole("button", { name: "Check for updates" }).click(); await first.getByText("Reading page 2").waitFor();
-  await first.getByText("20 listings checked", { exact: true }).waitFor();
+  assert.equal(await first.locator(".board-match-total").count(), 0, "Current progress replaces the old count during a recheck");
+  assert.equal(await first.locator(".board-update-summary > :nth-child(2)").textContent(), "Reading page 2");
   assert.equal(await first.getByRole("button", { name: "Edit Slack board" }).isEnabled(), false); await capture("boards-checking");
   await first.getByRole("button", { name: "Cancel check" }).click(); await first.getByRole("button", { name: "Check for updates" }).waitFor();
   await first.getByText("20 listings checked", { exact: true }).waitFor();
@@ -202,13 +246,28 @@ export async function checkBoardsRenderer(page, nav) {
     newCount: 0, error: "", instructions: index === 0
       ? "Only track Product Manager or Senior Product Manager roles. Ignore Principal, Staff, Director, Sr Manager and Group roles. ".repeat(10).trim()
       : index === 2 ? "Look under the Product heading for product manager roles." : "" })) }));
-  for (const width of [1550, 1050, 790]) {
+  assert.equal(await page.locator(".board-instructions-indicator svg").count(), 0, "Instructions use a text label without an icon");
+  for (const width of [1550, 1325, 1050, 790]) {
     await page.setViewportSize({ width, height: width === 790 ? 620 : 850 });
     for (const theme of ["light", "dark"]) {
       await page.evaluate(theme => { document.documentElement.dataset.theme = theme; document.querySelector(".desktop-workspace").scrollTop = 0; }, theme);
       await capture("boards-instructions-" + width + "-" + theme);
+      const heights = await page.locator(".board-row").evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height));
+      assert.ok(Math.max(...heights) - Math.min(...heights) < 1, "Instruction length does not change row height");
+      const badge = await first.locator(".board-instructions-indicator").evaluate(node => ({ background: getComputedStyle(node).backgroundColor, radius: getComputedStyle(node).borderRadius }));
+      assert.notEqual(badge.background, "rgba(0, 0, 0, 0)"); assert.equal(badge.radius, "4px");
     }
   }
+  await page.evaluate(() => window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => ({ ...board, newCount: index === 0 ? 2 : 0 })),
+    progress: [{ boardId: "1", requestId: "1", phase: "reading", message: "Finding the job results" }, { boardId: "2", requestId: "2", phase: "queued", message: "Waiting to check" }] }));
+  for (const width of [1550, 1325, 1050, 790]) {
+    await page.setViewportSize({ width, height: width === 790 ? 620 : 850 });
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate(theme => { document.documentElement.dataset.theme = theme; document.querySelector(".desktop-workspace").scrollTop = 0; }, theme);
+      await capture("boards-polish-mixed-" + width + "-" + theme);
+    }
+  }
+  await page.evaluate(() => window.boardsQA.set({ progress: [] }));
   await page.setViewportSize({ width: 1550, height: 850 });
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
   await first.getByRole("button", { name: "Edit Slack board" }).click();
