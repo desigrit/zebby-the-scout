@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { boardImageSchema } from "./board-image.ts";
+import { isBoardActionLabel } from "./board-listing-title.ts";
 
 export const BOARD_EXPLORER_VERSION = 1;
 export const boardReaderSettingsSchema = z.object({ automaticThorough: z.boolean(),
@@ -88,6 +89,7 @@ export function validateExploration(value: unknown, input: BoardExploreInput) {
   if (new Set(result.listings.map(job => job.id)).size !== result.listings.length || result.listings.some(job => !input.candidates.some(item => item.id === job.id))) {
     throw new Error("The page read included an unobserved job link.");
   }
+  if (result.listings.some(job => isBoardActionLabel(job.title))) throw new Error("A job title is still an action label. Inspect that vacancy before adding it.");
   const control = input.controls.find(item => item.id === action.targetId);
   if (["wait", "finish"].includes(action.kind) && (action.targetId || action.value) ||
       action.kind === "scroll" && (action.targetId && (!control || control.kind !== "scroll") || !["top", "down"].includes(action.value)) ||

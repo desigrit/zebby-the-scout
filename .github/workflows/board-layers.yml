@@ -62,6 +62,13 @@ jobs:
         run: |
           Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
           & .\node_modules\.bin\electron.cmd qa-output/board-layers/runner.mjs
+      - name: Verify thorough navigation and interrupted recovery
+        if: github.event_name != 'workflow_dispatch' || inputs.browser_checks
+        run: |
+          node --input-type=module -e "import { build } from 'esbuild'; await build({ entryPoints:['scripts/qa-board-thorough.mjs'], outfile:'qa-output/board-layers/thorough.mjs', bundle:true, platform:'node', format:'esm', target:'node22', external:['electron'] });"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          & .\node_modules\.bin\electron.cmd qa-output/board-layers/thorough.mjs
       - name: Capture the live Figma role sample
         if: github.event_name != 'workflow_dispatch' || inputs.browser_checks
         run: node scripts/qa-board-reader.mjs "https://www.figma.com/careers/#job-openings"

@@ -115,10 +115,11 @@ export class BoardsService<Selection extends BoardSelection> {
           let scan;
           if (options.thorough || options.resume) scan = await thorough();
           else {
-            try { scan = await scanBoard({ ...scanOptions, reader: this.dependencies.reader(signal) }); }
+            const initialReader = this.dependencies.reader(signal);
+            try { scan = await scanBoard({ ...scanOptions, reader: initialReader }); }
             catch (error) {
               signal.throwIfAborted();
-              if (!settings.automaticThorough || balanceError || boardCreditError(error) ||
+              if (!initialReader.thorough || !settings.automaticThorough || balanceError || boardCreditError(error) ||
                   /API key|authentication|sign.?in|unsupported model|model.*not.*available|credit|allowance|quota|billing/i.test(String(error))) throw error;
               report("Starting a thorough check", "reading"); scan = await thorough();
             }
