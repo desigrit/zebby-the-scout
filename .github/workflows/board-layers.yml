@@ -51,7 +51,7 @@ jobs:
         run: |
           npm test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (Test-Path tests/chatgpt-plan.test.mjs) { npm run test:private }
+          if ($env:GITHUB_REPOSITORY -eq 'desigrit/zebby-private') { npm run test:private }
       - run: npm run desktop:build
       - run: npm run credits:build
       - name: Bundle native reader fixtures

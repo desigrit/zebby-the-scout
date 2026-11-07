@@ -124,6 +124,8 @@ export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> 
     checkpoint.pass = pass; checkpoint.steps = []; checkpoint.status = "reading";
     const jobs = new Map<string, BoardCandidate>(), proofs = new Set<string>(), ignored = new Set<string>();
     const inspected = new Map<string, BoardCandidate>(), classified = new Set<string>(), visitedNext = new Set<string>();
+    const inspectedControls = new Map<string, BoardCandidate>();
+    const controlKey = (pageUrl: string, control: BoardObservation["page"]["controls"][number]) => hash([pageUrl, control.id, control.name, control.role, control.context]);
     let expected: number | null = null, empty = false, bottom = "", stableBottom = 0, sweptAgain = false, lastUrl = "";
     feedback = ""; history.length = 0; transientErrors = 0;
     await reader.open(options.url); await replay(recipe);
@@ -145,6 +147,10 @@ export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> 
       }
       const visible = new Set(page.viewportIds);
       const candidates = page.candidates.filter(candidate => visible.has(candidate.id)).map(candidate => inspected.get(boardJobIdentity(candidate.url).key) || candidate);
+      for (const control of page.controls.filter(item => item.visible)) {
+        const detail = inspectedControls.get(controlKey(page.url, control));
+        if (detail && !candidates.some(candidate => candidate.url === detail.url)) candidates.push({ ...detail, id: control.id });
+      }
       if (candidates.length > 60) throw new Error("Too many links are visible for a complete read. Use a more specific results link.");
       const controls = page.controls.filter(control => control.visible || ["input", "select"].includes(control.kind));
       if (controls.length > 80) throw new Error("Too many result controls are visible. Use a more specific results link.");
@@ -228,7 +234,11 @@ export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> 
       if (["fill", "select", "choose"].includes(action.kind)) { proofs.clear(); jobs.clear(); classified.clear(); ignored.clear(); expected = null; empty = false; stableBottom = 0; sweptAgain = false; }
       try {
         const detail = await take(action, observation);
-        if (detail) inspected.set(boardJobIdentity(detail.url).key, detail);
+        if (detail) {
+          inspected.set(boardJobIdentity(detail.url).key, detail);
+          const control = page.controls.find(item => item.id === action.targetId);
+          if (control && !page.candidates.some(candidate => candidate.id === action.targetId)) inspectedControls.set(controlKey(page.url, control), detail);
+        }
       } catch (error) { signal.throwIfAborted(); feedback = String(error).slice(0, 1500); }
       await persist(result.reason || "Continuing the thorough check");
     }

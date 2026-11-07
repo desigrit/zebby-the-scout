@@ -22,8 +22,14 @@ render();</script>`;
 
 async function runFixture(name, { iframe = false, oracleFailure = false } = {}) {
   const abort = new AbortController(), owner = new BoardBrowser(abort.signal), observed = [], actions = [], checkpoints = [];
+  const deadline = setTimeout(() => abort.abort(new Error("Native fixture deadline")), 150000);
+  let stage = "initializing";
+  const mark = async value => { stage = value; await writeFile(path.join(output, name + "-progress.json"), JSON.stringify({ stage, actions, observed: observed.slice(-8) })); };
+  const originalOpen = owner.thorough.open.bind(owner.thorough), originalObserve = owner.thorough.observe.bind(owner.thorough);
+  owner.thorough.open = async value => { await mark("opening"); return originalOpen(value); };
+  owner.thorough.observe = async () => { await mark("observing"); const value = await originalObserve(); await mark("observed"); return value; };
   const originalAct = owner.thorough.act.bind(owner.thorough);
-  owner.thorough.act = async (action, observation) => { actions.push(action.kind); return originalAct(action, observation); };
+  owner.thorough.act = async (action, observation) => { actions.push(action.kind); await mark("action: " + action.kind); return originalAct(action, observation); };
   await owner.window.webContents.session.protocol.handle("https", request => {
     const target = new URL(request.url);
     if (target.pathname.startsWith("/job/")) return html('<main><h1>Senior Product Manager ' + target.pathname.split('/').at(-1) + '</h1><p>Product, Seattle</p></main>');
@@ -76,7 +82,7 @@ async function runFixture(name, { iframe = false, oracleFailure = false } = {}) 
     if (!oracleFailure) { reports.push({ name, status: "failed", error: String(error), actions, observations: observed, checkpoint: run }); throw error; }
     assert.ok(run.jobs.length > 0); assert.equal(run.status, "incomplete");
     reports.push({ name, found: run.jobs.length, observations: observed.length, status: "interrupted with checkpoint" });
-  } finally { owner.close(); }
+  } finally { clearTimeout(deadline); owner.close(); }
 }
 
 await mkdir(path.join(output, "thorough-profile"), { recursive: true }); app.setPath("userData", path.join(output, "thorough-profile"));

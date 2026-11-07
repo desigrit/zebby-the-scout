@@ -41,13 +41,32 @@ export class BoardExplorerBrowser implements ThoroughBoardReader {
   private observedFeeds = new Map<string, ObservedBoardFeed>();
   private responses = new Map<string, string>();
   private attached = false;
+  private inspectingControl = false;
+  private inspectionTarget = "";
   private networkWork = new Set<Promise<void>>();
   constructor(private window: BrowserWindow, private signal: AbortSignal) {}
+  private bounded<T>(operation: Promise<T>, milliseconds: number, stage: string): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const stop = () => { finish(); reject(this.signal.reason || new Error("The check was stopped.")); };
+      const timer = setTimeout(() => { this.close(); reject(new Error(`${stage} took too long. Resume to reopen the page and continue.`)); }, milliseconds);
+      const finish = () => { clearTimeout(timer); this.signal.removeEventListener("abort", stop); };
+      this.signal.addEventListener("abort", stop, { once: true });
+      if (this.signal.aborted) stop();
+      operation.then(value => { finish(); resolve(value); }, error => { finish(); reject(error); });
+    });
+  }
   permitsNavigation(target: string) {
     if (!this.active) return false;
+    if (this.inspectingControl) { this.rememberInspectionTarget(target); return false; }
     const permitted = target === this.allowedTarget || sameTarget(target, this.source) || this.allowedTarget && sameTarget(target, this.allowedTarget);
     if (!permitted) this.networkError = "The results tried to leave the observed careers page. Open the saved link to verify its destination.";
     return Boolean(permitted);
+  }
+  private rememberInspectionTarget(target: string) {
+    try {
+      const url = boardUrl(target);
+      if (!/\/(apply|application|login|signin|auth|checkout|register)(?:\/|$)/i.test(url.pathname)) this.inspectionTarget = url.href;
+    } catch { /* Only a public URL emitted by the observed control can be inspected. */ }
   }
   private networkMessage = (_event: Electron.Event, method: string, params: Record<string, unknown>) => {
     const id = String(params.requestId || "");
@@ -86,7 +105,7 @@ export class BoardExplorerBrowser implements ThoroughBoardReader {
     if (!this.attached) {
       this.window.webContents.debugger.attach("1.3"); this.attached = true;
       this.window.webContents.debugger.on("message", this.networkMessage);
-      await this.window.webContents.debugger.sendCommand("Network.enable", { maxTotalBufferSize: 16_000_000, maxResourceBufferSize: 4_000_000 });
+      await this.bounded(this.window.webContents.debugger.sendCommand("Network.enable", { maxTotalBufferSize: 16_000_000, maxResourceBufferSize: 4_000_000 }), 10000, "Preparing public response capture");
     }
     await Promise.race([this.window.loadURL(this.source), delay(30000, undefined, { signal: this.signal }).then(() => { throw new Error("The careers page took too long to open. Resume the check to try again."); })]);
   }
@@ -95,14 +114,14 @@ export class BoardExplorerBrowser implements ThoroughBoardReader {
     if (this.networkError) throw new Error(this.networkError);
     const frame = this.frame || this.window.webContents.mainFrame;
     if (frame.isDestroyed()) throw new Error("The embedded results were replaced. Resume to read the updated page.");
-    const page = await frame.executeJavaScript(`(${observeExplorePage.toString()})()`) as ExplorePage;
+    const page = await this.bounded(frame.executeJavaScript(`(${observeExplorePage.toString()})()`), 15000, "Reading the page") as ExplorePage;
     boardUrl(page.url);
     if (page.candidates.length >= 2000 || page.controls.length >= 1000) throw new Error("This page has too many elements to verify in one check. Use a more specific results link.");
     if (page.blocked) throw new Error("This careers page is blocking automated reading. Your last successful check is unchanged. Try its direct job-board link instead.");
     return page;
   }
   private async execute(action: ExplorationAction | { kind: "label" | "unlabel"; targetId: string; value: string }) {
-    return (this.frame || this.window.webContents.mainFrame).executeJavaScript(`(${actExplorePage.toString()})(${JSON.stringify(action)})`) as Promise<boolean>;
+    return this.bounded((this.frame || this.window.webContents.mainFrame).executeJavaScript(`(${actExplorePage.toString()})(${JSON.stringify(action)})`), 15000, "Updating the results view") as Promise<boolean>;
   }
   async observe(): Promise<BoardObservation> {
     let page = await this.raw(), previous = pageFingerprint(page), stable = 0;
@@ -114,10 +133,10 @@ export class BoardExplorerBrowser implements ThoroughBoardReader {
     }
     await Promise.allSettled([...this.networkWork]);
     await this.execute({ kind: "label", targetId: "", value: "" });
-    await (this.frame || this.window.webContents.mainFrame).executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+    await this.bounded((this.frame || this.window.webContents.mainFrame).executeJavaScript("new Promise(resolve => { setTimeout(resolve, 250); requestAnimationFrame(() => requestAnimationFrame(resolve)); })"), 5000, "Preparing the page image");
     let data: string;
-    try { data = (await this.window.webContents.capturePage()).resize({ width: 1280, height: 900 }).toJPEG(80).toString("base64"); }
-    finally { await this.execute({ kind: "unlabel", targetId: "", value: "" }); }
+    try { data = (await this.bounded(this.window.webContents.capturePage(), 15000, "Capturing the page image")).resize({ width: 1280, height: 900 }).toJPEG(80).toString("base64"); }
+    finally { if (!this.window.isDestroyed()) await this.execute({ kind: "unlabel", targetId: "", value: "" }); }
     if (data.length > 1_400_000) throw new Error("This page image is too large to read. Resume from a more specific results link.");
     const after = await this.raw();
     if (pageFingerprint(after) !== pageFingerprint(page)) throw new Error("The job results changed while the page was being captured. Resume to read the updated results.");
@@ -129,8 +148,9 @@ export class BoardExplorerBrowser implements ThoroughBoardReader {
     const control = observation.page.controls.find(item => item.id === action.targetId);
     if (action.kind === "inspect") {
       const candidate = observation.page.candidates.find(item => item.id === action.targetId);
-      if (!candidate) throw new Error("The job link is no longer on this page.");
-      return this.inspect(candidate);
+      if (candidate) return this.inspect(candidate);
+      if (control && ["button", "link", "section"].includes(control.kind)) return this.inspectControl(control, observation);
+      throw new Error("The job link is no longer on this page.");
     }
     if (action.kind === "document") {
       if (!control || control.kind !== "document") throw new Error("The results document is no longer present.");
@@ -148,6 +168,24 @@ export class BoardExplorerBrowser implements ThoroughBoardReader {
     if (control?.href) this.allowedTarget = boardUrl(control.href).href;
     if (!await this.execute(action)) throw new Error("That reading action is no longer available. Inspect the current page again.");
     await delay(action.kind === "wait" ? 1200 : 400, undefined, { signal: this.signal });
+  }
+  private async inspectControl(control: ExplorationControl, observation: BoardObservation) {
+    this.inspectionTarget = ""; this.inspectingControl = true;
+    const frame = this.frame || this.window.webContents.mainFrame, before = frame.url;
+    this.window.webContents.setWindowOpenHandler(({ url }) => { this.rememberInspectionTarget(url); return { action: "deny" }; });
+    try {
+      if (!await this.execute({ kind: "expand", targetId: control.id, value: "" })) throw new Error("This control cannot be used to read a job.");
+      for (let attempt = 0; attempt < 10 && !this.inspectionTarget && !frame.isDestroyed() && frame.url === before; attempt++) await delay(200, undefined, { signal: this.signal });
+      if (!this.inspectionTarget && !frame.isDestroyed() && frame.url !== before) this.rememberInspectionTarget(frame.url);
+      if (!this.inspectionTarget || this.inspectionTarget === observation.page.url) throw new Error("This control did not expose a unique public job link. Inspect another result or its embedded document.");
+      return await this.inspect({ id: control.id, url: this.inspectionTarget, title: "", text: control.context.slice(0, 600) });
+    } finally {
+      this.inspectingControl = false;
+      if (!this.window.isDestroyed()) {
+        this.window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+        if (!this.signal.aborted && (frame.isDestroyed() || frame.url !== before)) await this.open(this.source);
+      }
+    }
   }
   private async inspect(candidate: BoardCandidate): Promise<BoardCandidate> {
     const url = boardUrl(candidate.url);
@@ -177,5 +215,6 @@ export class BoardExplorerBrowser implements ThoroughBoardReader {
       if (this.window.webContents.debugger.isAttached()) this.window.webContents.debugger.detach();
     }
     this.attached = false; this.active = false;
+    if (!this.window.isDestroyed()) this.window.destroy();
   }
 }

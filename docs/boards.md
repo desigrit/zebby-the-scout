@@ -17,7 +17,18 @@ Zebby collects every results page before comparing job IDs. On Netflix, each bat
 1. Use a published job feed when it preserves the saved search. Netflix's filtered batches and supported Greenhouse, Lever and Ashby searches provide explicit posting identities. Unknown query parameters and filters prevent a broader feed from replacing your saved search.
 2. Read the rendered page when a feed is unavailable or unsuitable. This includes embedded results, open shadow components, headings, scrolling lists and pagination. A model can identify the results document and classify unfamiliar links.
 3. Use visual reading when the text leaves jobs or navigation uncertain. Zebby scrolls its isolated browser and sends labelled page screenshots to the selected model. The model can return only links and controls the browser observed. It cannot invent a job URL or click arbitrary page elements.
-4. Verify coverage before applying tracking instructions or saving history. Repeated pages, changed filters, contradictory counts and incomplete visual reads leave the last successful check intact.
+4. Automatically try a thorough check if the normal layers cannot verify the inventory. The selected vision model can restore filters, open collapsed result groups, inspect vacancy controls and details, follow pagination, and scroll nested lists. It can examine samples of public job responses already loaded by the page. Each visible link must be classified or inspected.
+5. Verify the complete inventory in a fresh pass before applying tracking instructions or saving a thorough result. The two passes must agree on posting identities. Selected controls must prove the saved filters, and reliable filtered totals must match. A changing or incomplete inventory keeps the last successful check intact.
+
+## Thorough checks and recovery
+
+**Automatically try a thorough check** is on by default in Settings, below the Boards file. It uses the provider and model already selected for analysis. Under **Reading limits**, set the time and model requests allowed for each attempt. The defaults are 15 minutes and 60 requests. Cached results do not consume the request allowance. Online analysis uses the selected account's allowance or available credits.
+
+Choose **Stop check** to pause. **Resume check** reopens the saved search and verifies its current state, reusing completed inventory passes and validated analysis when they still apply. An unfinished inventory pass is read again. **Found so far** opens partial results; these are not new-listing notifications, and tracking instructions are applied only after the inventory is complete. The previous successful date, discoveries and review history stay intact until a new check is verified and saved.
+
+To force this path, edit a board and choose **Thorough recheck**. Save any link or instruction changes first. This starts a fresh verification without replaying the previous navigation shortcut.
+
+Successful navigation steps are saved as a shortcut for later thorough checks. They are matched against current controls and never substitute for fresh filter and completeness checks. Local recovery logs remain in the app's `board-runs` folder; switching databases never displays another workspace's partial results.
 
 Visual reading is available with the supported online models or an Ollama model that reports vision support. Downloaded text models continue to handle text-based checks. If a page requires vision, choose a compatible model in Settings and retry. Zebby keeps your selected provider until you change it. Very large or ambiguous boards may need a more specific results link.
 

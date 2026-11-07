@@ -104,7 +104,7 @@ export function validateExploration(value: unknown, input: BoardExploreInput) {
   const control = input.controls.find(item => item.id === action.targetId);
   if (["wait", "finish"].includes(action.kind) && (action.targetId || action.value) ||
       action.kind === "scroll" && (action.targetId && (!control || control.kind !== "scroll") || !["top", "down"].includes(action.value)) ||
-      action.kind === "inspect" && !input.candidates.some(item => item.id === action.targetId) ||
+      action.kind === "inspect" && !input.candidates.some(item => item.id === action.targetId) && (!control || !["button", "link", "section"].includes(control.kind)) ||
       !["wait", "finish", "scroll", "inspect"].includes(action.kind) && (!control || control.disabled) ||
       control && /\b(apply|submit|purchase|checkout|upload|sign in|log in|register|delete)\b/i.test(control.name) && action.kind !== "scroll") {
     throw new Error("The reader selected an unavailable or unsupported page action.");
