@@ -94,7 +94,7 @@ async function jobTitleFixture() {
     <article><h3>Staff Product Manager</h3><a href="${workday}Staff-Product-Manager_JR3">Staff Product Manager</a><a href="${workday}Staff-Product-Manager_JR3">Apply</a></article>
     <div><h3>Unrelated team heading</h3><a href="https://example.org/jobs/4">Apply</a><a href="https://example.org/jobs/5">Apply</a></div>
     <article><h3>Role A</h3><h3>Role B</h3><a href="https://example.org/jobs/6">Apply</a></article>
-    <table><tbody><tr><td><p class="job-listing__table-title">Senior Product Manager, Data Products</p></td><td>5 locations</td>
+    <table><tbody><tr><td class="job-listing__table--title-col"><p>Senior Product Manager, Data Products</p></td><td>5 locations</td>
       <td><p><a href="${workday}Senior-Product-Manager--Data-Products_JR7">Apply</a></p></td></tr></tbody></table>
   </section>`));
   try {

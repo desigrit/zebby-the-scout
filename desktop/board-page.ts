@@ -71,7 +71,7 @@ export function captureBoardPage(sectionId?: string): BoardPage {
       // job. Stay inside a single-destination card and stop at list boundaries.
       for (let card = element.parentElement, depth = 0; card && depth < 5 && card !== root && !card.matches("main,body"); card = card.parentElement, depth++) {
         if ([...card.querySelectorAll(linkSelector)].some(link => visible(link) && href(link) !== url)) break;
-        const headings = [...card.querySelectorAll<HTMLElement>('h2,h3,h4,h5,h6,[role="heading"],[itemprop="title"],[data-testid="job-title"],.job-listing__table-title')]
+        const headings = [...card.querySelectorAll<HTMLElement>('h2,h3,h4,h5,h6,[role="heading"],[itemprop="title"],[data-testid="job-title"],.job-listing__table-title,.job-listing__table--title-col')]
           .filter(visible).map(heading => clean(heading.innerText, 300)).filter(value => value && !actionLabel(value));
         const unique = [...new Set(headings)];
         if (unique.length > 1) break;
