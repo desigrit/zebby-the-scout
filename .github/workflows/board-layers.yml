@@ -54,7 +54,7 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || inputs.browser_checks
         run: node scripts/qa-board-reader.mjs "https://www.figma.com/careers/#job-openings"
       - name: Check the exact filtered Zoox board
-        if: github.event_name == 'workflow_dispatch' && inputs.browser_checks && inputs.zoox
+        if: github.event_name == 'workflow_dispatch' && inputs.zoox
         run: |
           node --input-type=module -e "import { build } from 'esbuild'; await build({ entryPoints:['scripts/qa-zoox-board.mjs'], outfile:'qa-output/board-layers/zoox.mjs', bundle:true, platform:'node', format:'esm', target:'node22', external:['electron'] });"
           Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue

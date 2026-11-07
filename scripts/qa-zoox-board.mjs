@@ -21,13 +21,18 @@ async function run() {
     report.page = { url: page.url, expectedTotal: page.expectedTotal, visualNeeded: page.visualNeeded,
       visualCandidateUrls: page.visualCandidateUrls, controls: page.controls,
       listings: page.candidates.filter(item => listing(item.url)) };
+    await reader.window.webContents.executeJavaScript(`(() => {
+      const link = [...document.querySelectorAll('a[href]')].find(item => item.href === ${JSON.stringify(report.page.listings[0]?.url || "")});
+      link?.scrollIntoView({ block: 'center', behavior: 'instant' });
+    })()`);
+    await reader.window.webContents.executeJavaScript("new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
+    await writeFile(path.join(output, "zoox-results.jpg"), (await reader.window.webContents.capturePage()).toJPEG(80));
     assert.equal(page.url, url, "The saved filters and fragment must survive");
     assert.match(page.summary, /Product, Features & Homologation/);
     assert.match(page.summary, /Full-time/i);
     assert.ok(page.expectedTotal > 0, "This reproduction needs a nonempty filtered board");
     assert.equal(report.page.listings.length, page.expectedTotal, "Every filtered job must have an observed link");
     assert.ok(report.page.listings.every(item => /Product, Features & Homologation/.test(item.text) && /FULL-TIME/.test(item.text)));
-    await writeFile(path.join(output, "zoox-results.jpg"), (await reader.window.webContents.capturePage()).toJPEG(80));
     return page;
   };
   try {
