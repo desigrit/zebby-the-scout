@@ -1657,10 +1657,21 @@ try {
   await analysisDialog.getByText("Recovery code saved.", { exact: true }).waitFor();
   await analysisDialog.getByRole("button", { name: "Change in Settings", exact: true }).click();
   await analysisDialog.waitFor({ state: "hidden" });
-  await page.waitForFunction(() => {
-    const heading = document.getElementById("ai-settings");
-    return heading && heading.getBoundingClientRect().top >= 44 && heading.getBoundingClientRect().top < 120;
-  });
+  try {
+    await page.waitForFunction(() => {
+      const heading = document.getElementById("ai-settings");
+      return heading && heading.getBoundingClientRect().top >= 44 && heading.getBoundingClientRect().top < 120;
+    });
+  } catch (error) {
+    console.error("Analysis settings anchor", await page.evaluate(() => ({
+      heading: document.getElementById("ai-settings")?.getBoundingClientRect().toJSON(),
+      workspace: document.querySelector(".desktop-workspace")?.getBoundingClientRect().toJSON(),
+      scrollTop: document.querySelector(".desktop-workspace")?.scrollTop,
+      dialog: Boolean(document.querySelector("dialog[open]")),
+    })));
+    await page.screenshot({ path: path.join(output, "credits-analysis-anchor-failure.png") });
+    throw error;
+  }
   await nav.getByRole("button", { name: "Plan", exact: true }).click();
   await analyze.click();
   await page.waitForFunction(() => window.creditQA.quoteRequests.length > 0);
