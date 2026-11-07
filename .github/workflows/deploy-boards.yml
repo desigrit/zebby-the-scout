@@ -3,7 +3,7 @@ name: Verify the Boards service and release desktop
 on:
   push:
     branches: [main]
-    paths: ['credits-service/**', 'shared/boards.ts', 'shared/analysis-images.ts', '.github/workflows/deploy-boards.yml']
+    paths: ['credits-service/**', 'shared/boards.ts', 'shared/board-exploration.ts', 'shared/board-image.ts', 'shared/analysis-images.ts', '.github/workflows/deploy-boards.yml']
   workflow_dispatch:
 
 concurrency:
@@ -34,12 +34,19 @@ jobs:
           Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
           & .\node_modules\.bin\electron.cmd qa-output/board-layers/runner.mjs
       - run: node scripts/qa-board-reader.mjs "https://www.figma.com/careers/#job-openings"
+      - name: Capture thorough reading evidence
+        run: |
+          node --input-type=module -e "import { build } from 'esbuild'; await build({ entryPoints:['scripts/qa-board-thorough.mjs'], outfile:'qa-output/board-layers/thorough.mjs', bundle:true, platform:'node', format:'esm', target:'node22', external:['electron'] });"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          & .\node_modules\.bin\electron.cmd qa-output/board-layers/thorough.mjs
       - uses: actions/upload-artifact@v4
         with:
           name: boards-provider-samples
           path: |
             qa-output/boards-reader/figma-sample.json
             qa-output/board-layers/visual-sample.json
+            qa-output/board-layers/thorough-sample.json
           if-no-files-found: error
           retention-days: 2
 

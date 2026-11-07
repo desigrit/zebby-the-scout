@@ -16,7 +16,7 @@ async function request(path, body, status = 200) {
 const health = await request("/health");
 assert.equal(health.mode, "live"); assert.equal(health.commit, expectedCommit);
 const catalog = await request("/v1/catalog");
-assert.ok(catalog.boardsReaderVersion >= 2, "The deployed service must support visual Boards reading.");
+assert.ok(catalog.boardsReaderVersion >= 3, "The deployed service must support thorough Boards reading.");
 for (const kind of ["plan", "match", "resume", "board_extract"]) assert.ok(catalog.analysisKinds.includes(kind));
 await request("/v1/wallet/guest", { deviceToken: token, name: "Zebby release verification" });
 const wallet = await request("/v1/wallet");
@@ -25,8 +25,10 @@ const input = { task: "roles", criteria: "Product managers only", candidates: [
   { id: "l0", url: "https://example.org/jobs/1", title: "Product Manager", department: "Product", text: "Product Manager" }] };
 const { input: visual } = JSON.parse(await readFile(new URL("../qa-output/board-layers/visual-sample.json", import.meta.url), "utf8"));
 assert.equal(visual.task, "visual");
+const { input: thorough } = JSON.parse(await readFile(new URL("../qa-output/board-layers/thorough-sample.json", import.meta.url), "utf8"));
+assert.equal(thorough.task, "explore");
 for (const model of ["gpt-6-luna", "claude-haiku-5-5"]) {
-  for (const evidence of [input, visual]) {
+  for (const evidence of [input, visual, thorough]) {
     const quote = await request("/v1/quotes", { kind: "board_extract", model, thinkingLevel: "low", input: evidence });
     assert.equal(quote.model, model); assert.ok(quote.maximum > 0);
     await request("/v1/analysis", { quoteId: quote.id, requestId: randomUUID(), input: evidence }, 402);
