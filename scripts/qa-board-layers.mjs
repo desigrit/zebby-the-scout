@@ -94,15 +94,17 @@ async function jobTitleFixture() {
     <article><h3>Staff Product Manager</h3><a href="${workday}Staff-Product-Manager_JR3">Staff Product Manager</a><a href="${workday}Staff-Product-Manager_JR3">Apply</a></article>
     <div><h3>Unrelated team heading</h3><a href="https://example.org/jobs/4">Apply</a><a href="https://example.org/jobs/5">Apply</a></div>
     <article><h3>Role A</h3><h3>Role B</h3><a href="https://example.org/jobs/6">Apply</a></article>
+    <table><tbody><tr><td><p class="job-listing__table-title">Senior Product Manager, Data Products</p></td><td>5 locations</td>
+      <td><p><a href="${workday}Senior-Product-Manager--Data-Products_JR7">Apply</a></p></td></tr></tbody></table>
   </section>`));
   try {
     await fixture.reader.open("https://slack.com/careers/dept/product");
     const page = await fixture.reader.read();
-    assert.equal(page.candidates.length, 6, "Duplicate Apply and title links represent one job");
-    assert.deepEqual(page.candidates.map(job => job.title), ["Senior Product Manager, Commerce", "Principal Product Manager", "Staff Product Manager", "Apply", "Apply", "Apply"]);
+    assert.equal(page.candidates.length, 7, "Duplicate Apply and title links represent one job");
+    assert.deepEqual(page.candidates.map(job => job.title), ["Senior Product Manager, Commerce", "Principal Product Manager", "Staff Product Manager", "Apply", "Apply", "Apply", "Senior Product Manager, Data Products"]);
     assert.ok(page.candidates[0].text.includes("Seattle, WA"));
     assert.equal(page.candidates[0].department, "Product");
-    reports.push({ name: "CTA titles use their own card, duplicate links preserve role names, ambiguous neighbors stay separate", checked: 6 });
+    reports.push({ name: "CTA titles use their own card or Slack table row, duplicate links preserve role names, ambiguous neighbors stay separate", checked: 7 });
   } finally { fixture.reader.close(); }
 }
 
