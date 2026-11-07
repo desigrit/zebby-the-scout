@@ -9,6 +9,7 @@ import { boardRetryDelay } from "./board-request";
 import type { BoardVisualInput, BoardControl } from "../shared/boards";
 import { isNetflixSearch, NetflixBoardPages } from "./netflix-board";
 import { greenhouseBoard, sameGreenhouseSearch } from "./greenhouse-board";
+import { isLyftCareers } from "./lyft-board";
 
 export type BoardDocument = { id: string; url: string; title: string; summary: string };
 export type BoardReader = { open(url: string): Promise<void>; read(): Promise<BoardPage>; next(id: string, observed?: BoardControl): Promise<void>; close(): void;
@@ -110,9 +111,18 @@ export class BoardBrowser implements BoardReader {
       return;
     }
     const feed = boardFeed(this.source);
+    if (isLyftCareers(target) && !feed) {
+      throw new Error("Zebby could not verify the filters in this Lyft link. Use a careers link with category, location, or search filters.");
+    }
     if (feed) {
       try { this.feed = await readBoardFeed(feed, (input, init) => this.window.webContents.session.fetch(input, init), this.signal); return; }
-      catch { this.signal.throwIfAborted(); /* Discard the entire feed before trying the rendered page. */ }
+      catch {
+        this.signal.throwIfAborted();
+        // A fresh Lyft page can drop fragment filters and collapse every job.
+        // Do not fall back to that different scope after a failed feed read.
+        if (feed.kind === "lyft") throw new Error("Lyft's job list could not be verified. Try again later. The last successful check is unchanged.");
+        /* Discard the entire feed before trying the rendered page. */
+      }
     }
     await this.loadPage();
   }

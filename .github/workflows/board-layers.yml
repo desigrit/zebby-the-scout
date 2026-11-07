@@ -15,7 +15,7 @@ on:
         type: boolean
         default: false
       lyft:
-        description: Inspect the filtered Lyft board
+        description: Verify the filtered Lyft board and run the full Beta regression suite
         type: boolean
         default: false
 
@@ -41,7 +41,15 @@ jobs:
       - run: npm ci
       - run: node node_modules/electron/install.js
       - run: npm run test:boards
+        if: github.event_name != 'workflow_dispatch' || !inputs.lyft
       - run: npm run test:credits
+        if: github.event_name != 'workflow_dispatch' || !inputs.lyft
+      - name: Verify public and private regressions for Lyft
+        if: github.event_name == 'workflow_dispatch' && inputs.lyft
+        run: |
+          npm test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:private
       - run: npx tsc --noEmit
       - run: npm run lint -- --quiet
       - run: npm run desktop:build
@@ -63,7 +71,7 @@ jobs:
           node --input-type=module -e "import { build } from 'esbuild'; await build({ entryPoints:['scripts/qa-zoox-board.mjs'], outfile:'qa-output/board-layers/zoox.mjs', bundle:true, platform:'node', format:'esm', target:'node22', external:['electron'] });"
           Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
           & .\node_modules\.bin\electron.cmd qa-output/board-layers/zoox.mjs
-      - name: Inspect the exact filtered Lyft board
+      - name: Verify the exact filtered Lyft board
         if: github.event_name == 'workflow_dispatch' && inputs.lyft
         run: |
           node --input-type=module -e "import { build } from 'esbuild'; await build({ entryPoints:['scripts/qa-lyft-board.mjs'], outfile:'qa-output/board-layers/lyft.mjs', bundle:true, platform:'node', format:'esm', target:'node22', external:['electron'] });"
