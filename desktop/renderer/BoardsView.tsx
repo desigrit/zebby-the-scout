@@ -14,11 +14,13 @@ const message = (error: unknown) => (error instanceof Error ? error.message : "T
 
 function useBoards() {
   const [state, setState] = useState<BoardsState>(initial), [error, setError] = useState(""), [working, setWorking] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const inFlight = useRef(false);
   useEffect(() => {
     let active = true, received = false;
-    const remove = window.desktop!.onBoardsChanged(next => { received = true; if (active) setState(next); });
-    void window.desktop!.boardsState().then(next => { if (active && !received) setState(next); }).catch(error => { if (active) setError(message(error)); });
+    const remove = window.desktop!.onBoardsChanged(next => { received = true; if (active) { setState(next); setLoaded(true); } });
+    void window.desktop!.boardsState().then(next => { if (active && !received) setState(next); }).catch(error => { if (active) setError(message(error)); })
+      .finally(() => { if (active) setLoaded(true); });
     return () => { active = false; remove(); };
   }, []);
   async function act(action: () => Promise<unknown>) {
@@ -28,7 +30,7 @@ function useBoards() {
     catch (error) { setError(message(error)); return false; }
     finally { inFlight.current = false; setWorking(false); }
   }
-  return { state, error, working, act };
+  return { state, error, working, loaded, act };
 }
 
 function useRecoveryFocus(state: BoardsState) {
@@ -96,8 +98,9 @@ function BoardsSavedCopy({ path }: { path?: string }) {
   </div> : null;
 }
 
-export function BoardsDatabaseSettings() {
+export function BoardsDatabaseSettings({ onReady }: { onReady?: () => void }) {
   const controls = useBoards(), { state, working, error, act } = controls;
+  useLayoutEffect(() => { if (controls.loaded) onReady?.(); }, [controls.loaded, onReady]);
   const recoveryFocus = useRecoveryFocus(state);
   const location = state.filePath || state.expectedPath;
   const busy = working || state.progress.length > 0;

@@ -403,7 +403,8 @@ try {
   await selector.press("Enter"); await inlineDetails.waitFor({ state: "visible" });
   checks.push("Compact details show the full role and company; Close restores focus and Enter reopens");
   await bounds(1550);
-  await nav.getByRole("button", { name: "Settings", exact: true }).click(); await capture("settings-ollama-light");
+  await nav.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("radiogroup", { name: "Appearance" }).waitFor(); await capture("settings-ollama-light");
   await theme("dark"); await capture("settings-ollama-dark"); await theme("light");
   await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption("openai");
   await capture("settings-openai-setup");

@@ -522,8 +522,8 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   </main>;
 }
 
-function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking }: { state: DesktopState; onState: (value: DesktopState) => void;
-  onUpdate: () => void; onCheckUpdates: () => Promise<void>; updateWorking: boolean }) {
+function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking, onBoardsReady }: { state: DesktopState; onState: (value: DesktopState) => void;
+  onUpdate: () => void; onCheckUpdates: () => Promise<void>; updateWorking: boolean; onBoardsReady?: () => void }) {
   const { openCredits } = useAnalysisFlow();
   const savedFeedback = useSavedFeedback();
   const retryAction = useRef<() => void>(() => undefined);
@@ -585,7 +585,7 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking 
           <SettingsAction icon={Plus} data-command="new" onClick={() => void choose("create")} disabled={working}>Create new database</SettingsAction>
           {state.dirty && <SettingsAction variant="primary" icon={RotateCw} onClick={() => void retry()} disabled={working}>Retry save</SettingsAction>}
         </div>
-        {state.filePath && <BoardsDatabaseSettings />}
+        {state.filePath && <BoardsDatabaseSettings onReady={onBoardsReady} />}
         <p className="settings-help">Quit Zebby and let both files sync before switching computers.</p>
       </div>
     </section>
@@ -691,10 +691,14 @@ export default function App() {
   }, [dirtyPlan, dirtyBoard, setTab]);
   useLayoutEffect(() => {
     if (tab === "settings" && scrollToAnalysis.current) {
-      scrollToAnalysis.current = false;
-      document.getElementById("ai-settings")?.scrollIntoView({ block: "start" });
+      document.getElementById("ai-settings")?.scrollIntoView({ block: "start", behavior: "instant" });
     }
   }, [tab]);
+  function settleAnalysisAnchor() {
+    if (!scrollToAnalysis.current) return;
+    scrollToAnalysis.current = false;
+    document.getElementById("ai-settings")?.scrollIntoView({ block: "start", behavior: "instant" });
+  }
   function openAnalysisSettings() {
     if (!navigate("settings")) return;
     if (tab === "settings") document.getElementById("ai-settings")?.scrollIntoView({ block: "start" });
@@ -820,6 +824,6 @@ export default function App() {
           setTab("applications");
         }} />
       : tab === "applications" ? <ApplicationDashboard key={databaseVersion} initialSelection={applicationSelection} />
-      : <SettingsView state={state} onState={setState} onUpdate={() => void applyUpdate()} onCheckUpdates={checkUpdates} updateWorking={updateWorking} />}</div>
+      : <SettingsView state={state} onState={setState} onUpdate={() => void applyUpdate()} onCheckUpdates={checkUpdates} updateWorking={updateWorking} onBoardsReady={settleAnalysisAnchor} />}</div>
   </div></BackgroundAnalysisProvider></AnalysisFlowProvider></SavedFeedbackProvider>;
 }

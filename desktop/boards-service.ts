@@ -147,10 +147,12 @@ export class BoardsService<Selection extends BoardSelection> {
             try { await this.runs.save(resolved); } catch { this.error = "The check was saved, but its recovery log could not be updated."; }
           }
         } catch (error) {
-          if (checkpoint?.status === "reading") {
-            checkpoint.status = signal.aborted ? "paused" : "incomplete"; checkpoint.updatedAt = new Date().toISOString();
-            checkpoint.message = signal.aborted ? "Check paused. Resume when ready" : (error instanceof Error ? error.message : "The check could not finish").slice(0, 4000);
-            try { await this.runs.save(checkpoint); } catch { this.error = "The check stopped, but its latest recovery log could not be saved."; }
+          // The nested thorough runner assigns this checkpoint asynchronously.
+          const interrupted = checkpoint as BoardCheckpoint | null;
+          if (interrupted?.status === "reading") {
+            interrupted.status = signal.aborted ? "paused" : "incomplete"; interrupted.updatedAt = new Date().toISOString();
+            interrupted.message = signal.aborted ? "Check paused. Resume when ready" : (error instanceof Error ? error.message : "The check could not finish").slice(0, 4000);
+            try { await this.runs.save(interrupted); } catch { this.error = "The check stopped, but its latest recovery log could not be saved."; }
           }
           if (!signal.aborted) {
             const needsCredits = selected.provider === "credits" && boardCreditError(error);
