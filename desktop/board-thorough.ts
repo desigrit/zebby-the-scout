@@ -7,7 +7,7 @@ import { validatedBoardExtraction, type BoardCandidate, type BoardExtractionInpu
 import { scanBoard, type BoardExtractor } from "./boards-scan";
 import type { BoardObservation, BoardRecipeStep, ObservedBoardFeed, ThoroughBoardReader } from "./board-explorer-browser";
 
-export type BoardCheckpoint = { version: number; id: string; boardId: string; workspace: string; revision: number; url: string;
+export type BoardCheckpoint = { version: number; id: string; boardId: string; workspace: string; revision: number; baseCheckId: number; url: string;
   provider: string; model: string; account: string; instructions: string; status: "reading" | "paused" | "incomplete" | "complete";
   pass: "collect" | "audit"; calls: number; reused: number; steps: BoardRecipeStep[]; recipe: BoardRecipeStep[];
   jobs: BoardCandidate[]; verifiedPass: BoardCandidate[]; updatedAt: string; startedAt: string; message: string };
@@ -29,9 +29,9 @@ export function boardScope(value: string): BoardExploreInput["scope"] {
   if (values.size > 30) throw new Error("This saved search has too many filters to verify.");
   return [...values.values()].map(({ key, value }, index) => ({ id: "s" + index, key, value }));
 }
-export function newBoardCheckpoint(input: Pick<BoardCheckpoint, "boardId" | "workspace" | "revision" | "url" | "provider" | "model" | "account" | "instructions">): BoardCheckpoint {
+export function newBoardCheckpoint(input: Pick<BoardCheckpoint, "boardId" | "workspace" | "revision" | "url" | "provider" | "model" | "account" | "instructions"> & { baseCheckId?: number }): BoardCheckpoint {
   const now = new Date().toISOString();
-  return { ...input, version: BOARD_EXPLORER_VERSION, id: randomUUID(), status: "reading", pass: "collect", calls: 0, reused: 0,
+  return { ...input, baseCheckId: input.baseCheckId || 0, version: BOARD_EXPLORER_VERSION, id: randomUUID(), status: "reading", pass: "collect", calls: 0, reused: 0,
     steps: [], recipe: [], jobs: [], verifiedPass: [], startedAt: now, updatedAt: now, message: "Starting a thorough check" };
 }
 function pointer(data: unknown, path: string): unknown {
@@ -81,7 +81,7 @@ export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> 
       throw new BoardReadLimit("This check reached its reading limit. The verified jobs are saved. Resume to continue, or adjust the limits in Settings.");
     }
   };
-  const persist = async (message: string) => { checkpoint.updatedAt = new Date().toISOString(); checkpoint.message = message; await options.save(checkpoint); };
+  const persist = async (message: string) => { checkpoint.updatedAt = new Date().toISOString(); checkpoint.message = message.slice(0, 4000); await options.save(checkpoint); };
   const call = async <T extends BoardExtractionInput>(input: T) => {
     checkBudget(); checkpoint.calls++; await persist(checkpoint.message);
     return validatedBoardExtraction(await options.extract(input, signal), input);
@@ -143,8 +143,8 @@ export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> 
       // Revalidate controls that remain in this document. A selected filter
       // can change without navigation; a stale proof cannot authorize a save.
       for (const filter of scope) {
-        if (page.controls.some(control => controlProvesScope(control, filter.value, scope.filter(item => item.key === filter.key).map(item => item.value)))) proofs.add(filter.id);
-        else if (!history.some(step => step.startsWith("document:"))) proofs.delete(filter.id);
+        if ([...page.controls, ...observation.scopeControls || []].some(control => controlProvesScope(control, filter.value, scope.filter(item => item.key === filter.key).map(item => item.value)))) proofs.add(filter.id);
+        else proofs.delete(filter.id);
       }
       const visible = new Set(page.viewportIds);
       const candidates = page.candidates.filter(candidate => visible.has(candidate.id)).map(candidate => inspected.get(boardJobIdentity(candidate.url).key) || candidate);

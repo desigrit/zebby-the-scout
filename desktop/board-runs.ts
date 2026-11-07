@@ -12,7 +12,7 @@ import { writeProfileSettings } from "./settings-persistence";
 const step = z.object({ action: explorationActionSchema, target: z.object({ name: z.string().max(300), role: z.string().max(60),
   kind: z.string().max(30), href: z.string().max(4000) }).optional() });
 const checkpointSchema = z.object({ version: z.literal(BOARD_EXPLORER_VERSION), id: z.string().uuid(), boardId: z.string(),
-  workspace: z.string(), revision: z.number().int(), url: z.string().url(), provider: z.string(), model: z.string(), account: z.string(),
+  workspace: z.string(), revision: z.number().int(), baseCheckId: z.number().int().nonnegative().default(0), url: z.string().url(), provider: z.string(), model: z.string(), account: z.string(),
   instructions: z.string().max(2000), status: z.enum(["reading", "paused", "incomplete", "complete"]), pass: z.enum(["collect", "audit"]),
   calls: z.number().int().nonnegative(), reused: z.number().int().nonnegative(), steps: z.array(step).max(240), recipe: z.array(step).max(240),
   jobs: z.array(explorationCandidateSchema).max(10000), verifiedPass: z.array(explorationCandidateSchema).max(10000),
@@ -46,6 +46,7 @@ export class BoardRuns {
       this.loaded.set(key, checkpoint);
     }
     const checkpoint = this.loaded.get(key);
+    if (checkpoint && checkpoint.status !== "complete" && board.lastCheckId > checkpoint.baseCheckId) return null;
     return checkpoint && checkpoint.workspace === workspace && checkpoint.boardId === board.id && checkpoint.revision === board.revision &&
       checkpoint.url === board.url && checkpoint.instructions === board.instructions ? checkpoint : null;
   }

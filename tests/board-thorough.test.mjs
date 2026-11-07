@@ -69,6 +69,11 @@ test("URL scope survives fragment filters and requires observed selected values"
   assert.equal(boardScope(url + "?q=%2520")[0].value, "%20");
   await assert.rejects(scan(fixture(), checkpoint({ url: url + "?team=Product" }), { settings: { ...defaultBoardReaderSettings, modelCalls: 8 } }), /reading limit|further progress/);
   const f = fixture({ filter: true }); await scan(f, checkpoint({ url: url + "?team=Product" })); assert.equal(f.opens(), 2);
+  const embedded = fixture(), observe = embedded.reader.observe;
+  embedded.reader.observe = async () => ({ ...await observe(), scopeControls: [control()] });
+  await scan(embedded, checkpoint({ url: url + "?team=Product" }));
+  embedded.reader.observe = async () => ({ ...await observe(), scopeControls: [control({ value: "Design", options: [] })] });
+  await assert.rejects(scan(embedded, checkpoint({ url: url + "?team=Product" })), /further progress|reading limit/);
 });
 test("a limit preserves the finished pass and resume starts with an independent audit", async () => {
   const f = fixture(), run = checkpoint();
@@ -105,6 +110,7 @@ test("journal is isolated by workspace and revision, survives restart and retain
   const board = { id: run.boardId, revision: run.revision, url: run.url, instructions: run.instructions };
   run.jobs = [job()]; await journal.save(run);
   const restarted = new BoardRuns(profile); assert.equal(restarted.summary(run.workspace, board).status, "paused");
+  assert.equal(restarted.latest(run.workspace, { ...board, lastCheckId: 1 }), null, "A later successful save supersedes unfinished recovery work");
   assert.equal(restarted.latest(run.workspace + ".other", board), null); assert.equal(restarted.latest(run.workspace, { ...board, revision: 2 }), null);
   await restarted.configure({ ...defaultBoardReaderSettings, automaticThorough: false }); assert.equal(new BoardRuns(profile).settings.automaticThorough, false);
   const second = checkpoint(); await restarted.save(second); assert.ok(await readFile(path.join(profile, "board-reader.json"), "utf8"));

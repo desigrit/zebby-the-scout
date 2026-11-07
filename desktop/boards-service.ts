@@ -100,7 +100,7 @@ export class BoardsService<Selection extends BoardSelection> {
             const compatible = prior && prior.provider === selected.provider && prior.model === selected.model && prior.account === account;
             const resumePrior = Boolean(compatible && prior.status !== "complete" && (!options.thorough || options.resume));
             checkpoint = resumePrior && prior ? prior : newBoardCheckpoint({ boardId: board.id,
-              workspace, revision: board.revision, url: board.url, provider: selected.provider, model: selected.model, account, instructions: board.instructions });
+              workspace, revision: board.revision, baseCheckId: board.lastCheckId, url: board.url, provider: selected.provider, model: selected.model, account, instructions: board.instructions });
             if (!options.thorough && compatible && prior.recipe.length) checkpoint.recipe = prior.recipe;
             checkpoint.status = "reading";
             const deadline = new AbortController(), timer = setTimeout(() => deadline.abort(new BoardReadLimit("This check reached its time limit. Resume to continue, or adjust the limits in Settings.")), settings.minutes * 60000);
@@ -147,6 +147,11 @@ export class BoardsService<Selection extends BoardSelection> {
             try { await this.runs.save(resolved); } catch { this.error = "The check was saved, but its recovery log could not be updated."; }
           }
         } catch (error) {
+          if (checkpoint?.status === "reading") {
+            checkpoint.status = signal.aborted ? "paused" : "incomplete"; checkpoint.updatedAt = new Date().toISOString();
+            checkpoint.message = signal.aborted ? "Check paused. Resume when ready" : (error instanceof Error ? error.message : "The check could not finish").slice(0, 4000);
+            try { await this.runs.save(checkpoint); } catch { this.error = "The check stopped, but its latest recovery log could not be saved."; }
+          }
           if (!signal.aborted) {
             const needsCredits = selected.provider === "credits" && boardCreditError(error);
             if (needsCredits) balanceError = error;

@@ -7,7 +7,7 @@ import type { ExplorationAction, ExplorationControl } from "../shared/board-expl
 import { actExplorePage, observeExplorePage, type ExplorePage } from "./board-explore-page";
 
 export type ObservedBoardFeed = { id: string; url: string; data: unknown; sample: string };
-export type BoardObservation = { page: ExplorePage; image: BoardImage; fingerprint: string; pendingRequests: number };
+export type BoardObservation = { page: ExplorePage; image: BoardImage; fingerprint: string; pendingRequests: number; scopeControls?: ExplorationControl[] };
 export type BoardRecipeStep = { action: ExplorationAction; target?: Pick<ExplorationControl, "name" | "role" | "kind" | "href"> };
 export interface ThoroughBoardReader {
   open(url: string): Promise<void>;
@@ -113,10 +113,9 @@ export class BoardExplorerBrowser implements ThoroughBoardReader {
     await Promise.race([this.window.loadURL(this.source), delay(30000, undefined, { signal: this.signal }).then(() => { throw new Error("The careers page took too long to open. Resume the check to try again."); })]);
     if (networkReady) await Promise.race([networkReady, delay(2000, undefined, { signal: this.signal })]);
   }
-  private async raw(): Promise<ExplorePage> {
+  private async raw(frame = this.frame || this.window.webContents.mainFrame): Promise<ExplorePage> {
     this.signal.throwIfAborted();
     if (this.networkError) throw new Error(this.networkError);
-    const frame = this.frame || this.window.webContents.mainFrame;
     if (frame.isDestroyed()) throw new Error("The embedded results were replaced. Resume to read the updated page.");
     const source = new URL(this.source), fragment = new URLSearchParams(source.hash.includes("?") ? source.hash.slice(source.hash.indexOf("?") + 1) : "");
     const values = [...source.searchParams.values(), ...fragment.values()].slice(0, 30);
@@ -125,6 +124,13 @@ export class BoardExplorerBrowser implements ThoroughBoardReader {
     if (page.candidates.length >= 2000 || page.controls.length >= 1000) throw new Error("This page has too many elements to verify in one check. Use a more specific results link.");
     if (page.blocked) throw new Error("This careers page is blocking automated reading. Your last successful check is unchanged. Try its direct job-board link instead.");
     return page;
+  }
+  private async parentScopeControls(): Promise<ExplorationControl[]> {
+    const controls: ExplorationControl[] = [];
+    for (let parent = this.frame?.parent; parent; parent = parent.parent) {
+      controls.push(...(await this.raw(parent)).controls.filter(control => ["input", "select"].includes(control.kind) || control.role === "combobox" || control.role === "selected"));
+    }
+    return controls;
   }
   private async execute(action: ExplorationAction | { kind: "label" | "unlabel"; targetId: string; value: string }) {
     const source = new URL(this.source), fragment = new URLSearchParams(source.hash.includes("?") ? source.hash.slice(source.hash.indexOf("?") + 1) : "");
@@ -148,11 +154,12 @@ export class BoardExplorerBrowser implements ThoroughBoardReader {
     if (data.length > 1_400_000) throw new Error("This page image is too large to read. Resume from a more specific results link.");
     const after = await this.raw();
     if (pageFingerprint(after) !== pageFingerprint(page)) throw new Error("The job results changed while the page was being captured. Resume to read the updated results.");
-    return { page, image: { mediaType: "image/jpeg", data, width: 1280, height: 900 }, fingerprint: pageFingerprint(page), pendingRequests: Math.min(this.pending.size, 1000) };
+    return { page, image: { mediaType: "image/jpeg", data, width: 1280, height: 900 }, fingerprint: pageFingerprint(page), pendingRequests: Math.min(this.pending.size, 1000), scopeControls: await this.parentScopeControls() };
   }
   async act(action: ExplorationAction, observation: BoardObservation): Promise<BoardCandidate | undefined> {
     const fresh = await this.raw();
     if (pageFingerprint(fresh) !== observation.fingerprint) throw new Error("The page changed before the next step. Read its current controls again.");
+    if (hash(await this.parentScopeControls()) !== hash(observation.scopeControls || [])) throw new Error("The saved filters changed before the next step. Read their current values again.");
     const control = observation.page.controls.find(item => item.id === action.targetId);
     if (action.kind === "inspect") {
       const candidate = observation.page.candidates.find(item => item.id === action.targetId);

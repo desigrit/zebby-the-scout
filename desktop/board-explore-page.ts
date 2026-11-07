@@ -20,7 +20,15 @@ export function observeExplorePage(desiredValues: string[] = []): ExplorePage {
     const labels = element instanceof HTMLInputElement || element instanceof HTMLSelectElement ? [...element.labels || []].map(label => label.textContent).join(" ") : "";
     return clean(element.getAttribute("aria-label") || labelledBy || labels || element.getAttribute("title") || element.innerText || element.getAttribute("placeholder") || element.getAttribute("name"));
   };
-  const shown = (element: Element) => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden" && !element.closest('[inert],[aria-hidden="true"]');
+  const shown = (element: Element) => {
+    if (!element.getClientRects().length || getComputedStyle(element).visibility === "hidden" || element.closest('[hidden],[inert],[aria-hidden="true"]')) return false;
+    // Chromium can retain layout rectangles for content in a closed details
+    // element. Only its summary is visible and can supply reading evidence.
+    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+      if (parent instanceof HTMLDetailsElement && !parent.open && !parent.querySelector(":scope > summary")?.contains(element)) return false;
+    }
+    return true;
+  };
   const inView = (element: Element) => {
     if (!shown(element)) return false;
     const rect = element.getBoundingClientRect();
