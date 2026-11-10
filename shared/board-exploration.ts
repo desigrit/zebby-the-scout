@@ -80,7 +80,7 @@ export function explorationContract(input: BoardExploreInput | BoardFeedMappingI
     listings: observedArray(links, objectSchema({ id: observedIds(links), title: str, department: str, location: str })),
     excludedIds: observedArray(links), uncertainIds: observedArray(links),
     action: objectSchema({ kind: { type: "string", enum: explorationActionSchema.shape.kind.options }, targetId: observedIds([...controls, ...links], true), value: str }),
-    scopeEvidence: observedArray(controls.length ? scopes : [], objectSchema({ scopeId: observedIds(scopes), controlId: observedIds(controls), value: str })),
+    scopeEvidence: observedArray(controls.length ? scopes : [], objectSchema({ scopeId: observedIds(scopes), controlId: observedIds(controls), value: observedIds(input.scope.map(item => item.value)) })),
     totalEvidence: objectSchema({ counterId: observedIds(input.counters.map(item => item.id), true), filteredTotal: { type: ["integer", "null"] }, interpretation: { type: "string", enum: ["filtered", "page", "overall", "unknown"] } }),
     irrelevantControls: observedArray(controls), empty: bool, complete: bool, reason: str,
   }) };

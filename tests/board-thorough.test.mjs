@@ -153,6 +153,8 @@ test("hash route filters require observed selected values, not the URL or an unc
     return observation;
   };
   await scan(f, checkpoint({ url: zoom })); assert.ok(f.inputs.every(input => input.coverage.scopeVerified));
+  const schema = boardModelContract(f.inputs[0]).schema, response = await f.extract(f.inputs[0]);
+  assert.equal(validStructuredResult(schema, { ...response, scopeEvidence: [{ scopeId: "s0", controlId: "e0", value: "Product" }] }), false, "Filter labels cannot replace the opaque value required by the saved route");
   const empty = fixture(); await assert.rejects(scan(empty, checkpoint({ url: zoom })), /further progress|revisiting|reading limit/);
 });
 
