@@ -22,6 +22,7 @@ const html = `<!doctype html><html><head><title>Careers</title><style>body{font:
 <header><a href="https://www.careers.zoom.us/">Careers</a><button aria-expanded="false">Open menu</button></header>
 <main><h1>Job results</h1><div id="results"></div></main>
 <div hidden><a href="https://www.careers.zoom.us/hidden" data-zebby-explore="e999" data-zebby-explore-label="link e999">Hidden link</a></div>
+<div id="closed-menu" style="position:fixed;opacity:0;height:0;overflow:hidden"><div style="height:300px"><a href="https://www.careers.zoom.us/closed-navigation">Menu link</a><button>More menu content</button></div></div>
 <footer>${Array.from({length:45},(_,index)=>`<a href="https://www.careers.zoom.us/about/${index}">About ${index}</a>`).join("")}</footer>
 <script>setTimeout(()=>document.querySelector('#results').innerHTML=${JSON.stringify(results)},1700)</script></body></html>`;
 
@@ -34,6 +35,7 @@ async function scan(name, live = false) {
   owner.thorough.observe = async () => {
     const observation = await originalObserve();
     const page = observation.page;
+    assert.ok(!page.candidates.some(item => item.url.includes("/closed-navigation")), "A transparent closed menu must not create unreachable coverage");
     await writeFile(path.join(output, name + "-page.json"), JSON.stringify(page));
     const labels = await owner.window.webContents.executeJavaScript("[...document.querySelectorAll('[data-zebby-explore-label]')].map(node=>node.getAttribute('data-zebby-explore-label'))");
     const linkIds = new Set(page.viewportIds), controlIds = new Set(page.controls.filter(control => control.visible).map(control => control.id)), counterIds = new Set(page.counters.map(counter => counter.id));
@@ -58,7 +60,7 @@ async function scan(name, live = false) {
       checkpoint: run, settings: { ...defaultBoardReaderSettings, minutes: 4, modelCalls: 30 }, progress() {}, save: async checkpoint => {
         await writeFile(path.join(output, name + "-progress.json"), JSON.stringify({ message: checkpoint.message, calls: checkpoint.calls, jobs: checkpoint.jobs.map(job => job.title) }));
       }, extract: async input => {
-        if (input.task === "roles") return { decisions: Object.fromEntries(input.candidates.map(job => [job.id, job.title.includes("Product Manager")])) };
+        if (input.task === "roles") { assert.equal(input.criteria, instructions); return { decisions: Object.fromEntries(input.candidates.map(job => [job.id, job.title.includes("Product Manager")])) }; }
         if (input.task === "feed_map") return { usable: false, records: "", id: "", title: "", url: "", department: "", location: "", total: "", next: "" };
         assert.equal(input.task, "explore");
         const jobs = input.candidates.filter(job => new URL(job.url).pathname.startsWith("/job-details/"));
@@ -99,6 +101,8 @@ async function filterEvidence() {
     await owner.window.webContents.executeJavaScript(`document.querySelector('[data-filter-type=professionID] input').checked=true;
       document.querySelector('.filters').insertAdjacentHTML('beforeend','<div data-filter-type="professionID" data-filter-path="engineering"><input type="checkbox" checked> Engineering (4)</div>')`);
     observation = await owner.thorough.observe(); assert.equal(proves(), false, "An extra selected specialization broadens the search and must not pass");
+    await owner.window.webContents.executeJavaScript("document.querySelector('#closed-menu').style.cssText='position:relative;opacity:1;height:300px;overflow:visible'");
+    observation = await owner.thorough.observe(); assert.ok(observation.page.candidates.some(item => item.url.includes('/closed-navigation')), "Content becomes readable when its menu opens");
     reports.push({ name: "native checkbox state and group evidence", status: "passed" });
   } finally { owner.close(); }
 }

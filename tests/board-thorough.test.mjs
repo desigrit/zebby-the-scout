@@ -125,6 +125,7 @@ test("link and control vocabularies prevent the Zoom unobserved-control failure"
   assert.equal(validStructuredResult(schema, { ...result, irrelevantControls: ["e0"] }), true);
   assert.equal(validStructuredResult(schema, { ...result, excludedIds: ["e0"] }), false);
   assert.equal(validStructuredResult(schema, { ...result, totalEvidence: { ...result.totalEvidence, counterId: "t999" } }), false);
+  assert.throws(() => validatedBoardExtraction({ ...result, totalEvidence: { counterId: "t999", filteredTotal: null, interpretation: "unknown" } }, input), /unobserved results counter/);
   assert.equal(validStructuredResult(schema, { ...result, scopeEvidence: [{ scopeId: "s999", controlId: "e0", value: "Product" }] }), false);
   assert.equal(validStructuredResult(schema, { ...result, action: { kind: "next", targetId: "e999", value: "" } }), false);
 });

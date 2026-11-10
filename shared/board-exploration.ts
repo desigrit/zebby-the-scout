@@ -136,6 +136,9 @@ export function validateExploration(value: unknown, input: BoardExploreInput) {
       throw new Error("The reader could not verify that the saved filters are active.");
     }
   }
+  if (result.totalEvidence.counterId && !input.counters.some(counter => counter.id === result.totalEvidence.counterId)) {
+    throw new Error("The reader referenced an unobserved results counter. Use a counter ID from this observation, or leave it empty when no counter is available.");
+  }
   if (result.totalEvidence.filteredTotal !== null && (result.totalEvidence.interpretation !== "filtered" ||
       !input.counters.some(counter => counter.id === result.totalEvidence.counterId &&
         counter.text.replace(/,/g, "").match(/\d+/g)?.includes(String(result.totalEvidence.filteredTotal))))) {

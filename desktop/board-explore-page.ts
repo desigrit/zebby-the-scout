@@ -24,6 +24,14 @@ export function observeExplorePage(desiredValues: string[] = []): ExplorePage {
   };
   const shown = (element: Element) => {
     if (!element.getClientRects().length || getComputedStyle(element).visibility === "hidden" || element.closest('[hidden],[inert],[aria-hidden="true"]')) return false;
+    // Closed mega menus often retain all their child rectangles while a
+    // parent is transparent and clipped to zero height. These are not unread
+    // results that scrolling can reveal. Reobserve them if their menu opens.
+    for (let node: Element | null = element; node; node = parentOf(node)) {
+      const style = getComputedStyle(node);
+      if (style.opacity === "0" || style.contentVisibility === "hidden" ||
+          node !== element && (/hidden|clip/.test(style.overflowY) && node.clientHeight === 0 || /hidden|clip/.test(style.overflowX) && node.clientWidth === 0)) return false;
+    }
     // Chromium can retain layout rectangles for content in a closed details
     // element. Only its summary is visible and can supply reading evidence.
     for (let parent = parentOf(element); parent; parent = parentOf(parent)) {
