@@ -215,3 +215,19 @@ test("default service fallback establishes a zero-new baseline and later discove
   assert.equal(store.list()[0].totalCount, 3); assert.equal(store.list()[0].newCount, 2); assert.equal(service.state.runs.length, 0);
   await store.close();
 });
+
+test("a saved route-filtered board starts directly with scope verification and saves a zero-new baseline", async () => {
+  const profile = path.join(folder, "route-service"), store = new BoardsStore(profile);
+  await store.create(path.join(folder, "route-boards.sqlite"));
+  await store.add([{ company: "Route search", url: url + "#/Product", instructions: "" }]);
+  let fast = 0, verified = 0;
+  const service = new BoardsService(store, { profile, selection: () => ({ provider: "openai", model: "fixture", thinkingLevel: "none" }),
+    reader() { const f = fixture({ filter: true }); return { thorough: { ...f.reader, async open() { verified++; await f.reader.open(); } },
+      async open() { fast++; throw new Error("A route filter must be verified before inventory analysis"); }, close() {}, async read() {}, async next() {} }; },
+    async extract(_selection, input) { return { value: await fixture().extract(input) }; }, changed() {} });
+  service.check();
+  for (let i = 0; i < 500 && service.busy; i++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(service.busy, false); assert.equal(fast, 0); assert.equal(verified, 2);
+  assert.equal(store.list()[0].error, ""); assert.equal(store.list()[0].totalCount, 1); assert.equal(store.list()[0].newCount, 0);
+  await store.close();
+});
