@@ -156,6 +156,12 @@ export class BoardExplorerBrowser implements ThoroughBoardReader {
     // Wait longer on the first view with no result counter, and recapture a
     // changing viewport locally before asking a model to analyse it.
     for (let capture = 0; capture < 3; capture++) {
+      const observation = await this.captureObservation();
+      if (observation) return observation;
+    }
+    throw new Error("The job results kept changing while the page was being captured. Resume to read the updated results.");
+  }
+  private async captureObservation(): Promise<BoardObservation | null> {
     const started = Date.now();
     let page = await this.raw(), previous = pageFingerprint(page), stable = 0;
     for (let attempt = 0; attempt < 35; attempt++) {
@@ -173,11 +179,9 @@ export class BoardExplorerBrowser implements ThoroughBoardReader {
     finally { if (!this.window.isDestroyed()) await this.execute({ kind: "unlabel", targetId: "", value: "" }); }
     if (data.length > 1_400_000) throw new Error("This page image is too large to read. Resume from a more specific results link.");
     const after = await this.raw();
-    if (pageFingerprint(after) !== pageFingerprint(page)) continue;
+    if (pageFingerprint(after) !== pageFingerprint(page)) return null;
     this.firstObservation = false;
     return { page, image: { mediaType: "image/jpeg", data, width: 1280, height: 900 }, fingerprint: pageFingerprint(page), pendingRequests: Math.min(this.pending.size, 1000), scopeControls: await this.parentScopeControls() };
-    }
-    throw new Error("The job results kept changing while the page was being captured. Resume to read the updated results.");
   }
   async reveal(id: string, observation: BoardObservation): Promise<void> {
     const fresh = await this.raw();

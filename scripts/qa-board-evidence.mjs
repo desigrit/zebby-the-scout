@@ -21,6 +21,7 @@ ${titles.map((title, index) => `<article><div><a href="https://www.careers.zoom.
 const html = `<!doctype html><html><head><title>Careers</title><style>body{font:18px system-ui;margin:24px}article{padding:30px}header{height:400px}footer{padding:80px 0}footer a{display:inline-block;width:170px;padding:8px}</style></head><body>
 <header><a href="https://www.careers.zoom.us/">Careers</a><button aria-expanded="false">Open menu</button></header>
 <main><h1>Job results</h1><div id="results"></div></main>
+<div hidden><a href="https://www.careers.zoom.us/hidden" data-zebby-explore="e999" data-zebby-explore-label="link e999">Hidden link</a></div>
 <footer>${Array.from({length:45},(_,index)=>`<a href="https://www.careers.zoom.us/about/${index}">About ${index}</a>`).join("")}</footer>
 <script>setTimeout(()=>document.querySelector('#results').innerHTML=${JSON.stringify(results)},1700)</script></body></html>`;
 
@@ -29,10 +30,18 @@ async function scan(name, live = false) {
   const timer = setTimeout(() => abort.abort(new Error("Evidence verification deadline")), 240000);
   if (!live) await owner.window.webContents.session.protocol.handle("https", () => new Response(html, { headers: { "content-type": "text/html" } }));
   const run = newBoardCheckpoint({ boardId: name, workspace: "evidence.sqlite", revision: 1, url, instructions, provider: "fixture", model: "observed-evidence", account: "" });
-  const originalObserve = owner.thorough.observe.bind(owner.thorough), originalAct = owner.thorough.act.bind(owner.thorough);
+  const originalObserve = owner.thorough.observe.bind(owner.thorough), originalAct = owner.thorough.act.bind(owner.thorough), originalReveal = owner.thorough.reveal.bind(owner.thorough);
   owner.thorough.observe = async () => {
     const observation = await originalObserve();
     const page = observation.page;
+    await writeFile(path.join(output, name + "-page.json"), JSON.stringify(page));
+    const labels = await owner.window.webContents.executeJavaScript("[...document.querySelectorAll('[data-zebby-explore-label]')].map(node=>node.getAttribute('data-zebby-explore-label'))");
+    const linkIds = new Set(page.viewportIds), controlIds = new Set(page.controls.filter(control => control.visible).map(control => control.id)), counterIds = new Set(page.counters.map(counter => counter.id));
+    for (const label of labels) {
+      const [kind, id] = label.split(" ");
+      assert.ok(kind === "link" ? linkIds.has(id) : kind === "control" ? controlIds.has(id) : kind === "link/control" ? linkIds.has(id) && controlIds.has(id) : kind === "count" && counterIds.has(id), "Only current evidence IDs may be labelled: " + label);
+    }
+    if (!live && observations.length === 0) assert.ok(page.counters.length, "The delayed results must load before the first model observation");
     observations.push({ pass: run.pass, candidates: page.candidates.length, counters: page.counters, selected: page.controls.filter(item => item.role === "selected"), atBottom: page.atBottom });
     if (page.counters.some(counter => /2 positions/.test(counter.text))) {
       assert.equal(page.counters.filter(counter => /2 positions/.test(counter.text)).length, 1, "Count containers must be deduplicated");
@@ -42,6 +51,7 @@ async function scan(name, live = false) {
     return observation;
   };
   owner.thorough.act = async (action, observation) => { actions.push(action); return originalAct(action, observation); };
+  owner.thorough.reveal = async (id, observation) => { actions.push({ kind: "reveal", target: observation.page.candidates.find(item => item.id === id) || observation.page.controls.find(item => item.id === id) }); return originalReveal(id, observation); };
   const started = Date.now();
   try {
     const value = await thoroughlyScanBoard({ url, instructions, reader: owner.thorough, signal: abort.signal, provider: "fixture", model: "observed-evidence",
@@ -62,7 +72,7 @@ async function scan(name, live = false) {
           empty: false, complete: true, reason: "Classified the observed viewport; verify the remaining document and independent pass" };
         assert.equal(validStructuredResult(boardModelContract(input).schema, result), true);
         validatedBoardExtraction(result, input);
-        decisions.push({ pass: input.pass, links: input.candidates.length, jobs: jobs.map(job => job.title), controls: input.controls.length, scope: input.coverage.scopeVerified });
+        decisions.push({ pass: input.pass, links: input.candidates.length, jobs: jobs.map(job => job.title), controls: input.controls.length, scope: input.coverage.scopeVerified, feedback: input.feedback, candidates: input.candidates.map(item => item.url) });
         if (jobs.length) await writeFile(path.join(output, name + "-sample.json"), JSON.stringify({ input, expected: { titles, filters: filters.map(item => item.value) } }));
         return result;
       } });
@@ -76,10 +86,28 @@ async function scan(name, live = false) {
   } finally { clearTimeout(timer); owner.close(); await writeFile(path.join(output, "report.json"), JSON.stringify(reports, null, 2)); }
 }
 
+async function filterEvidence() {
+  const abort = new AbortController(), owner = new BoardBrowser(abort.signal);
+  await owner.window.webContents.session.protocol.handle("https", () => new Response(html, { headers: { "content-type": "text/html" } }));
+  try {
+    await owner.thorough.open(url);
+    let observation = await owner.thorough.observe();
+    const proves = () => observation.page.controls.some(control => controlProvesScope(control, filters[0].value, filters.map(filter => filter.value)));
+    assert.equal(proves(), true);
+    await owner.window.webContents.executeJavaScript("document.querySelector('[data-filter-type=professionID] input').checked=false");
+    observation = await owner.thorough.observe(); assert.equal(proves(), false, "An unchecked filter cannot prove the route even when the URL and counter still match");
+    await owner.window.webContents.executeJavaScript(`document.querySelector('[data-filter-type=professionID] input').checked=true;
+      document.querySelector('.filters').insertAdjacentHTML('beforeend','<div data-filter-type="professionID" data-filter-path="engineering"><input type="checkbox" checked> Engineering (4)</div>')`);
+    observation = await owner.thorough.observe(); assert.equal(proves(), false, "An extra selected specialization broadens the search and must not pass");
+    reports.push({ name: "native checkbox state and group evidence", status: "passed" });
+  } finally { owner.close(); }
+}
+
 async function main() {
   await mkdir(path.join(output, "profile"), { recursive: true }); app.setPath("userData", path.join(output, "profile"));
   app.on("window-all-closed", () => {}); await app.whenReady();
   try {
+    await filterEvidence();
     await scan("delayed-route-results");
     if (process.argv.includes("--live")) { await scan("zoom-cold-1", true); await scan("zoom-cold-2", true); }
     console.log(JSON.stringify(reports)); app.exit(0);
