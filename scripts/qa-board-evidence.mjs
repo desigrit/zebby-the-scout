@@ -125,12 +125,14 @@ async function screenshotEvidence() {
         const next = await owner.thorough.observe(); assert.ok(hasColor(next.image, [40, 150, 200]), "Scrolled image must show the results, not the old header");
         await writeFile(path.join(output, "screenshot-current-viewport.jpg"), Buffer.from(next.image.data, "base64"));
       } else {
-        await owner.open(source); let views = 0;
+        await owner.open(source); let views = 0, reachedResults = false;
         for await (const viewport of owner.visual()) {
-          if (!views++) assert.ok(hasColor(viewport.image, [190, 40, 80]));
-          else { assert.ok(hasColor(viewport.image, [40, 150, 200]), "The earlier visual layer must also capture the new viewport"); break; }
+          const documentY = await owner.window.webContents.mainFrame.executeJavaScript("scrollY + innerHeight * (444 / 900)");
+          const inResults = documentY >= 1000; views++;
+          assert.ok(hasColor(viewport.image, inResults ? [40, 150, 200] : [190, 40, 80]), "The visual layer image must match its current document position");
+          if (inResults) { reachedResults = true; break; }
         }
-        assert.equal(views, 2);
+        assert.ok(reachedResults && views >= 2 && views <= 4);
       }
       assert.equal(owner.window.isVisible(), false, "Board reading must keep its window hidden");
       reports.push({ name: layer + " screenshot follows scrolling and paints current evidence", status: "passed" });

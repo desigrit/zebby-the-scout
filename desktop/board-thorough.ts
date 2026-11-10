@@ -178,7 +178,7 @@ export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> 
       let result: BoardExploreResult;
       // Reuse only an unchanged, validated finish observation while waiting
       // for local settling. A new pass has its own cache and reads afresh.
-      const readKey = hash([observation.fingerprint, observation.scopeControls, candidates, controls, scope]);
+      const readKey = hash([observation.fingerprint, observation.image, observation.scopeControls, candidates, controls, scope]);
       try { result = settledReads.get(readKey) || await call(input) as BoardExploreResult; transientErrors = 0; }
       catch (error) {
         signal.throwIfAborted();

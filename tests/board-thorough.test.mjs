@@ -162,6 +162,15 @@ test("local settling reuses a validated finish but each independent pass still r
   assert.equal(run.calls, 2); assert.equal(f.actions.filter(action => action.kind === "wait").length, 2);
 });
 
+test("a changed image cannot reuse a settling result even when its DOM IDs are unchanged", async () => {
+  const f = fixture(), observe = f.reader.observe; let observations = 0;
+  const changedImage = { ...image, data: (await sharp({ create: { width: 320, height: 240, channels: 3, background: "green" } }).jpeg().toBuffer()).toString("base64") };
+  f.reader.observe = async () => ({ ...await observe(), image: ++observations === 1 ? image : changedImage });
+  await scan(f);
+  assert.equal(f.inputs.length, 3); assert.notEqual(f.inputs[0].image.data, f.inputs[1].image.data);
+  assert.equal(f.inputs.at(-1).pass, "audit");
+});
+
 test("screenshot evidence rejects stale, transparent and differently scaled frames", () => {
   const width = 160, height = 100, proof = { x: 2, y: 2, width: 64, height: 8, viewportWidth: 80, viewportHeight: 50,
     colors: [40, 90, 180, 70, 130, 60, 190, 110, 40, 80, 170, 140, 160, 40, 120, 200, 120, 80, 60, 150, 200, 140, 80, 50] };
