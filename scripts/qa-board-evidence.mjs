@@ -29,6 +29,7 @@ const html = `<!doctype html><html><head><title>Careers</title><style>body{font:
 
 async function scan(name, live = false) {
   const abort = new AbortController(), owner = new BoardBrowser(abort.signal), observations = [], decisions = [], actions = [];
+  const expectedLiveJobs = new Map(); let expectedLiveTotal = null;
   const timer = setTimeout(() => abort.abort(new Error("Evidence verification deadline")), 240000);
   if (!live) await owner.window.webContents.session.protocol.handle("https", () => new Response(html, { headers: { "content-type": "text/html" } }));
   const run = newBoardCheckpoint({ boardId: name, workspace: "evidence.sqlite", revision: 1, url, instructions, provider: "fixture", model: "observed-evidence", account: "" });
@@ -36,6 +37,24 @@ async function scan(name, live = false) {
   owner.thorough.observe = async () => {
     const observation = await originalObserve();
     const page = observation.page;
+    if (live) {
+      // The live board changes between runs. Independently read its rendered
+      // inventory instead of treating the original two vacancies as permanent.
+      const inventory = await owner.window.webContents.executeJavaScript(`(() => {
+        const clean = text => (text || '').replace(/\\s+/g, ' ').trim();
+        const count = clean(document.body.innerText).match(/Your search resulted in:\\s*([\\d,]+)\\s+positions?/i);
+        const jobs = [...document.querySelectorAll('a[href]')].filter(link =>
+          new URL(link.href).pathname.startsWith('/job-details/') && link.getClientRects().length)
+          .map(link => ({ url: link.href, title: clean(link.innerText) }))
+          .filter(job => job.title && !/^(?:read more|apply(?: now)?|view (?:job|details))$/i.test(job.title));
+        return { total: count ? Number(count[1].replace(/,/g, '')) : null, jobs };
+      })()`);
+      if (inventory.total !== null) {
+        if (expectedLiveTotal === null) expectedLiveTotal = inventory.total;
+        assert.equal(inventory.total, expectedLiveTotal, "The live inventory changed during verification");
+      }
+      for (const job of inventory.jobs) expectedLiveJobs.set(job.url, job.title);
+    }
     assert.ok(!page.candidates.some(item => item.url.includes("/closed-navigation")), "A transparent closed menu must not create unreachable coverage");
     await writeFile(path.join(output, name + "-page.json"), JSON.stringify(page));
     const labels = await owner.window.webContents.executeJavaScript("[...document.querySelectorAll('[data-zebby-explore-label]')].map(node=>node.getAttribute('data-zebby-explore-label'))");
@@ -46,8 +65,8 @@ async function scan(name, live = false) {
     }
     if (!live && observations.length === 0) assert.ok(page.counters.length, "The delayed results must load before the first model observation");
     observations.push({ pass: run.pass, candidates: page.candidates.length, counters: page.counters, selected: page.controls.filter(item => item.role === "selected"), atBottom: page.atBottom });
-    if (page.counters.some(counter => /2 positions/.test(counter.text))) {
-      assert.equal(page.counters.filter(counter => /2 positions/.test(counter.text)).length, 1, "Count containers must be deduplicated");
+    if (page.counters.some(counter => /Your search resulted in: [\d,]+ positions?/.test(counter.text))) {
+      assert.equal(page.counters.filter(counter => /Your search resulted in: [\d,]+ positions?/.test(counter.text)).length, 1, "Count containers must be deduplicated");
       assert.ok(filters.every(filter => page.controls.some(control => controlProvesScope(control, filter.value, filters.map(item => item.value)))));
       if (page.candidates.some(item => page.viewportIds.includes(item.id) && item.url.includes("/job-details/"))) await writeFile(path.join(output, name + "-results.jpg"), Buffer.from(observation.image.data, "base64"));
     }
@@ -61,26 +80,32 @@ async function scan(name, live = false) {
       checkpoint: run, settings: { ...defaultBoardReaderSettings, minutes: 4, modelCalls: 30 }, progress() {}, save: async checkpoint => {
         await writeFile(path.join(output, name + "-progress.json"), JSON.stringify({ message: checkpoint.message, calls: checkpoint.calls, jobs: checkpoint.jobs.map(job => job.title) }));
       }, extract: async input => {
-        if (input.task === "roles") { assert.equal(input.criteria, instructions); return { decisions: Object.fromEntries(input.candidates.map(job => [job.id, job.title.includes("Product Manager")])) }; }
+        if (input.task === "roles") { assert.equal(input.criteria, instructions); return { decisions: Object.fromEntries(input.candidates.map(job => [job.id, /Product Manager/i.test(job.title)])) }; }
         if (input.task === "feed_map") return { usable: false, records: "", id: "", title: "", url: "", department: "", location: "", total: "", next: "" };
         assert.equal(input.task, "explore");
         const jobs = input.candidates.filter(job => new URL(job.url).pathname.startsWith("/job-details/"));
-        const counter = input.counters.find(counter => /Your search resulted in: 2 positions/.test(counter.text));
+        const counter = input.counters.find(counter => /Your search resulted in: [\d,]+ positions?/.test(counter.text));
+        const total = counter ? Number(counter.text.match(/Your search resulted in: ([\d,]+)/)[1].replace(/,/g, "")) : null;
         const next = input.controls.find(control => !control.disabled && /^(?:next|load more|show more)/i.test(control.name));
         const result = { listings: jobs.map(job => ({ id: job.id, title: job.title, department: "Product", location: "Seattle (WA)" })),
           excludedIds: input.candidates.filter(job => !jobs.includes(job)).map(job => job.id), uncertainIds: [], scopeEvidence: [],
           irrelevantControls: input.controls.filter(control => control !== next && !controlProvesScope(control, filters[0].value) && !controlProvesScope(control, filters[1].value)).map(control => control.id),
-          totalEvidence: { counterId: counter?.id || "", filteredTotal: counter ? 2 : null, interpretation: counter ? "filtered" : "unknown" },
+          totalEvidence: { counterId: counter?.id || "", filteredTotal: total, interpretation: counter ? "filtered" : "unknown" },
           action: next ? { kind: "next", targetId: next.id, value: "" } : { kind: "finish", targetId: "", value: "" },
           empty: false, complete: true, reason: "Classified the observed viewport; verify the remaining document and independent pass" };
         assert.equal(validStructuredResult(boardModelContract(input).schema, result), true);
         validatedBoardExtraction(result, input);
         decisions.push({ pass: input.pass, links: input.candidates.length, jobs: jobs.map(job => job.title), controls: input.controls.length, scope: input.coverage.scopeVerified, feedback: input.feedback, candidates: input.candidates.map(item => item.url) });
-        if (jobs.length) await writeFile(path.join(output, name + "-sample.json"), JSON.stringify({ input, expected: { titles, filters: filters.map(item => item.value) } }));
+        if (jobs.length) await writeFile(path.join(output, name + "-sample.json"), JSON.stringify({ input, expected: { titles: live ? [...expectedLiveJobs.values()] : titles, total: live ? expectedLiveTotal : titles.length, filters: filters.map(item => item.value) } }));
         return result;
       } });
-    assert.deepEqual(value.jobs.map(job => job.title).sort(), titles.slice().sort());
-    assert.ok(value.jobs.every(job => job.matches));
+    if (live) {
+      assert.ok(Number.isSafeInteger(expectedLiveTotal) && expectedLiveTotal > 0, "The live board must supply its current filtered total");
+      assert.equal(expectedLiveJobs.size, expectedLiveTotal, "The independent DOM inventory must agree with the filtered total");
+      assert.equal(value.jobs.length, expectedLiveTotal);
+      assert.deepEqual(value.jobs.map(job => [job.url, job.title]).sort(), [...expectedLiveJobs].sort());
+    } else assert.deepEqual(value.jobs.map(job => job.title).sort(), titles.slice().sort());
+    assert.ok(value.jobs.every(job => job.matches === /Product Manager/i.test(job.title)));
     assert.ok(decisions.some(item => item.pass === "collect") && decisions.some(item => item.pass === "audit"));
     assert.ok(decisions.length <= 18, `Expected bounded reading, got ${decisions.length} decisions`);
     reports.push({ name, status: "passed", jobs: value.jobs.map(job => ({ title: job.title, url: job.url })), observations: observations.length, modelDecisions: decisions.length, elapsedMs: Date.now() - started });
