@@ -3,6 +3,14 @@ name: Desktop packages
 on:
   workflow_dispatch:
     inputs:
+      verify_updates_only:
+        description: Verify an already-published release without rebuilding installers
+        type: boolean
+        default: false
+      published_version:
+        description: Published version to verify, such as 2.10.1
+        type: string
+        required: false
       compare_mac_release:
         description: Optional previous Mac release tag to inspect
         type: string
@@ -29,7 +37,7 @@ env:
 
 jobs:
   desktop-visual-review:
-    if: github.event_name == 'workflow_dispatch' && inputs.review_only
+    if: github.event_name == 'workflow_dispatch' && inputs.review_only && !inputs.verify_updates_only
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -62,7 +70,7 @@ jobs:
           if-no-files-found: error
 
   windows-x64:
-    if: github.event_name != 'workflow_dispatch' || (!inputs.mac_only && !inputs.review_only)
+    if: github.event_name != 'workflow_dispatch' || (!inputs.mac_only && !inputs.review_only && !inputs.verify_updates_only)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -132,7 +140,7 @@ jobs:
           if-no-files-found: error
 
   macos-arm64:
-    if: github.event_name != 'workflow_dispatch' || !inputs.review_only
+    if: github.event_name != 'workflow_dispatch' || (!inputs.review_only && !inputs.verify_updates_only)
     runs-on: macos-26
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -199,7 +207,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && !inputs.verify_updates_only
     needs: [windows-x64, macos-arm64]
     runs-on: ubuntu-latest
     permissions:
@@ -240,12 +248,16 @@ jobs:
 
   verify-boards-update:
     needs: release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: always() && ((startsWith(github.ref, 'refs/tags/v') && needs.release.result == 'success') || (github.event_name == 'workflow_dispatch' && inputs.verify_updates_only))
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
         with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
           ref: v2.6.4
+          path: previous-source
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -260,31 +272,14 @@ jobs:
           ditto "$RUNNER_TEMP/original-volume/Zebby.app" "$RUNNER_TEMP/previous/Zebby.app"
           hdiutil detach "$RUNNER_TEMP/original-volume"
       - name: Verify all three downloads through the 2.6.4 Settings updater
-        run: |
-          node --experimental-strip-types --input-type=module <<'JS'
-          import assert from 'node:assert/strict';
-          import { mkdtemp } from 'node:fs/promises';
-          import os from 'node:os';
-          import path from 'node:path';
-          import { setTimeout as delay } from 'node:timers/promises';
-          import { ReleaseUpdates } from './desktop/release-updates.ts';
-          import { SelfUpdater } from './desktop/self-update.ts';
-          const expectedVersion = process.env.GITHUB_REF_NAME.replace(/^v/, '');
-          for (const [platform, arch] of [['win32','x64'], ['win32','arm64'], ['darwin','arm64']]) {
-            const checker = new ReleaseUpdates({ version: '2.6.4', platform, arch });
-            let release;
-            for (let attempt = 0; attempt < 8; attempt++) {
-              release = (await checker.check(true)).available;
-              if (release?.version === expectedVersion) break;
-              await delay(10000);
-            }
-            assert.equal(release?.version, expectedVersion);
-            const folder = await mkdtemp(path.join(os.tmpdir(), 'zebby-update-'));
-            let phase;
-            const executable = path.join(process.env.RUNNER_TEMP, 'previous/Zebby.app/Contents/MacOS/Zebby');
-            const updater = new SelfUpdater({ platform, arch, folder, executable, onChange: state => { phase = state.phase; } });
-            await updater.download(release);
-            assert.equal(phase, 'ready');
-            console.log(platform, arch, 'download verified');
-          }
-          JS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_RELEASE_VERSION: ${{ inputs.published_version }}
+        run: node --experimental-strip-types scripts/qa-published-updates.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: public-update-verification
+          retention-days: 14
+          path: qa-output/public-updates/verification.json
+          if-no-files-found: error
