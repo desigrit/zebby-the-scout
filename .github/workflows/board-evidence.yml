@@ -1,5 +1,8 @@
 name: Board evidence regression
 on:
+  pull_request:
+    branches: [main]
+    paths: ['desktop/board-*.ts', 'desktop/boards-*.ts', 'shared/board*.ts', 'tests/board*.test.mjs', 'scripts/qa-board-evidence.mjs', '.github/workflows/board-evidence.yml']
   workflow_dispatch:
     inputs:
       live_zoom:
