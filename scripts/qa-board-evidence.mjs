@@ -102,6 +102,10 @@ async function filterEvidence() {
     await owner.window.webContents.executeJavaScript(`document.querySelector('[data-filter-type=professionID] input').checked=true;
       document.querySelector('.filters').insertAdjacentHTML('beforeend','<div data-filter-type="professionID" data-filter-path="engineering"><input type="checkbox" checked> Engineering (4)</div>')`);
     observation = await owner.thorough.observe(); assert.equal(proves(), false, "An extra selected specialization broadens the search and must not pass");
+    await owner.window.webContents.executeJavaScript(`document.querySelector('.filters').insertAdjacentHTML('afterbegin',
+      Array.from({length:65},()=>'<div data-filter-type="professionID" data-filter-path="${filters[0].value}"><input type="checkbox"> Product (2)</div>').join(''))`);
+    observation = await owner.thorough.observe();
+    assert.equal(proves(), false, "Long option lists must preserve every selected filter before truncating unselected options");
     await owner.window.webContents.executeJavaScript("document.querySelector('#closed-menu').style.cssText='position:relative;opacity:1;height:300px;overflow:visible'");
     observation = await owner.thorough.observe(); assert.ok(observation.page.candidates.some(item => item.url.includes('/closed-navigation')), "Content becomes readable when its menu opens");
     reports.push({ name: "native checkbox state and group evidence", status: "passed" });

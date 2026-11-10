@@ -132,7 +132,8 @@ export function observeExplorePage(desiredValues: string[] = []): ExplorePage {
     if (options.filter(option => option.selected).length > 60) throw new Error("This page has too many selected filters to verify.");
     // Do not truncate selected evidence: an unexpected additional selection
     // must prevent the group from proving a narrower saved search.
-    for (const member of members) member.options = options.filter(option => option.selected || wanted.has(option.value.toLowerCase()) || wanted.has(option.label.toLowerCase())).slice(0, 60);
+    for (const member of members) member.options = options.filter(option => option.selected || wanted.has(option.value.toLowerCase()) || wanted.has(option.label.toLowerCase()))
+      .sort((left, right) => Number(right.selected) - Number(left.selected)).slice(0, 60);
   }
   for (const element of query<HTMLElement>("*")) {
     if (!shown(element) || element.clientHeight < 120 || element.scrollHeight <= element.clientHeight + 8 ||
