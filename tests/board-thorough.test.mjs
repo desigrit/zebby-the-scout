@@ -10,6 +10,8 @@ import { boardExtractionInput, boardModelContract, validatedBoardExtraction } fr
 import { defaultBoardReaderSettings, controlProvesScope } from "../shared/board-exploration.ts";
 import { openAIAnalysisInput } from "../desktop/openai-request.ts";
 import { anthropicAnalysisInput } from "../desktop/anthropic-request.ts";
+import { validStructuredResult } from "../desktop/online-response.ts";
+import { matchesCaptureProof } from "../desktop/board-screenshot.ts";
 
 const folder = await mkdtemp(path.join(tmpdir(), "zebby-thorough-"));
 await build({ stdin: { contents: "export * from './desktop/board-thorough'; export * from './desktop/board-runs'; export * from './desktop/boards-store'; export * from './desktop/boards-service';", resolveDir: process.cwd() },
@@ -84,7 +86,7 @@ test("URL scope survives fragment filters and requires observed selected values"
 });
 test("a limit preserves the finished pass and resume starts with an independent audit", async () => {
   const f = fixture(), run = checkpoint();
-  await assert.rejects(scan(f, run, { settings: { ...defaultBoardReaderSettings, modelCalls: 4 } }), /reading limit/);
+  await assert.rejects(scan(f, run, { settings: { ...defaultBoardReaderSettings, modelCalls: 2 } }), /reading limit/);
   assert.equal(run.status, "paused"); assert.equal(run.verifiedPass.length, 1);
   const retry = fixture(); await scan(retry, run, { resume: true }); assert.equal(retry.opens(), 1); assert.equal(retry.inputs[0].pass, "audit");
 });
@@ -111,6 +113,105 @@ test("exploration schemas reject fabricated actions and preserve native image pr
   assert.throws(() => validatedBoardExtraction({ ...result, action: { kind: "inspect", targetId: "e0", value: "" } }, dangerous), /unsupported/);
   const contract = boardModelContract(input); const a = openAIAnalysisInput({ ...contract, input, model: "gpt-6.1-sol" }), b = anthropicAnalysisInput({ ...contract, input, model: "claude-sonnet-5-5" });
   assert.ok(JSON.stringify(a).includes("input_image")); assert.ok(JSON.stringify(b).includes('"image"'));
+});
+
+test("link and control vocabularies prevent the Zoom unobserved-control failure", async () => {
+  const f = fixture(); await scan(f);
+  const input = { ...f.inputs[0], controls: [control()] }, result = await f.extract(input);
+  const schema = boardModelContract(input).schema;
+  assert.equal(validStructuredResult(schema, result), true);
+  const linkAsControl = { ...result, irrelevantControls: [input.candidates[0].id] };
+  assert.equal(validStructuredResult(schema, linkAsControl), false);
+  assert.throws(() => validatedBoardExtraction(linkAsControl, input), /Use only control IDs: e0.*excludedIds/);
+  assert.equal(validStructuredResult(schema, { ...result, irrelevantControls: ["e0"] }), true);
+  assert.equal(validStructuredResult(schema, { ...result, excludedIds: ["e0"] }), false);
+  assert.equal(validStructuredResult(schema, { ...result, totalEvidence: { ...result.totalEvidence, counterId: "t999" } }), false);
+  assert.throws(() => validatedBoardExtraction({ ...result, totalEvidence: { counterId: "t999", filteredTotal: null, interpretation: "unknown" } }, input), /unobserved results counter/);
+  assert.equal(validStructuredResult(schema, { ...result, scopeEvidence: [{ scopeId: "s999", controlId: "e0", value: "Product" }] }), false);
+  assert.equal(validStructuredResult(schema, { ...result, action: { kind: "next", targetId: "e999", value: "" } }), false);
+});
+
+test("an empty viewport has valid empty arrays without permitting placeholder IDs", async () => {
+  const f = fixture({ inventory: [], total: false, empty: true }); await scan(f);
+  const input = f.inputs[0], result = await f.extract(input), schema = boardModelContract(input).schema;
+  assert.equal(validStructuredResult(schema, result), true);
+  assert.equal(validStructuredResult(schema, { ...result, irrelevantControls: [""] }), false);
+  assert.equal(validStructuredResult(schema, { ...result, excludedIds: [""] }), false);
+});
+
+test("hash route filters require observed selected values, not the URL or an unchecked input", async () => {
+  const zoom = "https://www.careers.zoom.us/job-results#/7bc982e1-3ea0-44c2-94d3-cdbc196a6688/united-states-of-america";
+  assert.deepEqual(boardScope(zoom).map(item => item.value), ["7bc982e1-3ea0-44c2-94d3-cdbc196a6688", "united-states-of-america"]);
+  assert.deepEqual(boardScope(url + "#/search"), []);
+  const unchecked = control({ role: "checkbox", kind: "input", value: "Product", options: [{ value: "Product", label: "Product", selected: false }] });
+  assert.equal(controlProvesScope(unchecked, "Product"), false);
+  const f = fixture(), observe = f.reader.observe;
+  f.reader.observe = async () => {
+    const observation = await observe();
+    observation.page.controls = boardScope(zoom).map((item, index) => control({ id: "e" + index, name: index ? "United States of America" : "Product", kind: "input", role: "selected", value: item.value,
+      options: [{ value: item.value, label: index ? "United States of America" : "Product", selected: true }] }));
+    return observation;
+  };
+  await scan(f, checkpoint({ url: zoom })); assert.ok(f.inputs.every(input => input.coverage.scopeVerified));
+  const schema = boardModelContract(f.inputs[0]).schema, response = await f.extract(f.inputs[0]);
+  assert.equal(validStructuredResult(schema, { ...response, scopeEvidence: [{ scopeId: "s0", controlId: "e0", value: "Product" }] }), false, "Filter labels cannot replace the opaque value required by the saved route");
+  const empty = fixture(); await assert.rejects(scan(empty, checkpoint({ url: zoom })), /further progress|revisiting|reading limit/);
+});
+
+test("local settling reuses a validated finish but each independent pass still reads afresh", async () => {
+  const f = fixture(); const { run } = await scan(f);
+  assert.equal(f.inputs.length, 2); assert.deepEqual(f.inputs.map(input => input.pass), ["collect", "audit"]);
+  assert.equal(run.calls, 2); assert.equal(f.actions.filter(action => action.kind === "wait").length, 2);
+});
+
+test("a changed image cannot reuse a settling result even when its DOM IDs are unchanged", async () => {
+  const f = fixture(), observe = f.reader.observe; let observations = 0;
+  const changedImage = { ...image, data: (await sharp({ create: { width: 320, height: 240, channels: 3, background: "green" } }).jpeg().toBuffer()).toString("base64") };
+  f.reader.observe = async () => ({ ...await observe(), image: ++observations === 1 ? image : changedImage });
+  await scan(f);
+  assert.equal(f.inputs.length, 3); assert.notEqual(f.inputs[0].image.data, f.inputs[1].image.data);
+  assert.equal(f.inputs.at(-1).pass, "audit");
+});
+
+test("screenshot evidence rejects stale, transparent and differently scaled frames", () => {
+  const width = 160, height = 100, proof = { x: 2, y: 2, width: 64, height: 8, viewportWidth: 80, viewportHeight: 50,
+    colors: [40, 90, 180, 70, 130, 60, 190, 110, 40, 80, 170, 140, 160, 40, 120, 200, 120, 80, 60, 150, 200, 140, 80, 50] };
+  for (const order of [[2, 1, 0, 3], [0, 1, 2, 3], [1, 2, 3, 0], [3, 2, 1, 0]]) {
+    const bitmap = new Uint8Array(width * height * 4);
+    for (let tile = 0; tile < 8; tile++) {
+      const offset = ((proof.y + 4) * 2 * width + (proof.x + tile * 8 + 4) * 2) * 4;
+      for (let channel = 0; channel < 3; channel++) bitmap[offset + order[channel]] = proof.colors[tile * 3 + channel];
+      bitmap[offset + order[3]] = 255;
+    }
+    assert.equal(matchesCaptureProof(bitmap, width, height, proof), true);
+    assert.equal(matchesCaptureProof(bitmap, width, height, { ...proof, colors: proof.colors.map(value => 255 - value) }), false);
+    assert.equal(matchesCaptureProof(bitmap, width, height, { ...proof, viewportWidth: 160 }), false);
+  }
+  assert.equal(matchesCaptureProof(new Uint8Array(width * height * 4), width, height, proof), false);
+  assert.equal(matchesCaptureProof(new Uint8Array(4), width, height, proof), false);
+});
+
+test("cycles with different scroll actions stop when they add no new evidence", async () => {
+  const f = fixture(), extract = f.extract; let calls = 0;
+  f.extract = async input => ({ ...await extract(input), action: { kind: "scroll", targetId: "", value: ++calls % 2 ? "top" : "down" } });
+  await assert.rejects(scan(f), /revisiting|further progress/);
+  assert.ok(calls <= 10, `Stopped after ${calls} calls`);
+});
+
+test("an unseen results control is revealed and cannot be skipped when the count already matches", async () => {
+  const f = fixture(), observe = f.reader.observe, extract = f.extract; let revealed = false, reviewed = false;
+  f.reader.observe = async () => {
+    const observation = await observe();
+    observation.page.controls = reviewed ? [] : [control({ name: "Explore opportunities", kind: "button", role: "button", value: "", options: [], visible: revealed })];
+    return observation;
+  };
+  f.reader.reveal = async id => { assert.equal(id, "e0"); revealed = true; };
+  f.extract = async input => {
+    const result = await extract(input);
+    if (input.controls.some(item => item.id === "e0" && item.visible)) { reviewed = true; return { ...result, irrelevantControls: ["e0"] }; }
+    return result;
+  };
+  await scan(f); assert.equal(revealed, true); assert.equal(reviewed, true);
 });
 test("journal is isolated by workspace and revision, survives restart and retains old runs", async () => {
   const profile = path.join(folder, "logs"), journal = new BoardRuns(profile), run = checkpoint();
@@ -142,5 +243,21 @@ test("default service fallback establishes a zero-new baseline and later discove
   assert.equal(service.state.runs[0].canResume, true);
   fail = false; service.check([previous.id], { resume: true }); await idle();
   assert.equal(store.list()[0].totalCount, 3); assert.equal(store.list()[0].newCount, 2); assert.equal(service.state.runs.length, 0);
+  await store.close();
+});
+
+test("a saved route-filtered board starts directly with scope verification and saves a zero-new baseline", async () => {
+  const profile = path.join(folder, "route-service"), store = new BoardsStore(profile);
+  await store.create(path.join(folder, "route-boards.sqlite"));
+  await store.add([{ company: "Route search", url: url + "#/Product", instructions: "" }]);
+  let fast = 0, verified = 0;
+  const service = new BoardsService(store, { profile, selection: () => ({ provider: "openai", model: "fixture", thinkingLevel: "none" }),
+    reader() { const f = fixture({ filter: true }); return { thorough: { ...f.reader, async open() { verified++; await f.reader.open(); } },
+      async open() { fast++; throw new Error("A route filter must be verified before inventory analysis"); }, close() {}, async read() {}, async next() {} }; },
+    async extract(_selection, input) { return { value: await fixture().extract(input) }; }, changed() {} });
+  service.check();
+  for (let i = 0; i < 500 && service.busy; i++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(service.busy, false); assert.equal(fast, 0); assert.equal(verified, 2);
+  assert.equal(store.list()[0].error, ""); assert.equal(store.list()[0].totalCount, 1); assert.equal(store.list()[0].newCount, 0);
   await store.close();
 });

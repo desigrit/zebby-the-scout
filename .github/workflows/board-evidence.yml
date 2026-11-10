@@ -1,0 +1,64 @@
+name: Board evidence regression
+on:
+  pull_request:
+    branches: [main]
+    paths: ['desktop/board-*.ts', 'desktop/boards-*.ts', 'shared/board*.ts', 'tests/board*.test.mjs', 'scripts/qa-board-evidence.mjs', '.github/workflows/board-evidence.yml']
+  workflow_dispatch:
+    inputs:
+      live_zoom:
+        description: Verify the exact Zoom route on a hosted Windows runner
+        type: boolean
+        default: true
+  push:
+    branches: [fix/board-observed-evidence]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint -- --quiet
+      - run: npm test
+      - run: npm run test:private
+        if: github.repository == 'desigrit/zebby-private'
+      - run: npm run desktop:build
+      - run: npm run credits:build
+      - run: node node_modules/electron/install.js
+      - name: Verify current evidence and filtered Zoom scans
+        env:
+          LIVE_ZOOM: ${{ github.event_name == 'push' || inputs.live_zoom }}
+        run: |
+          node --input-type=module -e "import { build } from 'esbuild'; await build({ entryPoints:['scripts/qa-board-evidence.mjs'], outfile:'qa-output/board-evidence/runner.mjs', bundle:true, platform:'node', format:'esm', target:'node22', external:['electron'] });"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          if ($env:LIVE_ZOOM -eq 'true') { & .\node_modules\.bin\electron.cmd qa-output/board-evidence/runner.mjs --live }
+          else { & .\node_modules\.bin\electron.cmd qa-output/board-evidence/runner.mjs }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify existing thorough navigation and interrupted recovery
+        run: |
+          node --input-type=module -e "import { build } from 'esbuild'; await build({ entryPoints:['scripts/qa-board-thorough.mjs'], outfile:'qa-output/board-layers/thorough.mjs', bundle:true, platform:'node', format:'esm', target:'node22', external:['electron'] });"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+          & .\node_modules\.bin\electron.cmd qa-output/board-layers/thorough.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: board-evidence
+          path: |
+            qa-output/board-evidence/*.json
+            qa-output/board-evidence/*.jpg
+            qa-output/board-layers/*.json
+            qa-output/board-layers/*.jpg
+          retention-days: 7
+          if-no-files-found: ignore

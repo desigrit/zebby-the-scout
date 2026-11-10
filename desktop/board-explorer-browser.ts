@@ -4,7 +4,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { boardUrl } from "../lib/board-identity";
 import type { BoardCandidate, BoardImage } from "../shared/boards";
 import type { ExplorationAction, ExplorationControl } from "../shared/board-exploration";
-import { actExplorePage, observeExplorePage, type ExplorePage } from "./board-explore-page";
+import { actExplorePage, observeExplorePage, type ExplorePage, type ExplorePageAction } from "./board-explore-page";
+import { captureBoardScreenshot } from "./board-screenshot";
 
 export type ObservedBoardFeed = { id: string; url: string; data: unknown; sample: string };
 export type BoardObservation = { page: ExplorePage; image: BoardImage; fingerprint: string; pendingRequests: number; scopeControls?: ExplorationControl[] };
@@ -13,11 +14,19 @@ export interface ThoroughBoardReader {
   open(url: string): Promise<void>;
   observe(): Promise<BoardObservation>;
   act(action: ExplorationAction, observation: BoardObservation): Promise<BoardCandidate | undefined>;
+  reveal?(id: string, observation: BoardObservation): Promise<void>;
   feeds(): ObservedBoardFeed[];
   close(): void;
 }
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const pageFingerprint = (page: ExplorePage) => hash([page.url, page.candidates, page.controls, page.counters, page.scrollY, page.height]);
+const desiredScopeValues = (value: string) => {
+  const source = new URL(value), fragment = new URLSearchParams(source.hash.includes("?") ? source.hash.slice(source.hash.indexOf("?") + 1) : "");
+  const route = /^#!?\//.test(source.hash) ? source.hash.replace(/^#!?\//, "").split("?")[0].split("/").filter(Boolean).map(segment => {
+    try { return decodeURIComponent(segment); } catch { return segment; }
+  }) : [];
+  return [...source.searchParams.values(), ...fragment.values(), ...route].slice(0, 30);
+};
 const sameTarget = (left: string, right: string) => {
   try { const a = boardUrl(left), b = boardUrl(right); return a.origin === b.origin && a.pathname.replace(/\/$/, "") === b.pathname.replace(/\/$/, ""); }
   catch { return false; }
@@ -44,6 +53,7 @@ export class BoardExplorerBrowser implements ThoroughBoardReader {
   private inspectingControl = false;
   private inspectionTarget = "";
   private networkWork = new Set<Promise<void>>();
+  private firstObservation = true;
   constructor(private window: BrowserWindow, private signal: AbortSignal) {}
   private bounded<T>(operation: Promise<T>, milliseconds: number, stage: string): Promise<T> {
     return new Promise((resolve, reject) => {
@@ -102,6 +112,7 @@ export class BoardExplorerBrowser implements ThoroughBoardReader {
   async open(url: string) {
     this.signal.throwIfAborted(); this.active = true; this.source = boardUrl(url).href; this.allowedTarget = this.source;
     this.frame = null; this.networkError = ""; this.epoch++; this.pending.clear(); this.responses.clear(); this.observedFeeds.clear();
+    this.firstObservation = true;
     // Reopening a fragment URL can be an in-document navigation in Chromium.
     // Start a genuinely new document so the audit cannot inherit the last
     // page, expanded sections, or a scroller parked at the end of the list.
@@ -123,8 +134,7 @@ export class BoardExplorerBrowser implements ThoroughBoardReader {
     this.signal.throwIfAborted();
     if (this.networkError) throw new Error(this.networkError);
     if (frame.isDestroyed()) throw new Error("The embedded results were replaced. Resume to read the updated page.");
-    const source = new URL(this.source), fragment = new URLSearchParams(source.hash.includes("?") ? source.hash.slice(source.hash.indexOf("?") + 1) : "");
-    const values = [...source.searchParams.values(), ...fragment.values()].slice(0, 30);
+    const values = desiredScopeValues(this.source);
     const page = await this.bounded(frame.executeJavaScript(`(${observeExplorePage.toString()})(${JSON.stringify(values)})`), 15000, "Reading the page") as ExplorePage;
     boardUrl(page.url);
     if (page.candidates.length >= 2000 || page.controls.length >= 1000) throw new Error("This page has too many elements to verify in one check. Use a more specific results link.");
@@ -138,29 +148,47 @@ export class BoardExplorerBrowser implements ThoroughBoardReader {
     }
     return controls;
   }
-  private async execute(action: ExplorationAction | { kind: "label" | "unlabel"; targetId: string; value: string }) {
-    const source = new URL(this.source), fragment = new URLSearchParams(source.hash.includes("?") ? source.hash.slice(source.hash.indexOf("?") + 1) : "");
-    const values = [...source.searchParams.values(), ...fragment.values()].slice(0, 30);
+  private async execute(action: ExplorePageAction) {
+    const values = desiredScopeValues(this.source);
     return this.bounded((this.frame || this.window.webContents.mainFrame).executeJavaScript(`(${actExplorePage.toString()})(${JSON.stringify(action)},${JSON.stringify(values)})`), 15000, "Updating the results view") as Promise<boolean>;
   }
   async observe(): Promise<BoardObservation> {
+    // A component can begin loading after document.readyState is complete.
+    // Wait longer on the first view with no result counter, and recapture a
+    // changing viewport locally before asking a model to analyse it.
+    for (let capture = 0; capture < 3; capture++) {
+      const observation = await this.captureObservation();
+      if (observation) return observation;
+    }
+    throw new Error("The job results kept changing while the page was being captured. Resume to read the updated results.");
+  }
+  private async captureObservation(): Promise<BoardObservation | null> {
+    const started = Date.now();
     let page = await this.raw(), previous = pageFingerprint(page), stable = 0;
-    for (let attempt = 0; attempt < 20; attempt++) {
+    for (let attempt = 0; attempt < 35; attempt++) {
       await delay(300, undefined, { signal: this.signal });
       page = await this.raw(); const signature = pageFingerprint(page);
       stable = signature === previous && !page.loading && this.pending.size === 0 ? stable + 1 : 0;
-      previous = signature; if (stable >= 2) break;
+      const minimum = this.firstObservation ? page.counters.length ? 1200 : 5000 : 600;
+      previous = signature; if (stable >= 3 && Date.now() - started >= minimum) break;
     }
     await Promise.allSettled([...this.networkWork]);
     await this.execute({ kind: "label", targetId: "", value: "" });
-    await this.bounded((this.frame || this.window.webContents.mainFrame).executeJavaScript("new Promise(resolve => { setTimeout(resolve, 250); requestAnimationFrame(() => requestAnimationFrame(resolve)); })"), 5000, "Preparing the page image");
     let data: string;
-    try { data = (await this.bounded(this.window.webContents.capturePage(), 15000, "Capturing the page image")).resize({ width: 1280, height: 900 }).toJPEG(80).toString("base64"); }
+    try { data = (await this.bounded(captureBoardScreenshot(this.window, this.signal), 15000, "Capturing the page image")).toJPEG(80).toString("base64"); }
     finally { if (!this.window.isDestroyed()) await this.execute({ kind: "unlabel", targetId: "", value: "" }); }
     if (data.length > 1_400_000) throw new Error("This page image is too large to read. Resume from a more specific results link.");
     const after = await this.raw();
-    if (pageFingerprint(after) !== pageFingerprint(page)) throw new Error("The job results changed while the page was being captured. Resume to read the updated results.");
+    if (pageFingerprint(after) !== pageFingerprint(page)) return null;
+    this.firstObservation = false;
     return { page, image: { mediaType: "image/jpeg", data, width: 1280, height: 900 }, fingerprint: pageFingerprint(page), pendingRequests: Math.min(this.pending.size, 1000), scopeControls: await this.parentScopeControls() };
+  }
+  async reveal(id: string, observation: BoardObservation): Promise<void> {
+    const fresh = await this.raw();
+    if (pageFingerprint(fresh) !== observation.fingerprint) throw new Error("The page changed before the next step. Read its current controls again.");
+    if (!fresh.candidates.some(candidate => candidate.id === id) && !fresh.controls.some(control => control.id === id)) throw new Error("The unread page element is no longer available.");
+    if (!await this.execute({ kind: "reveal", targetId: id, value: "" })) throw new Error("The unread page element could not be brought into view.");
+    await delay(400, undefined, { signal: this.signal });
   }
   async act(action: ExplorationAction, observation: BoardObservation): Promise<BoardCandidate | undefined> {
     const fresh = await this.raw();

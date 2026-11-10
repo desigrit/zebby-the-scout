@@ -8,7 +8,7 @@ import { scanBoard } from "./boards-scan";
 import type { BoardReader } from "./board-browser";
 import { writeProfileSettings } from "./settings-persistence";
 import { BoardRuns } from "./board-runs";
-import { newBoardCheckpoint, thoroughlyScanBoard, BoardReadLimit, type BoardCheckpoint } from "./board-thorough";
+import { boardScope, newBoardCheckpoint, thoroughlyScanBoard, BoardReadLimit, type BoardCheckpoint } from "./board-thorough";
 import type { BoardCheckOptions } from "../shared/board-exploration";
 
 export type BoardSelection = { provider: AnalysisProvider; model: string; thinkingLevel: string; ollamaUrl?: string };
@@ -128,7 +128,11 @@ export class BoardsService<Selection extends BoardSelection> {
             } finally { clearTimeout(timer); requestSignal = signal; }
           };
           let scan;
-          if (options.thorough || options.resume) scan = await thorough();
+          // Path-based hash filters need selected-control evidence, which the
+          // fast inventory pass cannot supply. Avoid paying for that pass
+          // only to repeat it with the thorough reader afterwards.
+          const routedFilters = /^#!?\//.test(new URL(board.url).hash) && boardScope(board.url).some(filter => filter.key === "route");
+          if (options.thorough || options.resume || settings.automaticThorough && routedFilters) scan = await thorough();
           else {
             const initialReader = this.dependencies.reader(signal);
             try { scan = await scanBoard({ ...scanOptions, reader: initialReader }); }
