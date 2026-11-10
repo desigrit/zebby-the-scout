@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { app } from "electron";
+import { app, nativeImage } from "electron";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { BoardBrowser } from "../desktop/board-browser.ts";
@@ -7,6 +7,7 @@ import { boardScope, thoroughlyScanBoard, newBoardCheckpoint } from "../desktop/
 import { defaultBoardReaderSettings, controlProvesScope } from "../shared/board-exploration.ts";
 import { boardModelContract, validatedBoardExtraction } from "../shared/boards.ts";
 import { validStructuredResult } from "../desktop/online-response.ts";
+import { matchesCaptureProof } from "../desktop/board-screenshot.ts";
 
 const output = path.resolve("qa-output/board-evidence"), reports = [];
 const url = "https://www.careers.zoom.us/job-results#/7bc982e1-3ea0-44c2-94d3-cdbc196a6688/united-states-of-america";
@@ -48,7 +49,7 @@ async function scan(name, live = false) {
     if (page.counters.some(counter => /2 positions/.test(counter.text))) {
       assert.equal(page.counters.filter(counter => /2 positions/.test(counter.text)).length, 1, "Count containers must be deduplicated");
       assert.ok(filters.every(filter => page.controls.some(control => controlProvesScope(control, filter.value, filters.map(item => item.value)))));
-      await writeFile(path.join(output, name + "-results.jpg"), Buffer.from(observation.image.data, "base64"));
+      if (page.candidates.some(item => page.viewportIds.includes(item.id) && item.url.includes("/job-details/"))) await writeFile(path.join(output, name + "-results.jpg"), Buffer.from(observation.image.data, "base64"));
     }
     return observation;
   };
@@ -107,10 +108,41 @@ async function filterEvidence() {
   } finally { owner.close(); }
 }
 
+async function screenshotEvidence() {
+  const source = "https://example.org/careers";
+  const content = '<!doctype html><html><body style="margin:0"><div style="height:1000px;background:rgb(190,40,80)">Header</div><main style="height:1000px;background:rgb(40,150,200);padding-top:100px;box-sizing:border-box"><p>1 open job</p><a href="https://example.org/job-details/1">Product Manager</a></main></body></html>';
+  const hasColor = (image, colors) => matchesCaptureProof(nativeImage.createFromBuffer(Buffer.from(image.data, "base64")).toBitmap({ scaleFactor: 1 }), 1280, 900,
+    { x: 1000, y: 440, width: 8, height: 8, viewportWidth: 1280, viewportHeight: 900, colors });
+  for (const layer of ["thorough", "visual"]) {
+    const abort = new AbortController(), owner = new BoardBrowser(abort.signal);
+    await owner.window.webContents.session.protocol.handle("https", () => new Response(content, { headers: { "content-type": "text/html" } }));
+    try {
+      if (layer === "thorough") {
+        await owner.thorough.open(source);
+        const first = await owner.thorough.observe(); assert.ok(hasColor(first.image, [190, 40, 80]), "Initial image must show the header");
+        const job = first.page.candidates.find(item => item.url.includes("/job-details/"));
+        await owner.thorough.reveal(job.id, first);
+        const next = await owner.thorough.observe(); assert.ok(hasColor(next.image, [40, 150, 200]), "Scrolled image must show the results, not the old header");
+        await writeFile(path.join(output, "screenshot-current-viewport.jpg"), Buffer.from(next.image.data, "base64"));
+      } else {
+        await owner.open(source); let views = 0;
+        for await (const viewport of owner.visual()) {
+          if (!views++) assert.ok(hasColor(viewport.image, [190, 40, 80]));
+          else { assert.ok(hasColor(viewport.image, [40, 150, 200]), "The earlier visual layer must also capture the new viewport"); break; }
+        }
+        assert.equal(views, 2);
+      }
+      assert.equal(owner.window.isVisible(), false, "Board reading must keep its window hidden");
+      reports.push({ name: layer + " screenshot follows scrolling and paints current evidence", status: "passed" });
+    } finally { owner.close(); }
+  }
+}
+
 async function main() {
   await mkdir(path.join(output, "profile"), { recursive: true }); app.setPath("userData", path.join(output, "profile"));
   app.on("window-all-closed", () => {}); await app.whenReady();
   try {
+    await screenshotEvidence();
     await filterEvidence();
     await scan("delayed-route-results");
     if (process.argv.includes("--live")) { await scan("zoom-cold-1", true); await scan("zoom-cold-2", true); }

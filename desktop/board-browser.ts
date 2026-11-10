@@ -11,6 +11,7 @@ import { isNetflixSearch, NetflixBoardPages } from "./netflix-board";
 import { greenhouseBoard, sameGreenhouseSearch } from "./greenhouse-board";
 import { isLyftCareers } from "./lyft-board";
 import { BoardExplorerBrowser, type ThoroughBoardReader } from "./board-explorer-browser";
+import { captureBoardScreenshot } from "./board-screenshot";
 
 export type BoardDocument = { id: string; url: string; title: string; summary: string };
 export type BoardReader = { open(url: string): Promise<void>; read(): Promise<BoardPage>; next(id: string, observed?: BoardControl): Promise<void>; close(): void;
@@ -86,7 +87,8 @@ export class BoardBrowser implements BoardReader {
     });
     this.window = new BrowserWindow({ show: false, width: 1280, height: 900,
       webPreferences: { session: isolated, sandbox: true, contextIsolation: true, nodeIntegration: false,
-        webSecurity: true, backgroundThrottling: false, devTools: false } });
+        webSecurity: true, backgroundThrottling: false, devTools: false, offscreen: true } });
+    this.window.webContents.setFrameRate(12);
     this.thorough = new BoardExplorerBrowser(this.window, signal);
     this.window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     this.window.webContents.on("did-frame-navigate", (_event, url, status) => {
@@ -337,7 +339,7 @@ export class BoardBrowser implements BoardReader {
         await this.action("label");
         await (this.frame || this.window.webContents.mainFrame).executeJavaScript(
           "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))");
-        const bitmap = (await this.window.webContents.capturePage()).resize({ width: 1280, height: 900 });
+        const bitmap = await captureBoardScreenshot(this.window, this.signal);
         await this.action("unlabel");
         const size = bitmap.getSize(), data = bitmap.toJPEG(80).toString("base64");
         if (data.length > 1_400_000) throw new Error("The board screenshot is too large to read. Try the direct job board link.");

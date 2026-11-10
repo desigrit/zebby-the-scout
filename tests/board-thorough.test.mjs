@@ -11,6 +11,7 @@ import { defaultBoardReaderSettings, controlProvesScope } from "../shared/board-
 import { openAIAnalysisInput } from "../desktop/openai-request.ts";
 import { anthropicAnalysisInput } from "../desktop/anthropic-request.ts";
 import { validStructuredResult } from "../desktop/online-response.ts";
+import { matchesCaptureProof } from "../desktop/board-screenshot.ts";
 
 const folder = await mkdtemp(path.join(tmpdir(), "zebby-thorough-"));
 await build({ stdin: { contents: "export * from './desktop/board-thorough'; export * from './desktop/board-runs'; export * from './desktop/boards-store'; export * from './desktop/boards-service';", resolveDir: process.cwd() },
@@ -159,6 +160,24 @@ test("local settling reuses a validated finish but each independent pass still r
   const f = fixture(); const { run } = await scan(f);
   assert.equal(f.inputs.length, 2); assert.deepEqual(f.inputs.map(input => input.pass), ["collect", "audit"]);
   assert.equal(run.calls, 2); assert.equal(f.actions.filter(action => action.kind === "wait").length, 2);
+});
+
+test("screenshot evidence rejects stale, transparent and differently scaled frames", () => {
+  const width = 160, height = 100, proof = { x: 2, y: 2, width: 64, height: 8, viewportWidth: 80, viewportHeight: 50,
+    colors: [40, 90, 180, 70, 130, 60, 190, 110, 40, 80, 170, 140, 160, 40, 120, 200, 120, 80, 60, 150, 200, 140, 80, 50] };
+  for (const order of [[2, 1, 0, 3], [0, 1, 2, 3], [1, 2, 3, 0], [3, 2, 1, 0]]) {
+    const bitmap = new Uint8Array(width * height * 4);
+    for (let tile = 0; tile < 8; tile++) {
+      const offset = ((proof.y + 4) * 2 * width + (proof.x + tile * 8 + 4) * 2) * 4;
+      for (let channel = 0; channel < 3; channel++) bitmap[offset + order[channel]] = proof.colors[tile * 3 + channel];
+      bitmap[offset + order[3]] = 255;
+    }
+    assert.equal(matchesCaptureProof(bitmap, width, height, proof), true);
+    assert.equal(matchesCaptureProof(bitmap, width, height, { ...proof, colors: proof.colors.map(value => 255 - value) }), false);
+    assert.equal(matchesCaptureProof(bitmap, width, height, { ...proof, viewportWidth: 160 }), false);
+  }
+  assert.equal(matchesCaptureProof(new Uint8Array(width * height * 4), width, height, proof), false);
+  assert.equal(matchesCaptureProof(new Uint8Array(4), width, height, proof), false);
 });
 
 test("cycles with different scroll actions stop when they add no new evidence", async () => {

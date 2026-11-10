@@ -5,6 +5,7 @@ import { boardUrl } from "../lib/board-identity";
 import type { BoardCandidate, BoardImage } from "../shared/boards";
 import type { ExplorationAction, ExplorationControl } from "../shared/board-exploration";
 import { actExplorePage, observeExplorePage, type ExplorePage, type ExplorePageAction } from "./board-explore-page";
+import { captureBoardScreenshot } from "./board-screenshot";
 
 export type ObservedBoardFeed = { id: string; url: string; data: unknown; sample: string };
 export type BoardObservation = { page: ExplorePage; image: BoardImage; fingerprint: string; pendingRequests: number; scopeControls?: ExplorationControl[] };
@@ -173,9 +174,8 @@ export class BoardExplorerBrowser implements ThoroughBoardReader {
     }
     await Promise.allSettled([...this.networkWork]);
     await this.execute({ kind: "label", targetId: "", value: "" });
-    await this.bounded((this.frame || this.window.webContents.mainFrame).executeJavaScript("new Promise(resolve => { setTimeout(resolve, 250); requestAnimationFrame(() => requestAnimationFrame(resolve)); })"), 5000, "Preparing the page image");
     let data: string;
-    try { data = (await this.bounded(this.window.webContents.capturePage(), 15000, "Capturing the page image")).resize({ width: 1280, height: 900 }).toJPEG(80).toString("base64"); }
+    try { data = (await this.bounded(captureBoardScreenshot(this.window, this.signal), 15000, "Capturing the page image")).toJPEG(80).toString("base64"); }
     finally { if (!this.window.isDestroyed()) await this.execute({ kind: "unlabel", targetId: "", value: "" }); }
     if (data.length > 1_400_000) throw new Error("This page image is too large to read. Resume from a more specific results link.");
     const after = await this.raw();
