@@ -26,6 +26,15 @@ export function boardScope(value: string): BoardExploreInput["scope"] {
     }
     values.set(JSON.stringify([key, value]), { key, value });
   }
+  // Hash routers can encode filters as path values, including opaque IDs.
+  // Require actual selected-control evidence for each value. Never infer the
+  // meaning of a UUID or treat the URL itself as proof of an active filter.
+  if (/^#!?\//.test(url.hash)) for (const segment of url.hash.replace(/^#!?\//, "").split("?")[0].split("/").filter(Boolean)) {
+    let value: string; try { value = decodeURIComponent(segment); } catch { throw new Error("This saved search contains an invalid filter address. Edit its link before checking again."); }
+    if (/^(?:jobs?|careers|search|results|job-results|openings)$/.test(value)) continue;
+    if (value.length > 500) throw new Error("This saved search contains ambiguous filters. Edit its link before checking again.");
+    values.set(JSON.stringify(["route", value]), { key: "route", value });
+  }
   if (values.size > 30) throw new Error("This saved search has too many filters to verify.");
   return [...values.values()].map(({ key, value }, index) => ({ id: "s" + index, key, value }));
 }
@@ -126,8 +135,10 @@ export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> 
     const inspected = new Map<string, BoardCandidate>(), classified = new Set<string>(), visitedNext = new Set<string>();
     const inspectedControls = new Map<string, BoardCandidate>();
     const repeatedDecisions = new Map<string, number>();
+    const settledReads = new Map<string, BoardExploreResult>();
     const controlKey = (pageUrl: string, control: BoardObservation["page"]["controls"][number]) => hash([pageUrl, control.id, control.name, control.role, control.context]);
     let expected: number | null = null, empty = false, bottom = "", stableBottom = 0, sweptAgain = false, lastUrl = "";
+    let progressKey = "", stagnant = 0;
     feedback = ""; history.length = 0; transientErrors = 0;
     await reader.open(options.url); await replay(recipe);
     options.progress(pass === "audit" ? "Verifying the inventory in a fresh pass" : "Reading the board thoroughly", "reading");
@@ -156,7 +167,7 @@ export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> 
       const controls = page.controls.filter(control => control.visible || ["input", "select"].includes(control.kind));
       if (controls.length > 80) throw new Error("Too many result controls are visible. Use a more specific results link.");
       const remainingSections = page.sections.filter(id => !ignored.has(id)).length;
-      const bottomKey = hash([page.url, jobKeys(jobs.values()), page.candidates.map(candidate => candidate.url), page.counters, remainingSections]);
+      const bottomKey = hash([page.url, page.candidates, page.counters, page.sections]);
       stableBottom = page.atBottom && bottomKey === bottom ? stableBottom + 1 : 0; bottom = page.atBottom ? bottomKey : "";
       const input: BoardExploreInput = { task: "explore", savedUrl: options.url, pageUrl: page.url, pageTitle: page.title, summary: page.summary,
         image: observation.image, candidates, controls, scope, pass, counters: page.counters, atBottom: page.atBottom,
@@ -165,7 +176,10 @@ export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> 
         history: history.slice(-12), feedback };
       options.progress(pass === "audit" ? `Verifying ${jobs.size} listings` : `Reading thoroughly, ${jobs.size} listings found`, "extracting");
       let result: BoardExploreResult;
-      try { result = await call(input) as BoardExploreResult; transientErrors = 0; }
+      // Reuse only an unchanged, validated finish observation while waiting
+      // for local settling. A new pass has its own cache and reads afresh.
+      const readKey = hash([observation.fingerprint, observation.scopeControls, candidates, controls, scope]);
+      try { result = settledReads.get(readKey) || await call(input) as BoardExploreResult; transientErrors = 0; }
       catch (error) {
         signal.throwIfAborted();
         if (++transientErrors > 3 || error instanceof BoardReadLimit || /credit|allowance|usage|quota|sign.?in|API key|authentication/i.test(String(error))) throw error;
@@ -190,6 +204,9 @@ export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> 
       const decisionKey = hash([observation.fingerprint, result.action, jobKeys(jobs.values()), [...proofs].sort()]);
       const repeated = (repeatedDecisions.get(decisionKey) || 0) + 1; repeatedDecisions.set(decisionKey, repeated);
       if (repeated > 4) throw new Error("The reader could not make further progress on this page. Resume to try again, or edit the board to use its direct results link. Your last successful check is unchanged.");
+      const nextProgress = hash([jobKeys(jobs.values()), [...classified].sort(), [...ignored].sort(), [...proofs].sort(), expected, empty]);
+      stagnant = nextProgress === progressKey ? stagnant + 1 : 0; progressKey = nextProgress;
+      if (stagnant >= 8) throw new Error("The reader kept revisiting the same results without finding new evidence. Resume to try again. Your last successful check is unchanged.");
       // Discover and validate public response fields, then use the records only
       // to enrich links independently observed in the current result scope.
       for (const feed of reader.feeds().slice(0, 3)) {
@@ -211,14 +228,25 @@ export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> 
         }
       }
       let action = result.action; feedback = "";
+      const unaccountedControls = page.controls.filter(control => !control.disabled && control.kind !== "scroll" &&
+        (isContinuationControl(control) || !ignored.has(control.id) && control.expanded !== true &&
+          !inspectedControls.has(controlKey(page.url, control)) &&
+          !(control.kind === "link" && classified.has(control.href)) &&
+          !scope.some(filter => controlProvesScope(control, filter.value, scope.filter(item => item.key === filter.key).map(item => item.value)))));
+      const unread = page.candidates.find(candidate => !classified.has(candidate.url) && !visible.has(candidate.id))?.id ||
+        unaccountedControls.find(control => !control.visible)?.id;
+      // Find the next observed unread element directly. This does not discard
+      // the rest of the document: finish still requires global coverage, the
+      // bottom of every scroller, a settled count and an independent audit.
+      if (reader.reveal && unread && !result.uncertainIds.length &&
+          (action.kind === "finish" || action.kind === "scroll" && action.value === "top" && !action.targetId)) {
+        try { checkBudget(); stepsTaken++; await reader.reveal(unread, observation); history.push("Reading the next unread element: " + unread); feedback = "Review this unread part of the results before revisiting earlier content."; }
+        catch (error) { signal.throwIfAborted(); feedback = String(error).slice(0, 1500); }
+        continue;
+      }
       if (action.kind === "finish") {
         const unclassified = page.candidates.some(candidate => !classified.has(candidate.url));
         const closed = page.sections.some(id => !ignored.has(id));
-        const unaccountedControls = controls.filter(control => !control.disabled && control.kind !== "scroll" &&
-          (isContinuationControl(control) || !ignored.has(control.id) && control.expanded !== true &&
-            !inspectedControls.has(controlKey(page.url, control)) &&
-            !(control.kind === "link" && classified.has(control.href)) &&
-            !scope.some(filter => controlProvesScope(control, filter.value, scope.filter(item => item.key === filter.key).map(item => item.value)))));
         if (proofs.size !== scope.length) feedback = "The saved filters are not all verified. Restore the missing filters and report their selected values.";
         else if (closed) feedback = "There are unopened sections that have not been classified as unrelated. Inspect and open the job-results sections.";
         else if (unaccountedControls.length) feedback = `These controls still need review: ${unaccountedControls.map(control => control.id + " " + control.name).join(", ").slice(0, 1000)}. Use result navigation, inspect vacancy controls, or explicitly classify unrelated controls before finishing.`;
@@ -228,7 +256,7 @@ export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> 
         else if (!jobs.size && !empty) feedback = "No jobs were verified, and the results have not explicitly confirmed an empty search. Inspect the result controls.";
         else if (!result.complete) feedback = "The visible evidence is still ambiguous. Resolve the stated issue before finishing.";
         else if (expected === null && !sweptAgain) { action = scroll(observation, true); sweptAgain = true; feedback = "No reliable total is stated. Sweep this results page once more for missed jobs and controls."; }
-        else if (stableBottom < 1) { action = { kind: "wait", targetId: "", value: "" }; feedback = "Verify that the final result set has settled before finishing."; }
+        else if (stableBottom < 1) { settledReads.set(readKey, result); action = { kind: "wait", targetId: "", value: "" }; feedback = "Verify that the final result set has settled before finishing."; }
         else {
           checkpoint.jobs = [...jobs.values()]; await persist("Inventory pass verified");
           return { jobs: [...jobs.values()], recipe: checkpoint.steps.filter(step => ["expand", "select", "choose", "fill", "dismiss", "document"].includes(step.action.kind)) };
@@ -242,7 +270,7 @@ export async function thoroughlyScanBoard(options: Options): Promise<BoardScan> 
         if (visitedNext.has(pageKey)) throw new Error("The board repeated a results page. Verified jobs are saved; resume to retry its navigation.");
         visitedNext.add(pageKey); stableBottom = 0; sweptAgain = false;
       }
-      if (["fill", "select", "choose"].includes(action.kind)) { proofs.clear(); jobs.clear(); classified.clear(); ignored.clear(); expected = null; empty = false; stableBottom = 0; sweptAgain = false; }
+      if (["fill", "select", "choose"].includes(action.kind)) { proofs.clear(); jobs.clear(); classified.clear(); ignored.clear(); settledReads.clear(); expected = null; empty = false; stableBottom = 0; sweptAgain = false; }
       try {
         const detail = await take(action, observation);
         if (detail) {
