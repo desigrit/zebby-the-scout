@@ -60,5 +60,5 @@ jobs:
             qa-output/board-evidence/*.jpg
             qa-output/board-layers/*.json
             qa-output/board-layers/*.jpg
-          retention-days: 7
+          retention-days: 3
           if-no-files-found: ignore

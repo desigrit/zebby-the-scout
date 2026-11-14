@@ -241,10 +241,6 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" "${assets[@]}" --title "Zebby $GITHUB_REF_NAME" --generate-notes --target "$GITHUB_SHA"
           fi
-      - name: Keep only the latest temporary build artifacts
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: node scripts/prune-build-artifacts.mjs --apply
 
   verify-boards-update:
     needs: release
@@ -280,6 +276,6 @@ jobs:
         if: always()
         with:
           name: public-update-verification
-          retention-days: 14
+          retention-days: 3
           path: qa-output/public-updates/verification.json
           if-no-files-found: error

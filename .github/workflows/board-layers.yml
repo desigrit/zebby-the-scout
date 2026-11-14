@@ -106,6 +106,6 @@ jobs:
             .impeccable/review/boards-*.png
             credits-service/dist/server.mjs
             credits-service/dist/provider-smoke.mjs
-          retention-days: 7
+          retention-days: 3
           if-no-files-found: ignore
           include-hidden-files: true
