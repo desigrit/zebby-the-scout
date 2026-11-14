@@ -49,4 +49,4 @@ jobs:
             qa-output/boards-recovery/*.png
             qa-output/boards-recovery/report.json
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 3

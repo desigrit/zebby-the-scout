@@ -40,5 +40,5 @@ jobs:
         if: always()
         with:
           name: slack-board-evidence
-          retention-days: 7
+          retention-days: 3
           path: qa-output/slack-board/*.json
