@@ -79,7 +79,7 @@ jobs:
   layers:
     name: Native Boards checks (Windows)
     needs: general
-    if: github.event_name == 'pull_request' || github.event_name == 'push' || inputs.browser_checks
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/v') || inputs.browser_checks
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
