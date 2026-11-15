@@ -8,7 +8,7 @@ export async function checkBoardsRenderer(page, nav) {
   await page.evaluate(() => {
     let state = { filePath: "OneDrive/Work-boards.sqlite", filename: "Work-boards.sqlite", dirty: false, error: "", boards: [], progress: [] };
     const listeners = new Set(), publish = () => { for (const listener of listeners) listener(structuredClone(state)); };
-    window.boardsQA = { get: () => state, set: change => { state = { ...state, ...change }; publish(); }, checks: [], reviews: [], listingCalls: [], failedAdd: false };
+    window.boardsQA = { get: () => state, set: change => { state = { ...state, ...change }; publish(); }, checks: [], reviews: [], removals: [], listingCalls: [], failedAdd: false };
     Object.assign(window.desktop, {
       boardsState: async () => structuredClone(state), onBoardsChanged: listener => { listeners.add(listener); return () => listeners.delete(listener); },
       addBoards: async inputs => {
@@ -19,7 +19,12 @@ export async function checkBoardsRenderer(page, nav) {
         publish(); return state;
       },
       updateBoard: async (id, input) => { Object.assign(state.boards.find(board => board.id === id), input); publish(); return state; },
-      removeBoard: async id => { state.boards = state.boards.filter(board => board.id !== id); publish(); return state; },
+      removeBoard: async id => {
+        window.boardsQA.removals.push(id);
+        if (window.boardsQA.deferRemove) await new Promise(resolve => { window.boardsQA.finishRemove = resolve; });
+        if (window.boardsQA.removeError) throw new Error("The board could not be removed. Try again.");
+        state.boards = state.boards.filter(board => board.id !== id); publish(); return state;
+      },
       checkBoards: async (ids, options) => { window.boardsQA.options = options; window.boardsQA.checks.push(ids || state.boards.map(board => board.id));
         state.progress = (ids || state.boards.map(board => board.id)).map(boardId => ({ boardId, requestId: boardId, phase: "reading", message: "Reading page 2" })); publish(); return state; },
       cancelBoardCheck: async id => { state.progress = state.progress.filter(entry => entry.boardId !== id); publish(); return true; },
@@ -162,9 +167,25 @@ export async function checkBoardsRenderer(page, nav) {
   assert.equal(keyboardListing.url(), await newLink.getAttribute("href"), "Keyboard activation opens a new listing");
   await keyboardListing.close(); await page.bringToFront();
   await page.waitForFunction(() => document.visibilityState === "visible");
+  const wideListing = await existingLink.evaluate(link => {
+    const title = link.querySelector(".board-listing-title").getBoundingClientRect(), meta = link.querySelector(".board-listing-meta").getBoundingClientRect();
+    return { titleTop: title.top, titleBottom: title.bottom, metaTop: meta.top, metaLeft: meta.left, titleRight: title.right,
+      border: getComputedStyle(link.parentElement).borderBottomWidth };
+  });
+  assert.ok(wideListing.metaTop >= wideListing.titleTop && wideListing.metaTop < wideListing.titleBottom && wideListing.metaLeft > wideListing.titleRight,
+    "Wide listings keep role and metadata on one line");
+  assert.equal(wideListing.border, "0px", "Expanded listings have no individual divider lines");
   await capture("boards-listings-light");
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; }); await capture("boards-listings-dark");
   await page.setViewportSize({ width: 790, height: 620 }); await capture("boards-listings-compact-dark");
+  await page.setViewportSize({ width: 620, height: 620 });
+  const compactListing = await existingLink.evaluate(link => ({
+    titleBottom: link.querySelector(".board-listing-title").getBoundingClientRect().bottom,
+    metaTop: link.querySelector(".board-listing-meta").getBoundingClientRect().top,
+  }));
+  assert.ok(compactListing.metaTop >= compactListing.titleBottom, "Compact listings wrap metadata below the role");
+  await capture("boards-listings-narrow-dark");
+  await page.setViewportSize({ width: 790, height: 620 });
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; }); await capture("boards-listings-compact-light");
   await page.setViewportSize({ width: 1550, height: 850 });
   await page.evaluate(() => window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => index === 0 ? { ...board, newCount: 59, totalCount: 120 } : board) }));
@@ -341,6 +362,57 @@ export async function checkBoardsRenderer(page, nav) {
   await page.getByRole("button", { name: "Thorough recheck", exact: true }).click();
   assert.equal((await page.evaluate(() => window.boardsQA.options)).thorough, true);
   await page.evaluate(() => window.boardsQA.set({ progress: [] }));
+  const beforeRemoval = await page.evaluate(() => structuredClone(window.boardsQA.get().boards));
+  await page.setViewportSize({ width: 1550, height: 850 });
+  await page.evaluate(() => { document.documentElement.dataset.theme = "light"; document.querySelector(".desktop-workspace").scrollTop = 0; });
+  const removeSlack = first.getByRole("button", { name: "Remove Slack board", exact: true });
+  const removeDialog = page.getByRole("dialog", { name: "Remove Slack?", exact: true });
+  await removeSlack.click(); await removeDialog.waitFor();
+  assert.deepEqual(await page.evaluate(() => window.boardsQA.removals), [], "Opening confirmation does not remove anything");
+  assert.equal(await removeDialog.getByRole("button", { name: "Cancel", exact: true }).evaluate(node => node === document.activeElement), true);
+  const anchor = await removeSlack.boundingBox(), bubble = await removeDialog.boundingBox();
+  assert.ok(Math.abs(bubble.x + bubble.width - anchor.x - anchor.width) < 2 && bubble.y >= anchor.y + anchor.height && bubble.y - anchor.y - anchor.height < 12,
+    "Confirmation is anchored beside the clicked X");
+  await capture("boards-remove-light");
+  await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; }); await capture("boards-remove-dark");
+  await removeDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await removeDialog.waitFor({ state: "hidden" });
+  assert.equal(await removeSlack.evaluate(node => node === document.activeElement), true, "Cancel restores focus to the X");
+  await page.keyboard.press("Enter"); await removeDialog.waitFor(); await page.keyboard.press("Escape");
+  await removeDialog.waitFor({ state: "hidden" });
+  assert.equal(await removeSlack.evaluate(node => node === document.activeElement), true, "Escape restores focus to the X");
+  await removeSlack.click(); await removeDialog.waitFor(); await page.locator(".boards-title").click();
+  await removeDialog.waitFor({ state: "hidden" });
+  assert.deepEqual(await page.evaluate(() => window.boardsQA.removals), [], "Cancel, Escape and outside clicks never delete a board");
+  await removeSlack.click(); await removeDialog.waitFor();
+  await removeDialog.getByRole("button", { name: "Remove", exact: true }).focus(); await page.keyboard.press("Tab");
+  await removeDialog.waitFor({ state: "hidden" });
+  await page.setViewportSize({ width: 790, height: 400 });
+  await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
+  await removeSlack.click(); await removeDialog.waitFor();
+  const smallAnchor = await removeSlack.boundingBox(), smallBubble = await removeDialog.boundingBox();
+  assert.ok(smallBubble.y >= 12 && smallBubble.y + smallBubble.height <= 388 && smallBubble.x >= 12 && smallBubble.x + smallBubble.width <= 778,
+    "The confirmation stays inside a small window");
+  assert.ok(smallBubble.y + smallBubble.height <= smallAnchor.y, "Near the bottom edge the confirmation opens above the X");
+  await capture("boards-remove-compact");
+  await removeDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.setViewportSize({ width: 1550, height: 850 });
+  await page.evaluate(() => { window.boardsQA.deferRemove = true; window.boardsQA.removeError = true; });
+  await removeSlack.click(); await removeDialog.getByRole("button", { name: "Remove", exact: true }).click();
+  await removeDialog.getByRole("button", { name: "Removing", exact: true }).waitFor();
+  assert.equal(await removeDialog.getByRole("button", { name: "Removing", exact: true }).getAttribute("aria-disabled"), "true");
+  await removeDialog.getByRole("button", { name: "Removing", exact: true }).click({ force: true });
+  assert.deepEqual(await page.evaluate(() => window.boardsQA.removals), ["0"], "Removal submits once while pending");
+  await page.evaluate(() => window.boardsQA.finishRemove());
+  await page.getByRole("alert").filter({ hasText: "The board could not be removed" }).waitFor();
+  await removeDialog.getByRole("button", { name: "Remove", exact: true }).waitFor();
+  assert.equal(await first.isVisible(), true, "A failed removal preserves the board and allows retry");
+  await page.evaluate(() => { window.boardsQA.deferRemove = false; window.boardsQA.removeError = false; });
+  await removeDialog.getByRole("button", { name: "Remove", exact: true }).click();
+  await first.waitFor({ state: "hidden" }); await removeDialog.waitFor({ state: "hidden" });
+  assert.deepEqual(await page.evaluate(() => window.boardsQA.get().boards.map(board => board.id)), ["1", "2"], "Only the confirmed board is removed");
+  await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Remove Uber board");
+  await page.evaluate(boards => window.boardsQA.set({ boards }), beforeRemoval);
   await page.setViewportSize({ width: 1325, height: 850 });
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
   await nav.getByRole("button", { name: "Settings", exact: true }).click();

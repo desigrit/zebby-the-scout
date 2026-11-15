@@ -192,6 +192,78 @@ function BoardCheckStatus({ error }: { error: string }) {
   return <BoardTooltipButton content={error} className="board-check-status">Check incomplete</BoardTooltipButton>;
 }
 
+function BoardRemoveButton({ board, disabled, onRemove }: {
+  board: Board; disabled: boolean; onRemove(): Promise<boolean>;
+}) {
+  const id = useId(), trigger = useRef<HTMLButtonElement>(null), popup = useRef<HTMLDivElement>(null);
+  const cancel = useRef<HTMLButtonElement>(null), submitting = useRef(false);
+  const [open, setOpen] = useState(false), [pending, setPending] = useState(false);
+  const [position, setPosition] = useState({ left: 0, top: 0 });
+  const visible = open;
+  useLayoutEffect(() => {
+    if (!visible) return;
+    const place = () => {
+      if (!trigger.current || !popup.current) return;
+      const anchor = trigger.current.getBoundingClientRect(), box = popup.current.getBoundingClientRect();
+      if (anchor.bottom <= 0 || anchor.top >= window.innerHeight) { setOpen(false); return; }
+      const next = {
+        left: Math.max(12, Math.min(anchor.right - box.width, window.innerWidth - box.width - 12)),
+        top: Math.max(12, Math.min(anchor.bottom + 8 + box.height <= window.innerHeight - 12
+          ? anchor.bottom + 8 : anchor.top - box.height - 8, window.innerHeight - box.height - 12)),
+      };
+      setPosition(previous => previous.left === next.left && previous.top === next.top ? previous : next);
+    };
+    place();
+    const resize = new ResizeObserver(place);
+    if (popup.current) resize.observe(popup.current);
+    window.addEventListener("resize", place); window.addEventListener("scroll", place, true);
+    return () => { resize.disconnect(); window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
+  }, [visible, disabled, pending]);
+  useLayoutEffect(() => { if (visible) cancel.current?.focus({ preventScroll: true }); }, [visible]);
+  useEffect(() => {
+    if (!visible) return;
+    const outside = (event: Event) => {
+      if (!popup.current?.contains(event.target as Node) && !trigger.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault(); event.stopPropagation(); setOpen(false); trigger.current?.focus({ preventScroll: true });
+    };
+    window.addEventListener("pointerdown", outside); window.addEventListener("focusin", outside); window.addEventListener("keydown", escape, true);
+    return () => { window.removeEventListener("pointerdown", outside); window.removeEventListener("focusin", outside); window.removeEventListener("keydown", escape, true); };
+  }, [visible]);
+  async function remove() {
+    if (submitting.current || disabled) return;
+    submitting.current = true; setPending(true);
+    const triggers = Array.from(document.querySelectorAll<HTMLButtonElement>(".board-remove-trigger"));
+    const index = triggers.indexOf(trigger.current!);
+    const next = triggers[index + 1] || triggers[index - 1];
+    try {
+      if (await onRemove()) {
+        setOpen(false);
+        requestAnimationFrame(() => (next?.isConnected ? next : document.querySelector<HTMLButtonElement>('.boards-toolbar [data-command="new"]'))?.focus({ preventScroll: true }));
+      }
+    } finally { submitting.current = false; setPending(false); }
+  }
+  return <>
+    <button ref={trigger} type="button" className="board-icon-action board-remove-trigger" aria-label={`Remove ${board.company} board`}
+      title="Remove board" disabled={disabled || pending} aria-haspopup="dialog" aria-expanded={visible} aria-controls={visible ? id : undefined}
+      onClick={() => setOpen(value => !value)}><X size={17} aria-hidden="true" /></button>
+    {visible && createPortal(<div ref={popup} id={id} role="dialog" aria-labelledby={id + "-title"} aria-describedby={id + "-description"}
+      className="board-remove-popover" style={position} aria-busy={pending || undefined}
+      onBlur={event => { if (!submitting.current && !popup.current?.contains(event.relatedTarget) && !trigger.current?.contains(event.relatedTarget)) setOpen(false); }}>
+      <h2 id={id + "-title"}>Remove {board.company}?</h2>
+      <p id={id + "-description"}>Its check history will also be removed.</p>
+      <div className="board-remove-actions">
+        <button ref={cancel} type="button" className="button button-secondary" disabled={pending}
+          onClick={() => { setOpen(false); trigger.current?.focus({ preventScroll: true }); }}>Cancel</button>
+        <button type="button" className="button button-primary" disabled={disabled && !pending} aria-disabled={pending || disabled} onClick={() => void remove()}>
+          {pending && <LoaderCircle size={14} className="spin" aria-hidden="true" />}{pending ? "Removing" : "Remove"}</button>
+      </div>
+    </div>, document.body)}
+  </>;
+}
+
 function BoardListingLink({ listing }: { listing: Pick<BoardListing, "title" | "url" | "department" | "location"> & { current?: boolean } }) {
   const titleId = useId();
   return <a className="board-listing-link" href={listing.url} target="_blank" rel="noopener noreferrer" aria-labelledby={titleId}>
@@ -427,7 +499,11 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
               {analysis.state.analysisProvider === "credits" && board.error.startsWith(BOARD_CREDIT_MESSAGE) && !progress &&
                 <button type="button" className="boards-text-action" onClick={() => analysis.openCredits()}>Top up</button>}
               <button type="button" className="board-icon-action" aria-label={`Edit ${board.company} board`} title="Edit board" disabled={working || Boolean(progress) || state.dirty} onClick={() => edit(board)}><Pencil size={15} aria-hidden="true" /></button>
-              <button type="button" className="board-icon-action" aria-label={`Remove ${board.company} board`} title="Remove board" disabled={working || Boolean(progress) || state.dirty} onClick={() => void act(() => window.desktop!.removeBoard(board.id))}><X size={17} aria-hidden="true" /></button>
+              <BoardRemoveButton board={board} disabled={working || Boolean(progress) || state.dirty} onRemove={async () => {
+                const removed = await act(() => window.desktop!.removeBoard(board.id));
+                if (removed && editing?.id === board.id) reset();
+                return removed;
+              }} />
             </div>
             {inspecting?.id === board.id && <BoardResults key={board.id + ":" + board.lastCheckId}
               board={board} onClose={closeInspection} />}

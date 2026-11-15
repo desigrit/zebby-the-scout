@@ -733,10 +733,8 @@ function registerIpc() {
   });
   handle("boards:remove", async (_event, id: string) => {
     boards.assertIdle(id);
-    const board = boardsStore.get(id);
-    const response = await dialog.showMessageBox(mainWindow!, { type: "question", title: "Remove board?",
-      message: `Remove ${board.company} and its check history?`, buttons: ["Cancel", "Remove board"], defaultId: 0, cancelId: 0 });
-    if (response.response === 1) { boards.assertIdle(id); await boardsStore.remove(id); boards.changed(); }
+    await boardsStore.remove(id);
+    boards.changed();
     return boards.state;
   });
   handle("boards:check", (_event, ids?: string[], options?: import("../shared/board-exploration").BoardCheckOptions) => boards.check(ids, options));
