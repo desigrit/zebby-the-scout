@@ -98,6 +98,9 @@ jobs:
           retention-days: 1
           path: work/ember-native-qa/failure*
           if-no-files-found: ignore
+      - run: node --experimental-strip-types scripts/qa-local-engine.mjs smollm2-360m
+      - name: Check Qwen thinking mode on local hardware
+        run: node --experimental-strip-types scripts/qa-local-engine.mjs qwen3-06b --thinking
       - run: node node_modules/playwright-core/cli.js install chromium
       - run: npm run test:renderer
       - name: Save credits flow review captures
@@ -154,9 +157,6 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm run desktop:build
       - run: npm run test:resume-files
-      - run: node --experimental-strip-types scripts/qa-local-engine.mjs smollm2-360m
-      - name: Check Qwen thinking mode on local hardware
-        run: node --experimental-strip-types scripts/qa-local-engine.mjs qwen3-06b --thinking
       - run: node node_modules/playwright-core/cli.js install chromium
       - run: npm run test:renderer
       - name: Save credits flow review captures
