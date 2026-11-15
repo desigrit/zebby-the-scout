@@ -25,6 +25,15 @@ on:
         default: false
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'android/**'
+      - '.github/workflows/android.yml'
+      - 'scripts/export-android-contracts.mjs'
+      - 'docs/**'
+      - '.impeccable/**'
+      - 'README.md'
+      - 'PRODUCT.md'
+      - 'DESIGN.md'
   push:
     tags: ["v*"]
 

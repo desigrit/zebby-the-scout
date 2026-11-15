@@ -1,0 +1,4 @@
+<network-security-config>
+    <!-- User-selected LAN Ollama servers can use HTTP. Keys and credits are HTTPS-only in Http. -->
+    <base-config cleartextTrafficPermitted="true"><trust-anchors><certificates src="system" /></trust-anchors></base-config>
+</network-security-config>
