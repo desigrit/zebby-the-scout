@@ -23,8 +23,6 @@ on:
         description: Run desktop UI checks and capture synthetic screenshots without packaging
         type: boolean
         default: false
-  pull_request:
-    branches: [main]
   push:
     tags: ["v*"]
 
@@ -36,7 +34,12 @@ env:
   ZEBBY_CREDITS_SERVICE_URL: ${{ vars.ZEBBY_CREDITS_SERVICE_URL }}
 
 jobs:
+  validation:
+    if: ${{ !inputs.verify_updates_only }}
+    uses: ./.github/workflows/board-layers.yml
+
   desktop-visual-review:
+    needs: validation
     if: github.event_name == 'workflow_dispatch' && inputs.review_only && !inputs.verify_updates_only
     runs-on: windows-latest
     steps:
@@ -70,6 +73,7 @@ jobs:
           if-no-files-found: error
 
   windows-x64:
+    needs: validation
     if: github.event_name != 'workflow_dispatch' || (!inputs.mac_only && !inputs.review_only && !inputs.verify_updates_only)
     runs-on: windows-latest
     steps:
@@ -140,6 +144,7 @@ jobs:
           if-no-files-found: error
 
   macos-arm64:
+    needs: validation
     if: github.event_name != 'workflow_dispatch' || (!inputs.review_only && !inputs.verify_updates_only)
     runs-on: macos-26
     env:

@@ -3,6 +3,7 @@ import { appendFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 const diagnostics = new Set([
+  'boards-validation',
   'board-evidence', 'board-layers-evidence', 'boards-file-recovery',
   'slack-board-evidence', 'zoom-reader-evidence', 'netflix-reader-evidence',
   'twitch-reader-evidence', 'public-update-verification',
