@@ -390,6 +390,7 @@ export async function checkBoardsRenderer(page, nav) {
   await page.setViewportSize({ width: 790, height: 400 });
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
   await removeSlack.click(); await removeDialog.waitFor();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const smallAnchor = await removeSlack.boundingBox(), smallBubble = await removeDialog.boundingBox();
   assert.ok(smallBubble.y >= 12 && smallBubble.y + smallBubble.height <= 388 && smallBubble.x >= 12 && smallBubble.x + smallBubble.width <= 778,
     "The confirmation stays inside a small window");
