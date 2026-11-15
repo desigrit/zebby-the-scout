@@ -3,6 +3,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
 export async function checkBoardsRenderer(page, nav) {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   const output = path.resolve(".impeccable/review"); await mkdir(output, { recursive: true });
   await page.evaluate(() => {
     let state = { filePath: "OneDrive/Work-boards.sqlite", filename: "Work-boards.sqlite", dirty: false, error: "", boards: [], progress: [] };
@@ -154,12 +155,13 @@ export async function checkBoardsRenderer(page, nav) {
   const [clickedListing] = await Promise.all([page.waitForEvent("popup"), existingLink.locator(".board-listing-meta").click()]);
   await clickedListing.waitForLoadState("domcontentloaded");
   assert.equal(clickedListing.url(), await existingLink.getAttribute("href"), "Clicking metadata opens the listing URL");
-  await clickedListing.close();
+  await clickedListing.close(); await page.bringToFront();
   const newLink = newSection.getByRole("link").first(); await newLink.focus();
   const [keyboardListing] = await Promise.all([page.waitForEvent("popup"), page.keyboard.press("Enter")]);
   await keyboardListing.waitForLoadState("domcontentloaded");
   assert.equal(keyboardListing.url(), await newLink.getAttribute("href"), "Keyboard activation opens a new listing");
-  await keyboardListing.close();
+  await keyboardListing.close(); await page.bringToFront();
+  await page.waitForFunction(() => document.visibilityState === "visible");
   await capture("boards-listings-light");
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; }); await capture("boards-listings-dark");
   await page.setViewportSize({ width: 790, height: 620 }); await capture("boards-listings-compact-dark");
