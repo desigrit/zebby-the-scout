@@ -393,7 +393,13 @@ export async function checkBoardsRenderer(page, nav) {
   const smallAnchor = await removeSlack.boundingBox(), smallBubble = await removeDialog.boundingBox();
   assert.ok(smallBubble.y >= 12 && smallBubble.y + smallBubble.height <= 388 && smallBubble.x >= 12 && smallBubble.x + smallBubble.width <= 778,
     "The confirmation stays inside a small window");
-  assert.ok(smallBubble.y + smallBubble.height <= smallAnchor.y, "Near the bottom edge the confirmation opens above the X");
+  if (smallAnchor.y + smallAnchor.height + 8 + smallBubble.height <= 388) {
+    assert.ok(smallBubble.y >= smallAnchor.y + smallAnchor.height && smallBubble.y - smallAnchor.y - smallAnchor.height <= 12,
+      "The confirmation stays beside the X when there is room below it");
+  } else if (smallAnchor.y - smallBubble.height - 8 >= 12) {
+    assert.ok(smallBubble.y + smallBubble.height <= smallAnchor.y && smallAnchor.y - smallBubble.y - smallBubble.height <= 12,
+      "The confirmation flips above the X when the lower edge has too little room");
+  }
   await capture("boards-remove-compact");
   await removeDialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.setViewportSize({ width: 1550, height: 850 });
