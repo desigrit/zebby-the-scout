@@ -400,7 +400,8 @@ export async function checkBoardsRenderer(page, nav) {
   await page.evaluate(() => { window.boardsQA.deferRemove = true; window.boardsQA.removeError = true; });
   await removeSlack.click(); await removeDialog.getByRole("button", { name: "Remove", exact: true }).click();
   await removeDialog.getByRole("button", { name: "Removing", exact: true }).waitFor();
-  assert.equal(await removeDialog.getByRole("button", { name: "Removing", exact: true }).isEnabled(), false);
+  assert.equal(await removeDialog.getByRole("button", { name: "Removing", exact: true }).getAttribute("aria-disabled"), "true");
+  await removeDialog.getByRole("button", { name: "Removing", exact: true }).click({ force: true });
   assert.deepEqual(await page.evaluate(() => window.boardsQA.removals), ["0"], "Removal submits once while pending");
   await page.evaluate(() => window.boardsQA.finishRemove());
   await page.getByRole("alert").filter({ hasText: "The board could not be removed" }).waitFor();

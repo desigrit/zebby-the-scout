@@ -213,12 +213,13 @@ function BoardRemoveButton({ board, disabled, onRemove }: {
       };
       setPosition(previous => previous.left === next.left && previous.top === next.top ? previous : next);
     };
-    place(); cancel.current?.focus({ preventScroll: true });
+    place();
     const resize = new ResizeObserver(place);
     if (popup.current) resize.observe(popup.current);
     window.addEventListener("resize", place); window.addEventListener("scroll", place, true);
     return () => { resize.disconnect(); window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
-  }, [visible]);
+  }, [visible, disabled, pending]);
+  useLayoutEffect(() => { if (visible) cancel.current?.focus({ preventScroll: true }); }, [visible]);
   useEffect(() => {
     if (!visible) return;
     const outside = (event: Event) => {
@@ -256,7 +257,7 @@ function BoardRemoveButton({ board, disabled, onRemove }: {
       <div className="board-remove-actions">
         <button ref={cancel} type="button" className="button button-secondary" disabled={pending}
           onClick={() => { setOpen(false); trigger.current?.focus({ preventScroll: true }); }}>Cancel</button>
-        <button type="button" className="button button-primary" disabled={pending || disabled} onClick={() => void remove()}>
+        <button type="button" className="button button-primary" disabled={disabled && !pending} aria-disabled={pending || disabled} onClick={() => void remove()}>
           {pending && <LoaderCircle size={14} className="spin" aria-hidden="true" />}{pending ? "Removing" : "Remove"}</button>
       </div>
     </div>, document.body)}
