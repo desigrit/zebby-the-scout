@@ -178,11 +178,14 @@ export async function checkBoardsRenderer(page, nav) {
   await capture("boards-listings-light");
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; }); await capture("boards-listings-dark");
   await page.setViewportSize({ width: 790, height: 620 }); await capture("boards-listings-compact-dark");
+  await page.setViewportSize({ width: 620, height: 620 });
   const compactListing = await existingLink.evaluate(link => ({
     titleBottom: link.querySelector(".board-listing-title").getBoundingClientRect().bottom,
     metaTop: link.querySelector(".board-listing-meta").getBoundingClientRect().top,
   }));
   assert.ok(compactListing.metaTop >= compactListing.titleBottom, "Compact listings wrap metadata below the role");
+  await capture("boards-listings-narrow-dark");
+  await page.setViewportSize({ width: 790, height: 620 });
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; }); await capture("boards-listings-compact-light");
   await page.setViewportSize({ width: 1550, height: 850 });
   await page.evaluate(() => window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => index === 0 ? { ...board, newCount: 59, totalCount: 120 } : board) }));
