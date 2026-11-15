@@ -36,7 +36,7 @@ export type BoardCandidate = { id: string; url: string; text: string; title?: st
 export type BoardControl = { id: string; text: string; context: string; disabled: boolean };
 export type BoardListing = BoardJob & { current: boolean; unread: boolean };
 export type BoardListings = { checkId: number; total: number; offset: number; listings: BoardListing[] };
-export type BoardListingFilter = "matches" | "new" | "all";
+export type BoardListingFilter = "matches" | "new" | "existing" | "all";
 export const BOARDS_READER_VERSION = 3;
 export const BOARD_VISION_MESSAGE = "This page needs visual reading. Choose an online model or a vision-capable Ollama model in Settings, then retry.";
 

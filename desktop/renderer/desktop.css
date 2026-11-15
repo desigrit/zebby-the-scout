@@ -49,7 +49,10 @@
 .boards-editor textarea::placeholder, .boards-editor input::placeholder { color: var(--ink-soft); opacity: 1; }
 .boards-company-field { max-width: 350px; }
 .board-field-help { margin: -9px 0 0; color: var(--ink-soft); font-size: 12px; }
-.board-match-total { color: var(--ink-soft); font-size: 12px; overflow-wrap: anywhere; }
+.board-match-total { color: var(--ink-soft); font-size: 12px; font-weight: 400; overflow-wrap: anywhere; }
+.board-match-total svg { flex: none; transition: transform 160ms ease-out; }
+.board-match-total[aria-expanded="true"] svg { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .board-match-total svg { transition: none; } }
 .boards-editor-actions { display: flex; gap: 8px; }
 .boards-columns, .board-row { display: grid; grid-template-columns: minmax(180px, 1.4fr) minmax(115px, .65fr) minmax(145px, .8fr) 230px; gap: 18px; align-items: center; }
 .boards-columns { padding: 0 0 10px; color: var(--ink-soft); font-size: 11px; border-bottom: 1px solid var(--line-strong); }
@@ -84,20 +87,26 @@
 .boards-file-footer { margin-top: 24px; }
 .board-listings { position: relative; grid-column: 1 / -1; min-width: 0; margin-top: 6px; padding: 0 0 4px; border-top: 1px solid var(--line); }
 .board-listings-close { position: absolute; right: 0; top: 8px; }
+.board-listings-group { margin-top: 24px; min-width: 0; }
+.board-listings-group h2 { margin: 0 40px 8px 0; font-size: 12px; font-weight: 650; color: var(--ink-soft); }
 .board-listing-items { list-style: none; padding: 0; margin: 0; }
-.board-listing-items li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px 24px; padding: 14px 0; border-bottom: 1px solid var(--line); }
-.board-listing-items li:first-child { padding-right: 40px; }
-.board-listing-items li > div { min-width: 0; }
-.board-listing-items a { color: var(--ink); font-size: 13px; font-weight: 600; text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
-.board-listing-items a:hover { color: var(--accent); }
-.board-listing-items p { margin: 6px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.board-listing-items li { border-bottom: 1px solid var(--line); }
+.board-listing-items .board-listing-link { display: flex; align-items: center; gap: 12px 24px; padding: 14px 8px; min-width: 0; color: var(--ink); text-decoration: none; border-radius: 4px; }
+.board-listing-link:hover, .board-listing-link:focus-visible { background: var(--accent-wash); }
+.board-listing-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.board-listing-copy { flex: 1; min-width: 0; }
+.board-listing-title { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.board-listing-link:hover .board-listing-title { color: var(--accent); }
+.board-listing-meta { display: block; margin-top: 6px; color: var(--ink-soft); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.board-listing-link > svg { flex: none; color: var(--ink-soft); }
 .board-listing-status { flex: none; color: var(--ink-soft); font-size: 11px; }
 .board-listings-feedback { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 18px 0; padding-right: 40px; color: var(--ink-soft); font-size: 13px; line-height: 1.6; max-width: 70ch; }
 .board-listings-feedback p { margin: 0; }
 .board-listings-pagination, .board-listings-pagination > div { display: flex; align-items: center; gap: 8px; }
 .board-listings-pagination { justify-content: space-between; margin-top: 14px; color: var(--ink-soft); font-size: 12px; font-variant-numeric: tabular-nums; }
 @media (max-width: 650px) {
-  .board-listing-items li { display: grid; gap: 7px; }
+  .board-listing-items .board-listing-link { gap: 10px; flex-wrap: wrap; }
+  .board-listing-status { flex: auto; }
   .board-listings-pagination { flex-wrap: wrap; gap: 12px; }
 }
 @media (max-width: 1180px) {
