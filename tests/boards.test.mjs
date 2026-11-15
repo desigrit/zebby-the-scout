@@ -623,3 +623,41 @@ test("embedded Greenhouse coverage precedes instructions and incomplete retries 
   await check(true); assert.equal(store.get(id).totalCount, 8); assert.equal(store.get(id).newCount, 1);
   await check(true); assert.equal(store.get(id).newCount, 1); assert.equal(roleCalls, calls + 1, "Retry reuses saved role decisions");
 }));
+
+
+test("existing inspection shows current matching roles separately from unread discoveries across checks and reopening", () => fixture(async ({ store, file }) => {
+  const [id] = await store.add([saved]);
+  const baseline = Array.from({ length: 61 }, (_, index) => index + 1);
+  await complete(store, id, ...baseline);
+  let check = store.get(id).lastCheckId;
+  assert.equal(store.listings(id, check, "new").total, 0);
+  assert.equal(store.listings(id, check, "existing").total, 61);
+  assert.equal(store.listings(id, check, "existing").listings.length, 50);
+  assert.equal(store.listings(id, check, "existing", 50).listings.length, 11);
+  const next = scan(2, 3, 100);
+  next.jobs.push({ ...jobs(101)[0], matches: false });
+  await store.complete(id, 1, store.generation, next);
+  check = store.get(id).lastCheckId;
+  assert.equal(store.listings(id, check, "existing").total, 2);
+  assert.equal(store.listings(id, check, "new").total, 1);
+  const existing = store.listings(id, check, "existing").listings;
+  assert.ok(existing.every(row => row.current && row.matches && !row.unread));
+  assert.ok(existing.every(row => !store.listings(id, check, "new").listings.some(item => item.key === row.key)));
+  await store.failed(id, 1, store.generation, "Incomplete check");
+  assert.deepEqual(store.listings(id, check, "existing").listings, existing);
+  await store.close(); await store.open(file);
+  assert.deepEqual(store.listings(id, check, "existing").listings, existing);
+  await complete(store, id, 2, 3);
+  check = store.get(id).lastCheckId;
+  assert.equal(store.listings(id, check, "new").listings[0].current, false, "Withdrawn unread roles remain reviewable");
+  assert.equal(store.listings(id, check, "existing").total, 2);
+  await store.reviewed(id, check);
+  assert.equal(store.listings(id, check, "new").total, 0);
+  assert.equal(store.listings(id, check, "existing").total, 2, "Reviewed withdrawn roles do not appear as currently checked");
+  await complete(store, id, 2, 3, 102);
+  check = store.get(id).lastCheckId;
+  await store.reviewed(id, check);
+  assert.equal(store.listings(id, check, "existing").total, 3, "Reviewing current discoveries moves them into the existing section");
+  assert.throws(() => store.listings(id, check - 1, "existing"), /newer check/);
+  assert.throws(() => store.listings(id, check, "existing", -1), /completed board check/);
+}));

@@ -1,8 +1,8 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Check, FolderOpen, LoaderCircle, Pencil, Plus, RefreshCw, X } from "lucide-react";
+import { ArrowUpRight, Check, ChevronDown, FolderOpen, LoaderCircle, Pencil, Plus, RefreshCw, X } from "lucide-react";
 import { useAnalysisFlow } from "./AnalysisFlow";
-import { BOARDS_MISSING_FILE, BOARD_CREDIT_MESSAGE, type Board, type BoardsState, type BoardListings, type BoardRunPreview } from "../../shared/boards";
+import { BOARDS_MISSING_FILE, BOARD_CREDIT_MESSAGE, type Board, type BoardsState, type BoardListing, type BoardListings, type BoardRunPreview } from "../../shared/boards";
 import { defaultBoardReaderSettings } from "../../shared/board-exploration";
 import { boardListingTitle } from "../../shared/board-listing-title";
 import SettingsAction from "./SettingsAction";
@@ -192,36 +192,58 @@ function BoardCheckStatus({ error }: { error: string }) {
   return <BoardTooltipButton content={error} className="board-check-status">Check incomplete</BoardTooltipButton>;
 }
 
-function BoardResults({ board, onClose }: { board: Board; onClose(): void }) {
-  const [requestedOffset, setOffset] = useState(0), [retry, setRetry] = useState(0);
-  const offset = Math.min(requestedOffset, Math.floor(Math.max(0, board.newCount - 1) / 50) * 50);
+function BoardListingLink({ listing }: { listing: Pick<BoardListing, "title" | "url" | "department" | "location"> & { current?: boolean } }) {
+  const titleId = useId();
+  return <a className="board-listing-link" href={listing.url} target="_blank" rel="noopener noreferrer" aria-labelledby={titleId}>
+    <span className="board-listing-copy"><span id={titleId} className="board-listing-title">{boardListingTitle(listing.title || "", listing.url) || listing.url}</span>
+      {(listing.department || listing.location) && <span className="board-listing-meta">{[listing.department, listing.location].filter(Boolean).join(" · ")}</span>}</span>
+    {listing.current === false && <span className="board-listing-status">No longer listed</span>}
+    <ArrowUpRight size={15} strokeWidth={1.5} aria-hidden="true" />
+  </a>;
+}
+
+function BoardResultsGroup({ board, filter }: { board: Board; filter: "new" | "existing" }) {
+  const [offset, setOffset] = useState(0), [retry, setRetry] = useState(0);
   const [loaded, setLoaded] = useState<{ key: string; result?: BoardListings; error?: string } | null>(null);
-  const requestKey = JSON.stringify([board.id, board.lastCheckId, board.newCount, offset, retry]);
+  const heading = useId(), title = filter === "new" ? "New listings" : "Existing listings checked";
+  const requestKey = JSON.stringify([board.id, board.lastCheckId, board.newCount, board.totalCount, filter, offset, retry]);
   const result = loaded?.key === requestKey ? loaded.result : null, error = loaded?.key === requestKey ? loaded.error : "";
-  const focus = useRef<HTMLElement>(null);
-  useEffect(() => { focus.current?.focus(); }, []);
   useEffect(() => {
     let active = true;
-    void window.desktop!.boardListings(board.id, board.lastCheckId, "new", offset)
-      .then(value => { if (active) setLoaded({ key: requestKey, result: value }); })
+    void window.desktop!.boardListings(board.id, board.lastCheckId, filter, offset)
+      .then(value => {
+        if (!active) return;
+        const lastPage = Math.floor(Math.max(0, value.total - 1) / 50) * 50;
+        if (offset > lastPage) setOffset(lastPage);
+        else setLoaded({ key: requestKey, result: value });
+      })
       .catch(error => { if (active) setLoaded({ key: requestKey, error: message(error) }); });
     return () => { active = false; };
-  }, [board.id, board.lastCheckId, board.newCount, offset, retry, requestKey]);
-  return <section id={"board-results-" + board.id} className="board-listings" aria-label={board.company + " new listings"} ref={focus} tabIndex={-1}>
-    <button type="button" className="board-icon-action board-listings-close" onClick={onClose} aria-label="Close listings"><X size={17} aria-hidden="true" /></button>
+  }, [board.id, board.lastCheckId, filter, offset, retry, requestKey]);
+  return <section className="board-listings-group" aria-labelledby={heading}>
+    <h2 id={heading}>{title}</h2>
     {error ? <div className="board-listings-feedback"><p role="alert">{error}</p>
       <button type="button" className="boards-text-action" onClick={() => setRetry(value => value + 1)}>Retry</button></div>
       : !result ? <p className="board-listings-feedback" role="status"><LoaderCircle size={14} className="spin" aria-hidden="true" />Loading listings</p>
       : <>
         {result.listings.length ? <ul className="board-listing-items">{result.listings.map(listing => <li key={listing.key}>
-          <div><a href={listing.url} target="_blank" rel="noopener noreferrer">{boardListingTitle(listing.title, listing.url) || listing.url}</a>
-            {(listing.department || listing.location) && <p>{[listing.department, listing.location].filter(Boolean).join(" · ")}</p>}</div>
-          {!listing.current && <span className="board-listing-status">No longer listed</span>}
-        </li>)}</ul> : <p className="board-listings-feedback" role="status">No new listings to review.</p>}
+          <BoardListingLink listing={listing} />
+        </li>)}</ul> : <p className="board-listings-feedback" role="status">{filter === "new" ? "No new listings." : "No existing listings checked."}</p>}
         {result.total > 50 && <div className="board-listings-pagination"><span role="status">{offset + 1}-{Math.min(offset + result.listings.length, result.total)} of {result.total}</span>
-          <div><button type="button" className="button button-secondary" disabled={offset === 0} onClick={() => setOffset(value => Math.max(0, value - 50))}>Previous</button>
-            <button type="button" className="button button-secondary" disabled={offset + 50 >= result.total} onClick={() => setOffset(value => value + 50)}>Next</button></div></div>}
+          <div><button type="button" className="boards-text-action" disabled={offset === 0} onClick={() => setOffset(value => Math.max(0, value - 50))}>Previous</button>
+            <button type="button" className="boards-text-action" disabled={offset + 50 >= result.total} onClick={() => setOffset(value => value + 50)}>Next</button></div></div>}
       </>}
+  </section>;
+}
+
+function BoardResults({ board, onClose }: { board: Board; onClose(): void }) {
+  const focus = useRef<HTMLElement>(null);
+  useEffect(() => { focus.current?.focus({ preventScroll: true }); }, []);
+  return <section id={"board-results-" + board.id} className="board-listings" aria-label={board.company + " listings"} ref={focus} tabIndex={-1}
+    onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); onClose(); } }}>
+    <button type="button" className="board-icon-action board-listings-close" onClick={onClose} aria-label="Close listings"><X size={17} aria-hidden="true" /></button>
+    <BoardResultsGroup board={board} filter="new" />
+    <BoardResultsGroup board={board} filter="existing" />
   </section>;
 }
 
@@ -237,10 +259,9 @@ function BoardPartialResults({ board, onClose }: { board: Board; onClose(): void
     <button type="button" className="board-icon-action board-listings-close" onClick={onClose} aria-label="Close partial results"><X size={17} aria-hidden="true" /></button>
     <p className="board-partial-help">Found so far. {board.instructions ? "Tracking instructions will be applied after the full inventory is verified. " : ""}Your last successful check is unchanged.</p>
     {error ? <p role="alert">{error}</p> : !preview ? <p role="status">Loading partial results</p> : <>
-      <ul className="board-listing-items">{preview.listings.slice(offset, offset + 50).map(listing => <li key={listing.url}><div>
-        <a href={listing.url} target="_blank" rel="noopener noreferrer">{boardListingTitle(listing.title || "", listing.url) || listing.url}</a>
-        {(listing.department || listing.location) && <p>{[listing.department, listing.location].filter(Boolean).join(" · ")}</p>}
-      </div></li>)}</ul>
+      <ul className="board-listing-items">{preview.listings.slice(offset, offset + 50).map(listing => <li key={listing.url}>
+        <BoardListingLink listing={listing} />
+      </li>)}</ul>
       {preview.listings.length > 50 && <div className="board-listings-pagination"><span>{offset + 1}-{Math.min(offset + 50, preview.listings.length)} of {preview.listings.length}</span><div>
         <button type="button" className="boards-text-action" disabled={!offset} onClick={() => setOffset(value => value - 50)}>Previous</button>
         <button type="button" className="boards-text-action" disabled={offset + 50 >= preview.listings.length} onClick={() => setOffset(value => value + 50)}>Next</button>
@@ -257,13 +278,17 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
   const [instructions, setInstructions] = useState("");
   const [partial, setPartial] = useState<{ id: string; workspace: string } | null>(null);
   const [inspection, setInspecting] = useState<{ id: string; filePath: string } | null>(null);
-  const inspecting = inspection?.filePath === state.filePath && state.boards.some(board => board.id === inspection.id && board.lastCheckedAt && board.newCount > 0) ? inspection : null;
+  const inspecting = inspection?.filePath === state.filePath && state.boards.some(board => board.id === inspection.id && board.lastCheckedAt) ? inspection : null;
   const inspectionButton = useRef<HTMLButtonElement | null>(null);
   const [reviewing, setReviewing] = useState<{ id: string; phase: "saving" | "done" } | null>(null);
   const reviewBusy = useRef(false), reviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (reviewTimer.current) clearTimeout(reviewTimer.current); }, []);
   function inspect(board: Board, button: HTMLButtonElement) {
     setPartial(null); inspectionButton.current = button; setInspecting({ id: board.id, filePath: state.filePath });
+  }
+  function toggleInspection(board: Board, button: HTMLButtonElement) {
+    if (inspecting?.id === board.id && inspectionButton.current === button) closeInspection();
+    else inspect(board, button);
   }
   function closeInspection() {
     setInspecting(null);
@@ -379,7 +404,7 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
                   {board.newCount > 0
                     ? <button type="button" className="boards-text-action board-discoveries" aria-expanded={inspecting?.id === board.id}
                         aria-controls={inspecting?.id === board.id ? "board-results-" + board.id : undefined}
-                        onClick={event => inspecting?.id === board.id ? closeInspection() : inspect(board, event.currentTarget)}>{board.newCount} new {board.newCount === 1 ? "listing" : "listings"}</button>
+                        onClick={event => toggleInspection(board, event.currentTarget)}>{board.newCount} new {board.newCount === 1 ? "listing" : "listings"}</button>
                     : (!board.error || progress) && <span className="board-no-updates">No new listings</span>}
                   {(board.newCount > 0 || review) && <BoardTooltipButton content="Mark as reviewed" label="Mark as reviewed" above
                     className={"board-icon-action board-review-action" + (review === "done" ? " is-reviewed" : "")}
@@ -388,7 +413,10 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
                   </BoardTooltipButton>}
                   {board.error && !progress && <BoardCheckStatus error={board.error} />}
                   </div>
-                  {checkProgress || partialLink || <span className="board-match-total">{board.totalCount} {board.totalCount === 1 ? "listing" : "listings"} checked</span>}
+                  {checkProgress || partialLink || <button type="button" className="boards-text-action board-match-total" aria-expanded={inspecting?.id === board.id}
+                    aria-controls={inspecting?.id === board.id ? "board-results-" + board.id : undefined}
+                    onClick={event => toggleInspection(board, event.currentTarget)}>
+                    {board.totalCount} {board.totalCount === 1 ? "listing" : "listings"} checked<ChevronDown size={13} strokeWidth={1.5} aria-hidden="true" /></button>}
                 </div>
                 : checkProgress || <div className="board-update-summary"><span role="status">{board.error ? <BoardCheckStatus error={board.error} /> : <span className="board-no-updates">{run?.canResume ? "Check paused" : "Not indexed"}</span>}</span>{partialLink}</div>}
             </div>

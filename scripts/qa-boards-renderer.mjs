@@ -3,6 +3,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
 export async function checkBoardsRenderer(page, nav) {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   const output = path.resolve(".impeccable/review"); await mkdir(output, { recursive: true });
   await page.evaluate(() => {
     let state = { filePath: "OneDrive/Work-boards.sqlite", filename: "Work-boards.sqlite", dirty: false, error: "", boards: [], progress: [] };
@@ -34,10 +35,12 @@ export async function checkBoardsRenderer(page, nav) {
       boardListings: async (id, checkId, filter, offset = 0) => {
         window.boardsQA.listingCalls.push({ id, filter, offset });
         if (window.boardsQA.listingError) throw new Error("The saved listings could not be opened. Try again.");
-        const board = state.boards.find(item => item.id === id), count = filter === "new" ? board.newCount : filter === "matches" ? 7 : 59;
+        const board = state.boards.find(item => item.id === id), count = filter === "new" ? board.newCount
+          : filter === "existing" ? Math.max(0, board.totalCount - board.newCount) : filter === "matches" ? board.totalCount : 59;
+        const start = offset + (filter === "existing" ? board.newCount : 0);
         return { checkId, total: count, offset, listings: Array.from({ length: Math.min(50, Math.max(0, count - offset)) }, (_, i) => ({
-          key: String(offset + i), url: i === 0 ? "https://salesforce.wd12.myworkdayjobs.com/en-US/Slack/job/Seattle/Senior-Product-Manager--Slack_JR123" : "https://example.org/jobs/" + (offset + i),
-          title: i === 0 ? "Apply" : i < 3 ? "Senior Product Manager, Commerce" : "Sr. Product Manager, Premium Content Experience",
+          key: String(start + i), url: start + i === 0 ? "https://salesforce.wd12.myworkdayjobs.com/en-US/Slack/job/Seattle/Senior-Product-Manager--Slack_JR123" : "https://example.org/jobs/" + (start + i),
+          title: start + i === 0 ? "Apply" : i < 3 ? "Senior Product Manager, Commerce" : "Sr. Product Manager, Premium Content Experience",
           department: "Community Growth", location: ["San Francisco, CA", "Seattle, WA", "Irvine, CA", "Los Angeles, CA", "New York City"][i % 5],
           matches: filter === "new" || i < 7, current: true, unread: filter === "new" })) };
       },
@@ -129,33 +132,68 @@ export async function checkBoardsRenderer(page, nav) {
   assert.equal(await tip.isVisible(), true);
   await page.keyboard.press("Escape"); await page.setViewportSize({ width: 1550, height: 850 });
   await first.getByRole("button", { name: "4 new listings", exact: true }).click();
-  const listingSection = first.getByRole("region", { name: "Slack new listings" });
+  const listingSection = first.getByRole("region", { name: "Slack listings", exact: true });
+  const newSection = listingSection.getByRole("region", { name: "New listings", exact: true });
+  const existingSection = listingSection.getByRole("region", { name: "Existing listings checked", exact: true });
   await listingSection.getByRole("link", { name: "Senior Product Manager Slack", exact: true }).waitFor();
-  assert.equal(await listingSection.locator(".board-listing-items li").count(), 4);
+  assert.equal(await newSection.locator(".board-listing-items li").count(), 4);
+  assert.equal(await existingSection.locator(".board-listing-items li").count(), 3);
+  const hrefs = await listingSection.getByRole("link").evaluateAll(links => links.map(link => link.href));
+  assert.equal(new Set(hrefs).size, 7, "New listings are not duplicated among existing listings");
   assert.equal(await listingSection.getByText("Apply", { exact: true }).count(), 0, "Previously saved CTA labels recover their Workday role name");
-  assert.equal(await listingSection.getByRole("heading").count(), 0, "Expanded listings start directly with role rows");
+  assert.deepEqual(await listingSection.getByRole("heading").allTextContents(), ["New listings", "Existing listings checked"]);
   assert.equal(await listingSection.locator(".board-listings-pagination").count(), 0, "Single-page results need no range footer");
   assert.equal(await listingSection.getByRole("button", { name: /^(All checked|Matches|New)$/ }).count(), 0);
   assert.equal(await listingSection.evaluate(node => node === document.activeElement), true);
+  await first.getByRole("button", { name: "7 listings checked", exact: true }).click();
+  assert.equal(await listingSection.isVisible(), true, "Switching count triggers keeps the shared view open");
+  assert.equal(await first.getByRole("button", { name: "4 new listings", exact: true }).getAttribute("aria-expanded"), "true");
+  assert.equal(await first.getByRole("button", { name: "7 listings checked", exact: true }).getAttribute("aria-controls"), await listingSection.getAttribute("id"));
+  await page.context().route("https://example.org/jobs/**", route => route.fulfill({ contentType: "text/html", body: "<title>Job listing</title>" }));
+  await page.context().route("https://salesforce.wd12.myworkdayjobs.com/**", route => route.fulfill({ contentType: "text/html", body: "<title>Job listing</title>" }));
+  const existingLink = existingSection.getByRole("link").first();
+  const [clickedListing] = await Promise.all([page.waitForEvent("popup"), existingLink.locator(".board-listing-meta").click()]);
+  await clickedListing.waitForLoadState("domcontentloaded");
+  assert.equal(clickedListing.url(), await existingLink.getAttribute("href"), "Clicking metadata opens the listing URL");
+  await clickedListing.close(); await page.bringToFront();
+  const newLink = newSection.getByRole("link").first(); await newLink.focus();
+  const [keyboardListing] = await Promise.all([page.waitForEvent("popup"), page.keyboard.press("Enter")]);
+  await keyboardListing.waitForLoadState("domcontentloaded");
+  assert.equal(keyboardListing.url(), await newLink.getAttribute("href"), "Keyboard activation opens a new listing");
+  await keyboardListing.close(); await page.bringToFront();
+  await page.waitForFunction(() => document.visibilityState === "visible");
   await capture("boards-listings-light");
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; }); await capture("boards-listings-dark");
   await page.setViewportSize({ width: 790, height: 620 }); await capture("boards-listings-compact-dark");
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; }); await capture("boards-listings-compact-light");
   await page.setViewportSize({ width: 1550, height: 850 });
-  await page.evaluate(() => window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => index === 0 ? { ...board, newCount: 59, totalCount: 59 } : board) }));
+  await page.evaluate(() => window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => index === 0 ? { ...board, newCount: 59, totalCount: 120 } : board) }));
   await listingSection.getByText("1-50 of 59", { exact: true }).waitFor();
-  await listingSection.getByRole("button", { name: "Next", exact: true }).click();
+  await newSection.getByRole("button", { name: "Next", exact: true }).click();
   await listingSection.getByText("51-59 of 59", { exact: true }).waitFor();
-  assert.equal(await listingSection.getByRole("button", { name: "Next", exact: true }).isEnabled(), false);
+  assert.equal(await newSection.getByRole("button", { name: "Next", exact: true }).isEnabled(), false);
+  await existingSection.getByText("1-50 of 61", { exact: true }).waitFor();
+  await existingSection.getByRole("button", { name: "Next", exact: true }).click();
+  await existingSection.getByText("51-61 of 61", { exact: true }).waitFor();
+  await newSection.getByText("51-59 of 59", { exact: true }).waitFor();
   await page.evaluate(() => { window.boardsQA.listingError = true;
     window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => index === 0 ? { ...board, newCount: 4, totalCount: 7 } : board) }); });
-  await listingSection.getByRole("alert").waitFor(); await capture("boards-listings-error");
+  await newSection.getByRole("alert").waitFor(); await capture("boards-listings-error");
   await page.evaluate(() => { window.boardsQA.listingError = false; });
-  await listingSection.getByRole("button", { name: "Retry", exact: true }).click();
+  await newSection.getByRole("button", { name: "Retry", exact: true }).click();
+  await existingSection.getByRole("button", { name: "Retry", exact: true }).click();
   await listingSection.getByRole("link", { name: "Senior Product Manager Slack", exact: true }).waitFor();
   await listingSection.getByRole("button", { name: "Close listings", exact: true }).click();
-  assert.equal(await first.getByRole("button", { name: "4 new listings", exact: true }).evaluate(node => node === document.activeElement), true);
-  assert.ok((await page.evaluate(() => window.boardsQA.listingCalls)).every(call => call.filter === "new"), "Only new matching listings are requested");
+  assert.equal(await first.getByRole("button", { name: "7 listings checked", exact: true }).evaluate(node => node === document.activeElement), true);
+  assert.ok((await page.evaluate(() => window.boardsQA.listingCalls)).every(call => ["new", "existing"].includes(call.filter)), "Inspection never requests unmatched listings");
+  const baselineBoard = page.getByRole("article", { name: "Uber", exact: true });
+  const baselineTrigger = baselineBoard.getByRole("button", { name: "20 listings checked", exact: true });
+  await baselineTrigger.focus(); await page.keyboard.press("Enter");
+  const baselineListings = baselineBoard.getByRole("region", { name: "Uber listings", exact: true });
+  await baselineListings.getByText("No new listings.", { exact: true }).waitFor();
+  assert.equal(await baselineListings.getByRole("link").count(), 20, "A baseline with no discoveries can still be inspected");
+  await page.keyboard.press("Escape"); await baselineListings.waitFor({ state: "hidden" });
+  assert.equal(await baselineTrigger.evaluate(node => node === document.activeElement), true);
   await page.evaluate(() => window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => index === 0 ? { ...board, totalCount: 20, checkedCount: undefined } : board) }));
   await capture("boards-desktop-light"); await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
   await capture("boards-desktop-dark"); await page.setViewportSize({ width: 790, height: 620 }); await capture("boards-compact-dark");
@@ -225,6 +263,11 @@ export async function checkBoardsRenderer(page, nav) {
   await second.getByText("1 new listing", { exact: true }).waitFor(); await second.getByText("1 listing checked", { exact: true }).waitFor();
   await third.getByText("0 listings checked", { exact: true }).waitFor();
   assert.equal(await third.getByRole("button", { name: /new listings?/ }).count(), 0, "Zero matches never show a discovery link");
+  await third.getByRole("button", { name: "0 listings checked", exact: true }).click();
+  const emptyListings = third.getByRole("region", { name: "Meta listings", exact: true });
+  await emptyListings.getByText("No existing listings checked.", { exact: true }).waitFor();
+  assert.equal(await emptyListings.getByRole("link").count(), 0);
+  await emptyListings.getByRole("button", { name: "Close listings" }).click();
   await capture("boards-updated-counts");
   await page.evaluate(() => window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => ({ ...board,
     error: index === 0 || index === 2 ? "This careers website is temporarily unavailable. Try again later. Your last successful check is unchanged." : "",
