@@ -6,11 +6,18 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { github, listPages, validatedRepository, validateArtifact } from './prune-actions-storage.mjs';
 
-export function selectStoreArchive(artifacts, releases) {
+export function selectStoreArchives(artifacts, releases) {
   const published = new Map(releases.filter(r => !r.draft).map(r => [r.tag_name, r]));
+  const selected = new Set();
   return artifacts.filter(a => !a.expired && a.name === 'store-submission-bundle' && /^v\d+\.\d+\.\d+(?:-[a-z0-9.-]+)?$/i.test(a.workflow_run?.head_branch || '') && published.has(a.workflow_run.head_branch))
     .toSorted((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at) || b.id - a.id)
-    .map(artifact => ({ artifact, release: published.get(artifact.workflow_run.head_branch) }))[0] || null;
+    .filter(artifact => {
+      const tag = artifact.workflow_run.head_branch;
+      if (selected.has(tag)) return false;
+      selected.add(tag);
+      return true;
+    })
+    .map(artifact => ({ artifact, release: published.get(artifact.workflow_run.head_branch) }));
 }
 
 function command(args, options = {}) {
@@ -19,11 +26,8 @@ function command(args, options = {}) {
   return result.stdout;
 }
 
-export async function main() {
-  const repository = validatedRepository(process.env.GITHUB_REPOSITORY);
+async function archiveStorePackage(repository, pair) {
   const prefix = `repos/${repository}`;
-  const pair = selectStoreArchive(listPages(`${prefix}/actions/artifacts`, 'artifacts'), listPages(`${prefix}/releases`, null));
-  if (!pair) { console.log('No released Store bundle needs archiving.'); return; }
   const { artifact, release } = pair;
   validateArtifact(repository, artifact);
   const run = github([`${prefix}/actions/runs/${artifact.workflow_run.id}`]);
@@ -54,6 +58,15 @@ export async function main() {
     if (saved?.state !== 'uploaded' || saved.size !== statSync(file).size || saved.digest !== digest) throw new Error('Uploaded Store archive failed verification');
     console.log(`Store package archived and verified: ${saved.browser_download_url}`);
   } finally { rmSync(directory, { recursive: true, force: true }); }
+}
+
+export async function main() {
+  const repository = validatedRepository(process.env.GITHUB_REPOSITORY);
+  const prefix = `repos/${repository}`;
+  const pairs = selectStoreArchives(listPages(`${prefix}/actions/artifacts`, 'artifacts'), listPages(`${prefix}/releases`, null));
+  if (!pairs.length) { console.log('No released Store bundle needs archiving.'); return; }
+  // A daily run can cover several releases. Finish every archive before cleanup.
+  for (const pair of pairs) await archiveStorePackage(repository, pair);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();
