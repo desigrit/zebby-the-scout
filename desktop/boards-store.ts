@@ -318,13 +318,14 @@ export class BoardsStore {
   }
   get(id: string) { const board = this.list().find(board => board.id === id); if (!board) throw new Error("This board is no longer available."); return board; }
   listings(id: string, checkId: number, filter: BoardListingFilter = "matches", offset = 0): BoardListings {
-    if (typeof id !== "string" || !Number.isSafeInteger(checkId) || checkId <= 0 || !["matches", "new", "all"].includes(filter) ||
+    if (typeof id !== "string" || !Number.isSafeInteger(checkId) || checkId <= 0 || !["matches", "new", "existing", "all"].includes(filter) ||
         !Number.isSafeInteger(offset) || offset < 0 || offset > 10000) throw new Error("Choose a completed board check.");
     const board = this.get(id), db = this.database();
     if (board.lastCheckId !== checkId) throw new Error("This board has a newer check. Open its listings again.");
     const reviewed = Number(db.prepare("SELECT reviewed_through FROM boards WHERE id=?").get(id)!.reviewed_through);
     const where = "j.board_id=? AND j.revision=? AND " + (filter === "new" ? "j.matches=1 AND j.first_check_id>" + reviewed
-      : "j.last_check_id=" + checkId + (filter === "matches" ? " AND j.matches=1" : ""));
+      : "j.last_check_id=" + checkId + (filter !== "all" ? " AND j.matches=1" : "")
+        + (filter === "existing" ? " AND j.first_check_id<=" + reviewed : ""));
     const total = Number(db.prepare("SELECT COUNT(*) AS count FROM board_jobs j WHERE " + where).get(id, board.revision)!.count);
     const rows = db.prepare(`SELECT j.*,d.title,d.department,d.location FROM board_jobs j LEFT JOIN board_job_details d
       ON d.board_id=j.board_id AND d.revision=j.revision AND d.identity=j.identity AND d.check_id=j.last_check_id
