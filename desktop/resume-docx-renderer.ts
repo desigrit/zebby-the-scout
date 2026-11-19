@@ -16,13 +16,21 @@ window.renderResumeDocument = async (base64: string) => {
   const parsed = await parseAsync(bytes, options);
   // docx-preview reads framePr but only implements drop caps. Preserve native
   // page-anchored text frames too, including a Word copy made from a PDF.
+  type Node = { type: string; cssStyle?: Record<string, string>; sectionProps?: { type?: string }; children?: Node[]; break?: string };
   const part = parsed.documentPart as {
     _xmlDocument: Document;
-    body: { children: { type: string; cssStyle?: Record<string, string> }[] };
+    body: { children: Node[] };
   };
   const body = part._xmlDocument.getElementsByTagNameNS("*", "body")[0];
   const source = [...body.children].filter(node => node.localName === "p");
   const paragraphs = part.body.children.filter(node => node.type === "paragraph");
+  for (const paragraph of paragraphs) {
+    // The preview library groups same-size sections onto one page unless a
+    // run explicitly requests a page break. Honor Word's next-page sections.
+    if (paragraph.sectionProps && paragraph.sectionProps.type !== "continuous") {
+      (paragraph.children ??= []).push({ type: "run", children: [{ type: "break", break: "page" }] });
+    }
+  }
   source.forEach((node, index) => {
     const frame = node.getElementsByTagNameNS("*", "framePr")[0];
     if (!frame || !paragraphs[index]) return;
