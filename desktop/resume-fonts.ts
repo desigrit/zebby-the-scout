@@ -1,9 +1,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 export const resumeFontDirectory = typeof __dirname === "string"
-  ? path.join(__dirname, "renderer", "resume-fonts") : fileURLToPath(new URL("../public/resume-fonts", import.meta.url));
+  ? path.join(__dirname, "renderer", "resume-fonts") : path.resolve("public", "resume-fonts");
 
 export async function readResumeFonts() {
   return Promise.all(["Regular", "Bold", "Italic", "BoldItalic"].map(async style => ({
