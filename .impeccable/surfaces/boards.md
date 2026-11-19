@@ -18,6 +18,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
 ## Compact board status
 
+Last checked shows Just now for checks less than one hour old, 1 hour ago through 23 hours ago for the rest of the first 24 hours, and the existing local calendar date thereafter. The exact local date and time remain available on hover. One page-level timer refreshes the labels every minute, with an immediate refresh when the window gains focus or visibility changes. Never checked remains the empty state.
+
 The company name and an optional Custom instructions label share one line above the saved URL. The light label uses the existing accent wash, rust text, 10px native type, 4px corners and 4px by 6px padding. Its compact shape follows BETA without the solid fill. It has no icon, hover preview or separate action. Long company names truncate with native hover text. Full instructions appear in the existing Edit board form, so their length does not change the summary row height. Boards with blank or whitespace-only instructions have no label.
 
 Boards uses a centered BETA badge in the page heading and navigation label, with solid Ember rust and white text in both appearances. Each completed board shows one count labeled "x listings checked" on the second status line: roles matching its saved instructions, or all openings at its saved URL when instructions are blank. During a subsequent scan, a spinner and current progress message replace that count on the same line. When progress ends, the last successful count returns, including after an interrupted scan, until a completed result replaces it.

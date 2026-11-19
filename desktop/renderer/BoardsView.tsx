@@ -5,6 +5,7 @@ import { useAnalysisFlow } from "./AnalysisFlow";
 import { BOARDS_MISSING_FILE, BOARD_CREDIT_MESSAGE, type Board, type BoardsState, type BoardListing, type BoardListings, type BoardRunPreview } from "../../shared/boards";
 import { defaultBoardReaderSettings } from "../../shared/board-exploration";
 import { boardListingTitle } from "../../shared/board-listing-title";
+import { boardLastCheckedLabel } from "../../shared/board-last-checked";
 import SettingsAction from "./SettingsAction";
 import { ErrorBanner } from "./WorkspaceFeedback";
 
@@ -344,6 +345,18 @@ function BoardPartialResults({ board, onClose }: { board: Board; onClose(): void
 
 export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
   const controls = useBoards(), { state, error, working, act } = controls;
+  const [checkedNow, setCheckedNow] = useState(Date.now);
+  useEffect(() => {
+    const refresh = () => setCheckedNow(Date.now());
+    const timer = window.setInterval(refresh, 60_000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, []);
   const recoveryFocus = useRecoveryFocus(state);
   const [adding, setAdding] = useState(false), [editing, setEditing] = useState<Board | null>(null);
   const [links, setLinks] = useState(""), [company, setCompany] = useState("");
@@ -452,7 +465,7 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
         <p>Save the company career pages you check regularly.</p>
         <button type="button" className="button button-primary" onClick={() => setAdding(true)} disabled={state.dirty}><Plus size={17} aria-hidden="true" />Add your first boards</button></div>
       : state.boards.length > 0 && <div className="boards-list" aria-label="Saved boards">
-        <div className="boards-columns" aria-hidden="true"><span>Company and board link</span><span>Last checked on</span><span>Updates</span><span /></div>
+        <div className="boards-columns" aria-hidden="true"><span>Company and board link</span><span>Last checked</span><span>Updates</span><span /></div>
         {state.boards.map(board => {
           const progress = state.progress.find(item => item.boardId === board.id);
           const run = state.runs?.find(item => item.boardId === board.id);
@@ -466,8 +479,8 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
             <div className="board-identity"><div className="board-heading"><strong title={board.company}>{board.company}</strong>
               {board.instructions?.trim() && <span className="board-instructions-indicator">Custom instructions</span>}</div>
               <a href={board.url} target="_blank" rel="noopener noreferrer" title={board.url}>{board.url}</a></div>
-            <div className="board-date"><span className="board-mobile-label">Last checked on</span>{board.lastCheckedAt
-              ? <time dateTime={board.lastCheckedAt} title={new Date(board.lastCheckedAt).toLocaleString()}>{new Date(board.lastCheckedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</time>
+            <div className="board-date"><span className="board-mobile-label">Last checked</span>{board.lastCheckedAt
+              ? <time dateTime={board.lastCheckedAt} title={new Date(board.lastCheckedAt).toLocaleString()}>{boardLastCheckedLabel(board.lastCheckedAt, checkedNow)}</time>
               : <span>Never checked</span>}</div>
             <div className="board-result">
               {board.lastCheckedAt ?
