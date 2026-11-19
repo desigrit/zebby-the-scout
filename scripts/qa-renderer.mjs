@@ -967,6 +967,14 @@ try {
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
   assert.equal(await page.getByText("Analysis details", { exact: true }).count(), 0);
   const tailorButton = page.getByRole("button", { name: "Create tailored resume", exact: true });
+  const referencePicker = page.getByRole("combobox", { name: "Resume", exact: true });
+  const referenceId = await referencePicker.inputValue();
+  await referencePicker.selectOption("");
+  assert.equal(await tailorButton.isDisabled(), true);
+  await page.getByText("Upload a reference resume in the section above.", { exact: true }).waitFor();
+  await captureSettings("plan-reference-required.png", false);
+  await referencePicker.selectOption(referenceId);
+  assert.equal(await tailorButton.isEnabled(), true);
   const tailoringPath = `/api/plans/${plans[0].id}/tailor`;
   await tailorButton.click(); await waitForAnalysis(tailoringPath);
   await page.locator('.tailored-resume-section .plan-analysis-progress').waitFor();

@@ -38,9 +38,10 @@ import { BoardsService } from "./boards-service";
 import { BoardBrowser } from "./board-browser";
 import { BOARD_VISION_MESSAGE, boardModelContract, type BoardInput, type BoardListingFilter } from "../shared/boards";
 import { restoreStartupDatabase } from "./startup-database";
-import { readResumeBlocks, resumeDocx, resumeHtml, tailoredBaseName } from "./tailored-resume";
+import { tailoredBaseName } from "./tailored-resume";
+import { readResumeReference, exportTailoredReference } from "./resume-reference";
 import { applyResumeEdits, tailoringInstructions, tailoringSchema } from "../shared/tailored-resume";
-import { printResumePdf } from "./resume-pdf";
+import { printWordResumePdf } from "./resume-pdf";
 import { materializeTailoredResume } from "./resume-files";
 import { distributionChannel as resolveDistributionChannel, readStorePackageFamily, requireDirectUpdates,
   requireDurableDatabase, storeDataPaths, STORE_UPDATES_URI } from "./distribution";
@@ -320,10 +321,11 @@ function selectedAnalysis() {
 function analysisHash(input: unknown) { return createHash("sha256").update(JSON.stringify(input)).digest("hex"); }
 async function tailoringInput(id: string) {
   const plan = store.getPlan(id), resume = plan?.resumeId && store.getResume(plan.resumeId);
-  if (!plan || !resume) throw new Error("Save this plan with a resume first.");
+  if (!plan || !resume) throw new Error("Upload a reference resume in the section above.");
   if (!plan.matchAnalyzedAt && !plan.keywords.length) throw new Error("Analyze this plan before creating a tailored resume.");
-  const resumeBlocks = await readResumeBlocks(resume.resume.filename, resume.data);
-  return { plan, resume, input: { url: plan.listingUrl, company: plan.company, title: plan.title, team: plan.team, locations: plan.locations,
+  const reference = await readResumeReference(resume.resume.filename, resume.data);
+  const resumeBlocks = reference.blocks;
+  return { plan, resume, reference, input: { url: plan.listingUrl, company: plan.company, title: plan.title, team: plan.team, locations: plan.locations,
     jobDescription: plan.description, currentCvOverview: plan.currentOverview, resumeText: resumeBlocks.map(block => block.text).join("\n"),
     resumeBlocks, suggestedSummary: plan.overview, keywords: plan.keywords, themes: plan.themes } };
 }
@@ -395,7 +397,7 @@ async function analyzeWithSelectedProvider(instructions: string, input: unknown,
 
 async function createTailoredResume(id: string, signal: AbortSignal, commit: <T>(persist: () => Promise<T>) => Promise<T>, quoteId = "", progress?: ReportAnalysisProgress) {
   const selected = selectedAnalysis();
-  const { plan, resume, input } = await tailoringInput(id);
+  const { plan, resume, reference, input } = await tailoringInput(id);
   signal.throwIfAborted();
   const infer = (value: unknown) => analyzeWithSelectedProvider(tailoringInstructions, value, "tailored_resume", tailoringSchema,
     "The tailored resume could not be created.", selected, signal, { quoteId, source: { kind: "resume", id } }, progress);
@@ -415,9 +417,10 @@ async function createTailoredResume(id: string, signal: AbortSignal, commit: <T>
   signal.throwIfAborted();
   progress?.("generating");
   const blocks = applyResumeEdits(input.resumeBlocks, result);
-  const [docx, pdf] = await Promise.all([resumeDocx(blocks), printResumePdf(resumeHtml(blocks), signal)]);
+  const { docx, pdf, kept } = await exportTailoredReference(reference, blocks, signal, printWordResumePdf);
+  const layoutNote = kept ? "Some wording was kept to preserve the reference layout." : undefined;
   const saved = await commit(() => store.saveTailoredResume(id, plan.updatedAt,
-    tailoredBaseName(resume.resume.filename, plan.listingUrl, id), analysisHash(input), docx, pdf));
+    tailoredBaseName(resume.resume.filename, plan.listingUrl, id), analysisHash(input), docx, pdf, layoutNote));
   if (selected.provider === "credits") await creditsClient.acknowledge(quoteId);
   // The database holds both originals of the generated files, including when
   // Documents is temporarily unavailable. Revealing the link retries export.

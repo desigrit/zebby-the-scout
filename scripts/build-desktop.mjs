@@ -1,11 +1,16 @@
 import { build as buildVite } from "vite";
 import { build as buildEsbuild } from "esbuild";
 import sharp from "sharp";
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 await buildVite({ configFile: path.resolve("vite.config.desktop.ts") });
 await mkdir("desktop-dist", { recursive: true });
+await cp("public/resume-fonts", "desktop-dist/renderer/resume-fonts", { recursive: true });
+await buildEsbuild({
+  entryPoints: ["desktop/resume-docx-renderer.ts"], outfile: "desktop-dist/resume-docx-renderer.js",
+  bundle: true, platform: "browser", target: "es2022", format: "iife", minify: true,
+});
 await copyFile("node_modules/lottie-web/LICENSE.md", "desktop-dist/LICENSE-lottie-web.txt");
 await buildEsbuild({
   entryPoints: ["desktop/main.ts"], outfile: "desktop-dist/main.cjs",

@@ -37,10 +37,11 @@ export function applyResumeEdits(blocks: ResumeBlock[], value: unknown): ResumeB
     }
   }
   const edits = new Map(result.edits.map(edit => [edit.id, edit.text.replace(/\u2014/g, "-")]));
-  return blocks.map(block => ({ ...block, text: (edits.get(block.id) || block.text).replace(/\u2014/g, "-") }));
+  return blocks.map(block => edits.has(block.id) ? { ...block, text: edits.get(block.id)! } : block);
 }
 
 export type TailoredResume = {
   docx: { id: string; filename: string }; pdf: { id: string; filename: string };
   generatedAt: string; sourceHash: string;
+  layoutNote?: string;
 };
