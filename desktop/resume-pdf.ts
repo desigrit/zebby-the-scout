@@ -42,9 +42,10 @@ export async function printWordResumePdf(data: Uint8Array, signal: AbortSignal):
   const timer = setTimeout(close, 45_000);
   try {
     const html = `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src data: blob:; font-src data: blob:">
-      <style>${faces}</style><body><script nonce="${nonce}">${script.replace(/<\/script/gi, "<\\/script")}</script></body>`;
+      <body><script nonce="${nonce}">${script.replace(/<\/script/gi, "<\\/script")}</script></body>`;
     await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
     signal.throwIfAborted();
+    await window.webContents.executeJavaScript(`{ const style = document.createElement("style"); style.textContent = ${JSON.stringify(faces)}; document.head.append(style); }`);
     await window.webContents.executeJavaScript(`window.renderResumeDocument(${JSON.stringify(Buffer.from(data).toString("base64"))})`);
     signal.throwIfAborted();
     const pdf = await window.webContents.printToPDF({ preferCSSPageSize: true, printBackground: true });
