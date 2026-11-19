@@ -19,6 +19,8 @@ for filename in ["pdf-reference.pdf", "pdf-tailored.pdf", "word-reference.pdf", 
             # Check that the edited line actually paints visible glyphs.
             pixels = document.pages[0].crop((40, 231, 395, 249)).to_image(resolution=144).original.convert("L")
             assert sum(p < 180 for p in pixels.getdata()) > 700, "Edited PDF text must be visible."
+        if filename.startswith("word-"):
+            assert any(r["width"] > 400 and r["height"] <= 2 for r in document.pages[0].rects + document.pages[0].lines), "Word section rules remain visible."
 assert report["pdf-reference.pdf"]["pages"] == report["pdf-tailored.pdf"]["pages"] == 2
 assert report["word-reference.pdf"]["pages"] == report["word-tailored.pdf"]["pages"] == 1
 converted = root / "converted" / "pdf-tailored.pdf"

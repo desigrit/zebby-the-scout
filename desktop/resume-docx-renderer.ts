@@ -21,6 +21,13 @@ window.renderResumeDocument = async (base64: string) => {
     _xmlDocument: Document;
     body: { children: Node[] };
   };
+  const retainDefaultBorderColor = (node: Node) => {
+    for (const [property, value] of Object.entries(node.cssStyle || {})) {
+      if (property.startsWith("border") && / null$/.test(value)) node.cssStyle![property] = value.replace(/ null$/, " currentColor");
+    }
+    node.children?.forEach(retainDefaultBorderColor);
+  };
+  part.body.children.forEach(retainDefaultBorderColor);
   const body = part._xmlDocument.getElementsByTagNameNS("*", "body")[0];
   const source = [...body.children].filter(node => node.localName === "p");
   const paragraphs = part.body.children.filter(node => node.type === "paragraph");
