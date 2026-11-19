@@ -55,7 +55,7 @@ export async function referenceWord() {
       <w:r><w:t xml:space="preserve">• Led customer research and partnered with engineering to improve activation by </w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t>18%.</w:t></w:r>
     </w:p>
     <w:p><w:hyperlink r:id="profile"><w:r><w:rPr><w:color w:val="0066CC"/><w:u w:val="single"/></w:rPr><w:t>linkedin.com/in/alex</w:t></w:r></w:hyperlink></w:p>
-    <w:sectPr><w:footerReference r:id="footer"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="600" w:right="600" w:bottom="600" w:left="600" w:header="0" w:footer="250"/></w:sectPr>
+    <w:sectPr><w:footerReference w:type="default" r:id="footer"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="600" w:right="600" w:bottom="600" w:left="600" w:header="0" w:footer="250"/></w:sectPr>
   </w:body></w:document>`);
   zip.file("word/styles.xml", '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:sz w:val="20"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="80"/></w:pPr></w:pPrDefault></w:docDefaults></w:styles>');
   zip.file("word/footer1.xml", '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Portfolio available on request</w:t></w:r></w:p></w:ftr>');

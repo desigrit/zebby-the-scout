@@ -54,7 +54,14 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node --experimental-strip-types scripts/prepare-resume-fixtures.mjs
-      - run: sudo apt-get update -qq && sudo apt-get install -y libreoffice-writer fonts-crosextra-carlito
+      - name: Install the independent Word renderer
+        timeout-minutes: 8
+        run: |
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            printf 'https://archive.ubuntu.com/ubuntu\n' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+          fi
+          sudo apt-get -o Acquire::Retries=1 -o Acquire::https::Timeout=30 update -qq
+          sudo apt-get -o Acquire::Retries=1 -o Acquire::https::Timeout=30 install -y --no-install-recommends libreoffice-writer fonts-crosextra-carlito
       - name: Render editable Word copies independently
         run: |
           mkdir -p qa-output/tailored-resume/converted
