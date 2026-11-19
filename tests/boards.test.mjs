@@ -11,6 +11,22 @@ import { DatabaseSync } from "node:sqlite";
 import { build } from "esbuild";
 import { onlineAnalysis } from "../desktop/online-analysis.ts";
 import { boardListingTitle } from "../shared/board-listing-title.ts";
+import { boardLastCheckedLabel } from "../shared/board-last-checked.ts";
+
+test("recent board checks use elapsed hours across midnight and explicit time zones", () => {
+  const now = Date.parse("2026-11-18T08:30:00Z"), hour = 60 * 60 * 1000;
+  for (const [age, label] of [[0, "Just now"], [hour - 1, "Just now"], [hour, "1 hour ago"],
+    [2 * hour, "2 hours ago"], [24 * hour - 1, "23 hours ago"]]) {
+    assert.equal(boardLastCheckedLabel(new Date(now - age).toISOString(), now), label);
+  }
+  assert.equal(boardLastCheckedLabel("2026-11-17T23:30:00-08:00", now), "1 hour ago");
+  const old = new Date(now - 24 * hour);
+  assert.equal(boardLastCheckedLabel(old.toISOString(), now),
+    old.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }));
+  assert.equal(boardLastCheckedLabel(new Date(now + hour).toISOString(), now), "Just now", "Clock skew never shows negative hours");
+  assert.equal(boardLastCheckedLabel("", now), "Never checked");
+  assert.equal(boardLastCheckedLabel("invalid", now), "Never checked");
+});
 
 test("CTA titles recover from Workday role URLs while meaningful titles stay unchanged", () => {
   const url = "https://salesforce.wd12.myworkdayjobs.com/en-US/Slack/job/Seattle/Senior-Product-Manager--Commerce_JR123";

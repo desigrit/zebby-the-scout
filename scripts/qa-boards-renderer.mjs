@@ -3,6 +3,8 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
 export async function checkBoardsRenderer(page, nav) {
+  const originalClock = await page.evaluate(() => Date.now());
+  await page.clock.setFixedTime(new Date("2026-11-18T20:00:00Z"));
   await page.emulateMedia({ reducedMotion: "no-preference" });
   const output = path.resolve(".impeccable/review"); await mkdir(output, { recursive: true });
   await page.evaluate(() => {
@@ -96,6 +98,37 @@ export async function checkBoardsRenderer(page, nav) {
     lastCheckedAt: "2026-11-04T16:30:00Z", lastCheckId: 10 + index, totalCount: 20, newCount: index === 0 ? 4 : 0,
     error: index === 2 ? "The board's results did not finish loading. The last successful check is unchanged." : "" })) }));
   const first = page.getByRole("article", { name: "Slack", exact: true }); await first.getByText("4 new listings", { exact: true }).waitFor();
+
+  const savedTimeBoards = await page.evaluate(() => structuredClone(window.boardsQA.get().boards));
+  const checkNow = Date.parse("2026-11-18T20:00:00Z");
+  await page.clock.setFixedTime(checkNow);
+  await page.evaluate(now => {
+    window.boardsQA.set({ boards: window.boardsQA.get().boards.map((board, index) => ({ ...board,
+      lastCheckedAt: new Date(now - [59 * 60_000, 8 * 3_600_000, 48 * 3_600_000][index]).toISOString() })) });
+    window.dispatchEvent(new Event("focus"));
+  }, checkNow);
+  await first.getByText("Just now", { exact: true }).waitFor();
+  await page.getByRole("article", { name: "Uber", exact: true }).getByText("8 hours ago", { exact: true }).waitFor();
+  assert.equal(await third.locator(".board-date time").textContent(),
+    await page.evaluate(now => new Date(now - 48 * 3_600_000).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }), checkNow));
+  assert.equal(await first.locator(".board-date time").getAttribute("title"),
+    await page.evaluate(now => new Date(now - 59 * 60_000).toLocaleString(), checkNow), "Hover retains the exact local timestamp");
+  await capture("boards-relative-time-light");
+  await page.setViewportSize({ width: 790, height: 620 });
+  await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
+  await capture("boards-relative-time-compact-dark");
+  await page.setViewportSize({ width: 1550, height: 850 });
+  await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
+  await page.clock.setFixedTime(checkNow + 2 * 60_000);
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await first.getByText("1 hour ago", { exact: true }).waitFor();
+  await page.clock.setFixedTime(checkNow + 24 * 3_600_000);
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  const previousDate = await page.evaluate(now => new Date(now - 59 * 60_000)
+    .toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }), checkNow);
+  await first.getByText(previousDate, { exact: true }).waitFor();
+  await page.clock.setFixedTime(checkNow);
+  await page.evaluate(boards => { window.boardsQA.set({ boards }); window.dispatchEvent(new Event("focus")); }, savedTimeBoards);
   assert.equal(await page.locator(".board-match-total").count(), 3, "Every board shows coverage, including boards without instructions");
   await first.getByRole("button", { name: "Edit Slack board" }).click();
   assert.equal(await instructions.inputValue(), seniorRoles);
@@ -444,4 +477,5 @@ export async function checkBoardsRenderer(page, nav) {
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
   await nav.getByRole("button", { name: "Plan", exact: true }).click();
   await page.getByRole("main", { name: "Plan", exact: true }).waitFor();
+  await page.clock.setFixedTime(originalClock);
 }
