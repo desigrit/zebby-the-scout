@@ -50,17 +50,17 @@ app.whenReady().then(async()=>{
   await writeFile(path.join(output,"Alex Morgan - 123456 - tailored.pdf"),pdf);
   await writeFile(path.join(output,"Alex Morgan - 123456 - tailored.docx"),docx);
   await writeFile(path.join(output,"resume.html"),html);
-  for (const name of ["word-reference", "word-tailored"]) {
+  for (const name of ["word-reference", "word-tailored", "pdf-tailored"]) {
     const source = await readFile(path.join(output, name + ".docx"));
     const rendered = await printWordResumePdf(source, new AbortController().signal);
-    await writeFile(path.join(output, name + ".pdf"), rendered);
+    await writeFile(path.join(output, name === "pdf-tailored" ? "pdf-as-word-native.pdf" : name + ".pdf"), rendered);
     const document = await getDocumentProxy(new Uint8Array(rendered));
-    assert.equal(document.numPages, 1, name + " retains its page count");
+    assert.equal(document.numPages, name === "pdf-tailored" ? 2 : 1, name + " retains its page count");
     const text = (await (await document.getPage(1)).getTextContent()).items.filter(i => "str" in i).map(i => i.str).join(" ");
     assert.ok(text.includes("Alex Morgan"), name + " identity");
     assert.ok(text.includes("18%"), name + " protected metric");
     assert.ok(text.includes(name === "word-tailored" ? "Drove customer research" : "Led customer research"), name + " wording");
-    assert.ok(text.includes("Portfolio available on request"), name + " footer");
+    if (name !== "pdf-tailored") assert.ok(text.includes("Portfolio available on request"), name + " footer");
     await document.loadingTask.destroy();
   }
   const controller=new AbortController();controller.abort();

@@ -27,8 +27,9 @@ export async function referencePdf() {
   text("Seattle, WA | 2022 - Present", 470, 604, bold);
   text("Led discovery and cross-functional delivery for a growing customer platform.", 30, 585, italic);
   text("•", 30, 564);
-  text("Led customer research and partnered with engineering to improve activation by ", 42, 564);
-  text("18%.", 350, 564, bold);
+  const achievement = "Led customer research and partnered with engineering to improve activation by ";
+  text(achievement, 42, 564);
+  text("18%.", 42 + regular.widthOfTextAtSize(achievement, 10), 564, bold);
   text("•", 30, 548);
   text("Built a weekly measurement practice so the team could compare customer outcomes.", 42, 548);
   const second = pdf.addPage([612, 792]);

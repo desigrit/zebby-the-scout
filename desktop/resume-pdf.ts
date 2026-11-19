@@ -30,8 +30,8 @@ export async function printWordResumePdf(data: Uint8Array, signal: AbortSignal):
     readResumeFonts(),
   ]);
   const nonce = randomBytes(18).toString("base64");
-  const faces = fonts.map(font => `@font-face { font-family: 'Calibri'; font-weight: ${font.style.includes("Bold") ? 700 : 400}; font-style: ${font.style.includes("Italic") ? "italic" : "normal"};
-    src: local('Calibri${font.style === "Regular" ? "" : " " + font.style.replace("BoldItalic", "Bold Italic")}'), url(data:font/ttf;base64,${Buffer.from(font.data).toString("base64")}) }`).join("\n");
+  const faces = fonts.flatMap(font => ["Calibri", "Carlito"].map(family => `@font-face { font-family: '${family}'; font-weight: ${font.style.includes("Bold") ? 700 : 400}; font-style: ${font.style.includes("Italic") ? "italic" : "normal"};
+    src: local('${family}${font.style === "Regular" ? "" : " " + font.style.replace("BoldItalic", "Bold Italic")}'), url(data:font/ttf;base64,${Buffer.from(font.data).toString("base64")}) }`)).join("\n");
   const window = new BrowserWindow({ show: false, width: 816, height: 1056,
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, partition: `resume-${randomBytes(12).toString("hex")}` } });
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));

@@ -311,11 +311,16 @@ export async function tailorPdfReference(reference: PdfReference, revised: Resum
       const first = overlaps[0];
       let drawing = `\nq\n${inverse(first.op.matrix).join(" ")} cm\n`;
       for (const line of lines) for (const run of line.runs) {
-        if (!run.text.trim() || run.retained) continue;
+        if (run.retained) continue;
         const info = reference.fonts.get(run.font)!;
-        if (!embedded.has(run.font)) embedded.set(run.font, info.data
-          ? await document.embedFont(info.data, { subset: true, features: { liga: false, clig: false } }) : document.embedStandardFont(info.standard!));
-        const font = embedded.get(run.font)!, name = page.node.newFontDictionary("ZebbyResume", font.ref);
+        // PDF.js sanitizes embedded fonts for reuse, including their glyph IDs.
+        // Subsetting that font again can leave searchable but invisible glyphs.
+        // Preserve its glyph table. Whitespace gets a real searchable space,
+        // since source PDF subsets often omit a Unicode mapping for spaces.
+        const key = run.text.trim() ? run.font : "zebby-spaces";
+        if (!embedded.has(key)) embedded.set(key, key === "zebby-spaces" ? document.embedStandardFont(StandardFonts.Helvetica) : info.data
+          ? await document.embedFont(info.data, { subset: false, features: { liga: false, clig: false } }) : document.embedStandardFont(info.standard!));
+        const font = embedded.get(key)!, name = page.node.newFontDictionary("ZebbyResume", font.ref);
         const width = font.widthOfTextAtSize(run.text, run.size);
         drawing += `BT\n${name.toString()} ${run.size} Tf\n0 Tc 0 Tw 100 Tz 0 Ts 0 Tr\n${run.color.join(" ")} rg\n${run.width / width} 0 0 1 ${run.x} ${run.y} Tm\n${font.encodeText(run.text).toString()} Tj\nET\n`;
       }
@@ -354,7 +359,7 @@ async function pdfReferenceDocx(reference: PdfReference, pages: Page[]) {
           runs.push("<w:r><w:tab/></w:r>");
         }
         const font = reference.fonts.get(run.font)!;
-        const family = font.name.replace(/[-,](?:BoldItalic|BoldOblique|Bold|Italic|Oblique|Regular)$/i, "").replace(/MT$/, "");
+        const family = font.parsed?.familyName || font.name.replace(/-\d+$/, "").replace(/[-,](?:BoldItalic|BoldOblique|Bold|Italic|Oblique|Regular)$/i, "").replace(/MT$/, "");
         const color = run.color.map(c => Math.round(c * 255).toString(16).padStart(2, "0")).join("");
         let xml = `<w:r><w:rPr><w:rFonts w:ascii="${esc(family)}" w:hAnsi="${esc(family)}"/><w:sz w:val="${Math.round(run.size * 2)}"/>${font.bold ? "<w:b/>" : ""}${font.italic ? "<w:i/>" : ""}<w:color w:val="${color}"/>${run.link ? '<w:u w:val="single"/>' : ""}</w:rPr><w:t xml:space="preserve">${esc(run.text)}</w:t></w:r>`;
         if (run.link && /^https?:\/\//i.test(run.link)) {
