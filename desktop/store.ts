@@ -654,16 +654,16 @@ export class DesktopStore {
     if (!row) return undefined;
     try {
       const file = z.object({ id: z.string().uuid(), filename: z.string().min(1).max(240) });
-      return z.object({ docx: file, pdf: file, generatedAt: z.string(), sourceHash: z.string() }).parse(JSON.parse(String(row.value)));
+      return z.object({ docx: file, pdf: file, generatedAt: z.string(), sourceHash: z.string(), layoutNote: z.string().max(200).optional() }).parse(JSON.parse(String(row.value)));
     } catch { return undefined; }
   }
 
   async saveTailoredResume(id: string, expectedUpdatedAt: string, baseName: string, sourceHash: string,
-    docx: Uint8Array, pdf: Uint8Array): Promise<Plan> {
+    docx: Uint8Array, pdf: Uint8Array, layoutNote?: string): Promise<Plan> {
     if (!docx.byteLength || !pdf.byteLength || Math.max(docx.byteLength, pdf.byteLength) > 10 * 1024 * 1024) throw new Error("The tailored resume files could not be saved.");
     const generatedAt = new Date().toISOString();
     const result: TailoredResume = { docx: { id: randomUUID(), filename: `${baseName}.docx` },
-      pdf: { id: randomUUID(), filename: `${baseName}.pdf` }, generatedAt, sourceHash };
+      pdf: { id: randomUUID(), filename: `${baseName}.pdf` }, generatedAt, sourceHash, layoutNote };
     await this.mutate(db => {
       const changed = db.prepare("UPDATE plans SET updated_at = ? WHERE id = ? AND updated_at = ?").run(generatedAt, id, expectedUpdatedAt);
       if (!changed.changes) throw new Error("This plan changed while the resume was being created. Try again from the latest version.");

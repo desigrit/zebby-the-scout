@@ -6,6 +6,10 @@ import path from "node:path";
 
 await buildVite({ configFile: path.resolve("vite.config.desktop.ts") });
 await mkdir("desktop-dist", { recursive: true });
+await buildEsbuild({
+  entryPoints: ["desktop/resume-docx-renderer.ts"], outfile: "desktop-dist/resume-docx-renderer.js",
+  bundle: true, platform: "browser", target: "es2022", format: "iife", minify: true,
+});
 await copyFile("node_modules/lottie-web/LICENSE.md", "desktop-dist/LICENSE-lottie-web.txt");
 await buildEsbuild({
   entryPoints: ["desktop/main.ts"], outfile: "desktop-dist/main.cjs",

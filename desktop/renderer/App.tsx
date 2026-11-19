@@ -106,6 +106,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   const busy = navigatingBusy || analyzing;
   const selectedPlan = plans.find((plan) => plan.id === selectedId);
   const hasAnalysis = Boolean(selectedPlan && (selectedPlan.matchAnalyzedAt || selectedPlan.keywords.length));
+  const hasResumeReference = Boolean(resumeFile || resumes.some(resume => resume.id === draft.resumeId));
   const jobIsCurrent = selectedPlan &&
     (["listingUrl", "company", "title", "team", "locations", "description"] as const)
       .every((key) => draft[key] === selectedPlan[key]);
@@ -489,10 +490,12 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
           </div>}
         </fieldset>
         {hasAnalysis && <div className="tailored-resume-section" ref={tailoringSection}>
-          <div className="tailored-resume-actions"><button type="button" className="button button-secondary" disabled={busy || !canAnalyze}
+          <div className="tailored-resume-actions"><button type="button" className="button button-secondary" disabled={busy || !canAnalyze || !hasResumeReference}
+            aria-describedby={!hasResumeReference ? "tailored-reference-required" : undefined}
             onClick={() => void analyze(true)}>{tailoring ? <LoaderCircle size={17} className="spin" aria-hidden="true" /> : <Sparkles size={17} aria-hidden="true" />}Create tailored resume</button>
             {tailoring && <button type="button" className="text-action" disabled={cancelling || resumeProgress?.stage === "saving"} onClick={() => void cancelAnalysis()}>Cancel</button>}
           </div>
+          {!hasResumeReference && <p id="tailored-reference-required" className="field-help">Upload a reference resume in the section above.</p>}
           {tailoring && resumeProgress && <PlanAnalysisProgress key={resumeProgress.requestId} task="resume" stage={resumeProgress.stage} startedAt={resumeProgress.startedAt} />}
           {selectedPlan?.tailoredResume && <div className="tailored-resume-files">{(["docx", "pdf"] as const).map(format => {
             const file = selectedPlan.tailoredResume![format];
@@ -501,6 +504,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
               retryAction.current = reveal; reveal();
             }}><FileText size={18} aria-hidden="true" /><span>{file.filename}</span><span className="file-format">{format === "docx" ? "Word" : "PDF"}</span><FolderOpen size={15} aria-hidden="true" /></button>;
           })}</div>}
+          {selectedPlan?.tailoredResume?.layoutNote && <p className="field-help">{selectedPlan.tailoredResume.layoutNote}</p>}
         </div>}
         </div>
         </div>
