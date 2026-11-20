@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { hasAnalysisReceipt, recordAnalysisReceipt } from "./analysis-receipts.ts";
 import { constants } from "node:fs";
 import { copyFile, lstat, mkdir, readFile, stat, unlink } from "node:fs/promises";
 import path from "node:path";
@@ -372,6 +373,7 @@ export class BoardsStore {
   }
   async complete(id: string, revision: number, generation: number, scan: BoardScan) {
     return this.write(db => {
+      if (hasAnalysisReceipt(db, scan.receipt, `board:${id}`)) return;
       const board = this.get(id);
       if (this.epoch !== generation || board.revision !== revision) throw new Error("The board or database changed during this check. Check it again.");
       const now = new Date().toISOString();
@@ -389,6 +391,7 @@ export class BoardsStore {
       }
       db.prepare("UPDATE boards SET last_check_id=?,last_checked_at=?,last_attempt_at=?,total_count=?,error='',reviewed_through=CASE WHEN last_check_id=0 THEN ? ELSE reviewed_through END WHERE id=?")
         .run(check, now, now, total, check, id);
+      recordAnalysisReceipt(db, scan.receipt, `board:${id}`);
     });
   }
   async failed(id: string, revision: number, generation: number, message: string) {

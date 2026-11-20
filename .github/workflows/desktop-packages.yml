@@ -51,6 +51,7 @@ jobs:
       - run: npm ci
       - run: node node_modules/electron/install.js
       - run: npm test
+      - run: npm run test:chatgpt
       - run: npx tsc --noEmit
       - run: npm run lint -- --quiet
       - run: npm run desktop:build
@@ -60,6 +61,7 @@ jobs:
           ZEBBY_QA_OUTPUT: work/desktop-visual-review
       - run: node node_modules/playwright-core/cli.js install chromium
       - run: npm run test:renderer
+      - run: npm run test:chatgpt:renderer
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -85,6 +87,7 @@ jobs:
       - run: npm ci
       - run: node node_modules/electron/install.js
       - run: npm test
+      - run: npm run test:chatgpt
       - run: npx tsc --noEmit
       - run: npm run lint -- --quiet
       - run: npm run desktop:build
@@ -107,16 +110,20 @@ jobs:
         run: node --experimental-strip-types scripts/qa-local-engine.mjs qwen3-06b --thinking
       - run: node node_modules/playwright-core/cli.js install chromium
       - run: npm run test:renderer
+      - run: npm run test:chatgpt:renderer
       - name: Save credits flow review captures
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: credits-renderer-qa-windows
           retention-days: 1
-          path: qa-output/renderer-1.5.0/credits-*.png
+          path: |
+            qa-output/renderer-1.5.0/credits-*.png
+            qa-output/chatgpt/*
           if-no-files-found: ignore
       - run: npm run credits:build
       - run: npx electron-builder --win nsis --x64 --publish never -c electron-builder.local.cjs
+      - run: npm run test:chatgpt:package
       - run: node scripts/qa-self-update-windows.mjs
       - run: node scripts/qa-packaged-engine.mjs
       - run: node scripts/qa-packaged-engine.mjs lfm25-350m
@@ -159,18 +166,22 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - run: npm run test:chatgpt
       - run: npx tsc --noEmit
       - run: npm run desktop:build
       - run: npm run test:resume-files
       - run: node node_modules/playwright-core/cli.js install chromium
       - run: npm run test:renderer
+      - run: npm run test:chatgpt:renderer
       - name: Save credits flow review captures
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: credits-renderer-qa-macos
           retention-days: 1
-          path: qa-output/renderer-1.5.0/credits-*.png
+          path: |
+            qa-output/renderer-1.5.0/credits-*.png
+            qa-output/chatgpt/*
           if-no-files-found: ignore
       - run: node --experimental-strip-types scripts/qa-local-engine.mjs smollm2-360m
       - name: Check Qwen thinking mode on local hardware
@@ -181,6 +192,7 @@ jobs:
         env:
           ZEBBY_MAC_COMPARE_RELEASE: ${{ inputs.compare_mac_release }}
           GH_TOKEN: ${{ github.token }}
+      - run: npm run test:chatgpt:package
       - run: node --experimental-strip-types scripts/qa-self-update-mac.mjs
       - run: node scripts/qa-packaged-engine.mjs
       - run: node scripts/qa-packaged-engine.mjs lfm25-350m

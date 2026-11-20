@@ -1,6 +1,20 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("desktop", {
+    connectChatGPT: (account?: string) => ipcRenderer.invoke("chatgpt:connect", account),
+    cancelChatGPTConnect: () => ipcRenderer.invoke("chatgpt:cancel-connect"),
+    disconnectChatGPT: () => ipcRenderer.invoke("chatgpt:disconnect"),
+    refreshChatGPTModels: () => ipcRenderer.invoke("chatgpt:models"),
+    configureChatGPT: (model: string, thinking: string) => ipcRenderer.invoke("chatgpt:configure", model, thinking),
+    testChatGPT: () => ipcRenderer.invoke("chatgpt:test"),
+    manageChatGPTUsage: () => ipcRenderer.invoke("chatgpt:usage"),
+    acknowledgeChatGPTWelcome: () => ipcRenderer.invoke("chatgpt:welcome"),
+    openChatGPTJobs: (id?: string) => ipcRenderer.invoke("chatgpt:jobs", id),
+    onChatGPTChanged: (callback: (state: unknown) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: unknown) => callback(state);
+      ipcRenderer.on("chatgpt:changed", listener);
+      return () => ipcRenderer.removeListener("chatgpt:changed", listener);
+    },
   boardsState: () => ipcRenderer.invoke("boards:state"),
   boardListings: (id: string, checkId: number, filter: string, offset?: number) => ipcRenderer.invoke("boards:listings", id, checkId, filter, offset),
   importBoardsHistory: () => ipcRenderer.invoke("boards:import-history"),

@@ -14,6 +14,7 @@ type Providers = {
   openai: (instructions: string, input: unknown, name: string, schema: Record<string, unknown>, failure: string) => Promise<Record<string, unknown>>;
   anthropic?: (instructions: string, input: unknown, name: string, schema: Record<string, unknown>, failure: string) => Promise<Record<string, unknown>>;
   credits?: (instructions: string, input: unknown, name: string, schema: Record<string, unknown>, failure: string) => Promise<Record<string, unknown>>;
+  chatgpt?: (instructions: string, input: unknown, name: string, schema: Record<string, unknown>, failure: string) => Promise<Record<string, unknown>>;
   ready: (id: string) => Promise<unknown>;
   local: (id: string, ...args: Parameters<Generate>) => ReturnType<Generate>;
 };
@@ -28,7 +29,7 @@ export async function runSelectedAnalysis(selected: AnalysisSelection, providers
     return providers.ollama(selected.ollamaUrl, selected.ollamaModel, instructions, input, schema);
   }
   if (selected.provider === "openai") return providers.openai(instructions, input, name, schema, failure);
-  if (selected.provider === "anthropic" || selected.provider === "credits") {
+  if (selected.provider === "anthropic" || selected.provider === "credits" || selected.provider === "chatgpt") {
     const provider = providers[selected.provider];
     if (!provider) throw new Error("This analysis method is not configured.");
     return provider(instructions, input, name, schema, failure);

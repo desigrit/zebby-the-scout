@@ -821,7 +821,7 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
                     <input aria-label="Match strength" type="number" min="0" max="100" step="1" value={form.matchStrength} onChange={(event) => updateField("matchStrength", event.target.value)} placeholder="Score later" />
                     <span>%</span>
                   </span>
-                  <small>{analysisFlow.state.analysisProvider === "credits" ? "Analyze the match after saving, or enter a score." : analysisFlow.canAutoAnalyze() ? "Calculated after saving when a resume and job description are included." : "Set up analysis in Settings, or enter a score."}</small>
+                  <small>{["credits", "chatgpt"].includes(analysisFlow.state.analysisProvider) ? "Analyze the match after saving, or enter a score." : analysisFlow.canAutoAnalyze() ? "Calculated after saving when a resume and job description are included." : "Set up analysis in Settings, or enter a score."}</small>
                 </label>
                 <label className="field">
                   <span>Status</span>

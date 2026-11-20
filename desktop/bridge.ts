@@ -7,8 +7,10 @@ import type { ThinkingCapability, ThinkingPreferences } from "../shared/thinking
 import type { AnalysisProgress } from "../shared/analysis-progress";
 import type { BoardInput, BoardsState, BoardListings, BoardListingFilter, BoardRunPreview } from "../shared/boards";
 import type { BoardCheckOptions, BoardReaderSettings } from "../shared/board-exploration";
+import type { ChatGPTState } from "../shared/chatgpt-plan";
 
 export type DesktopState = {
+  chatgpt?: ChatGPTState;
   filePath: string;
   filename: string;
   dirty: boolean;
@@ -42,6 +44,16 @@ export type DesktopState = {
 };
 
 export type DesktopBridge = {
+  connectChatGPT(account?: string): Promise<DesktopState>;
+  cancelChatGPTConnect(): Promise<void>;
+  disconnectChatGPT(): Promise<DesktopState>;
+  refreshChatGPTModels(): Promise<DesktopState>;
+  configureChatGPT(model: string, thinking: string): Promise<DesktopState>;
+  testChatGPT(): Promise<DesktopState>;
+  manageChatGPTUsage(): Promise<void>;
+  acknowledgeChatGPTWelcome(): Promise<DesktopState>;
+  openChatGPTJobs(id?: string): Promise<void>;
+  onChatGPTChanged?(callback: (state: DesktopState) => void): () => void;
   boardsState(): Promise<BoardsState>;
   importBoardsHistory(): Promise<BoardsState | null>;
   retryBoardsSave(): Promise<BoardsState>;

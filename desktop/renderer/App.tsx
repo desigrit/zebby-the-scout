@@ -329,7 +329,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
       const saved = dirty || !selectedId ? await save() : selectedPlan;
       if (!saved) throw new Error("Save this plan before analyzing it.");
       setNotice("");
-      const modelLabel = analysisProvider === "ollama" ? ollamaModel || "Ollama" : analysisProvider === "builtin"
+      const modelLabel = analysisProvider === "chatgpt" ? `ChatGPT plan · ${analysisFlow.state.chatgpt?.models.find(m => m.id === analysisFlow.state.chatgpt?.model)?.name || "Selected model"}` : analysisProvider === "ollama" ? ollamaModel || "Ollama" : analysisProvider === "builtin"
         ? builtInModel?.name || "Local model" : onlineModel(analysisProvider === "credits" ? analysisFlow.state.credits.model
           : analysisProvider === "anthropic" ? analysisFlow.state.anthropicModel : analysisFlow.state.openaiModel).name;
       retryAction.current = () => void analyze(tailor);
@@ -447,7 +447,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
             </button>
             {analyzing && !tailoring && <button className="button button-secondary" type="button" onClick={() => void cancelAnalysis()}
               disabled={cancelling || analysisProgress?.stage === "saving"}>Cancel</button>}
-            <small>{analyzing && analysisProgress?.modelLabel ? analysisProgress.modelLabel : analysisProvider === "ollama" ? (ollamaModel || "Ollama") : analysisProvider === "builtin"
+            <small>{analyzing && analysisProgress?.modelLabel ? analysisProgress.modelLabel : analysisProvider === "chatgpt" ? "Using ChatGPT plan" : analysisProvider === "ollama" ? (ollamaModel || "Ollama") : analysisProvider === "builtin"
               ? (builtInModel?.name || "Local model") : onlineModel(analysisProvider === "credits" ? analysisFlow.state.credits.model
                 : analysisProvider === "anthropic" ? analysisFlow.state.anthropicModel : analysisFlow.state.openaiModel).name}</small>
           </div>
@@ -597,7 +597,7 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking,
       <div className="settings-section-heading"><h2 id="ai-settings">Analysis</h2><AnalysisGuide /></div>
       <div className="settings-content"><AnalysisSettings state={state} onState={onState} openCredits={openCredits} /></div>
     </section>
-    <CreditsSettings />
+    {!(state.analysisProvider === "chatgpt") && <CreditsSettings />}
     <section className="settings-section" aria-labelledby="appearance-settings">
       <div className="settings-section-heading"><h2 id="appearance-settings">Appearance</h2></div>
       <div className="settings-content"><div className="appearance-options" role="radiogroup" aria-label="Appearance">
@@ -766,7 +766,8 @@ export default function App() {
     const removeUpdatesChanged = window.desktop!.onUpdatesChanged((updates) => {
       setState((current) => current ? { ...current, updates } : current);
     });
-    return () => { removeChanged(); removeNavigate(); removeModelsChanged(); removeUpdatesChanged(); removeCreditsChanged(); };
+    const removeChatGPTChanged = window.desktop!.onChatGPTChanged?.(next => setState(current => current ? { ...current, chatgpt: next.chatgpt } : next));
+    return () => { removeChanged(); removeNavigate(); removeModelsChanged(); removeUpdatesChanged(); removeCreditsChanged(); removeChatGPTChanged?.(); };
   }, [navigate, setTab]);
 
   useEffect(() => {

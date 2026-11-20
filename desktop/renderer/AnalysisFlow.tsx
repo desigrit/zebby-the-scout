@@ -19,6 +19,7 @@ const methods = [
   { id: "builtin", title: "Download a model", description: "Runs on this computer.", icon: Download },
   { id: "openai", title: "OpenAI API key", description: "Use your OpenAI API account.", icon: KeyRound },
   { id: "anthropic", title: "Anthropic API key", description: "Use your Anthropic API account.", icon: KeyRound },
+  { id: "chatgpt", title: "ChatGPT plan", description: "Use your ChatGPT plan allowance.", icon: KeyRound },
 ] as const;
 function warmCreditsService() {
   // Keep plan selection instant. Checkout can retry if this background check fails.
@@ -113,7 +114,7 @@ export function AnalysisFlowProvider({ state, onState, children, onOpenSettings 
           setError(creditProblem);
         }
       }
-      else { setMethod("credits"); show("choose"); }
+      else { setMethod(next.analysisProvider === "chatgpt" ? "chatgpt" : "credits"); show(next.analysisProvider === "chatgpt" ? "setup" : "choose"); }
     });
     signal.throwIfAborted();
     return configured ? prepare(source, signal) : null;
@@ -163,7 +164,7 @@ export function AnalysisFlowProvider({ state, onState, children, onOpenSettings 
     : scene === "buy" ? "A little fuel for your next move"
     : scene === "restore" ? "Restore credits" : scene === "connect" ? "Connect this computer"
     : scene === "checkout" ? "Finish checkout in your browser" : scene === "ready" ? "Your credits are ready" : "";
-  const flow: Flow = { prepare, canAutoAnalyze: () => current.current.analysisProvider !== "credits" && providerReady(current.current),
+  const flow: Flow = { prepare, canAutoAnalyze: () => !["credits", "chatgpt"].includes(current.current.analysisProvider) && providerReady(current.current),
     openCredits: (preferredPack) => { if (!pending.current) { if (preferredPack) setPack(preferredPack); show("buy"); } }, openSettings, state, updateState };
   return <AnalysisContext.Provider value={flow}>{children}
     <dialog ref={dialog} className={`analysis-dialog ${scene === "buy" ? "analysis-dialog-pricing" : ""}`} aria-labelledby="analysis-dialog-title"
@@ -240,7 +241,12 @@ export function AnalysisFlowProvider({ state, onState, children, onOpenSettings 
   </AnalysisContext.Provider>;
 }
 export function SidebarCredits() {
-  const { state, openCredits } = useAnalysisFlow();
+  const { state, openCredits, openSettings } = useAnalysisFlow();
+  if (state.analysisProvider === "chatgpt") return state.sidebarCollapsed ? null : <div className="sidebar-database">
+    <span>{providerReady(state) ? "Using ChatGPT plan" : "ChatGPT setup"}</span>{providerReady(state)
+      ? <a className="settings-link" href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer">Manage usage</a>
+      : <button type="button" className="settings-link" onClick={openSettings}>Finish setup</button>}
+  </div>;
   if (!state.credits.signedIn || state.credits.needsReconnect || state.credits.stale || !state.credits.wallet?.purchased) return null;
   const { used, total, percentRemaining } = creditUsage(state.credits.wallet);
   const percent = `${Math.round(percentRemaining).toLocaleString()}%`;

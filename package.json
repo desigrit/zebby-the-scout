@@ -1,6 +1,6 @@
 {
   "name": "pm-application-tracker",
-  "version": "2.10.7",
+  "version": "2.11.0",
   "private": true,
   "main": "desktop-dist/main.cjs",
   "engines": {
@@ -27,7 +27,10 @@
     "desktop:package:mac:arm64": "npm run desktop:build && electron-builder --mac dmg --arm64 --publish never",
     "desktop:package:store": "node scripts/build-msix.mjs",
     "test:resume-files": "node scripts/qa-tailored-files.mjs",
-    "benchmark:local": "node --experimental-strip-types scripts/benchmark-local.mjs"
+    "benchmark:local": "node --experimental-strip-types scripts/benchmark-local.mjs",
+    "test:chatgpt": "node --experimental-strip-types --test tests/chatgpt-*.test.mjs",
+    "test:chatgpt:renderer": "node --experimental-strip-types scripts/qa-chatgpt.mjs",
+    "test:chatgpt:package": "node --experimental-strip-types scripts/qa-chatgpt-package.mjs"
   },
   "dependencies": {
     "@pdf-lib/fontkit": "1.1.1",
