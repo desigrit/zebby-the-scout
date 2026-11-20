@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 :root {
+  color-scheme: light;
   --canvas: #f8f6f3;
   --paper: #fff;
   --ink: #302c29;
@@ -8,20 +9,22 @@
   --ink-faint: #71675f;
   --line: #ddd7d0;
   --line-strong: #a49a90;
-  --accent: #a64a34;
-  --accent-solid: #a64a34;
-  --accent-hover: #8e3d2a;
-  --accent-wash: #f8e8e1;
+  --accent: var(--tone);
+  --accent-solid: var(--tone-solid);
+  --accent-hover: var(--tone-hover);
+  --accent-wash: var(--tone-wash);
   --forest: #f0ece6;
-  --focus: #a64a34;
-  --cyan: #a64a34;
-  --cyan-wash: #f8e8e1;
+  --focus: var(--accent);
+  --cyan: var(--accent);
+  --cyan-wash: var(--accent-wash);
+  --danger-ink: light-dark(#a64a34, #f0ac91);
+  --danger-wash: light-dark(#f8e8e1, #443830);
   --chart: #b17732;
   --field: #fff;
   --surface-hover: #f5f2ee;
-  --surface-selected: #f8e8e1;
-  --focus-ring: rgba(166,74,52,.18);
-  --selection-bg: #f1cec0;
+  --surface-selected: var(--accent-wash);
+  --focus-ring: color-mix(in srgb, var(--accent) 18%, transparent);
+  --selection-bg: var(--tone-selection);
   --selection-ink: #302c29;
   --scroll-thumb: #8f8176;
   --button-ink: #fff;

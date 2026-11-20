@@ -9,6 +9,7 @@ import AnalysisErrorBanner from "./AnalysisErrorBanner";
 import { ErrorBanner, ErrorStyleProvider, SavedFeedbackProvider, useSavedFeedback } from "./WorkspaceFeedback";
 import { pasteJobDescription } from "../../lib/job-text-paste";
 import type { DesktopState } from "../bridge";
+import { ACCENT_COLORS, DEFAULT_ACCENT, type AccentColor } from "../accent-colors";
 import type { Plan, PlanInput } from "../store";
 import type { Application, Resume } from "../../lib/application-types";
 import { AnalysisSettings } from "./AnalysisSettings";
@@ -526,7 +527,8 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
   </main>;
 }
 
-function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking, onBoardsReady }: { state: DesktopState; onState: (value: DesktopState) => void;
+function SettingsView({ state, onState, accentColor, onAccentChange, onUpdate, onCheckUpdates, updateWorking, onBoardsReady }: {
+  state: DesktopState; onState: (value: DesktopState) => void; accentColor: AccentColor; onAccentChange: (value: AccentColor) => Promise<void>;
   onUpdate: () => void; onCheckUpdates: () => Promise<void>; updateWorking: boolean; onBoardsReady?: () => void }) {
   const { openCredits } = useAnalysisFlow();
   const savedFeedback = useSavedFeedback();
@@ -559,6 +561,13 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking,
     try { onState(await window.desktop!.setAppearance(value)); }
     catch (cause) { onState(state); setError(errorText(cause)); }
     finally { setWorking(false); }
+  }
+
+  async function changeAccentColor(value: AccentColor) {
+    retryAction.current = () => void changeAccentColor(value);
+    setError(""); setNotice("");
+    try { await onAccentChange(value); }
+    catch (cause) { setError(errorText(cause)); }
   }
 
   async function openLogs() {
@@ -607,6 +616,18 @@ function SettingsView({ state, onState, onUpdate, onCheckUpdates, updateWorking,
               onChange={() => void changeAppearance(value)} disabled={working} />
             <Icon size={17} aria-hidden="true" /><span>{label}</span>
           </label>)}</div>
+        <fieldset className="accent-picker" role="radiogroup" aria-labelledby="accent-color-label">
+          <legend id="accent-color-label">Accent color</legend>
+          <div className="accent-picker-row">
+            {(Object.keys(ACCENT_COLORS) as AccentColor[]).map(color =>
+              <label key={color} className="accent-option" data-accent={color} title={ACCENT_COLORS[color]}>
+                <input type="radio" name="accent-color" aria-label={ACCENT_COLORS[color]} value={color}
+                  checked={accentColor === color} onChange={() => void changeAccentColor(color)} />
+                <span className="accent-chip" aria-hidden="true"><Check size={15} strokeWidth={2.5} /></span>
+              </label>)}
+            <span className="accent-name" aria-hidden="true">{ACCENT_COLORS[accentColor]}</span>
+          </div>
+        </fieldset>
       </div>
     </section>
     <section className="settings-section" aria-labelledby="logs-settings">
@@ -670,6 +691,9 @@ export default function App() {
   useInteractiveScrollbars();
   const [state, setState] = useState<DesktopState | null>(null);
   const appearance = state?.appearance;
+  const [pendingAccent, setPendingAccent] = useState<AccentColor | null>(null);
+  const accentRequest = useRef(0);
+  const accentColor = pendingAccent ?? state?.accentColor ?? DEFAULT_ACCENT;
   const [tab, setTab, settleTab] = useTabTransition<Tab>("plan");
   useWorkspaceShortcuts(settleTab);
   const scrollToAnalysis = useRef(false);
@@ -770,7 +794,24 @@ export default function App() {
     return () => { removeChanged(); removeNavigate(); removeModelsChanged(); removeUpdatesChanged(); removeCreditsChanged(); removeChatGPTChanged?.(); };
   }, [navigate, setTab]);
 
-  useEffect(() => {
+  async function saveAccentColor(value: AccentColor) {
+    const request = ++accentRequest.current;
+    setPendingAccent(value);
+    try {
+      await window.desktop!.setAccentColor(value);
+      setState(current => current ? { ...current, accentColor: value } : current);
+    } catch (cause) {
+      if (request === accentRequest.current) throw cause;
+    } finally {
+      if (request === accentRequest.current) setPendingAccent(null);
+    }
+  }
+
+  useLayoutEffect(() => {
+    document.documentElement.dataset.accent = accentColor;
+  }, [accentColor]);
+
+  useLayoutEffect(() => {
     if (!appearance) return;
     const system = window.matchMedia("(prefers-color-scheme: dark)");
     const update = () => { document.documentElement.dataset.theme = appearance === "auto"
@@ -814,7 +855,7 @@ export default function App() {
         <button type="button" onClick={() => navigate("settings")}>Retry save in Settings</button></div>}
       {state.startupError && tab === "settings" && <ErrorBanner variant="inline"
         message="The previous database could not be opened. Choose a database to continue." />}
-      {!state.filePath ? (tab === "settings" ? <SettingsView state={state} onState={setState} onUpdate={() => void applyUpdate()} onCheckUpdates={checkUpdates} updateWorking={updateWorking} /> : <Welcome state={state} onState={setState} />)
+      {!state.filePath ? (tab === "settings" ? <SettingsView state={state} onState={setState} accentColor={accentColor} onAccentChange={saveAccentColor} onUpdate={() => void applyUpdate()} onCheckUpdates={checkUpdates} updateWorking={updateWorking} /> : <Welcome state={state} onState={setState} />)
       : tab === "boards" ? <BoardsView key={databaseVersion} onDirtyChange={setDirtyBoard} />
       : tab === "plan" ? <PlanView key={databaseVersion}
         analysisProvider={state.analysisProvider} ollamaModel={state.ollamaModel}
@@ -829,6 +870,6 @@ export default function App() {
           setTab("applications");
         }} />
       : tab === "applications" ? <ApplicationDashboard key={databaseVersion} initialSelection={applicationSelection} />
-      : <SettingsView state={state} onState={setState} onUpdate={() => void applyUpdate()} onCheckUpdates={checkUpdates} updateWorking={updateWorking} onBoardsReady={settleAnalysisAnchor} />}</div>
+      : <SettingsView state={state} onState={setState} accentColor={accentColor} onAccentChange={saveAccentColor} onUpdate={() => void applyUpdate()} onCheckUpdates={checkUpdates} updateWorking={updateWorking} onBoardsReady={settleAnalysisAnchor} />}</div>
   </div></BackgroundAnalysisProvider></AnalysisFlowProvider></SavedFeedbackProvider>;
 }

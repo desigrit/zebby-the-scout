@@ -1,3 +1,4 @@
+import type { AccentColor } from "./accent-colors";
 import type { LocalModelStatus } from "./local-model-catalog";
 import type { ComputeBackend, LocalCompute } from "./local-compute";
 import type { UpdateState } from "./release-updates";
@@ -36,6 +37,7 @@ export type DesktopState = {
   availableMemory: number;
   canSaveApiKey: boolean;
   appearance: "auto" | "dark" | "light";
+  accentColor: AccentColor;
   sidebarCollapsed: boolean;
   logsPath: string;
   platform: string;
@@ -108,6 +110,7 @@ export type DesktopBridge = {
   deleteLocalModel(id: string): Promise<DesktopState>;
   openModelFolder(): Promise<string>;
   setAppearance(value: DesktopState["appearance"]): Promise<DesktopState>;
+  setAccentColor(value: AccentColor): Promise<void>;
   setSidebarCollapsed(value: boolean): Promise<DesktopState>;
   openLogs(): Promise<void>;
   downloadResume(id: string): Promise<boolean>;

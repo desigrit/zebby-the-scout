@@ -375,7 +375,7 @@ The palette uses warm paper, rust, and ochre with a quiet warm wash for the sele
 
 ### Primary
 
-- **Rust:** accent drives deliberate actions; accent-hover deepens hover. Focus and the retained cyan information alias use the same rust. Dark appearance uses lighter rust with dark button ink.
+- **Accent color.** Ember is the default. Settings also offers Ochre, Pine, Harbor blue, and Plum. The selected color applies to actions, focus, and selection. Each has a light and dark variant. The zebra and hiring-stage colors keep their own palette.
 - **Quiet selection:** accent-wash and surface-selected mark current navigation and selected records. Text selection has its own foreground/background tokens.
 
 ### Secondary

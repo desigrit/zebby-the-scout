@@ -1,0 +1,56 @@
+:root,
+[data-accent="ember"] {
+  --tone-solid: #a64a34;
+  --tone: light-dark(var(--tone-solid), #f0ac91);
+  --tone-hover: light-dark(#8e3d2a, #ffc5ad);
+  --tone-wash: light-dark(#f8e8e1, #443830);
+  --tone-selection: light-dark(#f1cec0, #785344);
+}
+
+[data-accent="ochre"] {
+  --tone-solid: #805a20;
+  --tone: light-dark(var(--tone-solid), #dfbb7d);
+  --tone-hover: light-dark(#684714, #f2d49b);
+  --tone-wash: light-dark(#f5ecd9, #40382a);
+  --tone-selection: light-dark(#ead7ad, #6b5637);
+}
+
+[data-accent="pine"] {
+  --tone-solid: #38664e;
+  --tone: light-dark(var(--tone-solid), #9cc7ac);
+  --tone-hover: light-dark(#2a503c, #b8dcc4);
+  --tone-wash: light-dark(#e5eee6, #2e3c33);
+  --tone-selection: light-dark(#c6decf, #425f4e);
+}
+
+[data-accent="harbor"] {
+  --tone-solid: #39627e;
+  --tone: light-dark(var(--tone-solid), #a0c5dd);
+  --tone-hover: light-dark(#294d65, #bcdbed);
+  --tone-wash: light-dark(#e5edf2, #2e3942);
+  --tone-selection: light-dark(#cbdde9, #455c70);
+}
+
+[data-accent="plum"] {
+  --tone-solid: #79536f;
+  --tone: light-dark(var(--tone-solid), #d2afc9);
+  --tone-hover: light-dark(#64415a, #e8c8df);
+  --tone-wash: light-dark(#f1e8ef, #3f333c);
+  --tone-selection: light-dark(#e3d0df, #654d60);
+}
+
+.accent-picker { margin-top: 16px; }
+.accent-picker legend { padding: 0; color: var(--ink); font-size: 12px; font-weight: 600; }
+.accent-picker-row { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; margin: 4px 0 0 -4px; }
+.accent-option { position: relative; display: grid; place-items: center; width: 34px; height: 34px; }
+.accent-option input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; }
+.accent-chip { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 5px; background: var(--tone); color: var(--button-ink); pointer-events: none; }
+.accent-chip svg { visibility: hidden; }
+.accent-option input:checked + .accent-chip svg { visibility: visible; }
+.accent-option:hover .accent-chip { outline: 1px solid var(--tone); outline-offset: 1px; }
+.accent-option input:focus-visible + .accent-chip { outline: 2px solid var(--ink); outline-offset: 2px; }
+.accent-name { margin-left: 7px; color: var(--ink-soft); font-size: 12px; }
+@media (forced-colors: active) {
+  .accent-chip { forced-color-adjust: none; }
+  .accent-option input:focus-visible + .accent-chip { outline-color: Highlight; }
+}

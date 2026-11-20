@@ -258,7 +258,7 @@ function BoardRemoveButton({ board, disabled, onRemove }: {
       <div className="board-remove-actions">
         <button ref={cancel} type="button" className="button button-secondary" disabled={pending}
           onClick={() => { setOpen(false); trigger.current?.focus({ preventScroll: true }); }}>Cancel</button>
-        <button type="button" className="button button-primary" disabled={disabled && !pending} aria-disabled={pending || disabled} onClick={() => void remove()}>
+        <button type="button" className="button button-danger" disabled={disabled && !pending} aria-disabled={pending || disabled} onClick={() => void remove()}>
           {pending && <LoaderCircle size={14} className="spin" aria-hidden="true" />}{pending ? "Removing" : "Remove"}</button>
       </div>
     </div>, document.body)}

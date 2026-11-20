@@ -1,6 +1,6 @@
 // Native Electron verification, isolated from the user's profile and database.
 import assert from "node:assert/strict";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
@@ -405,6 +405,17 @@ try {
   await bounds(1550);
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("radiogroup", { name: "Appearance" }).waitFor(); await capture("settings-ollama-light");
+  const accents = page.getByRole("radiogroup", { name: "Accent color" });
+  assert.equal(await accents.getByRole("radio", { name: "Ember" }).isChecked(), true);
+  await accents.getByRole("radio", { name: "Pine" }).check();
+  await page.waitForFunction(() => document.documentElement.dataset.accent === "pine");
+  await page.waitForFunction(async () => (await window.desktop.state()).accentColor === "pine");
+  assert.equal(JSON.parse(await readFile(path.join(profile, "settings.json"), "utf8")).accentColor, "pine");
+  await assert.rejects(page.evaluate(() => window.desktop.setAccentColor("unknown")), /Choose an accent color/);
+  assert.equal(await page.evaluate(async () => (await window.desktop.state()).accentColor), "pine");
+  await accents.getByRole("radio", { name: "Ember" }).check();
+  await page.waitForFunction(() => document.documentElement.dataset.accent === "ember");
+  checks.push("Existing profiles start in Ember, selecting an accent persists it, and an invalid selection preserves it");
   await theme("dark"); await capture("settings-ollama-dark"); await theme("light");
   await page.getByRole("combobox", { name: "Analyze with", exact: true }).selectOption("openai");
   await capture("settings-openai-setup");

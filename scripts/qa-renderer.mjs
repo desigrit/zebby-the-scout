@@ -425,6 +425,10 @@ try {
         initialState.hasAnthropicKey = Boolean(key); initialState.anthropicKeyHint = key ? "sk-ant-••••••••" + key.slice(-4) : ""; return snapshot();
       },
       setAppearance: async (appearance) => { initialState.appearance = appearance; return snapshot(); },
+      setAccentColor: async (color) => {
+        if (window.modelQA.rejectAccentSave) throw new Error("Could not save the accent color.");
+        initialState.accentColor = color;
+      },
       setSidebarCollapsed: async (collapsed) => {
         if (window.modelQA.rejectSidebarSave) throw new Error("Synthetic settings save error");
         initialState.sidebarCollapsed = collapsed; return snapshot();
@@ -1330,6 +1334,67 @@ try {
   await page.getByText("Installed", { exact: true }).waitFor();
   assert.equal(await page.getByText("Installed", { exact: true }).count(), 1);
   await captureSettings("settings-windows-ready.png");
+  const palette = page.getByRole("radiogroup", { name: "Accent color" });
+  const colors = await palette.getByRole("radio").evaluateAll(radios => radios.map(radio => radio.value));
+  assert.deepEqual(colors, ["ember", "ochre", "pine", "harbor", "plum"]);
+  assert.equal(await palette.getByRole("radio", { name: "Ember", exact: true }).isChecked(), true);
+  await page.evaluate(() => { window.modelQA.rejectAccentSave = true; });
+  // A rejected click restores the committed radio, so check() would time out here.
+  await palette.getByRole("radio", { name: "Pine" }).click();
+  const accentError = page.getByRole("alert").filter({ hasText: "Could not save the accent color." });
+  await accentError.waitFor();
+  assert.equal(await palette.getByRole("radio", { name: "Ember" }).isChecked(), true);
+  await page.evaluate(() => { window.modelQA.rejectAccentSave = false; });
+  await accentError.getByRole("button", { name: "Retry" }).click();
+  await page.waitForFunction(() => document.documentElement.dataset.accent === "pine");
+  const lightFills = new Map();
+  function contrast(a, b) {
+    function luminance(rgb) {
+      const channels = rgb.match(/[\d.]+/g).slice(0, 3).map(value => Number(value) / 255)
+        .map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+      return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+    }
+    const first = luminance(a), second = luminance(b);
+    return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+  }
+  for (const mode of ["light", "dark"]) {
+    await page.getByRole("radio", { name: mode === "light" ? "Light" : "Dark", exact: true }).check();
+    await page.waitForFunction(mode => document.documentElement.dataset.theme === mode, mode);
+    const fills = new Set();
+    for (const color of colors) {
+      const radio = palette.locator(`input[value="${color}"]`);
+      await radio.check();
+      await page.waitForFunction(color => document.documentElement.dataset.accent === color, color);
+      const chip = radio.locator("+ .accent-chip");
+      const fill = await chip.evaluate(element => getComputedStyle(element).backgroundColor);
+      const checkInk = await chip.evaluate(element => getComputedStyle(element).color);
+      const wash = await page.locator(".appearance-option.selected").evaluate(element => getComputedStyle(element).backgroundColor);
+      assert.ok(contrast(fill, checkInk) >= 4.5 && contrast(fill, wash) >= 4.5, `${color} in ${mode}`);
+      if (mode === "light") lightFills.set(color, fill);
+      else assert.notEqual(fill, lightFills.get(color));
+      assert.equal(fill, await page.locator(".analysis-guide-link").evaluate(element => getComputedStyle(element).color));
+      assert.equal(await chip.locator("svg").isVisible(), true);
+      fills.add(fill);
+      const filename = `accent-picker-${mode}.png`;
+      if (color === "harbor" && (captureImages || captureNames.includes(filename))) {
+        await page.locator('section[aria-labelledby="appearance-settings"]').screenshot({
+          path: path.join(output, filename),
+        });
+      }
+    }
+    assert.equal(fills.size, colors.length);
+  }
+  await palette.getByRole("radio", { name: "Plum" }).press("ArrowLeft");
+  await page.waitForFunction(() => document.documentElement.dataset.accent === "harbor");
+  assert.equal(await palette.getByRole("radio", { name: "Harbor blue" }).evaluate(radio => radio === document.activeElement), true);
+  await page.getByRole("radio", { name: "System", exact: true }).check();
+  for (const colorScheme of ["dark", "light"]) {
+    await page.emulateMedia({ colorScheme });
+    await page.waitForFunction(mode => document.documentElement.dataset.theme === mode, colorScheme);
+    assert.equal(await palette.getByRole("radio", { name: "Harbor blue" }).isChecked(), true);
+  }
+  await palette.getByRole("radio", { name: "Ember", exact: true }).check();
+  await page.getByRole("radio", { name: "Light", exact: true }).check();
   await nav.getByRole("button", { name: "Plan", exact: true }).click();
   await page.getByText("Compact mode uses basic keyword coverage and limited overview suggestions.").waitFor();
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
