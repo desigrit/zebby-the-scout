@@ -22,7 +22,7 @@ export default function AnalysisGuide() {
       </header>
       <div className="analysis-dialog-body"><dl className="analysis-guide-options">
         <div><dt>Zebby credits</dt><dd>Buy a pack and choose an online model. No API key or signup needed.</dd></div>
-        <div><dt>ChatGPT plan</dt><dd>Connect your ChatGPT account and choose an available model. Manage this app's allowance in ChatGPT.</dd></div>
+        <div><dt>ChatGPT plan</dt><dd>Connect your ChatGPT account and choose an available model. Manage this app&apos;s allowance in ChatGPT.</dd></div>
         <div><dt>Local server</dt><dd>Ideal if you have your own GPU. Connect to Ollama and use the models you already run.</dd></div>
         <div><dt>Downloaded model</dt><dd>Ideal for offline use with your GPU or Apple Silicon. Zebby recommends models for your hardware and can also use your CPU.</dd></div>
         <div><dt>OpenAI / Claude API key</dt><dd>Use your own key. Usage is billed directly to your OpenAI or Anthropic account.</dd></div>
