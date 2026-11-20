@@ -1567,7 +1567,8 @@ try {
   const analysisDialog = page.getByRole("dialog");
   await analyze.click();
   await analysisDialog.getByRole("heading", { name: "Choose how to analyze", exact: true }).waitFor();
-  assert.equal(await analysisDialog.getByRole("radio").count(), 5);
+  assert.equal(await analysisDialog.getByRole("radio").count(), 6);
+  await analysisDialog.getByRole("radio", { name: /^ChatGPT plan/ }).waitFor();
   // Setup must not analyze with an old key while its replacement is unsaved or failed.
   await analysisDialog.getByRole("radio", { name: /^OpenAI API key/ }).check();
   await analysisDialog.getByRole("button", { name: "Continue", exact: true }).click();
@@ -1599,7 +1600,7 @@ try {
   await analysisDialog.getByRole("button", { name: "Close", exact: true }).click();
   await analysisDialog.waitFor({ state: "hidden" }); await analyze.click();
   await analysisDialog.getByRole("heading", { name: "Choose how to analyze", exact: true }).waitFor();
-  for (const name of ["Local server", "Download a model", "OpenAI API key", "Anthropic API key", "Buy Zebby credits"]) {
+  for (const name of ["Local server", "Download a model", "OpenAI API key", "Anthropic API key", "Buy Zebby credits", "ChatGPT plan"]) {
     assert.equal(await analysisDialog.getByRole("radio", { name: new RegExp(name) }).count(), 1);
   }
   await page.setViewportSize({ width: 1550, height: 850 });
