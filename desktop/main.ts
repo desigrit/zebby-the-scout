@@ -368,7 +368,7 @@ async function quoteAnalysis(source: AnalysisSource) {
 
 async function analyzeWithSelectedProvider(instructions: string, input: unknown, name: string,
   schema: Record<string, unknown>, failure: string, selected: ReturnType<typeof selectedAnalysis>, signal: AbortSignal,
-  paid?: { quoteId: string; source: AnalysisSource; revision?: string }, progress?: ReportAnalysisProgress): Promise<Record<string, unknown>> {
+  paid?: { quoteId: string; source: AnalysisSource; revision?: string; batchId?: string }, progress?: ReportAnalysisProgress): Promise<Record<string, unknown>> {
   signal.throwIfAborted();
   progress?.("waiting");
   logEvent(`Analysis provider selected (${name}, ${selected.provider}, ${selected.model || "default"}, thinking ${selected.thinkingLevel})`);
@@ -382,7 +382,7 @@ async function analyzeWithSelectedProvider(instructions: string, input: unknown,
         // a retry after saving reuses that result, while store writes still
         // compare the captured updated_at to reject edits during inference.
         revision: paid.source.kind === "board_extract" ? paid.revision || "1" : analysisHash(content), account: selected.account, model: selected.model, thinking: selected.thinkingLevel,
-        instructions: prompt, input: content, name: formatName, schema: format }, signal);
+        instructions: prompt, input: content, name: formatName, schema: format }, signal, paid.batchId);
     },
     ollama: async (baseUrl, model, prompt, content, format) => {
       const visual = boardVisualParts(content);
@@ -932,8 +932,9 @@ function registerIpc() {
     return state();
   });
   handle("desktop:set-accent-color", async (_event, value: unknown) => {
-    if (!isAccentColor(value)) throw new Error("Choose an accent color.");
+    if (!isAccentColor(value)) throw new Error("Choose a theme.");
     await persistSettings({ accentColor: value });
+    updateWindowAppearance();
   });
   handle("desktop:set-sidebar-collapsed", async (_event, value: boolean) => {
     if (typeof value !== "boolean") throw new Error("Choose a navigation layout.");
@@ -1044,7 +1045,7 @@ function openWebLink(url: string) {
 
 function updateWindowAppearance() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  const colors = windowColors(settings.appearance, nativeTheme.shouldUseDarkColors);
+  const colors = windowColors(settings.appearance, nativeTheme.shouldUseDarkColors, settings.accentColor);
   mainWindow.setBackgroundColor(colors.background);
   if (process.platform !== "darwin") {
     mainWindow.setTitleBarOverlay({ color: colors.background, symbolColor: colors.foreground });
@@ -1057,7 +1058,7 @@ function createWindow() {
     show: !(process.env.PM_TRACKER_TEST_USER_DATA && process.env.PM_TRACKER_TEST_HIDE_WINDOW),
     width: Math.min(1550, workArea.width), height: Math.min(850, workArea.height),
     minWidth: Math.min(790, workArea.width), minHeight: Math.min(620, workArea.height),
-    ...nativeWindowShell(process.platform, settings.appearance, nativeTheme.shouldUseDarkColors),
+    ...nativeWindowShell(process.platform, settings.appearance, nativeTheme.shouldUseDarkColors, settings.accentColor),
     title: APP_NAME, autoHideMenuBar: true,
     icon: path.join(rendererRoot, "icon.png"),
     webPreferences: { preload: path.join(appRoot, "preload.cjs"), contextIsolation: true,
@@ -1130,6 +1131,7 @@ else {
     boardsStore = new BoardsStore(storePaths?.recovery || app.getPath("userData"));
     boards = new BoardsService(boardsStore, {
       profile: app.getPath("userData"), selection: selectedAnalysis, reader: signal => new BoardBrowser(signal),
+      createUsageBatch: (selection, count) => chatgpt?.jobs.createBoardBatch(selection.model, selection.thinkingLevel, count),
       canUseVision: (selected, signal) => selected.provider === "chatgpt" ? Promise.resolve(chatgpt?.supportsVision() === true) : selected.provider === "ollama" ? ollamaSupportsVision(selected.ollamaUrl, selected.model, signal)
         : Promise.resolve(selected.provider !== "builtin"),
       changed: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("boards:changed", boards.state); },
@@ -1139,7 +1141,7 @@ else {
           const contract = boardModelContract(input);
           await chatgpt!.jobs.appliedRequest({ version: 1, workspace: selected.workspace, target: `board_extract:${context.boardId}`,
             revision: String(context.revision), account: selected.account, model: selected.model, thinking: selected.thinkingLevel,
-            name: contract.name, instructions: contract.instructions, schema: contract.schema, input });
+            name: contract.name, instructions: contract.instructions, schema: contract.schema, input }, context.batchId);
         }
       },
       extract: async (selected, input, signal, sourceId, context) => {
@@ -1152,8 +1154,9 @@ else {
         }
         const contract = boardModelContract(input);
         const value = await analyzeWithSelectedProvider(contract.instructions, input, contract.name, contract.schema,
-          "The board links could not be read.", selected, signal, { quoteId: "", source: { kind: "board_extract", id: context?.boardId || sourceId }, revision: String(context?.revision || 1) });
-        return { value, acknowledge: selected.provider === "chatgpt" ? () => chatgpt!.jobs.applied(value) : undefined };
+          "The board links could not be read.", selected, signal, { quoteId: "", source: { kind: "board_extract", id: context?.boardId || sourceId },
+            revision: String(context?.revision || 1), batchId: context?.batchId });
+        return { value, acknowledge: selected.provider === "chatgpt" ? () => chatgpt!.jobs.applied(value, context?.batchId) : undefined };
       },
     });
     if (store.status.filePath) await openPairedBoards();

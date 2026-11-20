@@ -133,9 +133,15 @@ try {
       job("d", "tailored_resume", "ready", { attempts: [attempt("d1", "completed", { usage })] }),
       job("e", "connection_image_test", "running", { attempts: [attempt("e1", "running")] }),
       job("f", "connection_test", "cancelled", { attempts: [attempt("f1", "cancelled", { requestStarted: false })] }),
+      job("1", "board_check_all", "completed", { boardCount: 3, attempts: [attempt("g1", "completed", { usage }), attempt("g2", "completed", { usage })] }),
+      job("2", "board_check_all", "completed", { boardCount: 1, attempts: [], reuseCount: 1 }),
     ] });
   });
   const history = page.getByRole("list", { name: "Analysis usage", exact: true });
+  const disclosure = page.getByRole("button", { name: "Usage", exact: true });
+  assert.equal(await disclosure.getAttribute("aria-expanded"), "false");
+  assert.equal(await history.isVisible(), false);
+  await disclosure.click();
   const planJob = history.locator(":scope > li").filter({ hasText: "Plan analysis" });
   await planJob.getByText("15,200 tokens", { exact: true }).waitFor();
   assert.equal(await history.locator(":scope > li").count(), 5);
@@ -180,9 +186,14 @@ try {
   await page.getByRole("radio", { name: "Dark", exact: true }).check(); await page.setViewportSize({ width: 790, height: 1150 }); await boardJob.scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(output, "usage-partial-dark-790.png"), animations: "disabled" });
   await boardJob.locator(".chatgpt-job-toggle").click();
-  await page.getByRole("button", { name: "Show 6 recent jobs", exact: true }).click();
+  await page.getByRole("button", { name: "Show 8 recent jobs", exact: true }).click();
   await history.getByText("No model request", { exact: true }).waitFor();
-  assert.equal(await history.locator(":scope > li").count(), 6);
+  assert.equal(await history.locator(":scope > li").count(), 8);
+  const batch = history.getByRole("button", { name: /Check all boards.*3 boards.*15,200 tokens/ });
+  await batch.click();
+  await history.getByRole("list", { name: "Board check requests" }).getByText("Request 2 · Completed").waitFor();
+  await history.getByRole("button", { name: /Check all boards.*1 board.*0 tokens/ }).waitFor();
+  await batch.click();
   await page.getByRole("button", { name: "Show recent jobs", exact: true }).click();
   await page.evaluate(() => { window.chatGPTQA.failFolder = true; });
   await planJob.getByRole("button", { name: "Run details for Plan analysis", exact: true }).click();
@@ -202,8 +213,11 @@ try {
   await page.evaluate(() => { window.chatGPTQA.slowTest = false; window.chatGPTQA.finishTest(); });
   await page.waitForFunction(() => document.activeElement?.textContent === "Test connection" && !document.activeElement.disabled);
   assert.equal(await history.locator(":scope > li").count(), 5, "Connection checks preserve history");
-  await page.getByText("About this history", { exact: true }).click();
-  await page.getByText(/All job files stay in your folder until you delete them/).waitFor();
+  await disclosure.press("Space");
+  assert.equal(await history.isVisible(), false);
+  assert.equal(await page.getByText(/All job files stay in your folder until you delete them/).count(), 0);
+  await disclosure.press("Enter");
+  assert.equal(await history.isVisible(), true);
   await page.getByRole("button", { name: "Open jobs folder", exact: true }).click();
   assert.equal(await page.evaluate(() => window.chatGPTQA.folders.at(-1)), "all");
   await page.getByRole("button", { name: "Disconnect", exact: true }).click();
@@ -212,6 +226,9 @@ try {
   await updates.getByRole("button", { name: "Check for updates", exact: true }).click();
   await updates.getByText("Up to date", { exact: true }).waitFor();
   assert.equal(await page.evaluate(() => window.chatGPTQA.checks), 1);
+  const checkButton = await updates.getByRole("button", { name: "Check for updates", exact: true }).boundingBox();
+  const currentLabel = await updates.getByText("Up to date", { exact: true }).boundingBox();
+  assert.ok(currentLabel.x >= checkButton.x + checkButton.width && Math.abs(currentLabel.y + currentLabel.height / 2 - checkButton.y - checkButton.height / 2) < 3);
   await page.evaluate(() => { window.chatGPTQA.failUpdate = true; });
   await updates.getByRole("button", { name: "Check for updates", exact: true }).click();
   await updates.getByRole("alert").getByText(/Could not check for updates/).waitFor();

@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { ChevronDown, ExternalLink } from "lucide-react";
+import { ArrowUpRight, ChevronDown } from "lucide-react";
 import type { ChatGPTJobSummary, ChatGPTModel, ChatGPTTokenUsage } from "../../shared/chatgpt-plan";
 import { summarizeChatGPTUsage } from "../../shared/chatgpt-usage";
 import { thinkingLabel } from "../../shared/thinking";
 
 const jobLabel = (name: string) => name === "connection_test" ? "Connection test" : name === "connection_image_test" ? "Image connection test"
-  : name.startsWith("board_") ? "Boards analysis" : name === "resume_plan" ? "Plan analysis" : name === "tailored_resume" ? "Tailored resume" : "Application match";
+  : name === "board_check_all" ? "Check all boards" : name.startsWith("board_") ? "Boards analysis" : name === "resume_plan" ? "Plan analysis" : name === "tailored_resume" ? "Tailored resume" : "Application match";
 const statusLabel: Record<string, string> = { queued: "Waiting", running: "Analyzing", ready: "Ready to save", applied: "Completed", completed: "Completed",
   interrupted: "Interrupted", cancelled: "Cancelled", failed: "Needs attention" };
 const number = (value?: number) => value === undefined ? "Not reported" : value.toLocaleString();
@@ -34,11 +34,13 @@ export default function ChatGPTUsage({ jobs, models, working, viewJob }: {
         const totals = summarizeChatGPTUsage(job.attempts);
         const attempts = job.attempts || [];
         const lastAttempt = attempts.at(-1);
+        const batch = job.name === "board_check_all";
+        const reuseCount = job.reuseCount || 0;
         const usageLabel = totals.usage ? `${number(totals.usage.totalTokens)} tokens${totals.missing ? " reported" : ""}`
           : ["queued", "running"].includes(job.state) ? "In progress"
-          : attempts.length && totals.notRequested === attempts.length ? "No model request" : "Usage unavailable";
-        const reuseCount = job.reuseCount || 0;
-        const status = ["applied", "completed"].includes(job.state) ? "" : statusLabel[job.state] || job.state;
+          : batch && !totals.missing ? "0 tokens"
+          : (attempts.length || reuseCount) && totals.notRequested === attempts.length ? "No model request" : "Usage unavailable";
+        const status = batch && job.state === "running" ? "Checking" : ["applied", "completed"].includes(job.state) ? "" : statusLabel[job.state] || job.state;
         const activityAt = job.updatedAt || job.createdAt;
         const expanded = expandedJobs.has(job.id), detailId = `chatgpt-job-${job.id}`;
         return <li key={job.id}>
@@ -48,6 +50,7 @@ export default function ChatGPTUsage({ jobs, models, working, viewJob }: {
             })}>
             <span className="chatgpt-job-info"><strong>{jobLabel(job.name)}</strong>
               <span className="chatgpt-job-model"><time dateTime={activityAt}>{new Date(activityAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</time>
+                {batch && job.boardCount !== undefined && ` · ${number(job.boardCount)} ${job.boardCount === 1 ? "board" : "boards"}`}
                 {` · ${modelLabel(lastAttempt?.model || job.model)}`}{job.thinking ? ` · ${thinkingLabel(job.thinking)} thinking` : ""}</span>
               {(status || reuseCount > 0) && <span className="chatgpt-job-meta">{status && <span>{status}</span>}
                 {reuseCount > 0 && <span className="chatgpt-reused">Saved result reused</span>}</span>}
@@ -55,18 +58,19 @@ export default function ChatGPTUsage({ jobs, models, working, viewJob }: {
             <span className="chatgpt-job-total">{usageLabel}<ChevronDown size={14} aria-hidden="true" /></span>
           </button>
           <button type="button" className="settings-link chatgpt-run-details" disabled={working}
-            aria-label={`Run details for ${jobLabel(job.name)}`} onClick={() => viewJob(job.id)}>Run details<ExternalLink size={13} aria-hidden="true" /></button>
+            aria-label={`Run details for ${jobLabel(job.name)}`} onClick={() => viewJob(job.id)}>Run details <ArrowUpRight size={15} aria-hidden="true" /></button>
           <div className="chatgpt-job-detail" id={detailId} hidden={!expanded}>
               {totals.usage && <TokenBreakdown usage={totals.usage} />}
-              {!totals.usage && <p className="settings-help">{usageLabel === "No model request" ? "This attempt stopped before requesting analysis."
+              {!totals.usage && <p className="settings-help">{usageLabel === "0 tokens" || (usageLabel === "No model request" && reuseCount > 0) ? "No new model request."
+                : usageLabel === "No model request" ? "This attempt stopped before requesting analysis."
                 : usageLabel === "In progress" ? "Token usage will appear when OpenAI reports it."
                 : "No token measurements were saved for this analysis."}</p>}
               {totals.usage && totals.missing > 0 && <p className="settings-help">Usage is unavailable for {totals.missing} {totals.missing === 1 ? "attempt" : "attempts"}. The reported total is incomplete.</p>}
               <p className="settings-help">{reuseCount > 0 ? `Saved result reused ${reuseCount === 1 ? "once" : `${number(reuseCount)} times`}. Reuse makes no new model request.`
                 : "No saved result reuse recorded."}</p>
               {job.error && <p className="chatgpt-job-error">{job.error}</p>}
-              {attempts.length > 1 && <ol className="chatgpt-attempts" aria-label="Analysis attempts">{attempts.map((attempt, index) => <li key={attempt.id}>
-                <div className="chatgpt-attempt-heading"><span>Attempt {index + 1} · {statusLabel[attempt.state] || attempt.state}</span>
+              {attempts.length > 1 && <ol className="chatgpt-attempts" aria-label={batch ? "Board check requests" : "Analysis attempts"}>{attempts.map((attempt, index) => <li key={attempt.id}>
+                <div className="chatgpt-attempt-heading"><span>{batch ? "Request" : "Attempt"} {index + 1} · {statusLabel[attempt.state] || attempt.state}</span>
                   <span>{attempt.usage ? `${number(attempt.usage.totalTokens)} tokens` : attempt.requestStarted === false ? "No model request" : "Usage unavailable"}</span></div>
                 {attempt.usage && <TokenBreakdown usage={attempt.usage} />}
               </li>)}</ol>}
@@ -78,11 +82,8 @@ export default function ChatGPTUsage({ jobs, models, working, viewJob }: {
       {showAll ? "Show recent jobs" : `Show ${jobs.length} recent jobs`}</button>}
     <div className="chatgpt-history-footer">
       <div className="settings-links">
-        <button type="button" className="settings-link" disabled={working} onClick={() => viewJob()}>Open jobs folder<ExternalLink size={13} aria-hidden="true" /></button>
+        <button type="button" className="settings-link" disabled={working} onClick={() => viewJob()}>Open jobs folder <ArrowUpRight size={15} aria-hidden="true" /></button>
       </div>
-      <details className="chatgpt-history-help"><summary>About this history</summary>
-        <p className="settings-help">Usage shows jobs active in the last 7 days. All job files stay in your folder until you delete them. Tokens measure analysis usage, not ChatGPT credits. Retry the original action to reuse a saved result.</p>
-      </details>
     </div>
   </div>;
 }

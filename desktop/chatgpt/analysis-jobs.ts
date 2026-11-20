@@ -4,13 +4,13 @@ import path from "node:path";
 import { writeProfileSettings } from "../settings-persistence.ts";
 import { validStructuredResult } from "../online-response.ts";
 import type { AnalysisReceipt, ChatGPTJobAttempt, ChatGPTJobSummary, ChatGPTUsageReport } from "../../shared/chatgpt-plan.ts";
-import { chatGPTUsageReport } from "../../shared/chatgpt-usage.ts";
+import { chatGPTUsageReport, summarizeChatGPTUsage } from "../../shared/chatgpt-usage.ts";
 
 export type JobRequest = { version: 1; workspace: string; target: string; revision: string; account: string;
   model: string; thinking: string; name: string; instructions: string; input: unknown; schema: Record<string, unknown> };
-type JobState = { id: string; digest: string; name: string; state: "queued" | "running" | "ready" | "applied" | "interrupted" | "cancelled" | "failed";
+type JobState = { id: string; digest: string; name: string; state: "queued" | "running" | "ready" | "applied" | "completed" | "interrupted" | "cancelled" | "failed";
   createdAt: string; updatedAt: string; error: string; attempt?: string; retained?: boolean; resultHash?: string;
-  model?: string; thinking?: string; attempts?: ChatGPTJobAttempt[]; reuseCount?: number; lastReusedAt?: string };
+  model?: string; thinking?: string; attempts?: ChatGPTJobAttempt[]; reuseCount?: number; lastReusedAt?: string; batchId?: string; boardCount?: number };
 export type JobExecution = { started: () => Promise<void>; usage: (report: ChatGPTUsageReport) => Promise<void> };
 export const jobDigest = (request: JobRequest) => createHash("sha256").update(JSON.stringify(request)).digest("hex");
 const hash = (data: string) => createHash("sha256").update(data).digest("hex");
@@ -28,10 +28,66 @@ export class AnalysisJobs {
   }
   get summaries(): ChatGPTJobSummary[] {
     const cutoff = this.now() - 7 * 86400_000;
-    return [...this.states.values()].filter(state => Date.parse(state.updatedAt) >= cutoff)
-      .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
-      .map(({ id, name, state, createdAt, updatedAt, error, model, thinking, attempts, reuseCount, lastReusedAt }) =>
-        ({ id, name, state, createdAt, updatedAt, error, model, thinking, attempts, reuseCount, lastReusedAt }));
+    const rows: ChatGPTJobSummary[] = [];
+    const batches = new Map<string, ChatGPTJobSummary>();
+    for (const item of this.states.values()) {
+      if (item.name === "board_check_all") {
+        const row = this.summary(item, []);
+        batches.set(item.id, row); rows.push(row);
+      }
+    }
+    for (const item of this.states.values()) {
+      if (batches.has(item.id)) continue;
+      const own = (item.attempts || []).filter(attempt => {
+        const batch = attempt.batchId && batches.get(attempt.batchId);
+        if (!batch) return true;
+        batch.attempts!.push(attempt); return false;
+      });
+      const grouped = item.batchId && batches.has(item.batchId);
+      if (grouped && !own.length && !item.reuseCount) continue;
+      const row = this.summary(item, own);
+      if (grouped) {
+        const last = own.at(-1);
+        row.state = last?.state || "completed";
+        row.updatedAt = [last?.finishedAt || last?.startedAt, item.lastReusedAt].filter(Boolean).sort().at(-1) || item.createdAt;
+        row.error = "";
+      }
+      rows.push(row);
+    }
+    for (const batch of batches.values()) batch.attempts!.sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+    return rows.filter(row => Date.parse(row.updatedAt!) >= cutoff).sort((a, b) => Date.parse(b.updatedAt!) - Date.parse(a.updatedAt!));
+  }
+  private summary(item: JobState, attempts: ChatGPTJobAttempt[]): ChatGPTJobSummary {
+    const { id, name, state, createdAt, updatedAt, error, model, thinking, reuseCount, lastReusedAt, boardCount } = item;
+    return { id, name, state, createdAt, updatedAt, error, model, thinking, attempts, reuseCount, lastReusedAt, boardCount };
+  }
+  createBoardBatch(model: string, thinking: string, boardCount: number) {
+    const id = hash(randomUUID()), createdAt = new Date(this.now()).toISOString();
+    return {
+      id,
+      start: async () => {
+        await mkdir(this.location(id), { mode: 0o700 });
+        await this.save({ id, digest: id, name: "board_check_all", state: "running", createdAt, updatedAt: createdAt,
+          model, thinking, boardCount, error: "", reuseCount: 0 });
+      },
+      finish: async (outcome: "completed" | "failed" | "cancelled") => {
+        const batch = this.states.get(id)!;
+        const finished = { ...batch, state: outcome, updatedAt: new Date(this.now()).toISOString() };
+        await this.save(finished);
+        await this.writeBatchReport(finished);
+      },
+    };
+  }
+  private async writeBatchReport(batch: JobState) {
+    const requests = [...this.states.values()].flatMap(job => (job.attempts || [])
+      .filter(attempt => attempt.batchId === batch.id).map(attempt => ({ jobId: job.id, ...attempt })));
+    const totals = summarizeChatGPTUsage(requests);
+    await writeProfileSettings(path.join(this.location(batch.id), "run.json"), JSON.stringify({
+      id: batch.id, name: "Check all boards", state: batch.state, boards: batch.boardCount, model: batch.model, thinking: batch.thinking,
+      createdAt: batch.createdAt, updatedAt: batch.updatedAt, savedResultsReused: batch.reuseCount || 0,
+      usage: totals.usage ?? (!totals.missing && batch.state === "completed" ? { inputTokens: 0, outputTokens: 0, totalTokens: 0 } : undefined),
+      unreportedRequests: totals.missing, requests,
+    }, null, 2));
   }
   private location(id: string) { if (!validId(id)) throw new Error("Choose a saved analysis job."); return path.join(this.folder, id); }
   async initialize() {
@@ -58,6 +114,7 @@ export class AnalysisJobs {
             output_tokens_details: { reasoning_tokens: usage.reasoningTokens },
           } });
           return { id: attempt.id, startedAt: attempt.startedAt, finishedAt: attempt.finishedAt, state: attempt.state,
+            ...(attempt.batchId && validId(attempt.batchId) ? { batchId: attempt.batchId } : {}),
             requestStarted: typeof attempt.requestStarted === "boolean" ? attempt.requestStarted : undefined, ...report };
         });
         if (!Number.isSafeInteger(state.reuseCount) || Number(state.reuseCount) < 0) state.reuseCount = 0;
@@ -87,28 +144,33 @@ export class AnalysisJobs {
     this.states.set(state.id, state); this.changed();
   }
   receipt(value: object) { return this.receipts.get(value); }
-  async applied(value: object) {
+  async applied(value: object, batchId?: string) {
     const receipt = this.receipts.get(value);
-    if (receipt) await this.markApplied(receipt);
+    if (receipt) await this.markApplied(receipt, Boolean(batchId));
   }
-  async appliedRequest(request: JobRequest) {
+  private async recordReuse(state?: JobState) {
+    if (!state) return;
+    const now = new Date(this.now()).toISOString();
+    await this.save({ ...state, reuseCount: (state.reuseCount || 0) + 1, lastReusedAt: now, updatedAt: now });
+  }
+  async appliedRequest(request: JobRequest, batchId?: string) {
     const id = jobDigest(request), state = this.states.get(id);
     if (state?.resultHash && ["ready", "applied"].includes(state.state)) {
-      if (state.state === "ready") await this.markApplied({ id, digest: id });
+      if (state.state === "ready") await this.markApplied({ id, digest: id }, Boolean(batchId));
       // Boards has its own validated batch cache. Account for that reuse too,
       // without starting an attempt or adding the original measurements again.
-      const latest = this.states.get(id)!, now = new Date().toISOString();
-      await this.save({ ...latest, reuseCount: (latest.reuseCount || 0) + 1, lastReusedAt: now, updatedAt: now });
+      if (!batchId) await this.recordReuse(this.states.get(id));
     }
+    if (batchId) await this.recordReuse(this.states.get(batchId));
   }
-  private async markApplied(receipt: AnalysisReceipt) {
+  private async markApplied(receipt: AnalysisReceipt, preserveActivity = false) {
     const state = this.states.get(receipt.id);
     if (state) {
       await writeProfileSettings(path.join(this.location(state.id), "receipt.json"), JSON.stringify({ ...receipt, appliedAt: new Date().toISOString() }, null, 2));
-      await this.save({ ...state, state: "applied", updatedAt: new Date().toISOString() });
+      await this.save({ ...state, state: "applied", updatedAt: preserveActivity ? state.updatedAt : new Date().toISOString() });
     }
   }
-  async run(request: JobRequest, signal: AbortSignal, execute: (execution: JobExecution) => Promise<Record<string, unknown>>, validate?: (value: unknown) => void) {
+  async run(request: JobRequest, signal: AbortSignal, execute: (execution: JobExecution) => Promise<Record<string, unknown>>, validate?: (value: unknown) => void, batchId?: string) {
     const id = jobDigest(request), directory = this.location(id);
     if (this.active.has(id)) throw new Error("This analysis is already running.");
     const serialized = JSON.stringify(request, null, 2);
@@ -129,8 +191,7 @@ export class AnalysisJobs {
           cached = result;
         } catch (error) { signal.throwIfAborted(); if (error instanceof DOMException) throw error; }
         if (cached) {
-          const now = new Date().toISOString();
-          await this.save({ ...state, reuseCount: (state.reuseCount || 0) + 1, lastReusedAt: now, updatedAt: now });
+          await this.recordReuse(batchId ? this.states.get(batchId) : state);
           this.receipts.set(cached, { id, digest: id }); return cached;
         }
       }
@@ -138,6 +199,7 @@ export class AnalysisJobs {
       if ((await lstat(directory)).isSymbolicLink()) throw new Error("The analysis job folder must be a local directory.");
       const now = new Date().toISOString();
       state = { id, digest: id, name: request.name, state: "queued", createdAt: state?.createdAt || now, updatedAt: now, error: "", retained: state?.retained,
+        batchId,
         model: request.model, thinking: request.thinking, attempts: state?.attempts || [], reuseCount: state?.reuseCount || 0, lastReusedAt: state?.lastReusedAt };
       newAttempt = true;
       const input = request.input && typeof request.input === "object" ? request.input as Record<string, unknown> : {};
@@ -160,7 +222,8 @@ export class AnalysisJobs {
       signal.throwIfAborted();
       const attempt = randomUUID();
       state = { ...state, attempt, state: "running", updatedAt: new Date().toISOString(),
-        attempts: [...state.attempts!, { id: attempt, startedAt: new Date().toISOString(), state: "running", requestStarted: false }] };
+        attempts: [...state.attempts!, { id: attempt, startedAt: new Date().toISOString(), state: "running", requestStarted: false,
+          ...(batchId ? { batchId } : {}) }] };
       await mkdir(path.join(directory, "attempts", attempt), { recursive: true }); await this.save(state);
       const updateAttempt = async (patch: Partial<ChatGPTJobAttempt>) => {
         state = { ...state!, attempts: state!.attempts!.map(item => item.id === attempt ? { ...item, ...patch } : item), updatedAt: new Date().toISOString() };
@@ -191,6 +254,8 @@ export class AnalysisJobs {
     if (!info.isDirectory() || info.isSymbolicLink() || path.dirname(await realpath(directory)) !== await realpath(this.folder)) {
       throw new Error("The analysis job location is invalid.");
     }
+    const state = this.states.get(id)!;
+    if (state.name === "board_check_all") await this.writeBatchReport(state);
     return directory;
   }
 }

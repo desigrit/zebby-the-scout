@@ -13,11 +13,14 @@ import { boardScope, newBoardCheckpoint, thoroughlyScanBoard, BoardReadLimit, ty
 import type { BoardCheckOptions } from "../shared/board-exploration";
 
 export type BoardSelection = { provider: AnalysisProvider; model: string; thinkingLevel: string; ollamaUrl?: string; account?: string };
+type BoardRequestContext = { boardId: string; revision: number; batchId?: string };
+type BatchOutcome = "completed" | "cancelled" | "failed";
 type Dependencies<Selection extends BoardSelection> = { profile: string; selection(): Selection;
   reader(signal: AbortSignal): BoardReader;
   canUseVision?(selection: Selection, signal: AbortSignal): Promise<boolean>;
-  extract(selection: Selection, input: BoardExtractionInput, signal: AbortSignal, sourceId: string, context?: { boardId: string; revision: number }): Promise<{ value: unknown; acknowledge?: () => Promise<void> }>;
-  acknowledgeCached?(selection: Selection, input: BoardExtractionInput, sourceId: string, context?: { boardId: string; revision: number }): Promise<void>;
+  extract(selection: Selection, input: BoardExtractionInput, signal: AbortSignal, sourceId: string, context?: BoardRequestContext): Promise<{ value: unknown; acknowledge?: () => Promise<void> }>;
+  acknowledgeCached?(selection: Selection, input: BoardExtractionInput, sourceId: string, context?: BoardRequestContext): Promise<void>;
+  createUsageBatch?(selection: Selection, count: number): { id: string; start(): Promise<void>; finish(outcome: BatchOutcome): Promise<void> } | undefined;
   changed(): void;
 };
 
@@ -44,6 +47,10 @@ export class BoardsService<Selection extends BoardSelection> {
     const boards = ids ? ids.map(id => this.store.get(id)) : this.store.list();
     const selected = this.dependencies.selection(), generation = this.store.generation, settings = { ...this.runs.settings }, workspace = this.store.status.filePath;
     this.error = "";
+    const count = boards.filter(board => !this.pending.has(board.id)).length;
+    const batch = ids === undefined && selected.provider === "chatgpt" && count > 0 ? this.dependencies.createUsageBatch?.(selected, count) : undefined;
+    const started = batch && this.queue.then(() => batch.start());
+    let outcome: BatchOutcome = "completed";
     let balanceError: unknown;
     for (const board of boards) {
       if (this.pending.has(board.id)) continue;
@@ -56,8 +63,13 @@ export class BoardsService<Selection extends BoardSelection> {
           entry.progress = { ...entry.progress, message, phase }; this.changed();
         };
         try {
+          if (started) await started;
           signal.throwIfAborted();
-          if (generation !== this.store.generation || this.store.get(board.id).revision !== board.revision) return;
+          if (generation !== this.store.generation || this.store.get(board.id).revision !== board.revision) {
+            if (outcome === "completed") outcome = "cancelled";
+            return;
+          }
+          const context = { boardId: board.id, revision: board.revision, batchId: batch?.id };
           const cacheRoot = path.join(this.dependencies.profile, "board-extractions");
           await mkdir(cacheRoot, { recursive: true });
           const extract = async (input: BoardExtractionInput) => {
@@ -75,13 +87,13 @@ export class BoardsService<Selection extends BoardSelection> {
             try { if (cached) validated = validatedBoardExtraction(cached, input); }
             catch { /* Reject corrupted or obsolete cached results. */ }
             if (validated) {
-              await this.dependencies.acknowledgeCached?.(selected, input, sourceId, { boardId: board.id, revision: board.revision });
+              await this.dependencies.acknowledgeCached?.(selected, input, sourceId, context);
               if (checkpoint) checkpoint.reused++;
               return validated;
             }
             requestSignal.throwIfAborted();
             if (balanceError) throw balanceError;
-            const response = await this.dependencies.extract(selected, input, requestSignal, sourceId, { boardId: board.id, revision: board.revision });
+            const response = await this.dependencies.extract(selected, input, requestSignal, sourceId, context);
             const result = validatedBoardExtraction(response.value, input);
             requestSignal.throwIfAborted();
             // Persist a paid result before acknowledging it. Interrupted scans
@@ -158,6 +170,8 @@ export class BoardsService<Selection extends BoardSelection> {
           }
         } catch (error) {
           // The nested thorough runner assigns this checkpoint asynchronously.
+          if (!signal.aborted) outcome = "failed";
+          else if (outcome === "completed") outcome = "cancelled";
           const interrupted = checkpoint as BoardCheckpoint | null;
           if (interrupted?.status === "reading") {
             interrupted.status = signal.aborted ? "paused" : "incomplete"; interrupted.updatedAt = new Date().toISOString();
@@ -176,6 +190,10 @@ export class BoardsService<Selection extends BoardSelection> {
       });
       this.queue = run.catch(error => { this.error = String(error); this.pending.delete(board.id); this.changed(); });
     }
+    if (batch) this.queue = this.queue.then(async () => {
+      await started;
+      await batch.finish(outcome);
+    }).catch(error => { this.error = String(error); this.changed(); });
     this.changed(); return this.state;
   }
   cancel(id: string) {

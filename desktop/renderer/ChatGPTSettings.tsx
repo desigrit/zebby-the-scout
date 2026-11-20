@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ExternalLink, LoaderCircle, RefreshCw } from "lucide-react";
+import { ArrowUpRight, ChevronDown, LoaderCircle, RefreshCw } from "lucide-react";
 import type { DesktopState } from "../bridge";
 import SettingsAction from "./SettingsAction";
 import { ErrorBanner } from "./WorkspaceFeedback";
@@ -9,6 +9,13 @@ import ChatGPTUsage from "./ChatGPTUsage";
 export default function ChatGPTSettings({ state, onState, onBusy }: { state: DesktopState; onState: (state: DesktopState) => void | Promise<void>; onBusy: (busy: boolean) => void }) {
   const connection = state.chatgpt;
   const [working, setWorking] = useState(false), [error, setError] = useState("");
+  const [usageOpen, setUsageOpen] = useState(() => {
+    try { return localStorage.getItem("zebby.usageExpanded") === "true"; } catch { return false; }
+  });
+  function toggleUsage() {
+    setUsageOpen(!usageOpen);
+    try { localStorage.setItem("zebby.usageExpanded", String(!usageOpen)); } catch { /* Keep the choice for this view. */ }
+  }
   const [errorSection, setErrorSection] = useState("account");
   const [busySection, setBusySection] = useState("");
   const retry = useRef<(() => void) | null>(null), dialog = useRef<HTMLDialogElement>(null);
@@ -93,20 +100,26 @@ export default function ChatGPTSettings({ state, onState, onBusy }: { state: Des
         {errorAt("connection")}
       </div></div>
     </>}
-    <div className="analysis-setting-row chatgpt-usage-row"><span className="analysis-setting-label" id="chatgpt-usage-heading" tabIndex={-1}>Usage</span><div className="chatgpt-settings">
-      <div className="chatgpt-usage-header"><p className="settings-help">{connection.connected ? "Using your ChatGPT plan" : "Your ChatGPT plan allowance"}</p>
-        <button type="button" className="settings-link" disabled={working} onClick={() => void action(() => window.desktop!.manageChatGPTUsage(), "usage", true)}>Manage usage<ExternalLink size={13} aria-hidden="true" /></button></div>
+    <div className="analysis-setting-row chatgpt-usage-row">
+      <button className="analysis-setting-label chatgpt-usage-toggle" id="chatgpt-usage-heading" type="button"
+        aria-expanded={usageOpen} aria-controls="chatgpt-usage-history" onClick={toggleUsage}>
+        Usage <ChevronDown size={14} strokeWidth={1.6} aria-hidden="true" /></button>
+      <div className="chatgpt-settings">
+      <div className="chatgpt-usage-header">{usageOpen && <p className="settings-help">{connection.connected ? "Using your ChatGPT plan" : "Your ChatGPT plan allowance"}</p>}
+        <button type="button" className="settings-link" disabled={working} onClick={() => void action(() => window.desktop!.manageChatGPTUsage(), "usage", true)}>Manage usage <ArrowUpRight size={15} aria-hidden="true" /></button></div>
       {connection.paused && <p className="settings-help" role="status">ChatGPT usage is paused. Review your allowance, then retry the original action.</p>}
       {errorAt("usage")}
-      <ChatGPTUsage jobs={connection.jobs} models={connection.models} working={working}
-        viewJob={id => void action(() => window.desktop!.openChatGPTJobs(id), "jobs", true)} />
-      {errorAt("jobs")}
+      <div id="chatgpt-usage-history" hidden={!usageOpen}>
+        <ChatGPTUsage jobs={connection.jobs} models={connection.models} working={working}
+          viewJob={id => void action(() => window.desktop!.openChatGPTJobs(id), "jobs", true)} />
+        {errorAt("jobs")}
+      </div>
     </div></div>
     <dialog ref={dialog} className="analysis-dialog" aria-labelledby="chatgpt-welcome-title" onCancel={event => { event.preventDefault(); finishWelcome(); }}>
       <header className="analysis-dialog-header"><h2 id="chatgpt-welcome-title">You&apos;re using your ChatGPT plan</h2></header>
       <div className="analysis-dialog-body"><p>Eligible analyses in Zebby use your ChatGPT plan. Review this app&apos;s allowance and credit access in ChatGPT settings.</p>
         {errorAt("welcome")}</div>
-      <footer className="analysis-dialog-footer"><button type="button" className="settings-link" disabled={working} onClick={() => void action(() => window.desktop!.manageChatGPTUsage(), "welcome", true)}>Manage usage<ExternalLink size={13} aria-hidden="true" /></button>
+      <footer className="analysis-dialog-footer"><button type="button" className="settings-link" disabled={working} onClick={() => void action(() => window.desktop!.manageChatGPTUsage(), "welcome", true)}>Manage usage <ArrowUpRight size={15} aria-hidden="true" /></button>
         <SettingsAction variant="primary" disabled={working} onClick={finishWelcome}>Got it</SettingsAction></footer>
     </dialog>
   </>;

@@ -375,7 +375,7 @@ The palette uses warm paper, rust, and ochre with a quiet warm wash for the sele
 
 ### Primary
 
-- **Accent color.** Ember is the default. Settings also offers Ochre, Pine, Harbor blue, and Plum. The selected color applies to actions, focus, and selection. Each has a light and dark variant. The zebra and hiring-stage colors keep their own palette.
+- **Theme.** Ember is the default. Ochre, Pine, Harbor blue, and Plum each color the canvas, sidebar, fields, actions, and selections. Each theme has a light and dark palette. Hiring-stage colors and the zebra retain their own meanings.
 - **Quiet selection:** accent-wash and surface-selected mark current navigation and selected records. Text selection has its own foreground/background tokens.
 
 ### Secondary

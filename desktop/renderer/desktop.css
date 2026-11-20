@@ -936,13 +936,18 @@ html[data-theme="dark"] .score-track { background: var(--line); }
 .chatgpt-settings .settings-help { margin-top: 4px; }
 .chatgpt-settings .settings-link:disabled, .chatgpt-refresh:disabled { opacity: .5; cursor: default; }
 .chatgpt-account-options { margin-top: 8px; }
-.chatgpt-account-options summary, .chatgpt-history-help summary { width: fit-content; padding: 4px 0; font-size: 11px; color: var(--ink-soft); }
+.chatgpt-account-options summary { width: fit-content; padding: 4px 0; font-size: 11px; color: var(--ink-soft); }
 .chatgpt-account-options .settings-link { display: flex; width: fit-content; margin-top: 4px; text-align: left; overflow-wrap: anywhere; }
 .chatgpt-refresh { display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0; border: 0; border-radius: 8px; background: transparent; color: var(--accent); }
 .chatgpt-refresh:hover:not(:disabled) { background: var(--accent-wash); color: var(--accent-hover); }
 .chatgpt-settings :is(button, summary):focus-visible, .chatgpt-refresh:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
 .chatgpt-usage-row { align-items: start; }
-.chatgpt-usage-row > .analysis-setting-label { padding-top: 6px; }
+.chatgpt-usage-toggle { display: inline-flex; align-items: center; justify-self: start; gap: 5px; min-height: 28px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--ink); font: inherit; }
+.chatgpt-usage-toggle:hover { color: var(--accent); }
+.chatgpt-usage-toggle svg { color: var(--ink-soft); }
+.chatgpt-usage-toggle[aria-expanded="false"] svg { transform: rotate(-90deg); }
+.chatgpt-usage-header > .settings-link { margin-inline-start: auto; }
+.update-current { color: var(--ink-soft); margin-inline-start: 3px; font-size: 11px; white-space: nowrap; }
 .chatgpt-usage-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; }
 .chatgpt-usage-header .settings-help { margin: 0; font-size: 12px; }
 .chatgpt-history { margin-top: 16px; }
@@ -973,9 +978,7 @@ html[data-theme="dark"] .score-track { background: var(--line); }
 .chatgpt-show-jobs { margin-bottom: 12px; }
 .chatgpt-history-empty { margin: 0; padding: 16px 0 20px; color: var(--ink-soft); font-size: 12px; border-top: 1px solid var(--line); }
 .chatgpt-history-footer { border-top: 1px solid var(--line); padding-top: 10px; }
-.chatgpt-history-help { margin-top: 4px; }
 @container analysis-settings (max-width: 560px) {
-  .chatgpt-usage-row > .analysis-setting-label { padding-top: 0; }
   .chatgpt-job-list > li, .chatgpt-job-toggle { column-gap: 12px; }
   .chatgpt-token-breakdown { column-gap: 16px; }
 }
