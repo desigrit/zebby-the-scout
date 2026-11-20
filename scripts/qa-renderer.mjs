@@ -1474,7 +1474,7 @@ try {
   await guideLink.click();
   const analysisGuide = page.getByRole("dialog", { name: "Need help deciding?", exact: true });
   await analysisGuide.waitFor();
-  assert.equal(await analysisGuide.locator("dt").count(), 4);
+  assert.deepEqual(await analysisGuide.locator("dt").allTextContents(), ["Zebby credits", "ChatGPT plan", "Local server", "Downloaded model", "OpenAI / Claude API key"]);
   assert.ok((await analysisGuide.boundingBox()).width <= 680);
   assert.equal(await analysisGuide.locator(".analysis-guide-options > div").evaluateAll(rows => rows.every(row =>
     row.querySelector("dt").getBoundingClientRect().right < row.querySelector("dd").getBoundingClientRect().left &&

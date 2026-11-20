@@ -6,7 +6,7 @@ TASK: Choose analysis, manage paid credits, the current database, and local mode
 
 FREQUENCY: Occasional setup and maintenance, with simple return visits to change a provider or open a file.
 
-INFORMATION: Current database, provider-specific controls, detected local hardware and model recommendations, model readiness/terms/download, a four-option analysis guide, guest credit wallet summary and model, appearance, logs and issues, installed version and update state. Manage credits opens recovery and pairing actions beside visible connected computers, daily credit activity, recent usage and lifetime totals. Local storage details are available on demand.
+INFORMATION: Current database, provider-specific controls, detected local hardware and model recommendations, model readiness/terms/download, a five-option analysis guide, guest credit wallet summary and model, ChatGPT account and Usage details, appearance, logs and issues, installed version and update state. Manage credits opens recovery and pairing actions beside visible connected computers, daily credit activity, recent usage and lifetime totals. Local storage details are available on demand.
 
 STATES: No/open/dirty database; saved or session-only key; selected provider/model; local hardware checking/CPU/GPU/unavailable; same-model CPU fallback; analysis guide open/closed; terms agreement; download progress/pause/retry/Ready; credits empty/loading/pending/funded; current or saved wallet; Credits and devices open/closed; selected activity day; recovery export/cancel/replacement; restore/connect editor and errors; pairing active/expired/used/cancelled; device removal; system/light/dark appearance; update check/download/verified restart/error.
 
@@ -190,3 +190,14 @@ The approved use of activity blocks keeps Credits and devices in its existing wi
 Source checked: `AnalysisGuide.tsx`, `LocalModelsSettings.tsx`, `CreditUsage.tsx`, `CreditsSettings.tsx`, `desktop.css`, the local compute detection and engine modules, runtime packaging, the wallet response schema, the service compatibility reads and the usage migration. Five inspected captures cover the wider guide, local hardware status, the wide credits manager and the narrow dark manager's access and usage sections.
 
 The supplied finish-review handoff returned disposition: ship with no material fixes. Supplied renderer checks cover guide layout and focus restoration, CPU/GPU recommendation groups without automatic selection, visible manager sections, 84 activity blocks, day selection and keyboard navigation. Credit tests cover UTC aggregation, lifetime totals, recent-row limits, wallet isolation and bounded legacy-response enrichment. Local-engine verification records Qwen3 0.6B using Vulkan with 29 offloaded layers, completed Plan and match output, and passing thinking, authentication and shutdown checks.
+
+
+## Public ChatGPT plan extension, 2026-11-19
+
+Public Zebby 2.11.0 includes the tested Beta connection as **ChatGPT plan**, with no Private badge. It inherits the quiet Analysis rows and existing Ember tokens. No new visual world or global token change is introduced. Public identity, database pairing, local profile, Store update behavior and direct installer updates remain intact.
+
+The selected provider reveals Account, account-specific Model and Thinking, Connection, and Usage. Continue with ChatGPT remains the initial button; ongoing actions use compact rust links and accessible icon controls. Account options is a disclosure. The first enabled connection shows the one-time ChatGPT plan notice, then returns focus to the model selector. Usage limits retain their message while Manage usage opens the account controls; Retry repeats the failed action.
+
+Usage shows recent jobs with the date, model and thinking on the left and vertically centered token totals and Run details on the right. Expanding a row reveals input, output, cached input, reasoning and per-attempt measurements. Reuse is stated without adding tokens. Unknown usage remains unknown. At narrow panel widths the links wrap into a separate row. Usage displays activity from the most recent seven days, and older local job files remain available through Open jobs folder. There are no Keep, Saved or cleanup controls.
+
+The ChatGPT provider replaces the sidebar credit balance with Using ChatGPT plan and Manage usage. The Credits section is hidden while this provider is selected; switching back preserves wallet access. The existing public thorough Boards settings stay available. Verification is recorded in the public release PR and GitHub-hosted Windows, Mac and Store checks.

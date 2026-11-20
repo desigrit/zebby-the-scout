@@ -105,12 +105,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/build-boards-smoke.mjs
       - run: node node_modules/playwright-core/cli.js install chromium
+      - name: Verify ChatGPT Settings, Usage and public updates
+        run: npm run test:chatgpt:renderer
       - name: Verify listing inspection and both appearances
         run: npm run test:renderer
         env:
           ZEBBY_CAPTURE_BOARDS: '1'
-      - name: Verify ChatGPT Settings, Usage and public updates
-        run: npm run test:chatgpt:renderer
       - uses: actions/upload-artifact@v4
         if: always()
         continue-on-error: true
