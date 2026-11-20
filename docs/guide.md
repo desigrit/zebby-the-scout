@@ -50,6 +50,12 @@ Choose **Local server** under **Analyze with** in Settings to analyze with a mod
 
 Choose **OpenAI API key** in Settings and select an OpenAI model. Save an API key on each computer where you use that provider. Plan analysis sends job text, your current CV overview, and the selected resume to OpenAI. Application match analysis sends job text and the selected resume. API usage may be billed to your account.
 
+### ChatGPT plan
+
+Choose **ChatGPT plan** under **Settings > Analysis > Analyze with**, then **Continue with ChatGPT**. Complete sign-in in your browser, select one of your account's models and its thinking level, and run **Test connection**. This provider works for Plan, application matching, tailored resumes and Boards. **Usage** shows reported tokens and saved-result reuse. **Run details** opens the analysis folder. The app shows seven days of activity and keeps older files on disk. [Connection, usage and recovery](chatgpt-plan.md)
+
+When moving from Zebby - Beta, finish saving and close it, then open the same Applications database in public Zebby. Its matching Boards file opens with it. Connect ChatGPT in public Settings and select your model there. The two installations keep separate credentials and local analysis history.
+
 ### Downloadable local models
 
 Choose **Downloaded model** in the **Analyze with** dropdown, then choose a **Local model**. The native dropdown shows model names, with the selected model's download size in a separate muted badge. Selecting a model starts its download, with progress and flat, borderless **Pause**, **Resume** or **Retry** icons. **Stop download** immediately cancels the transfer and deletes partial files, preserving verified completed models. LFM2.5 and Gemma open **Model terms** and require **Agree and download** first. Expand **About this model** for its description and RAM guidance. A completed download is verified and reused, including after app updates. No account, API key, Ollama installation, or GPU is required. These models run on the computer's CPU. Downloads require an internet connection; analysis works offline once a model is ready.
@@ -150,7 +156,7 @@ This repository contains the desktop app. The earlier web prototype is available
 
 ## Online analysis and credits
 
-The first **Analyze** opens a setup dialog when no working method is configured. Choose a local server, download a model, use your own OpenAI or Anthropic API key, or buy Zebby credits. Existing working methods continue directly. Local models and personal keys need no Zebby account.
+The first **Analyze** opens a setup dialog when no working method is configured. Choose a local server, download a model, connect your ChatGPT plan, use your own OpenAI or Anthropic API key, or buy Zebby credits. Existing working methods continue directly. Local models and personal keys need no Zebby account.
 
 **Settings > Analysis** uses quiet separated rows for **Analyze with**, **Server URL** (for local servers), **Model**, **API key** (when needed), and supported **Thinking**. Labels move above their controls when the Analysis panel is 560px wide or narrower. Only the selected method's controls appear. Model lists put newer releases first. OpenAI offers GPT-6.1 Sol, GPT-6 Luna and GPT-6 Astra; Anthropic offers Claude Sonnet 5.5, Opus 5.5 and Haiku 4.5. Models are used as selected, with no automatic fallback to a weaker model. Hosted model availability depends on the API account.
 

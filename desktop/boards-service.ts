@@ -7,16 +7,17 @@ import { BoardsStore } from "./boards-store";
 import { scanBoard } from "./boards-scan";
 import type { BoardReader } from "./board-browser";
 import { writeProfileSettings } from "./settings-persistence";
+import { chatGPTUsageError } from "../shared/chatgpt-plan";
 import { BoardRuns } from "./board-runs";
 import { boardScope, newBoardCheckpoint, thoroughlyScanBoard, BoardReadLimit, type BoardCheckpoint } from "./board-thorough";
 import type { BoardCheckOptions } from "../shared/board-exploration";
 
-export type BoardSelection = { provider: AnalysisProvider; model: string; thinkingLevel: string; ollamaUrl?: string };
+export type BoardSelection = { provider: AnalysisProvider; model: string; thinkingLevel: string; ollamaUrl?: string; account?: string };
 type Dependencies<Selection extends BoardSelection> = { profile: string; selection(): Selection;
   reader(signal: AbortSignal): BoardReader;
   canUseVision?(selection: Selection, signal: AbortSignal): Promise<boolean>;
-  extract(selection: Selection, input: BoardExtractionInput, signal: AbortSignal, sourceId: string): Promise<{ value: unknown; acknowledge?: () => Promise<void> }>;
-  acknowledgeCached?(selection: Selection, input: BoardExtractionInput, sourceId: string): Promise<void>;
+  extract(selection: Selection, input: BoardExtractionInput, signal: AbortSignal, sourceId: string, context?: { boardId: string; revision: number }): Promise<{ value: unknown; acknowledge?: () => Promise<void> }>;
+  acknowledgeCached?(selection: Selection, input: BoardExtractionInput, sourceId: string, context?: { boardId: string; revision: number }): Promise<void>;
   changed(): void;
 };
 
@@ -62,6 +63,7 @@ export class BoardsService<Selection extends BoardSelection> {
           const extract = async (input: BoardExtractionInput) => {
             const digest = createHash("sha256").update(JSON.stringify({ instructions: boardModelContract(input).instructions,
               input, provider: selected.provider, model: selected.model, thinking: selected.thinkingLevel,
+              account: selected.provider === "chatgpt" ? selected.account : undefined,
               endpoint: selected.provider === "ollama" ? selected.ollamaUrl : "" })).digest("hex");
             const cachePath = path.join(cacheRoot, digest + ".json");
             const sourceId = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-8${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
@@ -73,13 +75,13 @@ export class BoardsService<Selection extends BoardSelection> {
             try { if (cached) validated = validatedBoardExtraction(cached, input); }
             catch { /* Reject corrupted or obsolete cached results. */ }
             if (validated) {
-              await this.dependencies.acknowledgeCached?.(selected, input, sourceId);
+              await this.dependencies.acknowledgeCached?.(selected, input, sourceId, { boardId: board.id, revision: board.revision });
               if (checkpoint) checkpoint.reused++;
               return validated;
             }
             requestSignal.throwIfAborted();
             if (balanceError) throw balanceError;
-            const response = await this.dependencies.extract(selected, input, requestSignal, sourceId);
+            const response = await this.dependencies.extract(selected, input, requestSignal, sourceId, { boardId: board.id, revision: board.revision });
             const result = validatedBoardExtraction(response.value, input);
             requestSignal.throwIfAborted();
             // Persist a paid result before acknowledging it. Interrupted scans
@@ -96,7 +98,7 @@ export class BoardsService<Selection extends BoardSelection> {
           const thorough = async () => {
             signal.throwIfAborted();
             if (!await canUseVision()) throw new Error("A thorough check needs a model that can read images. Choose one in Settings, then retry. Your last successful check is unchanged.");
-            const prior = this.runs.latest(workspace, board), account = "";
+            const prior = this.runs.latest(workspace, board), account = selected.account || "";
             const compatible = prior && prior.provider === selected.provider && prior.model === selected.model && prior.account === account;
             const resumePrior = Boolean(compatible && prior.status !== "complete" && (!options.thorough || options.resume));
             checkpoint = resumePrior && prior ? prior : newBoardCheckpoint({ boardId: board.id,
@@ -138,12 +140,16 @@ export class BoardsService<Selection extends BoardSelection> {
             try { scan = await scanBoard({ ...scanOptions, reader: initialReader }); }
             catch (error) {
               signal.throwIfAborted();
-              if (!initialReader.thorough || !settings.automaticThorough || balanceError || boardCreditError(error) ||
+              if (!initialReader.thorough || !settings.automaticThorough || balanceError || boardCreditError(error) || chatGPTUsageError(error) ||
                   /API key|authentication|sign.?in|unsupported model|model.*not.*available|credit|allowance|quota|billing/i.test(String(error))) throw error;
               report("Starting a thorough check", "reading"); scan = await thorough();
             }
           }
           signal.throwIfAborted(); report("Saving check", "saving");
+          if (selected.provider === "chatgpt") {
+            const id = createHash("sha256").update(JSON.stringify({ board: board.id, revision: board.revision, priorCheck: board.lastCheckId, scan })).digest("hex");
+            scan.receipt = { id, digest: id };
+          }
           await this.store.complete(board.id, board.revision, generation, scan);
           const resolved = checkpoint || this.runs.latest(workspace, board);
           if (resolved) {
@@ -160,7 +166,7 @@ export class BoardsService<Selection extends BoardSelection> {
           }
           if (!signal.aborted) {
             const needsCredits = selected.provider === "credits" && boardCreditError(error);
-            if (needsCredits) balanceError = error;
+            if (needsCredits || chatGPTUsageError(error)) balanceError = error;
             const detail = error instanceof Error ? error.message : "The board could not be checked. Try again.";
             const message = needsCredits ? BOARD_CREDIT_MESSAGE + " " + detail : detail;
             try { await this.store.failed(board.id, board.revision, generation, message); }

@@ -454,7 +454,8 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
         {editing && (links.trim() !== editing.url || instructions.trim() !== (editing.instructions || "")) &&
           <p className="settings-help">Changing the link or instructions starts a new baseline on the next check.</p>}
         {!editing && <p className="settings-help">The first check saves your starting point. Later checks look for new listings.
-          {analysis.state.analysisProvider === "credits" && " Each AI batch uses your selected model and available Zebby credits."}</p>}
+          {analysis.state.analysisProvider === "credits" && " Each AI batch uses your selected model and available Zebby credits."}
+          {analysis.state.analysisProvider === "chatgpt" && " AI analysis uses your ChatGPT plan."}</p>}
         <div className="boards-editor-actions"><button type="submit" className="button button-primary" disabled={working || state.dirty}>
           {working && <LoaderCircle size={16} className="spin" aria-hidden="true" />}{editing ? "Save board" : "Add and check"}</button>
           <button type="button" className="button button-secondary" disabled={working} onClick={reset}>Cancel</button>
@@ -505,12 +506,14 @@ export default function BoardsView({ onDirtyChange }: { onDirtyChange: (dirty: b
                 </div>
                 : checkProgress || <div className="board-update-summary"><span role="status">{board.error ? <BoardCheckStatus error={board.error} /> : <span className="board-no-updates">{run?.canResume ? "Check paused" : "Not indexed"}</span>}</span>{partialLink}</div>}
             </div>
-            <div className="board-actions">{progress ? <button id={"board-check-" + board.id} type="button" className="button button-secondary" disabled={progress.phase === "saving"}
+            <div className="board-actions">{progress ? <button id={"board-check-" + board.id} type="button" className="boards-text-action board-check-action" disabled={progress.phase === "saving"}
               onClick={() => void act(() => window.desktop!.cancelBoardCheck(board.id))}>Stop check</button>
-              : <button id={"board-check-" + board.id} type="button" className="button button-secondary" disabled={working || state.dirty} onClick={() => { setPartial(null); void act(() => window.desktop!.checkBoards([board.id], run?.canResume ? { resume: true } : undefined)); }}>
-                <RefreshCw size={15} aria-hidden="true" />{run?.canResume ? "Resume check" : board.error ? "Retry" : "Check for updates"}</button>}
+              : <button id={"board-check-" + board.id} type="button" className="boards-text-action board-check-action" disabled={working || state.dirty} onClick={() => { setPartial(null); void act(() => window.desktop!.checkBoards([board.id], run?.canResume ? { resume: true } : undefined)); }}>
+                <RefreshCw size={14} strokeWidth={1.5} aria-hidden="true" />{run?.canResume ? "Resume check" : board.error ? "Retry" : "Check for updates"}</button>}
               {analysis.state.analysisProvider === "credits" && board.error.startsWith(BOARD_CREDIT_MESSAGE) && !progress &&
                 <button type="button" className="boards-text-action" onClick={() => analysis.openCredits()}>Top up</button>}
+              {analysis.state.analysisProvider === "chatgpt" && /ChatGPT.*(?:usage|limit|allowance)/i.test(board.error) && !progress &&
+                <a className="boards-text-action" href="https://chatgpt.com/settings/usage" target="_blank" rel="noreferrer">Manage usage</a>}
               <button type="button" className="board-icon-action" aria-label={`Edit ${board.company} board`} title="Edit board" disabled={working || Boolean(progress) || state.dirty} onClick={() => edit(board)}><Pencil size={15} aria-hidden="true" /></button>
               <BoardRemoveButton board={board} disabled={working || Boolean(progress) || state.dirty} onRemove={async () => {
                 const removed = await act(() => window.desktop!.removeBoard(board.id));

@@ -1,4 +1,6 @@
 import { randomUUID, createHash } from "node:crypto";
+import { hasAnalysisReceipt, recordAnalysisReceipt } from "./analysis-receipts.ts";
+import type { AnalysisReceipt } from "../shared/chatgpt-plan.ts";
 import { constants, existsSync } from "node:fs";
 import { copyFile, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -591,12 +593,13 @@ export class DesktopStore {
   }
 
   async saveMatchAnalysis(id: string, expectedUpdatedAt: string, score: number,
-    notes: string, jobDescription: string): Promise<Application> {
+    notes: string, jobDescription: string, receipt?: AnalysisReceipt): Promise<Application> {
     if (!Number.isInteger(score) || score < 0 || score > 100 || !notes.trim()) {
       throw new Error("The match analysis was incomplete. Try again.");
     }
     jobDescription = normalizeJobText(jobDescription);
     await this.mutate((db) => {
+      if (hasAnalysisReceipt(db, receipt, `match:${id}`)) return;
       const previous = db.prepare("SELECT notes, snapshot_text FROM applications WHERE id = ?").get(id) as Row | undefined;
       if (!previous) throw new Error("Application not found.");
       const applicationNotes = previous.snapshot_text ? String(previous.notes || "")
@@ -610,6 +613,7 @@ export class DesktopStore {
         .run(score, notes.trim().slice(0, 4000), new Date().toISOString(), jobDescription, applicationNotes,
           jobDescription, new Date().toISOString(), new Date().toISOString(), id, expectedUpdatedAt);
       if (!result.changes) throw new Error("This application changed while analysis ran. Run it again from the latest version.");
+      recordAnalysisReceipt(db, receipt, `match:${id}`);
     });
     return this.findApplication(id)!;
   }
@@ -659,12 +663,13 @@ export class DesktopStore {
   }
 
   async saveTailoredResume(id: string, expectedUpdatedAt: string, baseName: string, sourceHash: string,
-    docx: Uint8Array, pdf: Uint8Array, layoutNote?: string): Promise<Plan> {
+    docx: Uint8Array, pdf: Uint8Array, layoutNote?: string, receipt?: AnalysisReceipt): Promise<Plan> {
     if (!docx.byteLength || !pdf.byteLength || Math.max(docx.byteLength, pdf.byteLength) > 10 * 1024 * 1024) throw new Error("The tailored resume files could not be saved.");
     const generatedAt = new Date().toISOString();
     const result: TailoredResume = { docx: { id: randomUUID(), filename: `${baseName}.docx` },
       pdf: { id: randomUUID(), filename: `${baseName}.pdf` }, generatedAt, sourceHash, layoutNote };
     await this.mutate(db => {
+      if (hasAnalysisReceipt(db, receipt, `resume:${id}`)) return;
       const changed = db.prepare("UPDATE plans SET updated_at = ? WHERE id = ? AND updated_at = ?").run(generatedAt, id, expectedUpdatedAt);
       if (!changed.changes) throw new Error("This plan changed while the resume was being created. Try again from the latest version.");
       const insert = db.prepare("INSERT INTO resumes (id, filename, content_type, size, file_data, created_at) VALUES (?, ?, ?, ?, ?, ?)");
@@ -672,6 +677,7 @@ export class DesktopStore {
       insert.run(result.pdf.id, result.pdf.filename, "application/pdf", pdf.byteLength, pdf, generatedAt);
       db.prepare("INSERT INTO workspace_preferences (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
         .run(`tailored_resume:${id}`, JSON.stringify(result));
+      recordAnalysisReceipt(db, receipt, `resume:${id}`);
     });
     return this.getPlan(id)!;
   }
@@ -738,7 +744,7 @@ export class DesktopStore {
 
   async savePlanAnalysis(id: string, expectedUpdatedAt: string, keywords: string[],
     themes: string[], overview: string, overviewRationale: string, matchStrength: number,
-    keywordImportance: number[] = [], themeImportance: number[] = [], matchNotes = ""): Promise<Plan> {
+    keywordImportance: number[] = [], themeImportance: number[] = [], matchNotes = "", receipt?: AnalysisReceipt): Promise<Plan> {
     if (!Number.isInteger(matchStrength) || matchStrength < 0 || matchStrength > 100) {
       throw new Error("The match score must be between 0 and 100.");
     }
@@ -750,6 +756,7 @@ export class DesktopStore {
       }
     }
     await this.mutate((db) => {
+      if (hasAnalysisReceipt(db, receipt, `plan:${id}`)) return;
       const result = db.prepare(`UPDATE plans SET keywords_json = ?, themes_json = ?, overview = ?, overview_rationale = ?,
         match_strength = ?, keyword_importance_json = ?, theme_importance_json = ?, match_notes = ?, match_analyzed_at = ?, updated_at = ? WHERE id = ? AND updated_at = ?`)
         .run(JSON.stringify(keywords), JSON.stringify(themes), overview, overviewRationale.trim().slice(0, 2000), matchStrength,
@@ -758,6 +765,7 @@ export class DesktopStore {
       db.prepare(`INSERT INTO workspace_preferences (key, value)
         SELECT 'last_current_overview', current_overview FROM plans WHERE id = ?
         ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(id);
+      recordAnalysisReceipt(db, receipt, `plan:${id}`);
     });
     return this.getPlan(id)!;
   }

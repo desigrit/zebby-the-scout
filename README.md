@@ -37,6 +37,7 @@ Keyword and theme percentages estimate importance to the job. Review AI suggesti
 
 | Option | What you use |
 | --- | --- |
+| **ChatGPT plan** | Connect your ChatGPT account and use its available models across Plan, Applications and Boards. [Setup and usage](docs/chatgpt-plan.md) |
 | **Bring your own key** | Your OpenAI or Anthropic API key. Usage is billed to your provider account. |
 | **Run a local model** | Your Ollama server, or a model downloaded in Settings. Zebby recommends models for your hardware and uses Vulkan on Windows x64 or Metal on Apple Silicon, with CPU fallback. Windows ARM64 uses the CPU. Downloaded models work offline. |
 | **Buy Zebby credits** | Choose GPT or Claude. Packs of $20 or more unlock GPT-6 Astra and Claude Opus. No API key or Zebby account needed. |

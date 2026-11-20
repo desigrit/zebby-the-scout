@@ -1,6 +1,6 @@
 # Zebby privacy
 
-Last updated: November 7, 2026
+Last updated: November 19, 2026
 
 Zebby is a job application tracker from Desigrit Labs. This page explains what stays on your computer and what is sent when you use connected features.
 
@@ -20,15 +20,24 @@ Boards stores saved board URLs and filters, company names, tracking instructions
 | Local server | Job text, your summary, and extracted resume text go to the server URL you enter. A server on another computer receives that content. |
 | Your OpenAI API key | Job text, your summary, and the selected resume file go directly to OpenAI. Your OpenAI account is billed. |
 | Your Anthropic API key | Job text, your summary, and extracted resume text go directly to Anthropic. Your Anthropic account is billed. |
+| ChatGPT plan | Job and resume content and any required board text or screenshots go directly to OpenAI using your connected ChatGPT account. |
 | Zebby credits | Job text, your summary, and extracted resume text pass through Zebby's credits service to the selected online model provider. |
 
 For a Boards check, Zebby contacts the public careers site and applicable recruiting-platform feed from your computer. When a model is needed it receives the relevant URLs, titles, department headings, page excerpts, observed link and control IDs, and any tracking instructions. When these are insufficient, visual reading sends screenshots of the public page in Zebby's isolated browser. It does not capture your desktop or other browser windows.
 
-A downloaded model processes text on your computer. Ollama receives text and, for a vision-capable model, screenshots at your selected server. Personal keys send the required text and screenshots directly to OpenAI or Anthropic. Zebby credits send them through the credits service to the selected provider. Zebby does not save the screenshots to a database, cache or log. It keeps validated results and request hashes for interrupted-check recovery. The credits service retains validated decisions under its normal recovery policy.
+A downloaded model processes text on your computer. Ollama receives text and, for a vision-capable model, screenshots at your selected server. Personal keys send the required text and screenshots directly to OpenAI or Anthropic. Zebby credits send them through the credits service to the selected provider. For API-key, local and credits analysis, Zebby does not save the screenshots to a database, cache or log. ChatGPT plan analysis saves its required screenshots with the local analysis job, as described below. It keeps validated results and request hashes for interrupted-check recovery. The credits service retains validated decisions under its normal recovery policy.
 
 Automatic thorough checks can navigate public results, inspect job descriptions, and examine samples of public JSON responses loaded by the careers page. The selected model receives the relevant evidence, including screenshots. Local recovery logs retain discovered jobs, the saved search, model selection, and navigation steps so checks can resume. Older recovery logs remain in the app folder until you remove them. Successful navigation steps may be reused, but each new check verifies the current page and filters.
 
 Model providers process requests under their own terms. Retention and use for model improvement depend on the provider and the data-sharing settings of the account serving the request. With your own API key, those are your account settings. With Zebby credits, those are the service operator's account settings. OpenAI requests set `store: false`; this does not override separate provider retention or data-sharing settings.
+
+## ChatGPT connection and local history
+
+ChatGPT plan analysis connects directly to OpenAI through its documented account authorization flow. Your operating system encrypts the connection credentials in the app's local profile. They are excluded from shared databases, logs and analysis job folders. Disconnect cancels active work, requests revocation and removes the local tokens.
+
+Each analysis saves its request, instructions, source content, output schema, validated result, reported token usage and recovery state under the local `analysis-jobs` folder. Source content can include resumes, job descriptions, tracking instructions and screenshots from Zebby's isolated board browser. These files remain on disk until you remove them. Settings shows the most recent seven days and provides **Run details** and **Open jobs folder** links. The files are separate from your Applications and Boards databases.
+
+**Manage usage** opens ChatGPT's allowance controls. Your ChatGPT account settings govern any use of additional credits and OpenAI's treatment of this data. Zebby does not switch automatically to an API key or Zebby credits when that allowance runs out. Token measurements shown in Zebby are separate from the balance shown in ChatGPT.
 
 ## Credits, payments, and connected computers
 

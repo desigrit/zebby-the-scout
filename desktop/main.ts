@@ -1,4 +1,6 @@
 import { planInstructions, planSchema, matchInstructions, matchSchema } from "./analysis-contracts";
+import { CHATGPT_USAGE_URL } from "../shared/chatgpt-plan";
+import type { ChatGPTService } from "./chatgpt/chatgpt-service";
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, powerMonitor, protocol, safeStorage, screen, shell } from "electron";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -62,6 +64,7 @@ let boards: BoardsService<ReturnType<typeof selectedAnalysis>>;
 let switchingWorkspace: { done: Promise<void>; previous: DesktopStore["status"] } | undefined;
 let apiKey = "";
 let anthropicKey = "";
+let chatgpt: ChatGPTService | undefined;
 let creditsClient: CreditsClient;
 const paidQuotes = new Map<string, { source: AnalysisSource; model: string; thinkingLevel?: string; hash: string; expires: number; recovery?: boolean }>();
 let startupError = "";
@@ -86,7 +89,7 @@ let settings: { databasePath?: string; encryptedApiKey?: string; appearance?: Ap
   thinkingLevels?: ThinkingPreferences;
   acceptedModelTerms?: AcceptedModelTerms } = {};
 let unreadableProfile = false;
-const diagnosticLog = new DiagnosticLog(() => logsPath(), () => [apiKey, anthropicKey, ...(creditsClient?.secrets() || [])]);
+const diagnosticLog = new DiagnosticLog(() => logsPath(), () => [apiKey, anthropicKey, ...(creditsClient?.secrets() || []), ...(chatgpt?.auth.secrets() || [])]);
 
 function settingsPath() { return path.join(app.getPath("userData"), "settings.json"); }
 function logsPath() { return path.join(app.getPath("userData"), "Logs"); }
@@ -133,7 +136,7 @@ async function loadSettings() {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") { unreadableProfile = true; logDiagnostic("Could not read local settings", error); }
   }
   if (!["auto", "dark", "light"].includes(settings.appearance || "auto")) settings.appearance = "auto";
-  if (!["ollama", "openai", "builtin", "anthropic", "credits"].includes(settings.analysisProvider || "")) {
+  if (!["ollama", "openai", "builtin", "anthropic", "credits", "chatgpt"].includes(settings.analysisProvider || "")) {
     settings.analysisProvider = settings.encryptedApiKey ? "openai" : "ollama";
   }
   settings.ollamaUrl ||= DEFAULT_OLLAMA_URL;
@@ -198,6 +201,7 @@ async function loadSettings() {
 
 function state() {
   return {
+    chatgpt: chatgpt?.state,
     ...(switchingWorkspace?.previous ?? store.status), startupError, hasApiKey: Boolean(apiKey), hasAnthropicKey: Boolean(anthropicKey),
     apiKeyHint: maskedApiKey(apiKey, "openai"), anthropicKeyHint: maskedApiKey(anthropicKey, "anthropic"),
     thinkingLevels: settings.thinkingLevels || {},
@@ -309,12 +313,13 @@ async function captureListing<T extends { listingUrl?: string; snapshotText?: st
 
 function selectedAnalysis() {
   const provider = settings.analysisProvider || "ollama";
-  const model = provider === "openai" ? settings.openaiModel || "gpt-6.1-sol" : provider === "anthropic" ? settings.anthropicModel || "claude-sonnet-5-5"
+  const model = provider === "chatgpt" ? chatgpt?.selection.model || "" : provider === "openai" ? settings.openaiModel || "gpt-6.1-sol" : provider === "anthropic" ? settings.anthropicModel || "claude-sonnet-5-5"
     : provider === "credits" ? settings.creditModel || DEFAULT_CREDIT_MODEL : provider === "builtin" ? settings.builtInModelId || "" : settings.ollamaModel || "";
   return { provider: settings.analysisProvider || "ollama", ollamaUrl: settings.ollamaUrl || DEFAULT_OLLAMA_URL,
+    workspace: store.status.filePath, account: provider === "chatgpt" ? chatgpt?.selection.account || "" : "",
     ollamaModel: settings.ollamaModel || "", builtInModelId: settings.builtInModelId || "", model, apiKey: provider === "anthropic" ? anthropicKey : apiKey,
     thinkingLevels: { ...settings.thinkingLevels },
-    thinkingLevel: ["openai", "anthropic", "credits"].includes(provider) ? thinkingLevel(provider as "openai" | "anthropic" | "credits", model)
+    thinkingLevel: provider === "chatgpt" ? chatgpt?.selection.thinking || "" : ["openai", "anthropic", "credits"].includes(provider) ? thinkingLevel(provider as "openai" | "anthropic" | "credits", model)
       : settings.thinkingLevels?.[thinkingKey(provider, model, settings.ollamaUrl || DEFAULT_OLLAMA_URL)] || "off" };
 }
 
@@ -360,11 +365,22 @@ async function quoteAnalysis(source: AnalysisSource) {
 
 async function analyzeWithSelectedProvider(instructions: string, input: unknown, name: string,
   schema: Record<string, unknown>, failure: string, selected: ReturnType<typeof selectedAnalysis>, signal: AbortSignal,
-  paid?: { quoteId: string; source: AnalysisSource }, progress?: ReportAnalysisProgress): Promise<Record<string, unknown>> {
+  paid?: { quoteId: string; source: AnalysisSource; revision?: string }, progress?: ReportAnalysisProgress): Promise<Record<string, unknown>> {
   signal.throwIfAborted();
   progress?.("waiting");
   logEvent(`Analysis provider selected (${name}, ${selected.provider}, ${selected.model || "default"}, thinking ${selected.thinkingLevel})`);
   return runSelectedAnalysis(selected, {
+    chatgpt: async (prompt, content, formatName, format) => {
+      if (!chatgpt || !paid?.source) throw new Error("Connect ChatGPT in Settings before analyzing.");
+      if (store.status.dirty) throw new Error("A previous change has not reached your database file. Use Retry save in Settings before analyzing.");
+      chatgpt.validateVisionInput(content);
+      return chatgpt.analyze({ version: 1, workspace: selected.workspace, target: `${paid.source.kind}:${paid.source.id}`,
+        // Derived analysis updates updated_at. Fingerprint the actual source so
+        // a retry after saving reuses that result, while store writes still
+        // compare the captured updated_at to reject edits during inference.
+        revision: paid.source.kind === "board_extract" ? paid.revision || "1" : analysisHash(content), account: selected.account, model: selected.model, thinking: selected.thinkingLevel,
+        instructions: prompt, input: content, name: formatName, schema: format }, signal);
+    },
     ollama: async (baseUrl, model, prompt, content, format) => {
       const visual = boardVisualParts(content);
       if (visual && !await ollamaSupportsVision(baseUrl, model, signal)) throw new Error(BOARD_VISION_MESSAGE);
@@ -397,10 +413,11 @@ async function analyzeWithSelectedProvider(instructions: string, input: unknown,
 
 async function createTailoredResume(id: string, signal: AbortSignal, commit: <T>(persist: () => Promise<T>) => Promise<T>, quoteId = "", progress?: ReportAnalysisProgress) {
   const selected = selectedAnalysis();
+  if (selected.provider === "chatgpt") chatgpt?.resume();
   const { plan, resume, reference, input } = await tailoringInput(id);
   signal.throwIfAborted();
   const infer = (value: unknown) => analyzeWithSelectedProvider(tailoringInstructions, value, "tailored_resume", tailoringSchema,
-    "The tailored resume could not be created.", selected, signal, { quoteId, source: { kind: "resume", id } }, progress);
+    "The tailored resume could not be created.", selected, signal, { quoteId, source: { kind: "resume", id }, revision: plan.updatedAt }, progress);
   let result: Record<string, unknown>;
   if (selected.provider === "builtin" && getLocalModel(selected.builtInModelId).basic && input.resumeBlocks.some(block => block.editable)) {
     const edits: unknown[] = [];
@@ -420,7 +437,8 @@ async function createTailoredResume(id: string, signal: AbortSignal, commit: <T>
   const { docx, pdf, kept } = await exportTailoredReference(reference, blocks, signal, printWordResumePdf);
   const layoutNote = kept ? "Some wording was kept to preserve the reference layout." : undefined;
   const saved = await commit(() => store.saveTailoredResume(id, plan.updatedAt,
-    tailoredBaseName(resume.resume.filename, plan.listingUrl, id), analysisHash(input), docx, pdf, layoutNote));
+    tailoredBaseName(resume.resume.filename, plan.listingUrl, id), analysisHash(input), docx, pdf, layoutNote, chatgpt?.jobs.receipt(result)));
+  if (selected.provider === "chatgpt") await chatgpt?.jobs.applied(result).catch(() => undefined);
   if (selected.provider === "credits") await creditsClient.acknowledge(quoteId);
   // The database holds both originals of the generated files, including when
   // Documents is temporarily unavailable. Revealing the link retries export.
@@ -431,6 +449,7 @@ async function createTailoredResume(id: string, signal: AbortSignal, commit: <T>
 
 async function analyzePlan(id: string, signal: AbortSignal, commit: <T>(persist: () => Promise<T>) => Promise<T>, quoteId = "", progress?: ReportAnalysisProgress) {
   const selected = selectedAnalysis();
+  if (selected.provider === "chatgpt") chatgpt?.resume();
   const plan = store.getPlan(id);
   if (!plan) throw new Error("Plan not found.");
   if (!plan.resumeId) throw new Error("Choose a resume for this plan before analyzing it.");
@@ -451,7 +470,7 @@ async function analyzePlan(id: string, signal: AbortSignal, commit: <T>(persist:
     ] }];
   const analysis = await analyzeWithSelectedProvider(planInstructions,
     input, "resume_plan", planSchema,
-    "The analysis was incomplete. Try again.", selected, signal, { quoteId, source: { kind: "plan", id } }, progress);
+    "The analysis was incomplete. Try again.", selected, signal, { quoteId, source: { kind: "plan", id }, revision: plan.updatedAt }, progress);
   signal.throwIfAborted();
   const keywords = parsePlanRecommendations(analysis.keywords, 6, 20, 200);
   const themes = parsePlanRecommendations(analysis.themes, 5, 6, 1000);
@@ -470,13 +489,15 @@ async function analyzePlan(id: string, signal: AbortSignal, commit: <T>(persist:
   }
   const saved = await commit(() => store.savePlanAnalysis(id, plan.updatedAt, keywords.map((item) => item.text),
     themes.map((item) => item.text), overview, overviewRationale, score,
-    keywords.map((item) => item.importance), themes.map((item) => item.importance), explanation));
+    keywords.map((item) => item.importance), themes.map((item) => item.importance), explanation, chatgpt?.jobs.receipt(analysis)));
+  if (selected.provider === "chatgpt") await chatgpt?.jobs.applied(analysis).catch(() => undefined);
   if (selected.provider === "credits") { await creditsClient.acknowledge(quoteId).catch((error) => logDiagnostic("Could not clear completed credit recovery", error)); paidQuotes.delete(quoteId); }
   return saved;
 }
 
 async function analyzeApplicationMatch(id: string, signal: AbortSignal, commit: <T>(persist: () => Promise<T>) => Promise<T>, quoteId = "") {
   const selected = selectedAnalysis();
+  if (selected.provider === "chatgpt") chatgpt?.resume();
   const application = store.listApplications().find((item) => item.id === id);
   if (!application) throw new Error("Application not found.");
   if (!application.resumeId) throw new Error("Add a resume to this application, then analyze the match.");
@@ -498,14 +519,15 @@ async function analyzeApplicationMatch(id: string, signal: AbortSignal, commit: 
         title: application.title, jobDescription: description.slice(0, 80_000) }) },
     ] }];
   const analysis = await analyzeWithSelectedProvider(matchInstructions, input,
-    "application_match", matchSchema, "The match analysis was incomplete. Try again.", selected, signal, { quoteId, source: { kind: "match", id } });
+    "application_match", matchSchema, "The match analysis was incomplete. Try again.", selected, signal, { quoteId, source: { kind: "match", id }, revision: application.updatedAt });
   signal.throwIfAborted();
   const score = analysis.score;
   const explanation = typeof analysis.explanation === "string" ? publicAnalysisText(analysis.explanation.trim()) : "";
   if (typeof score !== "number" || !Number.isInteger(score) || score < 0 || score > 100 || !explanation) {
     throw new Error("The match analysis was incomplete. Try again.");
   }
-  const saved = await commit(() => store.saveMatchAnalysis(id, application.updatedAt, score, explanation, description));
+  const saved = await commit(() => store.saveMatchAnalysis(id, application.updatedAt, score, explanation, description, chatgpt?.jobs.receipt(analysis)));
+  if (selected.provider === "chatgpt") await chatgpt?.jobs.applied(analysis).catch(() => undefined);
   if (selected.provider === "credits") { await creditsClient.acknowledge(quoteId).catch((error) => logDiagnostic("Could not clear completed credit recovery", error)); paidQuotes.delete(quoteId); }
   return saved;
 }
@@ -659,7 +681,11 @@ function registerIpc() {
       if (changing) activeSettingsRequests++;
       if (trace) logEvent(`Setting request started (${channel})`);
       try { return await listener(event, ...args); }
-      catch (error) { logDiagnostic(`Request failed (${channel})`, error); throw error; }
+      catch (error) {
+        logDiagnostic(`Request failed (${channel})`, error);
+        if (channel.startsWith("chatgpt:") && error instanceof Error) throw new Error(error.message);
+        throw error;
+      }
       finally {
         if (changing) activeSettingsRequests--;
         if (trace) logEvent(`Setting request finished (${channel}, ${Date.now() - started} ms)`);
@@ -667,6 +693,24 @@ function registerIpc() {
     });
   }
   handle("desktop:state", () => state());
+  {
+    const connection = () => { if (!chatgpt) throw new Error("The ChatGPT connection is not ready."); return chatgpt; };
+    handle("chatgpt:connect", async (_event, account?: string) => { if (account !== undefined && typeof account !== "string") throw new Error("Choose a ChatGPT account."); await connection().connect(account); return state(); });
+    handle("chatgpt:cancel-connect", () => { connection().auth.cancelSignIn(); });
+    handle("chatgpt:disconnect", async () => { analysisRequests.cancelAll(); await boards.stop(); await connection().disconnect(); return state(); });
+    handle("chatgpt:models", async () => { await connection().refreshModels(); return state(); });
+    handle("chatgpt:configure", async (_event, model: string, thinking: string) => {
+      if (typeof model !== "string" || typeof thinking !== "string") throw new Error("Choose a ChatGPT model.");
+      await connection().configure(model, thinking); return state();
+    });
+    handle("chatgpt:test", async () => { await connection().testConnection(); return state(); });
+    handle("chatgpt:usage", () => shell.openExternal(CHATGPT_USAGE_URL));
+    handle("chatgpt:welcome", async () => { await connection().auth.acknowledgeWelcome(); return state(); });
+    handle("chatgpt:jobs", async (_event, id?: string) => {
+      const folder = id === undefined ? connection().jobs.folder : await connection().jobs.folderFor(id);
+      const error = await shell.openPath(folder); if (error) throw new Error("Could not open the analysis job folder.");
+    });
+  }
   async function changeCompanion(action: () => Promise<void>) {
     boards.assertIdle();
     if (switchingWorkspace || activeSettingsRequests > 1) throw new Error("Finish the current action before changing Boards history.");
@@ -726,6 +770,7 @@ function registerIpc() {
   });
   handle("boards:add", async (_event, inputs: BoardInput[]) => {
     if (!Array.isArray(inputs)) throw new Error("Add one board link per line.");
+    if (settings.analysisProvider === "chatgpt") chatgpt?.resume();
     try { const ids = await boardsStore.add(inputs); return boards.check(ids); }
     finally { boards.changed(); }
   });
@@ -740,7 +785,7 @@ function registerIpc() {
     boards.changed();
     return boards.state;
   });
-  handle("boards:check", (_event, ids?: string[], options?: import("../shared/board-exploration").BoardCheckOptions) => boards.check(ids, options));
+  handle("boards:check", (_event, ids?: string[], options?: import("../shared/board-exploration").BoardCheckOptions) => { if (settings.analysisProvider === "chatgpt") chatgpt?.resume(); return boards.check(ids, options); });
   handle("boards:configure-reader", (_event, value: unknown) => boards.configure(value));
   handle("boards:run-preview", (_event, id: string) => boards.preview(id));
   handle("boards:cancel", (_event, id: string) => boards.cancel(id));
@@ -861,7 +906,7 @@ function registerIpc() {
     const updater = directUpdater();
     if (installingUpdate) return;
     if (!app.isPackaged || updates.state.download.phase !== "ready") throw new Error("Download the update before restarting.");
-    if (activeApiRequests || activeSettingsRequests || analysisRequests.busy || boards.busy) throw new Error("Wait for board checks, analysis and saving to finish before restarting.");
+    if (activeApiRequests || activeSettingsRequests || analysisRequests.busy || boards.busy || chatgpt?.busy || chatgpt?.auth.connecting) throw new Error("Wait for board checks, analysis, sign-in and saving to finish before restarting.");
     installingUpdate = true;
     try {
       await Promise.all([store.retrySync(), boardsStore.retrySave()]);
@@ -906,7 +951,7 @@ function registerIpc() {
     return state();
   });
   handle("desktop:set-analysis-provider", async (_event, value: AnalysisProvider) => {
-    if (!["ollama", "openai", "builtin", "anthropic", "credits"].includes(value)) throw new Error("Choose an analysis provider.");
+    if (!["ollama", "openai", "builtin", "anthropic", "credits", "chatgpt"].includes(value)) throw new Error("Choose an analysis provider.");
     await persistAnalysisSettings({ analysisProvider: value });
     if (value !== "builtin" && !modelEngine.busy) await modelEngine.stop();
     return state();
@@ -1067,16 +1112,30 @@ else {
     logEvent(`Zebby starting (${app.getVersion()}, ${process.platform}/${process.arch}, profile ${app.getPath("userData")})`);
     store = new DesktopStore(storePaths?.recovery || app.getPath("userData"), logEvent);
     await loadSettings();
+    {
+      const { ChatGPTService } = await import("./chatgpt/chatgpt-service");
+      chatgpt = new ChatGPTService({ folder: app.getPath("userData"),
+        encrypt: value => { if (!safeStorage.isEncryptionAvailable()) throw new Error("Secure storage is unavailable."); return safeStorage.encryptString(value).toString("base64"); },
+        decrypt: value => safeStorage.decryptString(Buffer.from(value, "base64")), openBrowser: url => shell.openExternal(url),
+        changed: () => mainWindow?.webContents.send("chatgpt:changed", state()) });
+      await chatgpt.initialize();
+    }
     boardsStore = new BoardsStore(storePaths?.recovery || app.getPath("userData"));
     boards = new BoardsService(boardsStore, {
       profile: app.getPath("userData"), selection: selectedAnalysis, reader: signal => new BoardBrowser(signal),
-      canUseVision: (selected, signal) => selected.provider === "ollama" ? ollamaSupportsVision(selected.ollamaUrl, selected.model, signal)
+      canUseVision: (selected, signal) => selected.provider === "chatgpt" ? Promise.resolve(chatgpt?.supportsVision() === true) : selected.provider === "ollama" ? ollamaSupportsVision(selected.ollamaUrl, selected.model, signal)
         : Promise.resolve(selected.provider !== "builtin"),
       changed: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("boards:changed", boards.state); },
-      acknowledgeCached: async (selected, input, sourceId) => {
+      acknowledgeCached: async (selected, input, sourceId, context) => {
         if (selected.provider === "credits") await creditsClient.acknowledgeCachedSource({ kind: "board_extract", id: sourceId }, input);
+        if (selected.provider === "chatgpt" && context) {
+          const contract = boardModelContract(input);
+          await chatgpt!.jobs.appliedRequest({ version: 1, workspace: selected.workspace, target: `board_extract:${context.boardId}`,
+            revision: String(context.revision), account: selected.account, model: selected.model, thinking: selected.thinkingLevel,
+            name: contract.name, instructions: contract.instructions, schema: contract.schema, input });
+        }
       },
-      extract: async (selected, input, signal, sourceId) => {
+      extract: async (selected, input, signal, sourceId, context) => {
         if (selected.provider === "credits") {
           const source = { kind: "board_extract" as const, id: sourceId };
           const quote = await creditsClient.recoveryQuote(source, input) || await creditsClient.quote("board_extract", input, selected.model, selected.thinkingLevel);
@@ -1086,8 +1145,8 @@ else {
         }
         const contract = boardModelContract(input);
         const value = await analyzeWithSelectedProvider(contract.instructions, input, contract.name, contract.schema,
-          "The board links could not be read.", selected, signal);
-        return { value };
+          "The board links could not be read.", selected, signal, { quoteId: "", source: { kind: "board_extract", id: context?.boardId || sourceId }, revision: String(context?.revision || 1) });
+        return { value, acknowledge: selected.provider === "chatgpt" ? () => chatgpt!.jobs.applied(value) : undefined };
       },
     });
     if (store.status.filePath) await openPairedBoards();
@@ -1148,6 +1207,7 @@ else {
       event.preventDefault(); shuttingDown = true;
       logEvent("Zebby closing; stopping model workers and flushing logs");
       analysisRequests.cancelAll();
+      chatgpt?.stop();
       void Promise.all([boards?.stop(), modelDownloads?.pause(), modelEngine?.shutdown(), selfUpdater?.cancel()])
         .catch((error) => logDiagnostic("Could not stop the local model", error))
         .then(async () => { store?.close(); await boardsStore?.close(); await diagnosticLog.flush(); })

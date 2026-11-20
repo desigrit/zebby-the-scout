@@ -185,13 +185,18 @@ try {
     checks.push("Settings opens Microsoft Store; native IPC refuses GitHub installer download and installation.");
 
     const provider = page.getByRole("combobox", { name: "Analyze with", exact: true });
-    assert.deepEqual(await provider.locator("option").evaluateAll((options) => options.map((option) => option.value)), ["credits", "ollama", "builtin", "openai", "anthropic"]);
-    for (const name of ["credits", "ollama", "builtin", "openai", "anthropic"]) {
+    assert.deepEqual(await provider.locator("option").evaluateAll((options) => options.map((option) => option.value)), ["credits", "ollama", "builtin", "openai", "anthropic", "chatgpt"]);
+    for (const name of ["credits", "ollama", "builtin", "openai", "anthropic", "chatgpt"]) {
       await provider.selectOption(name);
       await page.waitForFunction(async (expected) => (await window.desktop.state()).analysisProvider === expected, name);
       if (name === "credits") await page.getByRole("region", { name: "Credits", exact: true }).getByRole("button", { name: "Buy credits", exact: true }).waitFor();
       if (name === "ollama") { await page.getByRole("textbox", { name: "Server URL", exact: true }).waitFor(); await page.getByRole("button", { name: "Test connection", exact: true }).click(); await page.getByText("Connected", { exact: true }).waitFor(); }
       if (name === "builtin") await page.getByRole("combobox", { name: "Local model", exact: true }).waitFor();
+      if (name === "chatgpt") {
+        await page.getByRole("button", { name: "Continue with ChatGPT", exact: true }).waitFor();
+        assert.equal((await page.evaluate(() => window.desktop.state())).chatgpt.available, true);
+        assert.equal(await page.getByText("ChatGPT plan (Private)", { exact: true }).count(), 0);
+      }
       if (name === "openai" || name === "anthropic") {
         assert.equal((await page.evaluate(() => window.desktop.state())).canSaveApiKey, true);
         const key = name === "openai" ? "sk-msix-qa-fixture" : "sk-ant-msix-qa-fixture";
@@ -204,7 +209,7 @@ try {
     assert.ok(!privateSettings.includes("sk-msix-qa-fixture") && !privateSettings.includes("sk-ant-msix-qa-fixture"));
     const encrypted = JSON.parse(privateSettings);
     assert.ok(encrypted.encryptedApiKey && encrypted.encryptedAnthropicKey);
-    checks.push("All five analysis providers remain selectable, local server connectivity works, and BYOK secrets use Windows encryption.");
+    checks.push("All six analysis providers are selectable, including ChatGPT plan; local connectivity and encrypted BYOK secrets work.");
     await page.screenshot({ path: path.join(output, "settings-store.png"), fullPage: true });
 
     await app.evaluate(({ dialog }, file) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: file }); }, path.join(profile, "unsafe.sqlite"));

@@ -8,8 +8,10 @@ import { OnlineModelSelect, ThinkingSelect, type ChangeAnalysisState } from "./T
 import ApiKeyField from "./ApiKeyField";
 import SettingsAction from "./SettingsAction";
 import { ErrorBanner } from "./WorkspaceFeedback";
+import ChatGPTSettings from "./ChatGPTSettings";
 
 export function providerReady(state: DesktopState, provider = state.analysisProvider) {
+  if (provider === "chatgpt") return Boolean(state.chatgpt?.connected && state.chatgpt.model && state.chatgpt.models.some(model => model.id === state.chatgpt?.model));
   if (provider === "openai") return state.hasApiKey;
   if (provider === "anthropic") return state.hasAnthropicKey;
   if (provider === "ollama") return Boolean(state.ollamaModel.trim());
@@ -63,10 +65,11 @@ export function AnalysisSettings({ state, onState, provider: suppliedProvider, o
   const onlineId = provider === "credits" ? state.credits.model : provider === "openai" ? state.openaiModel : state.anthropicModel;
   return <div className={`analysis-configuration${suppliedProvider ? " analysis-configuration-focused" : ""}`}>
     <div className="analysis-settings-group">
-      {!suppliedProvider && <div className="analysis-setting-row"><span className="analysis-setting-label">Analyze with</span><label className="field provider-field"><span>Analyze with</span><select value={provider} disabled={working}
+      {!suppliedProvider && <div className="analysis-setting-row"><span className="analysis-setting-label">Analyze with</span><label className="field provider-field"><span>Analyze with</span><select aria-label="Analyze with" value={provider} disabled={working}
         onChange={(event) => { setError(""); setNotice(""); void action(() => window.desktop!.setAnalysisProvider(event.target.value as AnalysisProvider)); }}>
         <option value="credits">Zebby credits</option><option value="ollama">Local server</option><option value="builtin">Downloaded model</option><option value="openai">OpenAI API key</option>
         <option value="anthropic">Anthropic API key</option>
+        {<option value="chatgpt">ChatGPT plan</option>}
       </select></label></div>}
       {provider === "ollama" && <div className="analysis-setting-row"><span className="analysis-setting-label">Server URL</span><div>
         <div className="server-connection-row"><label className="field"><span>Server URL</span><input type="url" value={url} spellCheck={false} disabled={working || finding}
@@ -78,7 +81,8 @@ export function AnalysisSettings({ state, onState, provider: suppliedProvider, o
         {connection && <p className="server-connection-status" role="status">{connection}</p>}
         <ErrorBanner message={connectionError} retry={() => void findModels(true)} busy={finding || working} />
       </div></div>}
-      <div className="analysis-setting-row"><span className="analysis-setting-label">Model</span>
+      {provider === "chatgpt" && <ChatGPTSettings state={state} onState={onState} onBusy={setWorking} />}
+      {provider !== "chatgpt" && <div className="analysis-setting-row"><span className="analysis-setting-label">Model</span>
       {provider === "ollama" ? <div className="analysis-server-model"><div className="ollama-model-row"><label className="field"><span>Model</span>
         <select value={models.includes(model) ? model : "custom"} disabled={working || finding}
           onChange={(event) => { const value = ["custom", "new-custom"].includes(event.target.value) ? "" : event.target.value; setModel(value); if (value) saveServer(url, value); }}>
@@ -93,11 +97,11 @@ export function AnalysisSettings({ state, onState, provider: suppliedProvider, o
       </div> : provider === "builtin" ? <LocalModelSelect state={state} onState={onState} disabled={working} onBusy={setWorking} />
         : <OnlineModelSelect state={state} onState={onState} provider={provider as "openai" | "anthropic" | "credits"} disabled={working} onBusy={setWorking}
           onLockedModel={() => openCredits("regular")} />}
-      </div>
+      </div>}
       {keyed && <div className="analysis-setting-row"><span className="analysis-setting-label">API key</span><ApiKeyField key={provider} state={state} onState={onState} provider={provider} disabled={working} onBusy={setWorking} onPendingChange={setKeyPending} /></div>}
-      <ThinkingSelect key={`${provider}:${provider === "builtin" ? state.builtInModelId : provider === "ollama" ? `${state.ollamaUrl}:${state.ollamaModel}` : onlineId}`}
+      {provider !== "chatgpt" && <ThinkingSelect key={`${provider}:${provider === "builtin" ? state.builtInModelId : provider === "ollama" ? `${state.ollamaUrl}:${state.ollamaModel}` : onlineId}`}
         state={state} onState={onState} provider={provider} model={provider === "builtin" ? state.builtInModelId : provider === "ollama" ? state.ollamaModel : onlineId}
-        disabled={working || provider === "ollama" && serverModelChanged} onBusy={setWorking} quiet />
+        disabled={working || provider === "ollama" && serverModelChanged} onBusy={setWorking} quiet />}
     </div>
     {provider === "builtin" && <LocalModelsSettings state={state} onState={onState} hideSelector />}
     {provider === "credits" && <div className="settings-actions"><SettingsAction variant="primary" icon={CreditCard} onClick={() => openCredits()}
