@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type { AccentColor } from "./accent-colors";
 
 contextBridge.exposeInMainWorld("desktop", {
     connectChatGPT: (account?: string) => ipcRenderer.invoke("chatgpt:connect", account),
@@ -85,6 +86,7 @@ contextBridge.exposeInMainWorld("desktop", {
   deleteLocalModel: (id: string) => ipcRenderer.invoke("desktop:delete-local-model", id),
   openModelFolder: () => ipcRenderer.invoke("desktop:open-model-folder"),
   setAppearance: (value: "auto" | "dark" | "light") => ipcRenderer.invoke("desktop:set-appearance", value),
+  setAccentColor: (value: AccentColor) => ipcRenderer.invoke("desktop:set-accent-color", value),
   setSidebarCollapsed: (value: boolean) => ipcRenderer.invoke("desktop:set-sidebar-collapsed", value),
   openLogs: () => ipcRenderer.invoke("desktop:open-logs"),
   downloadResume: (id: string) => ipcRenderer.invoke("desktop:download-resume", id),

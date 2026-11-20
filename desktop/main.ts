@@ -24,6 +24,7 @@ import { APP_NAME, configureApplicationProfile, migrateApplicationProfile, migra
 import { ReleaseUpdates } from "./release-updates";
 import { SelfUpdater } from "./self-update";
 import { nativeWindowShell, windowColors, type Appearance } from "./window-appearance";
+import { DEFAULT_ACCENT, isAccentColor, type AccentColor } from "./accent-colors";
 import { DiagnosticLog } from "./diagnostic-log";
 import { randomUUID, createHash } from "node:crypto";
 import { AnalysisRequests } from "./analysis-requests";
@@ -83,7 +84,7 @@ const analysisRequests = new AnalysisRequests((progress) => {
 const updates = new ReleaseUpdates({ version: app.getVersion(), platform: process.platform, arch: process.arch, channel: distributionChannel,
   onChange: (value) => mainWindow?.webContents.send("desktop:updates-changed", value),
   onError: (error) => logDiagnostic("Could not check for updates", error) });
-let settings: { databasePath?: string; encryptedApiKey?: string; appearance?: Appearance; sidebarCollapsed?: boolean;
+let settings: { databasePath?: string; encryptedApiKey?: string; appearance?: Appearance; accentColor?: AccentColor; sidebarCollapsed?: boolean;
   analysisProvider?: AnalysisProvider; ollamaUrl?: string; ollamaModel?: string; builtInModelId?: string;
   encryptedAnthropicKey?: string; encryptedCreditSession?: string; openaiModel?: string; anthropicModel?: string; creditModel?: string;
   thinkingLevels?: ThinkingPreferences;
@@ -117,7 +118,7 @@ async function saveSettings() {
   await settingsWrites;
 }
 let settingsWrites: Promise<unknown> = Promise.resolve();
-async function persistAnalysisSettings(change: Partial<typeof settings> | (() => Partial<typeof settings>)) {
+async function persistSettings(change: Partial<typeof settings> | (() => Partial<typeof settings>)) {
   settingsWrites = settingsWrites.catch(() => undefined).then(async () => {
     const patch = typeof change === "function" ? change() : change;
     await writeProfileSettings(settingsPath(), JSON.stringify({ ...settings, ...patch }, null, 2));
@@ -136,6 +137,7 @@ async function loadSettings() {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") { unreadableProfile = true; logDiagnostic("Could not read local settings", error); }
   }
   if (!["auto", "dark", "light"].includes(settings.appearance || "auto")) settings.appearance = "auto";
+  if (!isAccentColor(settings.accentColor)) settings.accentColor = DEFAULT_ACCENT;
   if (!["ollama", "openai", "builtin", "anthropic", "credits", "chatgpt"].includes(settings.analysisProvider || "")) {
     settings.analysisProvider = settings.encryptedApiKey ? "openai" : "ollama";
   }
@@ -220,6 +222,7 @@ function state() {
     totalMemory: totalmem(), availableMemory: freemem(),
     canSaveApiKey: safeStorage.isEncryptionAvailable(),
     appearance: settings.appearance || "auto", sidebarCollapsed: settings.sidebarCollapsed === true,
+    accentColor: settings.accentColor ?? DEFAULT_ACCENT,
     logsPath: logsPath(),
     platform: process.platform,
     distributionChannel,
@@ -855,7 +858,7 @@ function registerIpc() {
     const selected = onlineModel(model);
     if (!["openai", "anthropic", "credits"].includes(provider) || provider !== "credits" && selected.provider !== provider) throw new Error("Choose a model for this provider.");
     if (provider === "credits") creditModel(model);
-    await persistAnalysisSettings({ [provider === "credits" ? "creditModel" : provider === "openai" ? "openaiModel" : "anthropicModel"]: model });
+    await persistSettings({ [provider === "credits" ? "creditModel" : provider === "openai" ? "openaiModel" : "anthropicModel"]: model });
     paidQuotes.clear(); return state();
   });
   handle("desktop:set-thinking-level", async (_event, value: { provider: AnalysisProvider; model: string; level: string }) => {
@@ -874,13 +877,13 @@ function registerIpc() {
       if (!capability.options.some((item) => item.value === level)) throw new Error("Choose a thinking level supported by this model.");
     }
     const preferenceKey = thinkingKey(provider, model, settings.ollamaUrl || DEFAULT_OLLAMA_URL);
-    await persistAnalysisSettings(() => ({ thinkingLevels: { ...settings.thinkingLevels, [preferenceKey]: level } }));
+    await persistSettings(() => ({ thinkingLevels: { ...settings.thinkingLevels, [preferenceKey]: level } }));
     paidQuotes.clear(); return state();
   });
   handle("desktop:set-anthropic-key", async (_event, value: string) => {
     if (typeof value !== "string" || value.length > 500) throw new Error("Enter an Anthropic API key.");
     const next = value.trim();
-    await persistAnalysisSettings({ encryptedAnthropicKey: next && safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(next).toString("base64") : undefined });
+    await persistSettings({ encryptedAnthropicKey: next && safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(next).toString("base64") : undefined });
     anthropicKey = next; return state();
   });
   handle("desktop:cancel-analysis", (_event, id: string) => {
@@ -928,6 +931,10 @@ function registerIpc() {
     await saveSettings();
     return state();
   });
+  handle("desktop:set-accent-color", async (_event, value: unknown) => {
+    if (!isAccentColor(value)) throw new Error("Choose an accent color.");
+    await persistSettings({ accentColor: value });
+  });
   handle("desktop:set-sidebar-collapsed", async (_event, value: boolean) => {
     if (typeof value !== "boolean") throw new Error("Choose a navigation layout.");
     const previous = settings.sidebarCollapsed;
@@ -946,13 +953,13 @@ function registerIpc() {
   handle("desktop:set-api-key", async (_event, value: string) => {
     if (typeof value !== "string" || value.length > 500) throw new Error("The API key is invalid.");
     const next = value.trim();
-    await persistAnalysisSettings({ encryptedApiKey: next && safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(next).toString("base64") : undefined });
+    await persistSettings({ encryptedApiKey: next && safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(next).toString("base64") : undefined });
     apiKey = next;
     return state();
   });
   handle("desktop:set-analysis-provider", async (_event, value: AnalysisProvider) => {
     if (!["ollama", "openai", "builtin", "anthropic", "credits", "chatgpt"].includes(value)) throw new Error("Choose an analysis provider.");
-    await persistAnalysisSettings({ analysisProvider: value });
+    await persistSettings({ analysisProvider: value });
     if (value !== "builtin" && !modelEngine.busy) await modelEngine.stop();
     return state();
   });
@@ -961,7 +968,7 @@ function registerIpc() {
         value.model.length > 200 || /[\r\n]/.test(value.model)) {
       throw new Error("Enter an Ollama server URL and model.");
     }
-    await persistAnalysisSettings({ ollamaUrl: normalizeOllamaUrl(value.url), ollamaModel: value.model.trim() });
+    await persistSettings({ ollamaUrl: normalizeOllamaUrl(value.url), ollamaModel: value.model.trim() });
     return state();
   });
   handle("desktop:list-ollama-models", async (_event, url: string) => {
