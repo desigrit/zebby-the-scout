@@ -127,7 +127,7 @@ export class ChatGPTService {
       throw new ChatGPTPlanError("The ChatGPT connection was interrupted. Retry to run the unfinished analysis.");
     }
   }
-  async analyze(request: JobRequest, signal: AbortSignal) {
+  async analyze(request: JobRequest, signal: AbortSignal, batchId?: string) {
     if (!this.initialized) throw new ChatGPTPlanError("Connect ChatGPT in Settings first.", "signin");
     if (request.account !== this.auth.active) throw new ChatGPTPlanError("The ChatGPT account changed. Retry the analysis.", "signin");
     const controller = new AbortController(); this.controllers.add(controller);
@@ -149,7 +149,7 @@ export class ChatGPTService {
         }
         if (request.name.startsWith("board_")) validatedBoardExtraction(value, request.input as BoardExtractionInput);
         if (request.name === "tailored_resume") applyResumeEdits((request.input as { resumeBlocks: ResumeBlock[] }).resumeBlocks, value);
-      });
+      }, batchId);
     } finally { this.controllers.delete(controller); this.deps.changed(); }
   }
   async testConnection() {

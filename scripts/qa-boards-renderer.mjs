@@ -457,7 +457,8 @@ export async function checkBoardsRenderer(page, nav) {
   await page.evaluate(() => { document.documentElement.dataset.theme = "light"; });
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
   const syncHint = page.getByText("Quit Zebby and let both files sync before switching computers.", { exact: true });
-  await syncHint.waitFor();
+  await page.getByRole("heading", { name: "Database", exact: true }).waitFor();
+  assert.equal(await syncHint.count(), 0);
   await capture("boards-settings-spacing");
   const automatic = page.getByRole("checkbox", { name: "Automatically try a thorough check", exact: true });
   assert.equal(await automatic.isChecked(), true); await automatic.uncheck();

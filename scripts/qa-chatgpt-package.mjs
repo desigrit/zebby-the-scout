@@ -54,6 +54,7 @@ try {
   assert.equal(state.chatgpt.jobs.find(job => job.id === jobId).attempts[0].usage.totalTokens, 140);
   // Exercise the real native bridge while recording the requested folder instead of launching Explorer.
   await app.evaluate(({ shell }) => { globalThis.openedJobFolders = []; shell.openPath = async folder => { globalThis.openedJobFolders.push(folder); return ""; }; });
+  await page.getByRole("button", { name: "Usage", exact: true }).click();
   await page.getByRole("button", { name: "Run details for Application match", exact: true }).click();
   await page.waitForFunction(() => document.querySelector(".chatgpt-run-details")?.disabled === false);
   assert.deepEqual(await app.evaluate(() => globalThis.openedJobFolders), [path.join(profile, "analysis-jobs", jobId)]);

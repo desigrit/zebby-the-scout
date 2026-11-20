@@ -2,10 +2,10 @@ export type ChatGPTModel = { id: string; name: string; thinking: string[]; defau
 export type ChatGPTTokenUsage = { inputTokens: number; outputTokens: number; totalTokens: number;
   cachedInputTokens?: number; cacheWriteInputTokens?: number; reasoningTokens?: number };
 export type ChatGPTUsageReport = { usage?: ChatGPTTokenUsage; responseId?: string; model?: string };
-export type ChatGPTJobAttempt = ChatGPTUsageReport & { id: string; startedAt: string; finishedAt?: string;
+export type ChatGPTJobAttempt = ChatGPTUsageReport & { id: string; startedAt: string; finishedAt?: string; batchId?: string;
   state: string; requestStarted?: boolean };
 export type ChatGPTJobSummary = { id: string; name: string; state: string; createdAt: string; updatedAt?: string; error: string;
-  model?: string; thinking?: string; attempts?: ChatGPTJobAttempt[]; reuseCount?: number; lastReusedAt?: string };
+  model?: string; thinking?: string; attempts?: ChatGPTJobAttempt[]; reuseCount?: number; lastReusedAt?: string; boardCount?: number };
 export type ChatGPTState = {
   available: boolean; connected: boolean; connecting: boolean; account: string; activeAccount: string;
   accounts: { id: string; label: string }[]; models: ChatGPTModel[]; model: string; thinking: string;

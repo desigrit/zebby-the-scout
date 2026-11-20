@@ -405,13 +405,13 @@ try {
   await bounds(1550);
   await nav.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("radiogroup", { name: "Appearance" }).waitFor(); await capture("settings-ollama-light");
-  const accents = page.getByRole("radiogroup", { name: "Accent color" });
+  const accents = page.getByRole("radiogroup", { name: "Theme", exact: true });
   assert.equal(await accents.getByRole("radio", { name: "Ember" }).isChecked(), true);
   await accents.getByRole("radio", { name: "Pine" }).check();
   await page.waitForFunction(() => document.documentElement.dataset.accent === "pine");
   await page.waitForFunction(async () => (await window.desktop.state()).accentColor === "pine");
   assert.equal(JSON.parse(await readFile(path.join(profile, "settings.json"), "utf8")).accentColor, "pine");
-  await assert.rejects(page.evaluate(() => window.desktop.setAccentColor("unknown")), /Choose an accent color/);
+  await assert.rejects(page.evaluate(() => window.desktop.setAccentColor("unknown")), /Choose a theme/);
   assert.equal(await page.evaluate(async () => (await window.desktop.state()).accentColor), "pine");
   await accents.getByRole("radio", { name: "Ember" }).check();
   await page.waitForFunction(() => document.documentElement.dataset.accent === "ember");

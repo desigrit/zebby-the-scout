@@ -426,7 +426,7 @@ try {
       },
       setAppearance: async (appearance) => { initialState.appearance = appearance; return snapshot(); },
       setAccentColor: async (color) => {
-        if (window.modelQA.rejectAccentSave) throw new Error("Could not save the accent color.");
+        if (window.modelQA.rejectAccentSave) throw new Error("Could not save the theme.");
         initialState.accentColor = color;
       },
       setSidebarCollapsed: async (collapsed) => {
@@ -1158,7 +1158,7 @@ try {
   assert.equal(await page.getByRole("switch", { name: /logs|errors/i }).count(), 0);
   assert.equal(await page.getByRole("button", { name: "Create database copy", exact: true }).count(), 0);
   assert.doesNotMatch(await page.locator(".settings-page").innerText(), /weekly backups|Logs may include/i);
-  assert.equal(await page.getByText("Quit Zebby and let both files sync before switching computers.", { exact: true }).count(), 1);
+  assert.equal(await page.getByText("Quit Zebby and let both files sync before switching computers.", { exact: true }).count(), 0);
   await page.getByRole("button", { name: "Create new database", exact: true }).click();
   await page.getByRole("button", { name: "Open database", exact: true }).click();
   assert.deepEqual(await page.evaluate(() => window.modelQA.databaseRequests), ["create", "open"]);
@@ -1334,14 +1334,14 @@ try {
   await page.getByText("Installed", { exact: true }).waitFor();
   assert.equal(await page.getByText("Installed", { exact: true }).count(), 1);
   await captureSettings("settings-windows-ready.png");
-  const palette = page.getByRole("radiogroup", { name: "Accent color" });
+  const palette = page.getByRole("radiogroup", { name: "Theme", exact: true });
   const colors = await palette.getByRole("radio").evaluateAll(radios => radios.map(radio => radio.value));
   assert.deepEqual(colors, ["ember", "ochre", "pine", "harbor", "plum"]);
   assert.equal(await palette.getByRole("radio", { name: "Ember", exact: true }).isChecked(), true);
   await page.evaluate(() => { window.modelQA.rejectAccentSave = true; });
   // A rejected click restores the committed radio, so check() would time out here.
   await palette.getByRole("radio", { name: "Pine" }).click();
-  const accentError = page.getByRole("alert").filter({ hasText: "Could not save the accent color." });
+  const accentError = page.getByRole("alert").filter({ hasText: "Could not save the theme." });
   await accentError.waitFor();
   assert.equal(await palette.getByRole("radio", { name: "Ember" }).isChecked(), true);
   await page.evaluate(() => { window.modelQA.rejectAccentSave = false; });
@@ -1350,7 +1350,8 @@ try {
   const lightFills = new Map();
   function contrast(a, b) {
     function luminance(rgb) {
-      const channels = rgb.match(/[\d.]+/g).slice(0, 3).map(value => Number(value) / 255)
+      const scale = rgb.startsWith("color(srgb ") ? 1 : 255;
+      const channels = rgb.match(/[\d.]+/g).slice(0, 3).map(value => Number(value) / scale)
         .map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
       return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
     }
@@ -1360,7 +1361,7 @@ try {
   for (const mode of ["light", "dark"]) {
     await page.getByRole("radio", { name: mode === "light" ? "Light" : "Dark", exact: true }).check();
     await page.waitForFunction(mode => document.documentElement.dataset.theme === mode, mode);
-    const fills = new Set();
+    const fills = new Set(), canvases = new Set(), sidebars = new Set();
     for (const color of colors) {
       const radio = palette.locator(`input[value="${color}"]`);
       await radio.check();
@@ -1369,6 +1370,11 @@ try {
       const fill = await chip.evaluate(element => getComputedStyle(element).backgroundColor);
       const checkInk = await chip.evaluate(element => getComputedStyle(element).color);
       const wash = await page.locator(".appearance-option.selected").evaluate(element => getComputedStyle(element).backgroundColor);
+      const canvas = await page.locator(".desktop-titlebar").evaluate(element => getComputedStyle(element).backgroundColor);
+      const sidebar = await page.locator(".desktop-sidebar").evaluate(element => getComputedStyle(element).backgroundColor);
+      const secondary = await page.locator(".accent-name").evaluate(element => getComputedStyle(element).color);
+      canvases.add(canvas); sidebars.add(sidebar);
+      assert.ok(contrast(fill, canvas) >= 4.5 && contrast(secondary, sidebar) >= 4.5, `Theme contrast for ${color} in ${mode}`);
       assert.ok(contrast(fill, checkInk) >= 4.5 && contrast(fill, wash) >= 4.5, `${color} in ${mode}`);
       if (mode === "light") lightFills.set(color, fill);
       else assert.notEqual(fill, lightFills.get(color));
@@ -1381,8 +1387,14 @@ try {
           path: path.join(output, filename),
         });
       }
+      if (color === "harbor" && (captureImages || process.env.ZEBBY_CAPTURE_BOARDS === "1")) {
+        await palette.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: path.join(output, `theme-harbor-${mode}.png`), animations: "disabled" });
+      }
     }
     assert.equal(fills.size, colors.length);
+    assert.equal(canvases.size, colors.length);
+    assert.equal(sidebars.size, colors.length);
   }
   await palette.getByRole("radio", { name: "Plum" }).press("ArrowLeft");
   await page.waitForFunction(() => document.documentElement.dataset.accent === "harbor");

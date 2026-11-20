@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { configureApplicationProfile, migrateApplicationProfile, migrateModelFolder } from "../desktop/app-identity.ts";
 import { nativeWindowShell, windowColors } from "../desktop/window-appearance.ts";
+import { THEME_CANVAS } from "../desktop/accent-colors.ts";
 
 test("Zebby migrates the profile, internal database path, logs, models, and encrypted settings without changing originals", async () => {
   const fixture = await mkdtemp(path.join(tmpdir(), "zebby-identity-"));
@@ -127,6 +128,10 @@ test("the integrated shell retains native controls on Windows and Mac", () => {
 });
 
 test("explicit appearance overrides the OS while Auto follows it", () => {
+  for (const [name, canvas] of Object.entries(THEME_CANVAS)) {
+    assert.equal(nativeWindowShell("win32", "auto", true, name).titleBarOverlay.color, canvas.dark);
+    assert.equal(nativeWindowShell("darwin", "light", true, name).backgroundColor, canvas.light);
+  }
   for (const systemDark of [true, false]) {
     assert.equal(windowColors("light", systemDark).background, "#f8f6f3");
     assert.equal(windowColors("dark", systemDark).background, "#24201e");

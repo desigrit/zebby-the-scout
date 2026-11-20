@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Cpu, Download, FolderOpen, Pause, Play, RotateCw, Square } from "lucide-react";
+import { ArrowUpRight, Check, ChevronDown, Cpu, Download, Pause, Play, RotateCw, Square } from "lucide-react";
 import { useRef, useState } from "react";
 import { formatModelBytes, LOCAL_MODELS, type LocalModel, type LocalModelStatus } from "../local-model-catalog";
 import type { DesktopState } from "../bridge";
@@ -174,7 +174,7 @@ export default function LocalModelsSettings({ state, onState, hideSelector = fal
             </> : model.id === selected?.id ? null : controls(model, status, true)}
           </div></li>;
       })}</ul> : <p className="settings-help model-library-empty">No models downloaded. Choose a model above to start.</p>}
-      <div className="model-storage-footer"><button className="settings-link" type="button" onClick={() => void openFolder()}><FolderOpen size={15} aria-hidden="true" /> Open model folder</button>
+      <div className="model-storage-footer"><button className="settings-link" type="button" onClick={() => void openFolder()}>Open model folder <ArrowUpRight size={15} aria-hidden="true" /></button>
         <details className="analysis-sharing model-storage-help"><summary>Storage and privacy</summary>
           <p>Models stay in Zebby&apos;s data folder through updates.
             {state.platform === "darwin" ? " Delete models here before removing Zebby from your Mac." : " Uninstalling Zebby removes these downloads."}</p></details>

@@ -194,6 +194,61 @@ test("Usage includes every job active in the last seven days, with an inclusive 
   assert.equal(jobs.summaries.length, 36, "The display window advances without removing a folder");
   assert.equal(await jobs.folderFor(boundary), path.join(folder, boundary));
 }));
+test("Check all groups measured requests by click, counts cached work once, and survives restart", () => fixture(async folder => {
+  const jobs = new AnalysisJobs(folder); await jobs.initialize();
+  const first = jobs.createBoardBatch(request.model, request.thinking, 3);
+  await first.start();
+  const board = target => ({ ...request, target, name: "board_extract" });
+  const execute = async activity => {
+    await activity.started();
+    await activity.usage({ usage: { inputTokens: 80, outputTokens: 20, totalTokens: 100, cachedInputTokens: 30, reasoningTokens: 10 } });
+    return { score: 82 };
+  };
+  for (const target of ["one", "two"]) {
+    const value = await jobs.run(board(target), signal(), execute, undefined, first.id);
+    await jobs.applied(value, first.id);
+  }
+  await jobs.appliedRequest(board("three"), first.id);
+  await first.finish("completed");
+  const second = jobs.createBoardBatch(request.model, request.thinking, 1);
+  await second.start();
+  await jobs.run(board("one"), signal(), assert.fail, undefined, second.id);
+  await second.finish("completed");
+  const restored = new AnalysisJobs(folder); await restored.initialize();
+  assert.equal(restored.summaries.length, 2);
+  const batch = restored.summaries.find(item => item.id === first.id);
+  assert.equal(batch.boardCount, 3); assert.equal(batch.state, "completed"); assert.equal(batch.reuseCount, 1);
+  assert.equal(batch.attempts.length, 2);
+  const { usage } = summarizeChatGPTUsage(batch.attempts);
+  assert.deepEqual(usage, { inputTokens: 160, outputTokens: 40, totalTokens: 200, cachedInputTokens: 60, reasoningTokens: 20 });
+  const report = JSON.parse(await readFile(path.join(await restored.folderFor(first.id), "run.json"), "utf8"));
+  assert.deepEqual(report.usage, usage);
+  assert.deepEqual(new Set(report.requests.map(entry => entry.jobId)), new Set([jobDigest(board("one")), jobDigest(board("two"))]));
+  const cacheOnly = restored.summaries.find(item => item.id === second.id);
+  assert.equal(cacheOnly.attempts.length, 0); assert.equal(cacheOnly.reuseCount, 1);
+  await restored.run(board("one"), signal(), assert.fail);
+  const single = restored.summaries.find(item => item.id === jobDigest(board("one")));
+  assert.equal(single.reuseCount, 1); assert.equal(single.attempts.length, 0);
+}));
+test("standalone retries and interrupted Check all runs keep separate usage and unknown counts", () => fixture(async folder => {
+  const jobs = new AnalysisJobs(folder); await jobs.initialize();
+  const task = { ...request, name: "board_extract" };
+  await assert.rejects(jobs.run(task, signal(), async activity => {
+    await activity.started(); await activity.usage({ usage: { inputTokens: 8, outputTokens: 2, totalTokens: 10 } });
+    throw new Error("First attempt failed");
+  }), /First attempt failed/);
+  const group = jobs.createBoardBatch(request.model, request.thinking, 1); await group.start();
+  await assert.rejects(jobs.run(task, signal(), async activity => {
+    await activity.started(); throw new Error("Connection ended");
+  }, undefined, group.id), /Connection ended/);
+  const restored = new AnalysisJobs(folder); await restored.initialize();
+  const batch = restored.summaries.find(item => item.id === group.id);
+  assert.equal(batch.state, "interrupted"); assert.equal(batch.attempts.length, 1);
+  assert.equal(summarizeChatGPTUsage(batch.attempts).missing, 1);
+  const single = restored.summaries.find(item => item.id === jobDigest(task));
+  assert.equal(single.state, "failed"); assert.equal(single.attempts.length, 1);
+  assert.equal(summarizeChatGPTUsage(single.attempts).usage.totalTokens, 10);
+}));
 test("view job only resolves known real job directories", () => fixture(async folder => {
   const jobs = new AnalysisJobs(folder); await jobs.initialize();
   await jobs.run(request, signal(), async () => ({ score: 82 }));

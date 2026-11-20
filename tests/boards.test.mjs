@@ -388,6 +388,32 @@ test("coordinator deduplicates concurrent checks and reuses validated extraction
   await service.stop();
 }));
 
+test("only an explicit ChatGPT Check all groups its eligible boards and cached requests", () => fixture(async ({ store, profile }) => {
+  const ids = await store.add([saved, { company: "Second board", url: saved.url + "&department=Design" }]);
+  const events = [], groups = [], contexts = [];
+  let provider = "chatgpt";
+  const service = new BoardsService(store, { profile, selection: () => ({ provider, model: "chosen", thinkingLevel: "high" }),
+    reader: () => readerFor([page([1])]), changed() {},
+    createUsageBatch: (_selection, count) => {
+      const id = "group-" + groups.length; groups.push({ id, count });
+      return { id, start: async () => { events.push("start"); }, finish: async result => { events.push(result); } };
+    },
+    extract: async (_selected, input, _signal, _source, context) => { contexts.push(context); return { value: await allLinks(input) }; },
+    acknowledgeCached: async (_selected, _input, _source, context) => { contexts.push(context); },
+  });
+  const wait = async () => { while (service.busy) await new Promise(resolve => setTimeout(resolve, 5)); await service.stop(); };
+  service.check(); service.check(); await wait();
+  assert.deepEqual(groups, [{ id: "group-0", count: 2 }]); assert.deepEqual(events, ["start", "completed"]);
+  assert.deepEqual(new Set(contexts.map(item => item.boardId)), new Set(ids));
+  assert.ok(contexts.every(item => item.batchId === "group-0"));
+  contexts.length = 0; service.check([ids[0]]); await wait();
+  assert.equal(contexts.length, 1); assert.equal(contexts[0].batchId, undefined);
+  service.check(); for (const id of ids) service.cancel(id); await wait();
+  assert.deepEqual(events.slice(-2), ["start", "cancelled"]);
+  provider = "openai"; service.check(); await wait();
+  assert.equal(groups.length, 2);
+}));
+
 test("personal keys send Boards decisions directly to the selected online provider", async () => {
   const input = { task: "roles", criteria: "Product managers only", candidates: [{ id: "l0", url: saved.url, text: "Product Manager" }] };
   const decisions = { decisions: { l0: true } };

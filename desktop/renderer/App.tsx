@@ -9,7 +9,7 @@ import AnalysisErrorBanner from "./AnalysisErrorBanner";
 import { ErrorBanner, ErrorStyleProvider, SavedFeedbackProvider, useSavedFeedback } from "./WorkspaceFeedback";
 import { pasteJobDescription } from "../../lib/job-text-paste";
 import type { DesktopState } from "../bridge";
-import { ACCENT_COLORS, DEFAULT_ACCENT, type AccentColor } from "../accent-colors";
+import { ACCENT_COLORS, DEFAULT_ACCENT, THEME_CANVAS, type AccentColor } from "../accent-colors";
 import type { Plan, PlanInput } from "../store";
 import type { Application, Resume } from "../../lib/application-types";
 import { AnalysisSettings } from "./AnalysisSettings";
@@ -503,7 +503,7 @@ function PlanView({ analysisProvider, ollamaModel, builtInModelId, builtInReady,
             return <button key={file.id} type="button" className="tailored-resume-file" title="Show in folder" onClick={() => {
               const reveal = () => { void window.desktop!.revealTailoredResume(selectedPlan.id, format).catch(cause => setError(errorText(cause))); };
               retryAction.current = reveal; reveal();
-            }}><FileText size={18} aria-hidden="true" /><span>{file.filename}</span><span className="file-format">{format === "docx" ? "Word" : "PDF"}</span><FolderOpen size={15} aria-hidden="true" /></button>;
+            }}><FileText size={18} aria-hidden="true" /><span>{file.filename}</span><span className="file-format">{format === "docx" ? "Word" : "PDF"}</span><ArrowUpRight size={15} aria-hidden="true" /></button>;
           })}</div>}
           {selectedPlan?.tailoredResume?.layoutNote && <p className="field-help">{selectedPlan.tailoredResume.layoutNote}</p>}
         </div>}
@@ -599,7 +599,6 @@ function SettingsView({ state, onState, accentColor, onAccentChange, onUpdate, o
           {state.dirty && <SettingsAction variant="primary" icon={RotateCw} onClick={() => void retry()} disabled={working}>Retry save</SettingsAction>}
         </div>
         {state.filePath && <BoardsDatabaseSettings onReady={onBoardsReady} />}
-        <p className="settings-help">Quit Zebby and let both files sync before switching computers.</p>
       </div>
     </section>
     <section className="settings-section" aria-labelledby="ai-settings">
@@ -617,7 +616,7 @@ function SettingsView({ state, onState, accentColor, onAccentChange, onUpdate, o
             <Icon size={17} aria-hidden="true" /><span>{label}</span>
           </label>)}</div>
         <fieldset className="accent-picker" role="radiogroup" aria-labelledby="accent-color-label">
-          <legend id="accent-color-label">Accent color</legend>
+          <legend id="accent-color-label">Theme</legend>
           <div className="accent-picker-row">
             {(Object.keys(ACCENT_COLORS) as AccentColor[]).map(color =>
               <label key={color} className="accent-option" data-accent={color} title={ACCENT_COLORS[color]}>
@@ -651,9 +650,9 @@ function SettingsView({ state, onState, accentColor, onAccentChange, onUpdate, o
         <div className="settings-actions">
           {!state.updates.available && !state.updates.error && <SettingsAction icon={RefreshCw} busy={state.updates.checking}
             onClick={() => void checkUpdates()} disabled={state.updates.checking}>Check for updates</SettingsAction>}
+          {!state.updates.available && !state.updates.error && state.updates.checkedAt && !state.updates.checking && <span className="update-current" role="status">Up to date</span>}
           {!state.updates.download.error && <UpdateButton updates={state.updates} working={updateWorking} onClick={onUpdate} settings />}
         </div>
-        {!state.updates.available && !state.updates.error && state.updates.checkedAt && !state.updates.checking && <p className="settings-help" role="status">Up to date</p>}
         {state.updates.available && <a className="settings-link" href={state.updates.available.releaseUrl} target="_blank" rel="noopener noreferrer">
           Release notes <ArrowUpRight size={15} aria-hidden="true" /></a>}
         <ErrorBanner message={state.updates.download.error || (state.updates.error ? "Could not check for updates." : "")}
@@ -809,6 +808,8 @@ export default function App() {
 
   useLayoutEffect(() => {
     document.documentElement.dataset.accent = accentColor;
+    const { light, dark } = THEME_CANVAS[accentColor];
+    document.documentElement.style.setProperty("--theme-canvas", `light-dark(${light}, ${dark})`);
   }, [accentColor]);
 
   useLayoutEffect(() => {

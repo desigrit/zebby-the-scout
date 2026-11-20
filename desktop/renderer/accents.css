@@ -39,6 +39,18 @@
   --tone-selection: light-dark(#e3d0df, #654d60);
 }
 
+html[data-accent]:not([data-accent="ember"]) {
+  --canvas: var(--theme-canvas);
+  --paper: light-dark(color-mix(in srgb, var(--canvas) 30%, white), color-mix(in srgb, var(--canvas) 93%, white));
+  --forest: light-dark(color-mix(in srgb, var(--canvas) 85%, var(--tone-solid)), color-mix(in srgb, var(--canvas) 78%, black));
+  --field: light-dark(var(--paper), color-mix(in srgb, var(--canvas) 89%, white));
+  --surface-hover: light-dark(color-mix(in srgb, var(--canvas) 94%, var(--tone-solid)), color-mix(in srgb, var(--canvas) 86%, white));
+  --line: light-dark(color-mix(in srgb, var(--canvas) 76%, var(--tone-solid)), color-mix(in srgb, var(--canvas) 78%, var(--tone)));
+  --line-strong: light-dark(color-mix(in srgb, var(--canvas) 44%, var(--tone-solid)), color-mix(in srgb, var(--canvas) 42%, var(--tone)));
+  --ink-soft: light-dark(color-mix(in srgb, #494848 78%, var(--tone-solid)), color-mix(in srgb, #c9c7c4 82%, var(--tone)));
+  --ink-faint: var(--ink-soft);
+}
+
 .accent-picker { margin-top: 16px; }
 .accent-picker legend { padding: 0; color: var(--ink); font-size: 12px; font-weight: 600; }
 .accent-picker-row { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; margin: 4px 0 0 -4px; }
