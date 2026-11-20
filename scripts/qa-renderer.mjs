@@ -1347,6 +1347,16 @@ try {
   await page.evaluate(() => { window.modelQA.rejectAccentSave = false; });
   await accentError.getByRole("button", { name: "Retry" }).click();
   await page.waitForFunction(() => document.documentElement.dataset.accent === "pine");
+  const lightFills = new Map();
+  function contrast(a, b) {
+    function luminance(rgb) {
+      const channels = rgb.match(/[\d.]+/g).slice(0, 3).map(value => Number(value) / 255)
+        .map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+      return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+    }
+    const first = luminance(a), second = luminance(b);
+    return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+  }
   for (const mode of ["light", "dark"]) {
     await page.getByRole("radio", { name: mode === "light" ? "Light" : "Dark", exact: true }).check();
     await page.waitForFunction(mode => document.documentElement.dataset.theme === mode, mode);
@@ -1357,12 +1367,18 @@ try {
       await page.waitForFunction(color => document.documentElement.dataset.accent === color, color);
       const chip = radio.locator("+ .accent-chip");
       const fill = await chip.evaluate(element => getComputedStyle(element).backgroundColor);
+      const checkInk = await chip.evaluate(element => getComputedStyle(element).color);
+      const wash = await page.locator(".appearance-option.selected").evaluate(element => getComputedStyle(element).backgroundColor);
+      assert.ok(contrast(fill, checkInk) >= 4.5 && contrast(fill, wash) >= 4.5, `${color} in ${mode}`);
+      if (mode === "light") lightFills.set(color, fill);
+      else assert.notEqual(fill, lightFills.get(color));
       assert.equal(fill, await page.locator(".analysis-guide-link").evaluate(element => getComputedStyle(element).color));
       assert.equal(await chip.locator("svg").isVisible(), true);
       fills.add(fill);
-      if (color === "harbor") {
+      const filename = `accent-picker-${mode}.png`;
+      if (color === "harbor" && (captureImages || captureNames.includes(filename))) {
         await page.locator('section[aria-labelledby="appearance-settings"]').screenshot({
-          path: path.join(output, `accent-picker-${mode}.png`),
+          path: path.join(output, filename),
         });
       }
     }
