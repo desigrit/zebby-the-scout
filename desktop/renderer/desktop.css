@@ -275,6 +275,21 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .listing-link:hover { text-decoration: underline; }
 .application-row .row-actions button { width: 30px; height: 30px; }
 .desktop-shell .status-select { height: 30px; font-size: 11px; font-weight: 600; }
+.status-select, .status-field { display: inline-flex; align-items: center; justify-content: space-between; gap: 6px; text-align: left; }
+.desktop-shell .status-select { padding-inline: 10px 7px; }
+.desktop-shell .status-select[data-staged] { height: 38px; }
+.status-selection { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.status-selection small { font-size: 10px; font-weight: 450; }
+.status-select svg, .status-field svg, .status-menu-item svg { flex: none; }
+.status-field { width: 100%; min-height: 37px; padding: 5px 10px 5px 12px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--paper); color: var(--ink); font: inherit; font-size: 13px; }
+.status-field .status-selection { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 0 8px; }
+.status-field .status-selection small { color: var(--ink-soft); font-size: 12px; }
+.status-menu { z-index: 160; min-width: 168px; max-height: var(--radix-dropdown-menu-content-available-height); overflow: auto; padding: 4px; border-radius: 7px; background: var(--paper); color: var(--ink); box-shadow: 0 4px 18px #0003; outline: none; }
+.status-menu-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; padding: 4px 9px; border-radius: 4px; outline: none; font-size: 13px; cursor: default; }
+.status-menu-item[data-highlighted], .status-menu-item[data-state="open"] { color: var(--ink); background: var(--surface-hover); }
+.status-menu-item > span { display: inline-flex; color: var(--accent); }
+.status-menu-separator { margin: 3px 6px; height: 1px; background: var(--line); }
+@media (forced-colors: active) { .status-menu { border: 1px solid CanvasText; } .status-menu-item[data-highlighted] { outline: 1px solid Highlight; } }
 .desktop-shell .status-select:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; box-shadow: none; }
 .application-row-metrics .match-control { flex: none; width: 104px; justify-content: flex-start; }
 .match-control .score-track { width: 34px; }

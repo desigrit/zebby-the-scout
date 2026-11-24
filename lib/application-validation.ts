@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { APPLICATION_STATUSES, MAX_APPLICATION_NOTES_CHARS } from "./application-types";
+import { APPLICATION_STATUSES, MAX_APPLICATION_NOTES_CHARS, REJECTION_STAGES } from "./application-types";
 
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
   const date = new Date(`${value}T12:00:00Z`);
@@ -26,4 +26,5 @@ export const applicationInputSchema = z.object({
   matchStrength: z.number().int().min(0).max(100).nullable().default(null),
   resumeId: z.union([z.literal(""), z.string().uuid()]).default(""),
   status: z.enum(APPLICATION_STATUSES).default("Applied"),
+  rejectionStage: z.enum(REJECTION_STAGES).nullable().optional(),
 });

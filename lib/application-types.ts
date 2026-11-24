@@ -10,6 +10,19 @@ export const MAX_APPLICATION_NOTES_CHARS = 200_000;
 
 export type ApplicationStatus = (typeof APPLICATION_STATUSES)[number];
 
+export const REJECTION_STAGES = [
+  "After application",
+  "After recruiter screen",
+  "After pre-loop",
+  "After full loop",
+] as const;
+export type RejectionStage = (typeof REJECTION_STAGES)[number];
+
+export type ApplicationOutcome = {
+  status: ApplicationStatus;
+  rejectionStage?: RejectionStage | null;
+};
+
 export type Resume = {
   id: string;
   filename: string;
@@ -18,7 +31,7 @@ export type Resume = {
   createdAt: string;
 };
 
-export type Application = {
+export type Application = ApplicationOutcome & {
   id: string;
   company: string;
   title: string;
@@ -36,7 +49,6 @@ export type Application = {
   matchAnalyzedAt: string;
   resumeId: string;
   resumeName: string;
-  status: ApplicationStatus;
   createdAt: string;
   updatedAt: string;
 };
@@ -56,4 +68,5 @@ export type ApplicationInput = Pick<
   | "matchStrength"
   | "resumeId"
   | "status"
+  | "rejectionStage"
 >;

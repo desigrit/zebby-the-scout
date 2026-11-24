@@ -1028,14 +1028,34 @@ try {
   assert.equal(await page.locator('.activity-legend').count(), 0);
   const statusDay = page.locator('.activity-day[data-date="2026-09-29"]');
   const originalBarHeight = await statusDay.locator('.activity-bar').evaluate(element => element.getBoundingClientRect().height);
-  const firstStatus = firstRow.getByRole('combobox', { name: 'Status for Senior Product Manager at Expedia Group', exact: true });
-  assert.equal(await firstStatus.locator('option').count(), 5);
+  const firstStatus = firstRow.getByRole('button', { name: /^Status for Senior Product Manager at Expedia Group,/ });
+  async function chooseStatus(trigger, status, stage) {
+    await trigger.click();
+    const menu = page.getByRole('menu', { name: await trigger.getAttribute('aria-label'), exact: true });
+    if (status !== 'Rejected') {
+      await menu.getByRole('menuitemradio', { name: status, exact: true }).click();
+      return;
+    }
+    await menu.getByRole('menuitem', { name: 'Rejected', exact: true }).click();
+    await page.getByRole('menu', { name: 'Rejected', exact: true }).getByRole('menuitemradio', { name: stage ?? 'Stage unspecified', exact: true }).click();
+  }
+  await firstStatus.press('ArrowDown');
+  const rejectedBranch = page.getByRole('menuitem', { name: 'Rejected', exact: true });
+  await rejectedBranch.focus();
+  await rejectedBranch.press('ArrowRight');
+  const stagesMenu = page.getByRole('menu', { name: 'Rejected', exact: true });
+  await stagesMenu.getByRole('menuitemradio').first().waitFor();
+  assert.deepEqual(await stagesMenu.getByRole('menuitemradio').allTextContents(),
+    ['After application', 'After recruiter screen', 'After pre-loop', 'After full loop', 'Stage unspecified']);
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('Escape');
+  assert.equal(await firstStatus.getAttribute('data-status'), 'Applied');
   failNextStatusSave = true;
-  await firstStatus.selectOption('Offer received');
+  await chooseStatus(firstStatus, 'Offer received');
   await page.getByText('Could not save status.', { exact: true }).waitFor();
-  assert.equal(await firstStatus.inputValue(), 'Applied');
+  assert.equal(await firstStatus.getAttribute('data-status'), 'Applied');
   assert.equal(await page.locator('.offer-confetti').count(), 0, 'Failed status saves never celebrate');
-  await firstStatus.selectOption('Offer received');
+  await chooseStatus(firstStatus, 'Offer received');
   await page.locator('.offer-confetti').waitFor({ state: 'visible' });
   assert.equal(await page.locator('.offer-confetti').evaluate(element => getComputedStyle(element).pointerEvents), 'none');
   assert.equal(await firstStatus.evaluate(element => getComputedStyle(element).color), 'rgb(32, 90, 154)');
@@ -1043,26 +1063,31 @@ try {
   await page.waitForTimeout(650);
   await captureSettings('applications-offer-windows-light.png', false);
   await page.locator('.offer-confetti').waitFor({ state: 'detached', timeout: 3500 });
-  await firstStatus.selectOption('Offer received');
+  await chooseStatus(firstStatus, 'Offer received');
   assert.equal(await page.locator('.offer-confetti').count(), 0, 'Reselecting an existing offer does not replay confetti');
   const statusFilter = page.getByRole('combobox', { name: 'Filter by status', exact: true });
   assert.equal(await statusFilter.getByRole('option', { name: 'Offer received (1)', exact: true }).count(), 1);
   await statusFilter.selectOption('Offer received');
   assert.equal(await table.locator('.application-row').count(), 1);
   await statusFilter.selectOption('All statuses');
-  await firstStatus.selectOption('Applied');
+  await chooseStatus(firstStatus, 'Applied');
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await firstStatus.selectOption('Offer received');
+  await chooseStatus(firstStatus, 'Offer received');
   await page.getByText('Offer received. Congratulations!', { exact: true }).waitFor();
   assert.equal(await page.locator('.offer-confetti').isVisible(), false, 'Reduced motion retains success feedback without flying particles');
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   for (const status of ['Heard back', 'Interview scheduled', 'Rejected']) {
-    await firstStatus.selectOption(status);
+    await chooseStatus(firstStatus, status);
     await page.waitForFunction((status) => document.querySelector(`.activity-day[data-date="2026-09-29"] .activity-segment[data-status="${status}"]`)?.dataset.count === '1', status);
     assert.equal(await statusDay.locator('.activity-segment[data-status="Applied"]').getAttribute('data-count'), '1');
     assert.equal(await page.locator('.activity-day[data-date="2026-09-30"] .activity-segment').count(), 0);
   }
-  await table.getByRole('combobox', { name: 'Status for Product Manager at Meta', exact: true }).selectOption('Interview scheduled');
+  await chooseStatus(firstStatus, 'Rejected', 'After recruiter screen');
+  await firstStatus.getByText('After recruiter screen', { exact: true }).waitFor();
+  await statusFilter.selectOption('Rejected');
+  assert.ok(await firstStatus.isVisible());
+  await statusFilter.selectOption('All statuses');
+  await chooseStatus(table.getByRole('button', { name: /^Status for Product Manager at Meta,/ }), 'Interview scheduled');
   await page.waitForFunction(() => !document.querySelector('.activity-day[data-date="2026-09-29"] .activity-segment[data-status="Applied"]'));
   assert.equal(await statusDay.locator('.activity-segment[data-status="Interview scheduled"]').getAttribute('data-count'), '1');
   assert.equal(await statusDay.locator('.activity-segment[data-status="Rejected"]').getAttribute('data-count'), '1');
@@ -1081,6 +1106,9 @@ try {
   assert.equal(await expanded.isVisible(), false);
   await table.getByRole("button", { name: "Edit Senior Product Manager at Expedia Group" }).click();
   await assertLocationKeyboard(page.locator(".editor .location-editor"), "Windows Applications");
+  const editorStatus = page.locator(".editor").getByRole("button", { name: /^Status,/ });
+  await editorStatus.getByText("After recruiter screen", { exact: true }).waitFor();
+  await chooseStatus(editorStatus, "Rejected", "After pre-loop");
   await page.getByLabel("Team", { exact: true }).fill("Search & Recommendations");
   await table.getByRole("button", { name: "Notes for Senior Product Manager at Expedia Group" }).click();
   const notes = page.getByRole("dialog", { name: "Notes" }).getByRole("textbox", { name: "Notes" });
@@ -1091,6 +1119,7 @@ try {
   await page.getByRole("status").filter({ hasText: /^Saved$/ }).waitFor();
   assert.equal(applications[0].notes, `${description}\n\nRecruiter: Sam`);
   await page.getByRole("button", { name: "Save changes" }).click();
+  await firstStatus.getByText("After pre-loop", { exact: true }).waitFor();
   await page.getByRole('status').filter({ hasText: /^Saved$/ }).waitFor();
   assert.equal(applications[0].notes, `${description}\n\nRecruiter: Sam`);
   await table.getByRole("button", { name: "Refresh match for Senior Product Manager at Expedia Group" }).click();

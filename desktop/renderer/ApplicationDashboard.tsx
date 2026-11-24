@@ -18,6 +18,7 @@ import {
   MAX_APPLICATION_NOTES_CHARS,
   type Application,
   type ApplicationInput,
+  type ApplicationOutcome,
   type ApplicationStatus,
   type Resume,
 } from "../../lib/application-types";
@@ -35,6 +36,7 @@ import { useBackgroundAnalysis } from "./BackgroundAnalysis";
 import { jobRunning } from "./analysis-jobs";
 import { applicationActivity } from "../../lib/application-activity";
 import ApplicationActivity from "./ApplicationActivity";
+import ApplicationStatusPicker from "./ApplicationStatusPicker";
 import MatchProgressRing from "./MatchProgressRing";
 import OfferCelebration from "./OfferCelebration";
 
@@ -73,7 +75,7 @@ function formatDate(value: string) {
   }).format(new Date(value + "T12:00:00"));
 }
 
-function applicationInput(item: Application, status = item.status): ApplicationInput {
+function applicationInput(item: Application): ApplicationInput {
   return {
     company: item.company,
     title: item.title,
@@ -87,7 +89,8 @@ function applicationInput(item: Application, status = item.status): ApplicationI
     appliedDate: item.appliedDate,
     matchStrength: item.matchStrength,
     resumeId: item.resumeId,
-    status,
+    status: item.status,
+    rejectionStage: item.rejectionStage,
   };
 }
 
@@ -524,6 +527,7 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
         matchStrength,
         resumeId,
         status: form.status,
+        rejectionStage: form.rejectionStage,
       };
       const response = await fetch(
         editingId ? "/api/applications/" + encodeURIComponent(editingId) : "/api/applications",
@@ -560,17 +564,18 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
     }
   }
 
-  async function updateStatus(item: Application, status: ApplicationStatus) {
-    if (jobRunning(jobs.get({ kind: "match", id: item.id })) || item.status === status) return;
+  async function updateStatus(item: Application, outcome: ApplicationOutcome) {
+    if (jobRunning(jobs.get({ kind: "match", id: item.id })) ||
+      (item.status === outcome.status && (item.rejectionStage ?? null) === (outcome.rejectionStage ?? null))) return;
     jobs.dismiss({ kind: "match", id: item.id });
-    retryAction.current = () => void updateStatus(item, status);
+    retryAction.current = () => void updateStatus(item, outcome);
     setSavingStatusId(item.id);
     setActionError("");
     try {
       const response = await fetch("/api/applications/" + encodeURIComponent(item.id), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(applicationInput(item, status)),
+        body: JSON.stringify({ ...applicationInput(item), ...outcome }),
       });
       const saved = await readJson<{ application: Application }>(response);
       setApplications((current) =>
@@ -664,13 +669,9 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
   }
 
   function statusControl(item: Application) {
-    return <select className="status-select" data-status={item.status}
-      title={item.status}
-      aria-label={`Status for ${item.title || "untitled role"} at ${item.company || "unknown company"}`}
-      value={item.status} disabled={savingStatusId === item.id || analyzingIds.has(item.id)}
-      onChange={(event) => void updateStatus(item, event.target.value as ApplicationStatus)}>
-      {APPLICATION_STATUSES.map((status) => <option key={status}>{status}</option>)}
-    </select>;
+    return <ApplicationStatusPicker compact value={item} disabled={savingStatusId === item.id || analyzingIds.has(item.id)}
+      label={`Status for ${item.title || "untitled role"} at ${item.company || "unknown company"}`}
+      onChange={(outcome) => void updateStatus(item, outcome)} />;
   }
 
   async function downloadResume(item: Application) {
@@ -823,12 +824,11 @@ export default function ApplicationDashboard({ initialSelection }: { initialSele
                   </span>
                   <small>{["credits", "chatgpt"].includes(analysisFlow.state.analysisProvider) ? "Analyze the match after saving, or enter a score." : analysisFlow.canAutoAnalyze() ? "Calculated after saving when a resume and job description are included." : "Set up analysis in Settings, or enter a score."}</small>
                 </label>
-                <label className="field">
+                <div className="field">
                   <span>Status</span>
-                  <select value={form.status} onChange={(event) => updateField("status", event.target.value as ApplicationStatus)}>
-                    {APPLICATION_STATUSES.map((status) => <option key={status}>{status}</option>)}
-                  </select>
-                </label>
+                  <ApplicationStatusPicker value={form} label="Status" disabled={saving}
+                    onChange={(outcome) => setForm((current) => ({ ...current, ...outcome }))} />
+                </div>
                 <ResumePicker resumes={resumes} value={form.resumeId} file={resumeFile} disabled={saving}
                   onSelect={(value) => updateField("resumeId", value)} onFile={setResumeFile} />
                 <label className="field field-wide">
