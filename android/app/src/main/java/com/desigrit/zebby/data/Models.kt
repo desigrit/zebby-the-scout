@@ -22,6 +22,11 @@ enum class JobStatus(val label: String) {
     companion object { fun of(value: String) = entries.firstOrNull { it.label == value } ?: Applied }
 }
 
+enum class RejectionStage(val label: String) {
+    Application("After application"), Recruiter("After recruiter screen"),
+    PreLoop("After pre-loop"), FullLoop("After full loop");
+}
+
 /** Uses desktop column names, preserving all unrelated columns when an existing row is edited. */
 data class Job(val plan: Boolean, val fields: Map<String, String>) {
     operator fun get(name: String): String = fields[name].orEmpty()
@@ -32,6 +37,11 @@ data class Job(val plan: Boolean, val fields: Map<String, String>) {
     val description get() = this[descriptionKey]
     val score get() = this["match_strength"].toIntOrNull()?.takeIf { it in 0..100 }
     val status get() = JobStatus.of(this["status"])
+    val rejectionStage get() = if (status == JobStatus.Rejected)
+        RejectionStage.entries.find { it.label == this["rejection_stage"] } else null
+    val statusLabel get() = rejectionStage?.let { "${status.label} · ${it.label}" } ?: status.label
+    fun withStatus(value: JobStatus, stage: RejectionStage? = null) =
+        with("status", value.label).with("rejection_stage", if (value == JobStatus.Rejected) stage?.label.orEmpty() else "")
     fun with(key: String, value: String) = copy(fields = fields + (key to value))
     fun source() = listOf("listing_url", "company", "title", "team", "locations", descriptionKey, "current_overview", "resume_id").joinToString("\u0000") { this[it] }
     fun toJson(): String = JSONObject().put("plan", plan).put("fields", JSONObject(fields)).toString()

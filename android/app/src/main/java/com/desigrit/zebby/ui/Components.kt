@@ -77,6 +77,41 @@ import java.time.format.DateTimeFormatter
         }
     }
 }
+@Composable fun StatusPicker(job: Job, enabled: Boolean, onSelect: (Job) -> Unit) {
+    var open by remember(job.id, enabled) { mutableStateOf(false) }
+    var stages by remember(job.id) { mutableStateOf(false) }
+    fun choose(status: JobStatus, stage: RejectionStage? = null) {
+        open = false
+        onSelect(job.withStatus(status, stage))
+    }
+    ExposedDropdownMenuBox(expanded = open, onExpandedChange = {
+        if (enabled) { stages = false; open = it }
+    }) {
+        OutlinedTextField(value = job.statusLabel, onValueChange = {}, readOnly = true, enabled = enabled,
+            label = { Text("Status") }, modifier = Modifier.fillMaxWidth().menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled),
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(open) })
+        ExposedDropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            if (stages) {
+                DropdownMenuItem(text = { Text("Rejected") }, leadingIcon = { Icon(Icons.Outlined.ArrowBack, "Back to statuses") },
+                    onClick = { stages = false })
+                RejectionStage.entries.forEach { stage ->
+                    DropdownMenuItem(text = { Text(stage.label) }, onClick = { choose(JobStatus.Rejected, stage) },
+                        trailingIcon = { if (job.rejectionStage == stage) Icon(Icons.Outlined.Check, "Selected") })
+                }
+                DropdownMenuItem(text = { Text("Stage unspecified") }, onClick = { choose(JobStatus.Rejected) },
+                    trailingIcon = { if (job.status == JobStatus.Rejected && job.rejectionStage == null) Icon(Icons.Outlined.Check, "Selected") })
+            } else JobStatus.entries.forEach { status ->
+                DropdownMenuItem(text = { Text(status.label) },
+                    onClick = { if (status == JobStatus.Rejected) stages = true else choose(status) },
+                    trailingIcon = {
+                        if (status == JobStatus.Rejected) Icon(Icons.Outlined.ChevronRight, "Choose stage")
+                        else if (status == job.status) Icon(Icons.Outlined.Check, "Selected")
+                    })
+            }
+        }
+    }
+}
+
 @Composable fun LocationEditor(value:String,recents:List<String>,enabled:Boolean,onChange:(String)->Unit) {
     var adding by remember { mutableStateOf(false) };var text by remember { mutableStateOf("") }
     val items=locations(value)
