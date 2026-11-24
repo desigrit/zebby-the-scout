@@ -7,7 +7,7 @@ import path from "node:path";
 import { DatabaseSync, backup } from "node:sqlite";
 import { z } from "zod";
 import { applicationInputSchema } from "../lib/application-validation";
-import { MAX_APPLICATION_NOTES_CHARS } from "../lib/application-types";
+import { MAX_APPLICATION_NOTES_CHARS, REJECTION_STAGES } from "../lib/application-types";
 import type { Application, ApplicationInput, Resume } from "../lib/application-types";
 import { normalizeJobText } from "../lib/job-text";
 import { normalizedListingUrl } from "../lib/listing-url";
@@ -106,6 +106,7 @@ function mapApplication(row: Row): Application {
     matchNotes: String(row.match_notes || ""), matchAnalyzedAt: String(row.match_analyzed_at || ""),
     resumeId: String(row.resume_id || ""), resumeName: String(row.resume_name || ""),
     status: row.status as Application["status"],
+    rejectionStage: row.status === "Rejected" ? REJECTION_STAGES.find((stage) => stage === row.rejection_stage) ?? null : null,
     createdAt: String(row.created_at), updatedAt: String(row.updated_at),
   };
 }
@@ -529,7 +530,7 @@ export class DesktopStore {
     if (!parsed.success) {
       const issue = parsed.error.issues[0], field = String(issue.path[0] || "application");
       const names: Record<string, string> = { listingUrl: "job listing link", appliedDate: "date applied", resumeId: "resume",
-        matchStrength: "match strength", jobDescription: "job description", snapshotText: "job description" };
+        matchStrength: "match strength", jobDescription: "job description", snapshotText: "job description", rejectionStage: "rejection stage" };
       throw new Error(`Check the ${names[field] || field} and try again.`);
     }
     const item: ApplicationInput = { ...parsed.data, team: parsed.data.team || "", locations: parsed.data.locations || "",
@@ -571,6 +572,18 @@ export class DesktopStore {
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(resultId, item.company, item.title,
           item.team, item.locations, item.listingUrl, item.jobDescription, notesWithListing(item.notes, snapshot[0]), ...snapshot, item.appliedDate,
           item.matchStrength, item.resumeId || null, item.status, now, now);
+      }
+      if (item.status === "Rejected" && item.rejectionStage !== undefined) {
+        const hasColumn = db.prepare("SELECT 1 FROM pragma_table_info('applications') WHERE name = 'rejection_stage'").get();
+        if (!hasColumn && !item.rejectionStage) return;
+        if (!hasColumn) {
+          // Add the optional v10 field on first use. Older clients can still edit the same file.
+          db.exec(`ALTER TABLE applications ADD COLUMN rejection_stage TEXT NOT NULL DEFAULT '';
+            CREATE TRIGGER clear_rejection_stage AFTER UPDATE OF status ON applications
+            WHEN NEW.status <> 'Rejected' AND NEW.rejection_stage <> ''
+            BEGIN UPDATE applications SET rejection_stage = '' WHERE id = NEW.id; END;`);
+        }
+        db.prepare("UPDATE applications SET rejection_stage = ? WHERE id = ?").run(item.rejectionStage ?? "", resultId);
       }
     });
     return this.findApplication(resultId)!;

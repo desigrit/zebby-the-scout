@@ -8,6 +8,52 @@ import { DatabaseSync } from "node:sqlite";
 import { build } from "esbuild";
 import { escapeText } from "entities";
 
+test("rejection stages preserve the Rejected total and survive edits by older clients", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "zebby-rejection-stages-"));
+  const file = path.join(root, "jobs.sqlite");
+  let store;
+  try {
+    const bundle = path.join(root, "store.mjs");
+    await build({ entryPoints: [path.resolve("desktop/store.ts")], outfile: bundle,
+      bundle: true, platform: "node", format: "esm", target: "node22" });
+    const { DesktopStore } = await import(pathToFileURL(bundle).href);
+    store = new DesktopStore(path.join(root, "profile"));
+    await store.create(file);
+    const rejected = { company: "Example", status: "Rejected", matchStrength: 82 };
+    const legacy = await store.saveApplication(rejected);
+    assert.equal(legacy.rejectionStage, null);
+    const stages = ["After application", "After recruiter screen", "After pre-loop", "After full loop"];
+    const saved = await store.saveApplication({ ...rejected, rejectionStage: stages[0] });
+    for (const stage of stages) {
+      const updated = await store.saveApplication({ ...saved, rejectionStage: stage }, saved.id);
+      assert.equal(updated.status, "Rejected");
+      assert.equal(updated.rejectionStage, stage);
+      assert.equal(updated.matchStrength, 82);
+    }
+    assert.equal((await store.saveApplication(rejected, saved.id)).rejectionStage, "After full loop");
+    await assert.rejects(store.saveApplication({ ...saved, rejectionStage: "Unknown stage" }, saved.id), /rejection stage/);
+    await store.open(file);
+    assert.equal(store.listApplications().filter((app) => app.status === "Rejected").length, 2);
+    assert.equal(store.listApplications().find((app) => app.id === legacy.id).rejectionStage, null);
+    assert.equal(store.listApplications().find((app) => app.id === saved.id).rejectionStage, stages[3]);
+    assert.equal((await store.saveApplication({ ...saved, rejectionStage: null }, saved.id)).rejectionStage, null);
+    await store.saveApplication({ ...saved, rejectionStage: stages[1] }, saved.id);
+    store.close();
+    const olderClient = new DatabaseSync(file);
+    try {
+      assert.equal(olderClient.prepare("PRAGMA user_version").get().user_version, 10);
+      const update = olderClient.prepare("UPDATE applications SET status = ? WHERE id = ?");
+      update.run("Interview scheduled", saved.id);
+      update.run("Rejected", saved.id);
+    } finally { olderClient.close(); }
+    await store.open(file);
+    assert.equal(store.listApplications().find((app) => app.id === saved.id).rejectionStage, null);
+  } finally {
+    store?.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("recent locations combine saved plans and applications without writing or crossing databases", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "zebby-recent-locations-test-"));
   const file = path.join(root, "applications.sqlite");
