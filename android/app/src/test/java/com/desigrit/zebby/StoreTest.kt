@@ -27,6 +27,21 @@ class StoreTest {
         val saved=store.save(Job.fresh(false))
         assertEquals(saved.id,Store(context).all(false).single().id)
     }
+    @Test fun rejectionStagesRoundTripAndClearOnStatusChange() {
+        val job = store.save(Job.fresh(false).withStatus(JobStatus.Rejected))
+        assertNull(job.rejectionStage)
+        for (stage in RejectionStage.entries) {
+            store.save(job.withStatus(JobStatus.Rejected, stage))
+            val saved = store.get(false, job.id)!!
+            assertEquals(JobStatus.Rejected, saved.status)
+            assertEquals(stage, saved.rejectionStage)
+        }
+        val reopened = Store(context).get(false, job.id)!!
+        assertEquals(RejectionStage.FullLoop, reopened.rejectionStage)
+        store.save(reopened.with("status", JobStatus.Interview.label))
+        store.save(store.get(false, job.id)!!.with("status", JobStatus.Rejected.label))
+        assertNull(store.get(false, job.id)!!.rejectionStage)
+    }
     @Test fun movingPlanPreservesScoreExplanationResumeAndOriginalPlan() {
         val resume=store.addResume("resume.txt","text/plain","A synthetic candidate resume with enough readable text.".toByteArray())
         val plan=store.save(Job.fresh(true).with("company","Example").with("title","Product Manager").with("listing_url","https://example.com/jobs/1")

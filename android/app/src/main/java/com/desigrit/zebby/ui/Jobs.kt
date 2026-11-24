@@ -92,7 +92,7 @@ import kotlinx.coroutines.withContext
                         }
                         SmallLabel(shortDate(job["applied_date"]).ifBlank {"No date"})
                         if(vm.active(job)!=null) CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp) else Match(job.score)
-                        Text(job.status.label,Modifier.widthIn(min=120.dp),style=MaterialTheme.typography.labelMedium,color=statusColor(job.status))
+                        Text(job.statusLabel,Modifier.widthIn(min=120.dp,max=172.dp),style=MaterialTheme.typography.labelMedium,color=statusColor(job.status))
                         Icon(Icons.Outlined.ChevronRight,null,tint=MaterialTheme.colorScheme.onSurfaceVariant)
                     } else Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                         Text(job.title,style=MaterialTheme.typography.titleMedium,maxLines=2,overflow=TextOverflow.Ellipsis)
@@ -104,7 +104,7 @@ import kotlinx.coroutines.withContext
                             SmallLabel(shortDate(job["applied_date"]).ifBlank { "No date" })
                             if(vm.active(job)!=null) CircularProgressIndicator(Modifier.size(18.dp),strokeWidth=2.dp) else Match(job.score)
                         }
-                        Text(job.status.label,style=MaterialTheme.typography.labelMedium,color=statusColor(job.status))
+                        Text(job.statusLabel,style=MaterialTheme.typography.labelMedium,color=statusColor(job.status))
                     }
                 }
             }
@@ -154,7 +154,9 @@ import kotlinx.coroutines.withContext
                 Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(8.dp)) { Text(job.title,style=MaterialTheme.typography.headlineSmall);Text(job.company,style=MaterialTheme.typography.bodyLarge,color=MaterialTheme.colorScheme.onSurfaceVariant) }
                 ActionIcon(Icons.Outlined.Edit,"Edit application",run==null) {onEdit(job)};ActionIcon(Icons.Outlined.Close,"Close application",onClick=onClose)
             }
-            Selector("Status",job.status.label,JobStatus.entries.map { it.label to it.label },enabled=run==null) { value -> vm.save(job.with("status",value)) { if(value==JobStatus.Offer.label && job.status!=JobStatus.Offer) celebrate=true } }
+            StatusPicker(job, enabled = run == null) { next ->
+                vm.save(next) { if (next.status == JobStatus.Offer && job.status != JobStatus.Offer) celebrate = true }
+            }
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
                 Column { SmallLabel("Applied");Text(shortDate(job["applied_date"]).ifBlank { "Not dated" },style=MaterialTheme.typography.bodyLarge) }
                 Match(job.score,if(run==null) ({vm.analyze(job)}) else null)

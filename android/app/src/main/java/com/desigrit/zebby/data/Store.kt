@@ -46,7 +46,20 @@ class Store(private val context: Context) {
                 val jobChanged = listOf("listing_url", "company", "title", "team", "locations", job.descriptionKey).any { previous[it] != job[it] }
                 if (jobChanged && job.plan) next = next.with("keyword_importance_json", "[]").with("theme_importance_json", "[]")
             }
-            val known = columns(db, table(job.plan))
+            var known = columns(db, table(job.plan))
+            if (!job.plan && next["rejection_stage"].isNotEmpty()) {
+                if (next.status != JobStatus.Rejected) next = next.with("rejection_stage", "")
+                else {
+                    require(next.rejectionStage != null) { "Choose a rejection stage." }
+                    if ("rejection_stage" !in known) {
+                        db.execSQL("ALTER TABLE applications ADD COLUMN rejection_stage TEXT NOT NULL DEFAULT ''")
+                        db.execSQL("""CREATE TRIGGER clear_rejection_stage AFTER UPDATE OF status ON applications
+                            WHEN NEW.status <> 'Rejected' AND NEW.rejection_stage <> ''
+                            BEGIN UPDATE applications SET rejection_stage = '' WHERE id = NEW.id; END;""")
+                        known = known + "rejection_stage"
+                    }
+                }
+            }
             val values = ContentValues().apply { next.fields.filterKeys { it in known }.forEach { (k, v) ->
                 if ((k == "match_strength" || k == "resume_id") && v.isBlank()) putNull(k) else put(k, v)
             } }

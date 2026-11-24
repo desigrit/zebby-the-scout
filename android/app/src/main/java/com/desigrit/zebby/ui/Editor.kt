@@ -80,7 +80,7 @@ import org.json.JSONArray
                 var dateOpen by remember {mutableStateOf(false)}
                 OutlinedButton(onClick={dateOpen=true},enabled=enabled) {Icon(Icons.Outlined.CalendarToday,null,Modifier.size(18.dp));Spacer(Modifier.width(12.dp));Text(draft["applied_date"].ifBlank {"Date applied"})}
                 if(dateOpen) ApplicationDateDialog(draft["applied_date"],onDismiss={dateOpen=false}) {change("applied_date",it);dateOpen=false}
-                Selector("Status",draft.status.label,JobStatus.entries.map {it.label to it.label},enabled) {change("status",it)}
+                StatusPicker(draft, enabled) { serialized = it.toJson() }
                 Field("Match %",draft["match_strength"],enabled,keyboard=KeyboardType.Number) {value -> if(value.isEmpty() || value.toIntOrNull() in 0..100) change("match_strength",value)}
                 Field("Notes",draft["notes"],enabled,multiline=true) {change("notes",it)}
             }
